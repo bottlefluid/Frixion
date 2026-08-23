@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frixion</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%235865f2'/%3E%3Cpath d='M8 8h9a1 1 0 0 1 1 1v5.2a1 1 0 0 1-1 1h-4.6L9.8 18v-2.8H8a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============ TITLE BAR (desktop-app style) ============ -->
+<div id="title-bar">
+  <div class="tb-left">
+    <span class="tb-brand-mark">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M4 5h16a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-9.2L7 20.5V17H4A1.5 1.5 0 0 1 2.5 15.5v-9A1.5 1.5 0 0 1 4 5z" fill="#fff"/></svg>
+    </span>
+    <span class="tb-brand-word">Frixion</span>
+  </div>
+  <div class="tb-drag"></div>
+  <div class="tb-right">
+    <button class="tb-icon-btn" id="tb-inbox-btn" title="Inbox">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3-5h12l3 5"/><path d="M3 8.5v9A1.5 1.5 0 0 0 4.5 19h15a1.5 1.5 0 0 0 1.5-1.5v-9"/><path d="M3 8.5h5.2a.8.8 0 0 1 .7.4l.9 1.6a.8.8 0 0 0 .7.4h3a.8.8 0 0 0 .7-.4l.9-1.6a.8.8 0 0 1 .7-.4H21"/></svg>
+    </button>
+    <button class="tb-icon-btn" id="tb-help-btn" title="Help">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.3 1.8-2.3 3.3" stroke-linecap="round"/><circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none"/></svg>
+    </button>
+    <span class="tb-sep"></span>
+    <button class="tb-win-btn" id="tb-min-btn" title="Minimize">
+      <svg viewBox="0 0 10 10" width="10" height="10"><path d="M1 5h8" stroke="currentColor" stroke-width="1.1"/></svg>
+    </button>
+    <button class="tb-win-btn" id="tb-max-btn" title="Maximize">
+      <svg viewBox="0 0 10 10" width="10" height="10"><rect x="1.5" y="1.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>
+    </button>
+    <button class="tb-win-btn tb-close" id="tb-close-btn" title="Close">
+      <svg viewBox="0 0 10 10" width="10" height="10"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.1"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- inbox popover -->
+<div id="inbox-popover" class="hidden">
+  <div class="ip-head">Inbox</div>
+  <div class="ip-empty">
+    <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9.5"/><path d="M7.5 12.5l2.7 2.7 6-6.4"/></svg>
+    <div class="ip-empty-t">You're all caught up.</div>
+    <div class="ip-empty-d">Mentions and unread activity will show up here.</div>
+  </div>
+</div>
+
+<!-- help popover -->
+<div id="help-popover" class="hidden">
+  <div class="ip-head">Frixion Help</div>
+  <div class="help-rows">
+    <div class="help-row"><kbd>Enter</kbd><span>Send a message</span></div>
+    <div class="help-row"><kbd>Shift</kbd> + <kbd>Enter</kbd><span>New line</span></div>
+    <div class="help-row"><kbd>:name:</kbd><span>Insert an emoji</span></div>
+  </div>
+  <div class="help-foot">Frixion v1.4 — see what's new in Settings → Update Log.</div>
+</div>
+
+<div id="page-body">
+
+<!-- ============ AUTH ============ -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <span class="brand-mark">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 5h16a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-9.2L7 20.5V17H4A1.5 1.5 0 0 1 2.5 15.5v-9A1.5 1.5 0 0 1 4 5z" fill="#fff"/></svg>
+      </span>
+      <span class="brand-word">Frixion</span>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="login-view">
+      <h1>Welcome back!</h1>
+      <p class="sub">Log in with your username and password.</p>
+      <div class="auth-error" id="login-error"></div>
+      <div class="field"><label>Username</label><input type="text" id="login-username" autocomplete="username"></div>
+      <div class="field"><label>Password</label><input type="password" id="login-password" autocomplete="current-password"></div>
+      <button class="btn-primary" id="login-btn">Log In</button>
+      <div class="auth-switch">Need an account? <a id="show-register">Register</a></div>
+    </div>
+
+    <!-- REGISTER -->
+    <div id="register-view" class="hidden">
+      <h1>Create an account</h1>
+      <p class="sub">Pick a username and password. No email needed.</p>
+      <div class="auth-error" id="register-error"></div>
+      <div class="field"><label>Username</label><input type="text" id="reg-username" maxlength="24" autocomplete="username"></div>
+      <div class="field"><label>Password</label><input type="password" id="reg-password" autocomplete="new-password"></div>
+      <button class="btn-primary" id="register-btn">Continue</button>
+      <div class="auth-switch">Already have an account? <a id="show-login">Log In</a></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ============ MAIN APP ============ -->
+<div id="app" class="hidden">
+
+  <!-- server rail -->
+  <div id="server-rail">
+    <div class="rail-item dm-item active" id="rail-home" title="Direct Messages">
+      <svg width="26" height="20" viewBox="0 0 26 20" fill="currentColor"><path d="M2 0h22a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm11 9L2 2v2l11 7 11-7V2z"/></svg>
+    </div>
+    <div class="rail-divider"></div>
+    <div id="server-rail-list"></div>
+    <div class="rail-item action" id="rail-add-server" title="Add a Server">+</div>
+    <div class="rail-item explore-btn" id="rail-explore" title="Explore Servers">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg>
+    </div>
+    <div class="rail-divider"></div>
+    <div class="rail-item premium-btn" id="rail-premium" title="Frixion Premium"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2.5l2.95 6.4 7 .63-5.3 4.66 1.6 6.86-6.25-3.78-6.25 3.78 1.6-6.86-5.3-4.66 7-.63z"/></svg></div>
+  </div>
+
+  <!-- second column -->
+  <div id="side-panel">
+    <div id="side-header">
+      <span id="side-header-title">Direct Messages</span>
+    </div>
+
+    <!-- DM list (home view) -->
+    <div id="dm-list">
+      <div class="side-section-label">
+        <span>Direct Messages</span>
+        <span id="dm-add-btn" title="Add friend / DM" style="cursor:pointer;">+</span>
+      </div>
+      <div id="dm-rows"></div>
+    </div>
+
+    <!-- channel list (server view) -->
+    <div id="channel-list" class="hidden">
+      <div class="side-section-label">
+        <span>Text Channels</span>
+        <span id="channel-add-btn" title="Create channel" style="cursor:pointer;">+</span>
+      </div>
+      <div id="channel-rows"></div>
+    </div>
+
+    <div id="user-panel">
+      <div class="avatar" id="self-avatar" style="width:32px;height:32px;font-size:13px;"></div>
+      <div class="who" id="open-my-settings">
+        <div class="uname" id="self-username"></div>
+        <div class="utag" id="self-status-label">Online</div>
+      </div>
+      <div class="icon-btn" id="open-settings-gear" title="User Settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="7" cy="18" r="2" fill="currentColor" stroke="none"/></svg></div>
+    </div>
+  </div>
+
+  <!-- main chat column -->
+  <div id="main-col">
+    <div id="chat-header">
+      <span class="hash" id="chat-header-hash">#</span>
+      <span class="title" id="chat-header-title">Select a conversation</span>
+      <div class="chat-header-actions">
+        <span class="hdr-icon-btn hidden" id="mute-toggle" title="Mute Channel">
+          <svg class="i-unmuted" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 9a4.5 4.5 0 0 1 0 6"/><path d="M18 6.5a8 8 0 0 1 0 11"/></svg>
+          <svg class="i-muted hidden" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M16 9l5 6M21 9l-5 6"/></svg>
+        </span>
+        <span class="hdr-icon-btn hidden" id="pins-toggle" title="Pinned Messages">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2 2-5 5-4 1 7 7 1-4 5-5 2 2"/><path d="M9 15l-5 5"/></svg>
+        </span>
+        <span class="hdr-icon-btn hidden" id="search-toggle" title="Search">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        </span>
+        <span class="members-toggle hidden" id="members-toggle" title="Toggle Member List"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9" r="2.3"/><path d="M15 14.2c2.6.3 4.5 2.4 4.5 5.3"/></svg></span>
+      </div>
+    </div>
+
+    <div id="search-bar" class="hidden">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="text" id="search-input" placeholder="Search messages">
+      <span id="search-count"></span>
+      <span class="hdr-icon-btn" id="search-close" title="Close">✕</span>
+    </div>
+
+    <div id="welcome-view">
+      <span class="welcome-icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none"><path d="M4 5h16a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-9.2L7 20.5V17H4A1.5 1.5 0 0 1 2.5 15.5v-9A1.5 1.5 0 0 1 4 5z" fill="currentColor"/></svg>
+      </span>
+      <h2>No conversation selected</h2>
+      <p>Pick a server, channel, or DM from the left to start chatting.</p>
+    </div>
+
+    <div id="chat-view" class="hidden" style="display:contents;">
+      <div id="messages"></div>
+      <div id="composer-wrap">
+        <div id="emoji-picker-panel" class="hidden">
+          <div class="ep-search"><input type="text" id="emoji-search" placeholder="Search emoji"></div>
+          <div class="ep-scroll">
+            <div class="ep-section-label">Custom</div>
+            <div class="ep-grid" id="ep-custom-grid"></div>
+            <div class="ep-section-label">Emoji</div>
+            <div class="ep-grid" id="ep-standard-grid"></div>
+          </div>
+        </div>
+        <div id="composer">
+          <button class="emoji-btn" id="emoji-picker-btn" title="Emoji"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 14c.8 1.2 2 2 3.5 2s2.7-.8 3.5-2" stroke-linecap="round"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/></svg></button>
+          <textarea id="composer-input" rows="1" placeholder="Message"></textarea>
+          <button class="send-btn" id="send-btn">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- member panel -->
+  <div id="member-panel">
+    <div class="side-section-label">Online — <span id="online-count">0</span></div>
+    <div id="member-rows-online"></div>
+    <div class="side-section-label">Offline — <span id="offline-count">0</span></div>
+    <div id="member-rows-offline"></div>
+  </div>
+</div>
+
+
+<!-- ============ MODAL: create/join server chooser ============ -->
+<div class="modal-overlay hidden" id="server-choice-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2>Add a Server</h2><span class="x" data-close="server-choice-modal">✕</span></div>
+    <p class="desc">Your server is where you and your friends hang out. Make yours and start talking.</p>
+    <div class="big-choice-row">
+      <div class="big-choice" id="choice-create"><span class="em"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><div><div class="t">Create My Own</div><div class="d">Start a brand new server</div></div></div>
+      <div class="big-choice" id="choice-join"><span class="em"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5l5-5"/><path d="M11 5.5l.8-.8a3.6 3.6 0 0 1 5.1 5.1l-.9.9"/><path d="M13 18.5l-.8.8a3.6 3.6 0 0 1-5.1-5.1l.9-.9"/></svg></span><div><div class="t">Join a Server</div><div class="d">Enter an invite code</div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: create server ============ -->
+<div class="modal-overlay hidden" id="create-server-modal">
+  <div class="modal-box">
+    <span class="back-link" data-back="server-choice-modal">← Back</span>
+    <div class="modal-header-row"><h2>Customize your server</h2><span class="x" data-close="create-server-modal">✕</span></div>
+    <p class="desc">Give your new server a personality with a name. You can change this later.</p>
+    <div class="auth-error" id="create-server-error"></div>
+    <div class="field"><label>Server Name</label><input type="text" id="new-server-name" maxlength="40" placeholder="My Awesome Server"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" data-close="create-server-modal">Cancel</button>
+      <button class="btn-accent-inline" id="confirm-create-server">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: join server ============ -->
+<div class="modal-overlay hidden" id="join-server-modal">
+  <div class="modal-box">
+    <span class="back-link" data-back="server-choice-modal">← Back</span>
+    <div class="modal-header-row"><h2>Join a Server</h2><span class="x" data-close="join-server-modal">✕</span></div>
+    <p class="desc">Enter an invite code below to join an existing server.</p>
+    <div class="auth-error" id="join-server-error"></div>
+    <div class="field"><label>Invite Code</label><input type="text" id="join-server-code" placeholder="e.g. 8f3ka1"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" data-close="join-server-modal">Cancel</button>
+      <button class="btn-accent-inline" id="confirm-join-server">Join Server</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: server settings (owner) ============ -->
+<div class="modal-overlay hidden" id="server-settings-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2 id="server-settings-title">Server Settings</h2><span class="x" data-close="server-settings-modal">✕</span></div>
+    <div class="field"><label>Server Name</label><input type="text" id="edit-server-name" maxlength="40"></div>
+    <div class="field"><label>Invite Code</label><input type="text" id="server-invite-display" readonly></div>
+    <div class="modal-actions">
+      <button class="btn-danger" id="delete-server-btn">Delete Server</button>
+      <button class="btn-accent-inline" id="save-server-btn">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: create channel ============ -->
+<div class="modal-overlay hidden" id="create-channel-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2>Create Text Channel</h2><span class="x" data-close="create-channel-modal">✕</span></div>
+    <div class="field"><label>Channel Name</label><input type="text" id="new-channel-name" maxlength="30" placeholder="new-channel"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" data-close="create-channel-modal">Cancel</button>
+      <button class="btn-accent-inline" id="confirm-create-channel">Create Channel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: start DM ============ -->
+<div class="modal-overlay hidden" id="new-dm-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2>Message a Friend</h2><span class="x" data-close="new-dm-modal">✕</span></div>
+    <p class="desc">Enter their exact username to start a conversation.</p>
+    <div class="auth-error" id="new-dm-error"></div>
+    <div class="field"><label>Username</label><input type="text" id="new-dm-username" placeholder="username"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" data-close="new-dm-modal">Cancel</button>
+      <button class="btn-accent-inline" id="confirm-new-dm">Message</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: user settings ============ -->
+<div class="modal-overlay hidden" id="settings-modal">
+  <div class="modal-box">
+    <div id="settings-nav">
+      <div class="nav-label">User Settings</div>
+      <div class="nav-item active" data-pane="pane-account">My Account</div>
+      <div class="nav-item" data-pane="pane-premium">Frixion Premium</div>
+      <div class="nav-item" data-pane="pane-themes">Themes</div>
+      <div class="nav-label">App</div>
+      <div class="nav-item" data-pane="pane-updates">Update Log</div>
+      <div class="nav-label">&nbsp;</div>
+      <div class="nav-item" id="open-admin-panel">Admin Panel</div>
+      <div class="nav-item" id="logout-btn" style="color:#f87171;">Log Out</div>
+    </div>
+    <div id="settings-content">
+      <span class="x settings-close" data-close="settings-modal">✕</span>
+
+      <div class="settings-pane" id="pane-account">
+        <h2>My Account</h2>
+        <div class="field"><label>Username</label><input type="text" id="set-username" maxlength="24"></div>
+        <div class="field">
+          <label>Avatar Color</label>
+          <div class="color-swatches" id="avatar-color-swatches"></div>
+        </div>
+        <div class="field">
+          <label>Status</label>
+          <div class="status-picker" id="status-picker"></div>
+        </div>
+        <button class="btn-accent-inline" id="save-account-btn">Save Changes</button>
+      </div>
+
+      <div class="settings-pane hidden" id="pane-premium">
+        <h2>Frixion Premium</h2>
+        <div id="premium-not-owned">
+          <div class="premium-hero">
+            <h2>Frixion Premium</h2>
+            <p>Unlock exclusive themes, a profile flair, and support Frixion's development.</p>
+          </div>
+          <div class="perk-list">
+            <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="7" cy="12" r="3" fill="#5865f2"/><circle cx="12" cy="7" r="3" fill="#eb459e"/><circle cx="17" cy="12" r="3" fill="#f0b232"/></svg></span><div><div class="t">Exclusive Themes</div><div class="d">5 premium color themes for the whole app</div></div></div>
+            <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2.5l2.95 6.4 7 .63-5.3 4.66 1.6 6.86-6.25-3.78-6.25 3.78 1.6-6.86-5.3-4.66 7-.63z"/></svg></span><div><div class="t">Premium Badge</div><div class="d">A star badge next to your name everywhere</div></div></div>
+            <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5l7-7a3.5 3.5 0 0 1 5 5l-8.5 8.5a5 5 0 0 1-7-7l7.5-7.5"/></svg></span><div><div class="t">Bigger Uploads</div><div class="d">Higher attachment size limit (coming soon)</div></div></div>
+          </div>
+          <button class="btn-accent-inline" style="width:100%;" id="activate-premium-btn">Activate Frixion Premium</button>
+        </div>
+        <div id="premium-owned" class="hidden">
+          <span class="premium-active-badge"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="vertical-align:-2px"><path d="M12 2.5l2.95 6.4 7 .63-5.3 4.66 1.6 6.86-6.25-3.78-6.25 3.78 1.6-6.86-5.3-4.66 7-.63z"/></svg> Frixion Premium Active</span>
+          <p class="desc" style="margin-top:14px;">Thanks for supporting Frixion! Head to the Themes tab to personalize your app.</p>
+        </div>
+      </div>
+
+      <div class="settings-pane hidden" id="pane-themes">
+        <h2>Themes</h2>
+        <p class="desc">Frixion Premium unlocks 5 exclusive color themes.</p>
+        <div class="theme-grid" id="theme-grid"></div>
+      </div>
+
+      <div class="settings-pane hidden" id="pane-updates">
+        <h2>Update Log</h2>
+        <div id="updates-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: premium quick access ============ -->
+<div class="modal-overlay hidden" id="premium-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2></h2><span class="x" data-close="premium-modal">✕</span></div>
+    <div class="premium-hero">
+      <h2>Frixion Premium</h2>
+      <p>Unlock exclusive themes, a profile flair, and support Frixion's development.</p>
+    </div>
+    <div class="perk-list">
+      <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="7" cy="12" r="3" fill="#5865f2"/><circle cx="12" cy="7" r="3" fill="#eb459e"/><circle cx="17" cy="12" r="3" fill="#f0b232"/></svg></span><div><div class="t">Exclusive Themes</div><div class="d">5 premium color themes for the whole app</div></div></div>
+      <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2.5l2.95 6.4 7 .63-5.3 4.66 1.6 6.86-6.25-3.78-6.25 3.78 1.6-6.86-5.3-4.66 7-.63z"/></svg></span><div><div class="t">Premium Badge</div><div class="d">A star badge next to your name everywhere</div></div></div>
+      <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5l7-7a3.5 3.5 0 0 1 5 5l-8.5 8.5a5 5 0 0 1-7-7l7.5-7.5"/></svg></span><div><div class="t">Bigger Uploads</div><div class="d">Higher attachment size limit (coming soon)</div></div></div>
+    </div>
+    <button class="btn-accent-inline" style="width:100%;" id="premium-modal-activate-btn">Activate Frixion Premium</button>
+  </div>
+</div>
+
+<!-- ============ MODAL: admin password gate ============ -->
+<div class="modal-overlay hidden" id="admin-login-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2>Admin Panel</h2><span class="x" data-close="admin-login-modal">✕</span></div>
+    <p class="desc">Enter the admin password to continue.</p>
+    <div class="auth-error" id="admin-login-error"></div>
+    <div class="field"><label>Password</label><input type="password" id="admin-pass-input"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" data-close="admin-login-modal">Cancel</button>
+      <button class="btn-accent-inline" id="admin-login-submit">Enter</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: admin panel ============ -->
+<div class="modal-overlay hidden" id="admin-panel-modal">
+  <div class="modal-box wide admin-box">
+    <div class="modal-header-row"><h2>Admin Panel</h2><span class="x" data-close="admin-panel-modal">✕</span></div>
+    <div class="admin-tabs">
+      <button class="admin-tab on" data-admin-tab="players">Players</button>
+      <button class="admin-tab" data-admin-tab="emojis">Emojis</button>
+    </div>
+
+    <div class="admin-pane" id="admin-pane-players">
+      <div class="admin-layout">
+        <div class="admin-left">
+          <input class="fld-input" id="admin-search" placeholder="Search users" autocomplete="off">
+          <div class="admin-user-list" id="admin-user-list"></div>
+        </div>
+        <div class="admin-right" id="admin-actions"><div class="empty">Select a user to manage.</div></div>
+      </div>
+    </div>
+
+    <div class="admin-pane hidden" id="admin-pane-emojis">
+      <div class="admin-block">
+        <div class="ab-title">Publish a Custom Emoji</div>
+        <div class="ab-row" style="align-items:flex-end;">
+          <div style="flex:1;"><label class="fld-label">Image</label><input class="fld-input" id="admin-emoji-file" type="file" accept="image/*"></div>
+          <div style="width:180px;"><label class="fld-label">Shortcode</label><input class="fld-input" id="admin-emoji-name" placeholder="e.g. party_blob" maxlength="24"></div>
+          <button class="btn-accent-inline slim" id="admin-emoji-publish">Publish</button>
+        </div>
+        <small class="hint">Used in chat as :shortcode:. Images are auto-resized to 48×48.</small>
+      </div>
+      <div class="admin-block">
+        <div class="ab-title">Published Emojis</div>
+        <div class="admin-emoji-list" id="admin-emoji-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: pinned messages ============ -->
+<div class="modal-overlay hidden" id="pinned-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2>Pinned Messages</h2><span class="x" data-close="pinned-modal">✕</span></div>
+    <div id="pinned-list"></div>
+  </div>
+</div>
+
+</div><!-- /#page-body -->
+
+<div id="toast-stack"></div>
+
+<!-- Firebase compat SDK (Firestore only — no Firebase Auth, username/password lives in Firestore) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
