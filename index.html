@@ -305,6 +305,7 @@
       <div class="nav-label">User Settings</div>
       <div class="nav-item active" data-pane="pane-account">My Account</div>
       <div class="nav-item" data-pane="pane-premium">Frixion Premium</div>
+      <div class="nav-item" data-pane="pane-quests">Quests</div>
       <div class="nav-item" data-pane="pane-themes">Themes</div>
       <div class="nav-label">App</div>
       <div class="nav-item" data-pane="pane-updates">Update Log</div>
@@ -331,27 +332,31 @@
 
       <div class="settings-pane hidden" id="pane-premium">
         <h2>Frixion Premium</h2>
-        <div id="premium-not-owned">
-          <div class="premium-hero">
-            <h2>Frixion Premium</h2>
-            <p>Unlock exclusive themes, a profile flair, and support Frixion's development.</p>
-          </div>
-          <div class="perk-list">
-            <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="7" cy="12" r="3" fill="#5865f2"/><circle cx="12" cy="7" r="3" fill="#eb459e"/><circle cx="17" cy="12" r="3" fill="#f0b232"/></svg></span><div><div class="t">Exclusive Themes</div><div class="d">5 premium color themes for the whole app</div></div></div>
-            <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2.5l2.95 6.4 7 .63-5.3 4.66 1.6 6.86-6.25-3.78-6.25 3.78 1.6-6.86-5.3-4.66 7-.63z"/></svg></span><div><div class="t">Premium Badge</div><div class="d">A star badge next to your name everywhere</div></div></div>
-            <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5l7-7a3.5 3.5 0 0 1 5 5l-8.5 8.5a5 5 0 0 1-7-7l7.5-7.5"/></svg></span><div><div class="t">Bigger Uploads</div><div class="d">Higher attachment size limit (coming soon)</div></div></div>
-          </div>
-          <button class="btn-accent-inline" style="width:100%;" id="activate-premium-btn">Activate Frixion Premium</button>
+        <div class="orb-balance-row">
+          <span class="orb-chip"><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg><span id="orb-balance-amt">0</span> Orbs</span>
+          <span class="orb-hint">Earn more from the Quests tab</span>
         </div>
-        <div id="premium-owned" class="hidden">
-          <span class="premium-active-badge"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="vertical-align:-2px"><path d="M12 2.5l2.95 6.4 7 .63-5.3 4.66 1.6 6.86-6.25-3.78-6.25 3.78 1.6-6.86-5.3-4.66 7-.63z"/></svg> Frixion Premium Active</span>
-          <p class="desc" style="margin-top:14px;">Thanks for supporting Frixion! Head to the Themes tab to personalize your app.</p>
+        <div class="premium-hero">
+          <h2>Frixion Premium</h2>
+          <p>Unlock exclusive themes and a badge next to your name. Renews monthly with Orbs.</p>
         </div>
+        <div class="perk-list">
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="7" cy="12" r="3" fill="#5865f2"/><circle cx="12" cy="7" r="3" fill="#eb459e"/><circle cx="17" cy="12" r="3" fill="#f0b232"/></svg></span><div><div class="t">Exclusive Themes</div><div class="d">Unlocks the Ash and Onyx appearance themes</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2.5l2.95 6.4 7 .63-5.3 4.66 1.6 6.86-6.25-3.78-6.25 3.78 1.6-6.86-5.3-4.66 7-.63z"/></svg></span><div><div class="t">Premium Badge</div><div class="d">A star badge next to your name everywhere</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5l7-7a3.5 3.5 0 0 1 5 5l-8.5 8.5a5 5 0 0 1-7-7l7.5-7.5"/></svg></span><div><div class="t">Bigger Uploads</div><div class="d">Higher attachment size limit (coming soon)</div></div></div>
+        </div>
+        <div id="premium-action-area"></div>
+      </div>
+
+      <div class="settings-pane hidden" id="pane-quests">
+        <h2>Quests</h2>
+        <p class="desc">Complete quests to earn Orbs, then spend them on Frixion Premium.</p>
+        <div id="quests-list"></div>
       </div>
 
       <div class="settings-pane hidden" id="pane-themes">
         <h2>Themes</h2>
-        <p class="desc">Frixion Premium unlocks 5 exclusive color themes.</p>
+        <p class="desc">Frixion Premium unlocks the Ash and Onyx themes.</p>
         <div class="theme-grid" id="theme-grid"></div>
       </div>
 
@@ -367,16 +372,19 @@
 <div class="modal-overlay hidden" id="premium-modal">
   <div class="modal-box">
     <div class="modal-header-row"><h2></h2><span class="x" data-close="premium-modal">✕</span></div>
+    <div class="orb-balance-row">
+      <span class="orb-chip"><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg><span id="premium-modal-orb-amt">0</span> Orbs</span>
+    </div>
     <div class="premium-hero">
       <h2>Frixion Premium</h2>
-      <p>Unlock exclusive themes, a profile flair, and support Frixion's development.</p>
+      <p>Unlock exclusive themes and a badge next to your name. Renews monthly with Orbs.</p>
     </div>
     <div class="perk-list">
-      <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="7" cy="12" r="3" fill="#5865f2"/><circle cx="12" cy="7" r="3" fill="#eb459e"/><circle cx="17" cy="12" r="3" fill="#f0b232"/></svg></span><div><div class="t">Exclusive Themes</div><div class="d">5 premium color themes for the whole app</div></div></div>
+      <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="7" cy="12" r="3" fill="#5865f2"/><circle cx="12" cy="7" r="3" fill="#eb459e"/><circle cx="17" cy="12" r="3" fill="#f0b232"/></svg></span><div><div class="t">Exclusive Themes</div><div class="d">Unlocks the Ash and Onyx appearance themes</div></div></div>
       <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2.5l2.95 6.4 7 .63-5.3 4.66 1.6 6.86-6.25-3.78-6.25 3.78 1.6-6.86-5.3-4.66 7-.63z"/></svg></span><div><div class="t">Premium Badge</div><div class="d">A star badge next to your name everywhere</div></div></div>
       <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5l7-7a3.5 3.5 0 0 1 5 5l-8.5 8.5a5 5 0 0 1-7-7l7.5-7.5"/></svg></span><div><div class="t">Bigger Uploads</div><div class="d">Higher attachment size limit (coming soon)</div></div></div>
     </div>
-    <button class="btn-accent-inline" style="width:100%;" id="premium-modal-activate-btn">Activate Frixion Premium</button>
+    <div id="premium-modal-action-area"></div>
   </div>
 </div>
 
@@ -401,6 +409,7 @@
     <div class="admin-tabs">
       <button class="admin-tab on" data-admin-tab="players">Players</button>
       <button class="admin-tab" data-admin-tab="emojis">Emojis</button>
+      <button class="admin-tab" data-admin-tab="filter">Filter</button>
     </div>
 
     <div class="admin-pane" id="admin-pane-players">
@@ -426,6 +435,21 @@
       <div class="admin-block">
         <div class="ab-title">Published Emojis</div>
         <div class="admin-emoji-list" id="admin-emoji-list"></div>
+      </div>
+    </div>
+
+    <div class="admin-pane hidden" id="admin-pane-filter">
+      <div class="admin-block">
+        <div class="ab-title">Message Filter</div>
+        <div class="ab-row">
+          <input class="fld-input" id="admin-filter-word" placeholder="Add a word to filter" maxlength="30">
+          <button class="btn-accent-inline slim" id="admin-filter-add">Add</button>
+        </div>
+        <small class="hint">Catches leetspeak, repeated letters, and spaced-out bypasses of these words — matched as whole words, so it won't touch normal words that merely contain one as a substring. Tagged words show as [CENSORED].</small>
+      </div>
+      <div class="admin-block">
+        <div class="ab-title">Filtered Words</div>
+        <div class="admin-emoji-list" id="admin-filter-list"></div>
       </div>
     </div>
   </div>

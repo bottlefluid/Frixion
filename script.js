@@ -65,13 +65,14 @@ const SESSION_KEY = 'frixion_user';
 const ADMIN_HASH = 'f7c323a01e4a88630c1301300a5212a6d21c874c5dee36d26de35cb9b75ca8d4'; // sha256("theflyisflying")
 
 const AVATAR_COLORS = ['#5865f2','#eb459e','#ed4245','#f0b232','#23a55a','#00a8fc','#9b59b6','#e67e22','#1abc9c'];
+
+// Exact Discord appearance theme names. Dark/Light/Sync are free; Ash/Onyx are Premium-exclusive.
 const THEMES = [
-  { key: 'default', name: 'Frixion Dark', premium: false },
-  { key: 'void',     name: 'Void',        premium: true },
-  { key: 'crimson',  name: 'Crimson',     premium: true },
-  { key: 'emerald',  name: 'Emerald',     premium: true },
-  { key: 'sunset',   name: 'Sunset',      premium: true },
-  { key: 'glacier',  name: 'Glacier',     premium: true },
+  { key: 'dark',   name: 'Dark',              premium: false },
+  { key: 'light',  name: 'Light',             premium: false },
+  { key: 'sync',   name: 'Sync with Computer', premium: false },
+  { key: 'ash',    name: 'Ash',               premium: true },
+  { key: 'onyx',   name: 'Onyx',              premium: true },
 ];
 const STATUSES = [
   { key: 'online', label: 'Online' },
@@ -80,10 +81,33 @@ const STATUSES = [
   { key: 'offline', label: 'Invisible' },
 ];
 
+// ---------- Frixion Premium economy ----------
+const STARTING_ORBS = 50;
+const PREMIUM_COST_ORBS = 150;
+const PREMIUM_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+function isPremium(p) { return !!(p && p.premiumUntil && p.premiumUntil > Date.now()); }
+
+// ---------- Quests ----------
+const QUESTS = [
+  { id: 'msgs50', title: 'Chatterbox', desc: 'Send 50 messages', stat: 'messagesSent', goal: 50, reward: 30 },
+  { id: 'msgs200', title: 'Motormouth', desc: 'Send 200 messages', stat: 'messagesSent', goal: 200, reward: 100 },
+  { id: 'react25', title: 'Reactionary', desc: 'React to 25 messages', stat: 'reactionsGiven', goal: 25, reward: 20 },
+  { id: 'dm5', title: 'Making Friends', desc: 'Start 5 direct messages', stat: 'dmsStarted', goal: 5, reward: 15 },
+  { id: 'servers3', title: 'Community Member', desc: 'Join or create 3 servers', stat: 'serversCount', goal: 3, reward: 25 },
+];
+
 // ============================================================
 // UPDATE LOG — newest first. Add a new entry after every update.
 // ============================================================
 const UPDATES = [
+  { v: '1.5', date: '2026-08-23', title: 'Orbs, Quests, a real subscription, and a message filter',
+    notes: [
+      'Frixion Premium is no longer free — it now costs 150 Orbs and runs as a 30-day subscription that you can renew.',
+      'Added Orbs, a currency you earn by completing Quests (send messages, react, make friends, join servers) — see the new Quests tab in Settings.',
+      'Admins can grant or remove Orbs from any player in the Admin Panel.',
+      'Renamed the appearance themes to match Discord\'s actual theme names: Dark, Light, Sync with Computer, Ash and Onyx. Ash and Onyx are the two Premium-exclusive ones.',
+      'Added a Message Filter: admins can add words in the Admin Panel, and Frixion will catch leetspeak, repeated letters, and spaced-out bypasses — but only as whole words, so normal words that happen to contain a filtered word are left alone. Caught words are replaced with [CENSORED].',
+    ] },
   { v: '1.4', date: '2026-08-22', title: 'A proper title bar, pins, and search',
     notes: [
       'Added a desktop-app-style title bar up top, with Inbox and Help buttons and window controls.',
@@ -143,6 +167,7 @@ const ICONS = {
   shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l7 3v5.5c0 4.6-3 8.3-7 9.5-4-1.2-7-4.9-7-9.5V6z"/></svg>',
   smiley: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 14c.8 1.2 2 2 3.5 2s2.7-.8 3.5-2" stroke-linecap="round"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/></svg>',
   pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2 2-5 5-4 1 7 7 1-4 5-5 2 2"/><path d="M9 15l-5 5"/></svg>',
+  orb: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg>',
 };
 function icon(name, cls) { return `<span class="i ${cls||''}">${ICONS[name] || ''}</span>`; }
 
@@ -179,6 +204,35 @@ function renderMessageText(rawText) {
     if (SHORTCODE_MAP[key]) return `<span class="native-emoji">${SHORTCODE_MAP[key]}</span>`;
     return whole;
   });
+}
+
+// ---------- message filter ----------
+// Bypass-resistant: matches leetspeak substitutions, repeated letters, and
+// letters split up with punctuation/spaces — but only as a WHOLE word, so it
+// won't flag normal words that merely contain a filtered word as a substring
+// (e.g. filtering "ass" will not touch "class" or "assist").
+const LEET_CLASSES = { a: 'a4@', b: 'b8', e: 'e3', g: 'g9', i: 'i1!|', l: 'l1', o: 'o0', s: 's5$', t: 't7', z: 'z2' };
+let filteredWords = [];
+function subscribeMessageFilter() {
+  db.collection('config').doc('filter').onSnapshot(snap => {
+    filteredWords = (snap.exists && Array.isArray(snap.data().words)) ? snap.data().words : [];
+    if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminFilterList();
+  });
+}
+function buildFilterRegex(word) {
+  const chars = word.toLowerCase().split('').filter(c => /[a-z0-9]/.test(c));
+  if (!chars.length) return null;
+  const parts = chars.map(c => (LEET_CLASSES[c] ? `[${LEET_CLASSES[c]}]` : c) + '+');
+  const body = parts.join('[^a-z0-9]*');
+  try { return new RegExp(`(?<![a-z0-9])${body}(?![a-z0-9])`, 'gi'); } catch (e) { return null; }
+}
+function applyMessageFilter(text) {
+  let out = text;
+  for (const w of filteredWords) {
+    const re = buildFilterRegex(w);
+    if (re) out = out.replace(re, '[CENSORED]');
+  }
+  return out;
 }
 
 // ---------- state ----------
@@ -229,7 +283,7 @@ function avatarHTML(size, color, letter, status) {
     status ? `<span class="status-dot ${status}"></span>` : ''
   }</div>`;
 }
-function premiumStar(profile) { return profile && profile.premium ? icon('star', 'premium-star') : ''; }
+function premiumStar(profile) { return isPremium(profile) ? icon('star', 'premium-star') : ''; }
 function opTag(profile) { return profile && profile.op ? '<span class="op-tag">Admin</span>' : ''; }
 function timeStr(ts) {
   if (!ts) return '';
@@ -250,11 +304,11 @@ async function getProfile(uid) {
   if (profileCache[uid]) return profileCache[uid];
   try {
     const snap = await db.collection('users').doc(uid).get();
-    const data = snap.exists ? snap.data() : { username: uid, avatarColor: '#5865f2', status: 'offline', premium: false };
+    const data = snap.exists ? snap.data() : { username: uid, avatarColor: '#5865f2', status: 'offline', premiumUntil: null };
     profileCache[uid] = data;
     return data;
   } catch (e) {
-    return { username: uid, avatarColor: '#5865f2', status: 'offline', premium: false };
+    return { username: uid, avatarColor: '#5865f2', status: 'offline', premiumUntil: null };
   }
 }
 
@@ -402,7 +456,10 @@ $('register-btn').onclick = async () => {
     const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
     const data = {
       username, password: pass, avatarColor: color, status: 'online',
-      premium: false, theme: 'default', op: false,
+      premiumUntil: null, theme: 'dark', op: false,
+      orbs: STARTING_ORBS,
+      stats: { messagesSent: 0, reactionsGiven: 0, dmsStarted: 0, serversCount: 0 },
+      claimedQuests: [],
       banned: false, banReason: '', bannedUntil: null,
       createdAt: FieldValue.serverTimestamp(),
     };
@@ -423,6 +480,7 @@ $('logout-btn').onclick = async () => {
   myUid = null; myProfile = null; profileCache = {}; isAdmin = false;
   currentServerId = null; currentServerData = null; currentChannelId = null;
   currentDMId = null; currentDMOtherUid = null; currentView = 'none';
+  document.body.className = '';
   closeModal('settings-modal');
   showAuthScreen();
 };
@@ -463,12 +521,25 @@ function initAppForUser() {
 
   subscribeDMList();
   subscribeCustomEmojis();
+  subscribeMessageFilter();
   showHomeView();
 }
 
+let systemThemeListenerAdded = false;
 function applyTheme(themeKey) {
   document.body.className = '';
-  if (themeKey && themeKey !== 'default') document.body.classList.add('theme-' + themeKey);
+  if (themeKey === 'sync') {
+    const wantsLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+    if (wantsLight) document.body.classList.add('theme-light');
+    if (!systemThemeListenerAdded && window.matchMedia) {
+      systemThemeListenerAdded = true;
+      window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+        if (myProfile && myProfile.theme === 'sync') applyTheme('sync');
+      });
+    }
+    return;
+  }
+  if (themeKey && themeKey !== 'dark') document.body.classList.add('theme-' + themeKey);
 }
 
 function renderSelfPanel() {
@@ -516,6 +587,7 @@ $('confirm-create-server').onclick = async () => {
     $('new-server-name').value = '';
     closeModal('create-server-modal');
     toast('Server created.');
+    db.collection('users').doc(myUid).update({ 'stats.serversCount': FieldValue.increment(1) }).catch(() => {});
   } catch (e) { $('create-server-error').textContent = e.message; }
 };
 
@@ -529,6 +601,7 @@ $('confirm-join-server').onclick = async () => {
     const doc = q.docs[0];
     if (!(doc.data().members || []).includes(myUid)) {
       await doc.ref.update({ members: FieldValue.arrayUnion(myUid) });
+      db.collection('users').doc(myUid).update({ 'stats.serversCount': FieldValue.increment(1) }).catch(() => {});
     }
     $('join-server-code').value = '';
     closeModal('join-server-modal');
@@ -601,6 +674,7 @@ $('confirm-new-dm').onclick = async () => {
     const dsnap = await ref.get();
     if (!dsnap.exists) {
       await ref.set({ participants: [myUid, otherUid], createdAt: FieldValue.serverTimestamp() });
+      db.collection('users').doc(myUid).update({ 'stats.dmsStarted': FieldValue.increment(1) }).catch(() => {});
     }
     closeModal('new-dm-modal');
     selectDM(id, otherUid);
@@ -1019,6 +1093,7 @@ async function toggleReaction(msgId, emoji) {
   const already = !!(msg && msg.reactions && (msg.reactions[emoji] || []).includes(myUid));
   try {
     await ref.update({ [`reactions.${emoji}`]: already ? FieldValue.arrayRemove(myUid) : FieldValue.arrayUnion(myUid) });
+    if (!already) db.collection('users').doc(myUid).update({ 'stats.reactionsGiven': FieldValue.increment(1) }).catch(() => {});
   } catch (e) { toast('Could not react.', 'error'); }
 }
 
@@ -1034,10 +1109,11 @@ async function deleteMessage(id) {
 
 async function sendMessage() {
   const input = $('composer-input');
-  const text = input.value.trim();
-  if (!text) return;
+  const raw = input.value.trim();
+  if (!raw) return;
   input.value = '';
   autoResize(input);
+  const text = applyMessageFilter(raw);
   const payload = { text, uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp() };
   try {
     if (currentView === 'channel') {
@@ -1046,6 +1122,7 @@ async function sendMessage() {
       await db.collection('dms').doc(currentDMId).collection('messages').add(payload);
       await db.collection('dms').doc(currentDMId).update({ updatedAt: FieldValue.serverTimestamp() });
     }
+    db.collection('users').doc(myUid).update({ 'stats.messagesSent': FieldValue.increment(1) }).catch(() => {});
   } catch (e) { toast('Failed to send message.', 'error'); }
 }
 $('send-btn').onclick = sendMessage;
@@ -1137,16 +1214,60 @@ function populateSettings() {
     statusWrap.appendChild(row);
   });
 
-  const premOwned = !!myProfile.premium;
-  $('premium-not-owned').classList.toggle('hidden', premOwned);
-  $('premium-owned').classList.toggle('hidden', !premOwned);
+  $('orb-balance-amt').textContent = myProfile.orbs || 0;
+  $('premium-action-area').innerHTML = buildPremiumActionHTML();
+  wirePremiumActionButtons('premium-action-area');
 
+  renderThemeGrid();
+  renderQuests();
+}
+
+function buildPremiumActionHTML() {
+  const active = isPremium(myProfile);
+  const balance = myProfile.orbs || 0;
+  if (active) {
+    const until = new Date(myProfile.premiumUntil).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+    return `
+      <span class="premium-active-badge">${icon('star')} Frixion Premium Active</span>
+      <p class="desc" style="margin-top:12px;">Renews on ${until}. Renewing early adds another ${PREMIUM_DURATION_MS / 86400000} days on top of your current expiry.</p>
+      <button class="btn-accent-inline" style="width:100%;" data-premium-action="renew">Renew Now — ${PREMIUM_COST_ORBS} Orbs</button>`;
+  }
+  const canAfford = balance >= PREMIUM_COST_ORBS;
+  return `
+    <button class="btn-accent-inline" style="width:100%;" data-premium-action="subscribe" ${canAfford ? '' : 'disabled'}>Subscribe — ${PREMIUM_COST_ORBS} Orbs / 30 days</button>
+    ${canAfford ? '' : `<p class="desc" style="margin-top:10px;">You have ${balance} Orbs. Complete quests to earn the rest.</p>`}`;
+}
+function wirePremiumActionButtons(containerId) {
+  const btn = $(containerId).querySelector('[data-premium-action]');
+  if (btn) btn.onclick = subscribeToPremium;
+}
+
+async function subscribeToPremium() {
+  const fresh = (await db.collection('users').doc(myUid).get()).data();
+  if ((fresh.orbs || 0) < PREMIUM_COST_ORBS) { toast('Not enough Orbs — complete quests to earn more.'); return; }
+  const base = isPremium(fresh) ? fresh.premiumUntil : Date.now();
+  const newUntil = base + PREMIUM_DURATION_MS;
+  try {
+    await db.collection('users').doc(myUid).update({ orbs: FieldValue.increment(-PREMIUM_COST_ORBS), premiumUntil: newUntil });
+    toast('Frixion Premium is active!');
+    closeModal('premium-modal');
+  } catch (e) { toast('Something went wrong.', 'error'); }
+}
+
+function openPremiumModal() {
+  $('premium-modal-orb-amt').textContent = myProfile.orbs || 0;
+  $('premium-modal-action-area').innerHTML = buildPremiumActionHTML();
+  wirePremiumActionButtons('premium-modal-action-area');
+  openModal('premium-modal');
+}
+
+function renderThemeGrid() {
   const themeGrid = $('theme-grid');
   themeGrid.innerHTML = '';
   THEMES.forEach(t => {
-    const locked = t.premium && !myProfile.premium;
+    const locked = t.premium && !isPremium(myProfile);
     const card = document.createElement('div');
-    card.className = `theme-card theme-swatch-${t.key}` + (locked ? ' locked' : '') + (((myProfile.theme || 'default') === t.key) ? ' selected' : '');
+    card.className = `theme-card theme-swatch-${t.key}` + (locked ? ' locked' : '') + (((myProfile.theme || 'dark') === t.key) ? ' selected' : '');
     card.innerHTML = `<span>${esc(t.name)}</span>` + (locked ? `<span class="lock-badge">${icon('shield')}</span>` : '');
     card.onclick = async () => {
       if (locked) { openPremiumModal(); return; }
@@ -1156,26 +1277,56 @@ function populateSettings() {
   });
 }
 
+function renderQuests() {
+  const wrap = $('quests-list');
+  const stats = myProfile.stats || {};
+  const claimed = myProfile.claimedQuests || [];
+  wrap.innerHTML = QUESTS.map(q => {
+    const progress = Math.min(stats[q.stat] || 0, q.goal);
+    const pct = Math.round((progress / q.goal) * 100);
+    const done = progress >= q.goal;
+    const isClaimed = claimed.includes(q.id);
+    return `
+    <div class="quest-row">
+      <div class="quest-info">
+        <div class="quest-title">${esc(q.title)}</div>
+        <div class="quest-desc">${esc(q.desc)}</div>
+        <div class="quest-bar"><div class="quest-bar-fill" style="width:${pct}%"></div></div>
+        <div class="quest-progress">${progress} / ${q.goal}</div>
+      </div>
+      <div class="quest-reward">
+        <span class="orb-chip small">${icon('orb')}${q.reward}</span>
+        ${isClaimed
+          ? '<span class="quest-claimed">Claimed</span>'
+          : (done ? `<button class="btn-accent-inline slim" data-qid="${q.id}">Claim</button>` : '<span class="quest-locked">In progress</span>')}
+      </div>
+    </div>`;
+  }).join('');
+  wrap.querySelectorAll('[data-qid]').forEach(btn => { btn.onclick = () => claimQuest(btn.dataset.qid); });
+}
+
+async function claimQuest(id) {
+  const q = QUESTS.find(x => x.id === id);
+  if (!q) return;
+  const fresh = (await db.collection('users').doc(myUid).get()).data();
+  const stats = fresh.stats || {};
+  const claimed = fresh.claimedQuests || [];
+  if (claimed.includes(id) || (stats[q.stat] || 0) < q.goal) return;
+  try {
+    await db.collection('users').doc(myUid).update({
+      orbs: FieldValue.increment(q.reward),
+      claimedQuests: FieldValue.arrayUnion(id),
+    });
+    toast(`+${q.reward} Orbs — ${q.title} complete!`);
+  } catch (e) { toast('Could not claim reward.', 'error'); }
+}
+
 $('save-account-btn').onclick = async () => {
   const uname = $('set-username').value.trim();
   if (!uname || uname === myProfile.username) { toast('Nothing to change.'); return; }
   toast("Username can't be changed after registration — it's your document ID.", 'error');
   $('set-username').value = myProfile.username;
 };
-
-$('activate-premium-btn').onclick = activatePremium;
-$('premium-modal-activate-btn').onclick = activatePremium;
-async function activatePremium() {
-  await db.collection('users').doc(myUid).update({ premium: true });
-  toast('Frixion Premium activated.');
-  closeModal('premium-modal');
-  if (!$('settings-modal').classList.contains('hidden')) populateSettings();
-}
-function openPremiumModal() {
-  const owned = myProfile && myProfile.premium;
-  $('premium-modal-activate-btn').classList.toggle('hidden', !!owned);
-  openModal('premium-modal');
-}
 
 // ============================================================
 // ADMIN PANEL (Toblox-style: password hash in Firestore, OPs skip it)
@@ -1228,6 +1379,7 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
     document.querySelectorAll('.admin-pane').forEach(p => p.classList.add('hidden'));
     $('admin-pane-' + tab.dataset.adminTab).classList.remove('hidden');
     if (tab.dataset.adminTab === 'emojis') renderAdminEmojiList();
+    if (tab.dataset.adminTab === 'filter') renderAdminFilterList();
   };
 });
 
@@ -1280,6 +1432,30 @@ function renderAdminEmojiList() {
   });
 }
 
+$('admin-filter-add').onclick = async () => {
+  const word = ($('admin-filter-word').value || '').trim().toLowerCase();
+  if (!word) { toast('Enter a word first.'); return; }
+  if (filteredWords.includes(word)) { toast('That word is already filtered.'); return; }
+  try {
+    await db.collection('config').doc('filter').set({ words: FieldValue.arrayUnion(word) }, { merge: true });
+    $('admin-filter-word').value = '';
+  } catch (e) { toast('Could not add word.', 'error'); }
+};
+$('admin-filter-word').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('admin-filter-add').click(); });
+
+function renderAdminFilterList() {
+  const wrap = $('admin-filter-list');
+  wrap.innerHTML = filteredWords.length
+    ? filteredWords.slice().sort().map(w => `<div class="admin-emoji-chip" data-w="${esc(w)}"><span>${esc(w)}</span><span class="rm" title="Remove">${icon('trash')}</span></div>`).join('')
+    : '<div class="empty">No filtered words yet.</div>';
+  wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
+    btn.onclick = async () => {
+      const w = btn.closest('.admin-emoji-chip').dataset.w;
+      await db.collection('config').doc('filter').set({ words: FieldValue.arrayRemove(w) }, { merge: true });
+    };
+  });
+}
+
 async function renderAdminList() {
   const list = $('admin-user-list');
   const q = ($('admin-search').value || '').toLowerCase();
@@ -1314,6 +1490,14 @@ async function renderAdminActions() {
   wrap.innerHTML = `
     <div class="admin-sel-head">${avatarHTML(44, u.avatarColor, initials(u.username))}<div><div class="as-name">${esc(u.username)}${u.op ? '<span class="op-tag">Admin</span>' : ''}</div><div class="as-sub">${ban.banned ? ('Banned — ' + esc(ban.reason)) : 'Not banned'}</div></div></div>
     <div class="admin-block">
+      <div class="ab-title">Orbs — Balance: ${u.orbs || 0}</div>
+      <div class="ab-row">
+        <input id="admin-orbs-amt" type="number" min="1" placeholder="Amount" class="fld-input">
+        <button class="btn-accent-inline slim" id="admin-orbs-grant">Grant</button>
+        <button class="btn-secondary slim" id="admin-orbs-remove">Remove</button>
+      </div>
+    </div>
+    <div class="admin-block">
       <div class="ab-title">Operator</div>
       <div class="ab-row">
         <span class="ab-note">${u.op ? 'This user has full admin access with no password.' : 'Not an operator.'}</span>
@@ -1343,11 +1527,23 @@ async function renderAdminActions() {
       <button class="btn-danger" id="admin-delete-btn">Delete Account</button>
     </div>`;
 
+  $('admin-orbs-grant').onclick = () => adminAdjustOrbs(u.username, 1);
+  $('admin-orbs-remove').onclick = () => adminAdjustOrbs(u.username, -1);
   if (u.op) $('admin-deop-btn').onclick = () => adminSetOp(u.username, false);
   else $('admin-op-btn').onclick = () => adminSetOp(u.username, true);
   $('admin-ban-btn').onclick = adminBan;
   if (ban.banned) $('admin-unban-btn').onclick = adminUnban;
   $('admin-delete-btn').onclick = adminDelete;
+}
+
+async function adminAdjustOrbs(username, sign) {
+  const amt = parseInt($('admin-orbs-amt').value || '0', 10);
+  if (!amt || amt < 1) { toast('Enter an amount.'); return; }
+  try {
+    await db.collection('users').doc(username).update({ orbs: FieldValue.increment(sign * amt) });
+    toast(`${sign > 0 ? 'Granted' : 'Removed'} ${amt} Orbs ${sign > 0 ? 'to' : 'from'} ${username}.`);
+    renderAdminActions();
+  } catch (e) { toast('Could not update Orbs.', 'error'); }
 }
 
 async function adminSetOp(username, val) {
