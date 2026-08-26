@@ -83,23 +83,47 @@ const STATUSES = [
 
 // ---------- Frixion Premium economy ----------
 const STARTING_ORBS = 50;
-const PREMIUM_COST_ORBS = 150;
-const PREMIUM_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const PREMIUM_COST_ORBS = 1400;
+const PREMIUM_DURATION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 function isPremium(p) { return !!(p && p.premiumUntil && p.premiumUntil > Date.now()); }
+function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 
-// ---------- Quests ----------
+// ---------- Quests (reset daily) ----------
 const QUESTS = [
-  { id: 'msgs50', title: 'Chatterbox', desc: 'Send 50 messages', stat: 'messagesSent', goal: 50, reward: 30 },
-  { id: 'msgs200', title: 'Motormouth', desc: 'Send 200 messages', stat: 'messagesSent', goal: 200, reward: 100 },
-  { id: 'react25', title: 'Reactionary', desc: 'React to 25 messages', stat: 'reactionsGiven', goal: 25, reward: 20 },
-  { id: 'dm5', title: 'Making Friends', desc: 'Start 5 direct messages', stat: 'dmsStarted', goal: 5, reward: 15 },
-  { id: 'servers3', title: 'Community Member', desc: 'Join or create 3 servers', stat: 'serversCount', goal: 3, reward: 25 },
+  { id: 'daily_msgs20', title: 'Chatterbox', desc: 'Send 20 messages', stat: 'messagesSent', goal: 20, reward: 40 },
+  { id: 'daily_react10', title: 'Reactionary', desc: 'React to 10 messages', stat: 'reactionsGiven', goal: 10, reward: 25 },
+  { id: 'daily_dm', title: 'Say Hi', desc: 'Send a direct message', stat: 'dmsMessaged', goal: 1, reward: 15 },
+  { id: 'daily_server', title: 'Show Up', desc: 'Send a message in a server channel', stat: 'channelsMessaged', goal: 1, reward: 15 },
 ];
+async function ensureQuestsFresh(profile) {
+  if (profile.questsDate === todayStr()) return profile;
+  const reset = {
+    questsDate: todayStr(),
+    dailyStats: { messagesSent: 0, reactionsGiven: 0, dmsMessaged: 0, channelsMessaged: 0 },
+    claimedQuestsToday: [],
+  };
+  try { await db.collection('users').doc(myUid).update(reset); } catch (e) {}
+  return { ...profile, ...reset };
+}
 
 // ============================================================
 // UPDATE LOG — newest first. Add a new entry after every update.
 // ============================================================
 const UPDATES = [
+  { v: '1.6', date: '2026-08-24', title: 'Friends, profiles, group DMs, gifting, and a lot more',
+    notes: [
+      'Frixion Premium now costs 1400 Orbs and lasts 3 days, and Quests reset every day instead of being one-time.',
+      'Added a real Friends system: send/accept/decline requests, and a Friends tab above your DMs.',
+      'Added Group DMs — pick friends to start a group, add more people later, and it lives right in your DM list.',
+      'Added user profiles: banner color, pronouns, bio, and a private note on other people\'s profiles that only you can see. Click any name or avatar to open one.',
+      'Added a Codes tab: buying or gifting Premium now gives you a redeemable code instead of applying instantly.',
+      'You can gift Frixion Premium to someone you\'re DMing if you have enough Orbs.',
+      'Admins can now grant or remove Frixion Premium directly, and generate Orb/Premium codes from the Admin Panel.',
+      'Servers can now have channel categories, just like Discord — collapsible groups that channels live under.',
+      'Rebuilt the message box to match Discord\'s exact layout: attach, emoji, gift, GIF and sticker icons, no more explicit Send button.',
+      'The emoji picker now has a full categorized set (Smileys, People, Animals, Food, Activities, Travel, Objects, Symbols) with jump-to-category icons.',
+      'Fixed empty channels and DMs showing a generic "no conversation selected" message — they now show a proper "Welcome to #channel" start-of-conversation state.',
+    ] },
   { v: '1.5', date: '2026-08-23', title: 'Orbs, Quests, a real subscription, and a message filter',
     notes: [
       'Frixion Premium is no longer free — it now costs 150 Orbs and runs as a 30-day subscription that you can renew.',
@@ -173,19 +197,79 @@ function icon(name, cls) { return `<span class="i ${cls||''}">${ICONS[name] || '
 
 // ---------- emoji: reactions + shortcodes + custom (uploaded via Admin Panel) ----------
 const REACT_EMOJIS = ['👍','❤️','😂','🔥','😮','😢','🎉'];
-const SHORTCODE_MAP = {
-  smile:'😄', grin:'😁', joy:'😂', rofl:'🤣', wink:'😉', blush:'😊', sunglasses:'😎',
-  heart_eyes:'😍', kissing_heart:'😘', thinking:'🤔', neutral:'😐', unamused:'😒',
-  sob:'😭', cry:'😢', angry:'😠', rage:'😡', scream:'😱', open_mouth:'😮', flushed:'😳',
-  sleepy:'😴', mask:'😷', clown:'🤡', ghost:'👻', skull:'💀', robot:'🤖', alien:'👽',
-  poop:'💩', heart:'❤️', broken_heart:'💔', sparkling_heart:'💖', fire:'🔥', star:'⭐',
-  sparkles:'✨', tada:'🎉', confetti:'🎊', hundred:'💯', boom:'💥', zzz:'💤', eyes:'👀',
-  thumbsup:'👍', thumbsdown:'👎', clap:'👏', wave:'👋', pray:'🙏', muscle:'💪',
-  ok_hand:'👌', point_up:'☝️', v:'✌️', crossed_fingers:'🤞',
-  dog:'🐶', cat:'🐱', fox:'🦊', unicorn:'🦄', frog:'🐸', chicken:'🐔',
-  pizza:'🍕', hamburger:'🍔', fries:'🍟', taco:'🌮', coffee:'☕', beer:'🍺', cake:'🎂',
-  rocket:'🚀', gem:'💎', crown:'👑', trophy:'🏆', bulb:'💡', warning:'⚠️', check:'✅', x:'❌',
-};
+const EMOJI_CATEGORIES = [
+  { key: 'smileys', label: 'Smileys', icon: '😀', items: {
+    grinning:'😀', smile:'😄', laughing:'😆', grin:'😁', joy:'😂', rofl:'🤣', slight_smile:'🙂',
+    upside_down:'🙃', wink:'😉', blush:'😊', innocent:'😇', heart_eyes:'😍', star_struck:'🤩',
+    kissing_heart:'😘', kissing:'😗', yum:'😋', stuck_out_tongue:'😛', sunglasses:'😎', smirk:'😏',
+    unamused:'😒', neutral:'😐', expressionless:'😑', thinking:'🤔', zipper_mouth:'🤐',
+    raised_eyebrow:'🤨', confused:'😕', worried:'😟', slight_frown:'🙁', frowning:'☹️',
+    open_mouth:'😮', hushed:'😯', astonished:'😲', flushed:'😳', pleading:'🥺', cry:'😢',
+    sob:'😭', scream:'😱', angry:'😠', rage:'😡', triumph:'😤', sleepy:'😪', sleeping:'😴',
+    drooling:'🤤', mask:'😷', dizzy_face:'😵', exploding_head:'🤯', cowboy:'🤠', partying:'🥳',
+    woozy:'🥴', nauseated:'🤢', shush:'🤫', clown:'🤡', poop:'💩', ghost:'👻', skull:'💀',
+    alien:'👽', robot:'🤖',
+  } },
+  { key: 'people', label: 'People', icon: '👋', items: {
+    wave:'👋', raised_hand:'✋', ok_hand:'👌', pinch:'🤏', vulcan:'🖖', crossed_fingers:'🤞',
+    love_you:'🤟', metal:'🤘', point_up:'☝️', point_down:'👇', point_left:'👈', point_right:'👉',
+    thumbsup:'👍', thumbsdown:'👎', fist:'✊', punch:'👊', clap:'👏', raised_hands:'🙌',
+    pray:'🙏', handshake:'🤝', muscle:'💪', eyes:'👀', brain:'🧠', tongue:'👅', ear:'👂',
+    nose:'👃', baby:'👶', boy:'👦', girl:'👧', man:'👨', woman:'👩', older_man:'👴',
+    older_woman:'👵', cop:'👮', student:'🧑‍🎓', mage:'🧙', vampire:'🧛', zombie:'🧟',
+    superhero:'🦸', supervillain:'🦹',
+  } },
+  { key: 'animals', label: 'Animals', icon: '🐶', items: {
+    dog:'🐶', cat:'🐱', mouse:'🐭', hamster:'🐹', rabbit:'🐰', fox:'🦊', bear:'🐻',
+    panda:'🐼', koala:'🐨', tiger:'🐯', lion:'🦁', cow:'🐮', pig:'🐷', frog:'🐸',
+    monkey:'🐵', chicken:'🐔', penguin:'🐧', bird:'🐦', unicorn:'🦄', bee:'🐝',
+    butterfly:'🦋', snail:'🐌', turtle:'🐢', snake:'🐍', octopus:'🐙', fish:'🐟',
+    dolphin:'🐬', whale:'🐳', shark:'🦈', crab:'🦀', dragon:'🐉', wolf:'🐺',
+    elephant:'🐘', horse:'🐴', dove:'🕊️',
+  } },
+  { key: 'food', label: 'Food', icon: '🍕', items: {
+    apple:'🍎', banana:'🍌', grapes:'🍇', watermelon:'🍉', strawberry:'🍓', peach:'🍑',
+    pineapple:'🍍', carrot:'🥕', corn:'🌽', bread:'🍞', cheese:'🧀', egg:'🥚',
+    bacon:'🥓', pancakes:'🥞', pizza:'🍕', hamburger:'🍔', fries:'🍟', hotdog:'🌭',
+    taco:'🌮', burrito:'🌯', sushi:'🍣', ramen:'🍜', spaghetti:'🍝', popcorn:'🍿',
+    donut:'🍩', cookie:'🍪', cake:'🍰', birthday_cake:'🎂', chocolate:'🍫', candy:'🍬',
+    icecream:'🍦', coffee:'☕', tea:'🍵', beer:'🍺', wine:'🍷', cocktail:'🍸',
+    soda:'🥤',
+  } },
+  { key: 'activities', label: 'Activities', icon: '⚽', items: {
+    soccer:'⚽', basketball:'🏀', football:'🏈', baseball:'⚾', tennis:'🎾', volleyball:'🏐',
+    rugby:'🏉', pool_8ball:'🎱', bowling:'🎳', golf:'⛳', dart:'🎯', video_game:'🎮',
+    dice:'🎲', chess:'♟️', puzzle:'🧩', guitar:'🎸', microphone:'🎤', headphones:'🎧',
+    trophy:'🏆', medal:'🏅', tada:'🎉', confetti:'🎊', gift:'🎁', balloon:'🎈',
+    fishing:'🎣', skateboard:'🛹', running:'🏃', swimmer:'🏊', biking:'🚴',
+  } },
+  { key: 'travel', label: 'Travel', icon: '🚗', items: {
+    car:'🚗', taxi:'🚕', bus:'🚌', truck:'🚚', bike:'🚲', motorcycle:'🏍️',
+    train:'🚆', airplane:'✈️', rocket:'🚀', helicopter:'🚁', ship:'🚢', anchor:'⚓',
+    fuelpump:'⛽', traffic_light:'🚦', map:'🗺️', mountain:'⛰️', beach:'🏖️',
+    desert:'🏜️', camping:'🏕️', house:'🏠', city:'🏙️', castle:'🏰', bridge:'🌉',
+    sunrise:'🌅', sunset:'🌇', night:'🌃', rainbow:'🌈', star:'⭐', full_moon:'🌕',
+    sun:'☀️', cloud:'☁️', rain:'🌧️', snow:'❄️', lightning:'⚡', tornado:'🌪️',
+  } },
+  { key: 'objects', label: 'Objects', icon: '💡', items: {
+    bulb:'💡', flashlight:'🔦', candle:'🕯️', book:'📖', notebook:'📓', pencil:'✏️',
+    pen:'🖊️', paperclip:'📎', scissors:'✂️', lock:'🔒', unlock:'🔓', key:'🔑',
+    hammer:'🔨', wrench:'🔧', gear:'⚙️', magnet:'🧲', gem:'💎', money:'💵',
+    dollar:'💲', credit_card:'💳', envelope:'✉️', package:'📦', phone:'📱',
+    computer:'💻', camera:'📷', tv:'📺', battery:'🔋', bomb:'💣', knife:'🔪',
+    shield:'🛡️', crown:'👑', ring:'💍', umbrella:'☂️', clock:'🕐', hourglass:'⌛',
+  } },
+  { key: 'symbols', label: 'Symbols', icon: '❤️', items: {
+    heart:'❤️', orange_heart:'🧡', yellow_heart:'💛', green_heart:'💚', blue_heart:'💙',
+    purple_heart:'💜', black_heart:'🖤', white_heart:'🤍', broken_heart:'💔',
+    sparkling_heart:'💖', two_hearts:'💕', heartbeat:'💓', sparkles:'✨', star2:'🌟',
+    boom:'💥', dizzy:'💫', zzz:'💤', hundred:'💯', check:'✅', x:'❌',
+    warning:'⚠️', question:'❓', exclamation:'❗', no_entry:'🚫', recycle:'♻️',
+    infinity:'♾️', peace:'☮️', yinyang:'☯️', atom:'⚛️', radioactive:'☢️',
+    flag_checkered:'🏁', arrow_up:'⬆️', arrow_down:'⬇️', arrow_left:'⬅️', arrow_right:'➡️',
+  } },
+];
+const SHORTCODE_MAP = Object.assign({}, ...EMOJI_CATEGORIES.map(c => c.items));
 let customEmojis = {}; // name -> { name, dataUrl }
 function subscribeCustomEmojis() {
   db.collection('customEmojis').onSnapshot(snap => {
@@ -245,11 +329,12 @@ let currentServerData = null;
 let currentChannelId = null;
 let currentDMId = null;
 let currentDMOtherUid = null;
-let currentView = 'none';
+let currentGroupDMId = null;
+let currentView = 'none';    // 'none' | 'channel' | 'dm' | 'groupdm' | 'friends' | 'quests' | 'codes'
 let lastRawMessages = [];
 let lastChannelsList = [];
 
-let unsub = { servers: null, channels: null, messages: null, dms: null, self: null };
+let unsub = { servers: null, channels: null, categories: null, messages: null, dms: null, groupDms: null, self: null };
 
 // ---------- helpers ----------
 function $(id) { return document.getElementById(id); }
@@ -374,6 +459,32 @@ function banStatus(profile) {
   return { banned: true, reason: profile.banReason || 'No reason given', until: profile.bannedUntil };
 }
 
+// Backfills fields added in later updates onto accounts created earlier, so old accounts never crash on missing data.
+function defaultProfileFields(existing) {
+  return {
+    orbs: STARTING_ORBS,
+    stats: { messagesSent: 0, reactionsGiven: 0, dmsStarted: 0, serversCount: 0 },
+    questsDate: todayStr(),
+    dailyStats: { messagesSent: 0, reactionsGiven: 0, dmsMessaged: 0, channelsMessaged: 0 },
+    claimedQuestsToday: [],
+    bio: '', pronouns: '', bannerColor: (existing && existing.avatarColor) || '#5865f2',
+    friends: [], incomingRequests: [], outgoingRequests: [],
+    theme: 'dark',
+  };
+}
+async function normalizeProfile(username, data) {
+  const defaults = defaultProfileFields(data);
+  const patch = {};
+  for (const k of Object.keys(defaults)) {
+    if (data[k] === undefined) patch[k] = defaults[k];
+  }
+  if (Object.keys(patch).length) {
+    try { await db.collection('users').doc(username).set(patch, { merge: true }); } catch (e) {}
+    Object.assign(data, patch);
+  }
+  return data;
+}
+
 async function boot() {
   const saved = getSession();
   if (!saved) { showAuthScreen(); return; }
@@ -382,6 +493,7 @@ async function boot() {
   const data = snap.data();
   const ban = banStatus(data);
   if (ban.banned) { setSession(null); showAuthScreen(); $('login-error').textContent = `You're banned: ${ban.reason}`; return; }
+  await normalizeProfile(saved, data);
   myUid = saved;
   myProfile = data;
   profileCache[myUid] = data;
@@ -428,6 +540,7 @@ $('login-btn').onclick = async () => {
       $('login-btn').disabled = false; $('login-btn').textContent = 'Log In'; return;
     }
     if (ban.expired) { await db.collection('users').doc(username).update({ banned: false, banReason: '', bannedUntil: null }); data.banned = false; }
+    await normalizeProfile(username, data);
     await db.collection('users').doc(username).update({ status: data.status === 'offline' ? 'online' : data.status });
     myUid = username; myProfile = data; profileCache[myUid] = data;
     setSession(username);
@@ -459,7 +572,11 @@ $('register-btn').onclick = async () => {
       premiumUntil: null, theme: 'dark', op: false,
       orbs: STARTING_ORBS,
       stats: { messagesSent: 0, reactionsGiven: 0, dmsStarted: 0, serversCount: 0 },
-      claimedQuests: [],
+      questsDate: todayStr(),
+      dailyStats: { messagesSent: 0, reactionsGiven: 0, dmsMessaged: 0, channelsMessaged: 0 },
+      claimedQuestsToday: [],
+      bio: '', pronouns: '', bannerColor: color,
+      friends: [], incomingRequests: [], outgoingRequests: [],
       banned: false, banReason: '', bannedUntil: null,
       createdAt: FieldValue.serverTimestamp(),
     };
@@ -488,10 +605,12 @@ $('logout-btn').onclick = async () => {
 function cleanupAllListeners() {
   if (unsub.servers) unsub.servers();
   if (unsub.channels) unsub.channels();
+  if (unsub.categories) unsub.categories();
   if (unsub.messages) unsub.messages();
   if (unsub.dms) unsub.dms();
+  if (unsub.groupDms) unsub.groupDms();
   if (unsub.self) unsub.self();
-  unsub = { servers: null, channels: null, messages: null, dms: null, self: null };
+  unsub = { servers: null, channels: null, categories: null, messages: null, dms: null, groupDms: null, self: null };
 }
 
 // ============================================================
@@ -505,7 +624,10 @@ function initAppForUser() {
     isAdmin = !!myProfile.op;
     applyTheme(myProfile.theme || 'default');
     renderSelfPanel();
+    updateFriendReqBadge();
     if (!$('settings-modal').classList.contains('hidden')) populateSettings();
+    if (currentView === 'friends') renderFriendsView();
+    if (currentView === 'quests') renderQuests();
     renderCurrentView();
   });
 
@@ -613,10 +735,17 @@ $('confirm-join-server').onclick = async () => {
 // ============================================================
 // HOME VIEW (DMs)
 // ============================================================
+function hideMainPageViews() {
+  $('friends-view').classList.add('hidden');
+  $('quests-view').classList.add('hidden');
+  $('codes-view').classList.add('hidden');
+}
+
 function showHomeView() {
   currentServerId = null; currentServerData = null; currentChannelId = null;
-  currentView = 'none'; currentDMId = null; currentDMOtherUid = null;
+  currentView = 'none'; currentDMId = null; currentDMOtherUid = null; currentGroupDMId = null;
   if (unsub.channels) { unsub.channels(); unsub.channels = null; }
+  if (unsub.categories) { unsub.categories(); unsub.categories = null; }
   if (unsub.messages) { unsub.messages(); unsub.messages = null; }
   $('rail-home').classList.add('active');
   document.querySelectorAll('#server-rail-list .rail-item').forEach(e => e.classList.remove('active'));
@@ -626,7 +755,32 @@ function showHomeView() {
   $('members-toggle').classList.add('hidden');
   $('app').classList.remove('member-list-open');
   hideHeaderActions();
-  showWelcome();
+  document.querySelectorAll('.home-nav-item').forEach(i => i.classList.remove('active'));
+  document.querySelector('.home-nav-item[data-home-view="friends"]').classList.add('active');
+  openHomeMainView('friends');
+  renderDMRows();
+}
+
+document.querySelectorAll('.home-nav-item').forEach(item => {
+  item.onclick = () => {
+    document.querySelectorAll('.home-nav-item').forEach(i => i.classList.remove('active'));
+    item.classList.add('active');
+    openHomeMainView(item.dataset.homeView);
+  };
+});
+
+function openHomeMainView(which) {
+  currentServerId = null; currentServerData = null; currentChannelId = null;
+  currentDMId = null; currentDMOtherUid = null; currentGroupDMId = null;
+  if (unsub.messages) { unsub.messages(); unsub.messages = null; }
+  $('welcome-view').classList.add('hidden');
+  $('chat-view').classList.add('hidden');
+  hideHeaderActions();
+  hideMainPageViews();
+  $('chat-header-hash').textContent = '';
+  if (which === 'friends') { currentView = 'friends'; $('chat-header-title').textContent = 'Friends'; $('friends-view').classList.remove('hidden'); renderFriendsView(); }
+  else if (which === 'quests') { currentView = 'quests'; $('chat-header-title').textContent = 'Quests'; $('quests-view').classList.remove('hidden'); renderQuests(); }
+  else if (which === 'codes') { currentView = 'codes'; $('chat-header-title').textContent = 'Codes'; $('codes-view').classList.remove('hidden'); }
   renderDMRows();
 }
 
@@ -639,6 +793,20 @@ function subscribeDMList() {
     await Promise.all(dms.map(dm => getProfile(dm.participants.find(p => p !== myUid))));
     if (currentView !== 'channel') renderDMRows();
   });
+  if (unsub.groupDms) unsub.groupDms();
+  unsub.groupDms = db.collection('groupDMs').where('participants', 'array-contains', myUid).onSnapshot(async snap => {
+    const gs = [];
+    snap.forEach(d => gs.push({ id: d.id, ...d.data() }));
+    window.__myGroupDMs = gs;
+    await Promise.all(gs.flatMap(g => g.participants.filter(p => p !== myUid).map(p => getProfile(p))));
+    if (currentView !== 'channel') renderDMRows();
+  });
+}
+
+function groupDMDisplayName(g) {
+  if (g.name) return g.name;
+  const others = g.participants.filter(p => p !== myUid);
+  return others.map(u => (profileCache[u] || { username: u }).username).join(', ') || 'Group';
 }
 
 function renderDMRows() {
@@ -655,9 +823,33 @@ function renderDMRows() {
     row.onclick = () => selectDM(dm.id, otherUid);
     wrap.appendChild(row);
   });
+  const groups = window.__myGroupDMs || [];
+  groups.forEach(g => {
+    const name = groupDMDisplayName(g);
+    const row = document.createElement('div');
+    row.className = 'dm-row' + (currentGroupDMId === g.id ? ' active' : '');
+    row.innerHTML = `<div class="avatar group-avatar" style="width:32px;height:32px;">${icon('people')}</div><span class="dm-name">${esc(name)}</span>`;
+    row.onclick = () => selectGroupDM(g.id);
+    wrap.appendChild(row);
+  });
 }
 
 $('dm-add-btn').onclick = () => { $('new-dm-username').value = ''; $('new-dm-error').textContent = ''; openModal('new-dm-modal'); };
+
+async function startDMWith(uname) {
+  if (uname === myUid) return;
+  const snap = await db.collection('users').doc(uname).get();
+  if (!snap.exists) { toast('No user found with that username.', 'error'); return; }
+  profileCache[uname] = snap.data();
+  const id = dmIdFor(myUid, uname);
+  const ref = db.collection('dms').doc(id);
+  const dsnap = await ref.get();
+  if (!dsnap.exists) {
+    await ref.set({ participants: [myUid, uname], createdAt: FieldValue.serverTimestamp() });
+    db.collection('users').doc(myUid).update({ 'stats.dmsStarted': FieldValue.increment(1) }).catch(() => {});
+  }
+  selectDM(id, uname);
+}
 
 $('confirm-new-dm').onclick = async () => {
   const uname = $('new-dm-username').value.trim();
@@ -665,33 +857,24 @@ $('confirm-new-dm').onclick = async () => {
   if (!uname) { $('new-dm-error').textContent = 'Enter a username.'; return; }
   if (uname === myProfile.username) { $('new-dm-error').textContent = "That's you!"; return; }
   try {
-    const snap = await db.collection('users').doc(uname).get();
-    if (!snap.exists) { $('new-dm-error').textContent = 'No user found with that username.'; return; }
-    const otherUid = uname;
-    profileCache[otherUid] = snap.data();
-    const id = dmIdFor(myUid, otherUid);
-    const ref = db.collection('dms').doc(id);
-    const dsnap = await ref.get();
-    if (!dsnap.exists) {
-      await ref.set({ participants: [myUid, otherUid], createdAt: FieldValue.serverTimestamp() });
-      db.collection('users').doc(myUid).update({ 'stats.dmsStarted': FieldValue.increment(1) }).catch(() => {});
-    }
+    await startDMWith(uname);
     closeModal('new-dm-modal');
-    selectDM(id, otherUid);
   } catch (e) { $('new-dm-error').textContent = e.message; }
 };
 
 async function selectDM(id, otherUid) {
-  currentServerId = null; currentServerData = null; currentChannelId = null;
+  currentServerId = null; currentServerData = null; currentChannelId = null; currentGroupDMId = null;
   currentView = 'dm'; currentDMId = id; currentDMOtherUid = otherUid;
   document.querySelectorAll('#server-rail-list .rail-item').forEach(e => e.classList.remove('active'));
   $('rail-home').classList.add('active');
   $('members-toggle').classList.add('hidden');
   $('app').classList.remove('member-list-open');
+  hideMainPageViews();
   const p = await getProfile(otherUid);
   $('chat-header-hash').textContent = '@';
   $('chat-header-title').textContent = p.username;
   $('composer-input').placeholder = `Message @${p.username}`;
+  $('gift-btn').classList.remove('hidden');
   showHeaderActions();
   renderDMRows();
   showChat();
@@ -702,6 +885,318 @@ async function selectDM(id, otherUid) {
       snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
       onMessagesUpdate(msgs);
     });
+}
+
+async function selectGroupDM(id) {
+  currentServerId = null; currentServerData = null; currentChannelId = null;
+  currentDMId = null; currentDMOtherUid = null;
+  currentView = 'groupdm'; currentGroupDMId = id;
+  document.querySelectorAll('#server-rail-list .rail-item').forEach(e => e.classList.remove('active'));
+  $('rail-home').classList.add('active');
+  $('members-toggle').classList.add('hidden');
+  $('app').classList.remove('member-list-open');
+  hideMainPageViews();
+  const g = (window.__myGroupDMs || []).find(x => x.id === id);
+  const name = g ? groupDMDisplayName(g) : 'Group';
+  $('chat-header-hash').textContent = '';
+  $('chat-header-title').textContent = name;
+  $('composer-input').placeholder = `Message ${name}`;
+  $('gift-btn').classList.add('hidden');
+  showHeaderActions();
+  $('pins-toggle').classList.remove('hidden');
+  renderDMRows();
+  showChat();
+  if (unsub.messages) unsub.messages();
+  unsub.messages = db.collection('groupDMs').doc(id).collection('messages').orderBy('createdAt', 'asc')
+    .onSnapshot(snap => {
+      const msgs = [];
+      snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+      onMessagesUpdate(msgs);
+    });
+}
+
+let groupDmPickerSelection = [];
+function renderFriendPicker(containerId, excludeUids) {
+  const wrap = $(containerId);
+  const friends = (myProfile.friends || []).filter(u => !excludeUids.includes(u));
+  groupDmPickerSelection = [];
+  if (!friends.length) { wrap.innerHTML = '<div class="empty">Add some friends first.</div>'; return; }
+  wrap.innerHTML = friends.map(u => `<label class="friend-pick-row"><input type="checkbox" value="${esc(u)}"><span>${esc(u)}</span></label>`).join('');
+}
+
+$('dm-add-btn').addEventListener('contextmenu', (e) => e.preventDefault());
+
+document.querySelectorAll('.home-nav-item').forEach(() => {}); // (nav wiring above)
+
+$('new-group-dm-btn').onclick = () => {
+  renderFriendPicker('group-dm-friend-picker', []);
+  $('new-group-dm-name').value = '';
+  openModal('new-group-dm-modal');
+};
+$('add-member-toggle').onclick = () => {
+  if (!currentGroupDMId) return;
+  const g = (window.__myGroupDMs || []).find(x => x.id === currentGroupDMId);
+  renderFriendPicker('add-to-group-friend-picker', g ? g.participants : [myUid]);
+  openModal('add-to-group-modal');
+};
+
+$('confirm-new-group-dm').onclick = async () => {
+  const checks = [...$('group-dm-friend-picker').querySelectorAll('input:checked')].map(i => i.value);
+  if (checks.length < 2) { toast('Pick at least 2 friends for a group.'); return; }
+  const name = $('new-group-dm-name').value.trim();
+  try {
+    const participants = [myUid, ...checks];
+    const ref = await db.collection('groupDMs').add({
+      name: name || null, participants, ownerId: myUid, createdAt: FieldValue.serverTimestamp(),
+    });
+    closeModal('new-group-dm-modal');
+    toast('Group created.');
+    selectGroupDM(ref.id);
+  } catch (e) { toast('Could not create group.', 'error'); }
+};
+
+$('confirm-add-to-group').onclick = async () => {
+  const checks = [...$('add-to-group-friend-picker').querySelectorAll('input:checked')].map(i => i.value);
+  if (!checks.length || !currentGroupDMId) { toast('Pick at least one friend.'); return; }
+  try {
+    await db.collection('groupDMs').doc(currentGroupDMId).update({ participants: FieldValue.arrayUnion(...checks) });
+    closeModal('add-to-group-modal');
+    toast('Added to group.');
+  } catch (e) { toast('Could not add to group.', 'error'); }
+};
+
+// ============================================================
+// PROFILES
+// ============================================================
+$('messages').addEventListener('click', (e) => {
+  const hit = e.target.closest('.msg-meta .author') || e.target.closest('.msg-group > .avatar');
+  const group = e.target.closest('.msg-group');
+  if (hit && group && group.dataset.uid) openProfileModal(group.dataset.uid);
+});
+$('open-my-settings').addEventListener('dblclick', () => openProfileModal(myUid));
+$('user-panel').addEventListener('click', (e) => {
+  if (e.target.closest('#self-avatar')) { e.stopPropagation(); openProfileModal(myUid); }
+});
+
+function renderBannerSwatches(current) {
+  const wrap = $('banner-color-swatches');
+  wrap.innerHTML = '';
+  wrap.dataset.chosen = current;
+  AVATAR_COLORS.forEach(c => {
+    const sw = document.createElement('div');
+    sw.className = 'swatch' + (current === c ? ' selected' : '');
+    sw.style.background = c;
+    sw.onclick = () => {
+      wrap.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
+      sw.classList.add('selected');
+      wrap.dataset.chosen = c;
+      $('profile-banner').style.background = c;
+    };
+    wrap.appendChild(sw);
+  });
+}
+
+function openGiftModal(username) {
+  $('gift-modal-desc').textContent = `Send Frixion Premium to ${username}.`;
+  $('gift-modal-orb-amt').textContent = myProfile.orbs || 0;
+  $('confirm-gift-premium').onclick = () => giftPremiumTo(username);
+  openModal('gift-modal');
+}
+
+async function openProfileModal(username) {
+  const isSelf = username === myUid;
+  let p;
+  try {
+    const snap = await db.collection('users').doc(username).get();
+    if (!snap.exists) { toast('User not found.', 'error'); return; }
+    p = snap.data();
+    profileCache[username] = p;
+  } catch (e) { toast('Could not load profile.', 'error'); return; }
+
+  $('profile-banner').style.background = p.bannerColor || p.avatarColor || '#5865f2';
+  $('profile-avatar').style.background = p.avatarColor;
+  $('profile-avatar').textContent = initials(p.username);
+  $('profile-username').innerHTML = esc(p.username) + premiumStar(p) + opTag(p);
+  $('profile-pronouns').textContent = p.pronouns || '';
+  $('profile-pronouns').classList.toggle('hidden', !p.pronouns);
+  $('profile-bio-view').textContent = p.bio || (isSelf ? 'Add a bio below with Edit Profile.' : 'No bio yet.');
+  $('profile-member-since').textContent = (p.createdAt && p.createdAt.toDate) ? p.createdAt.toDate().toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) : '—';
+
+  $('profile-edit-fields').classList.toggle('hidden', !isSelf);
+  $('profile-note-wrap').classList.toggle('hidden', isSelf);
+  $('profile-mutual').textContent = '';
+
+  if (isSelf) {
+    $('edit-pronouns').value = p.pronouns || '';
+    $('edit-bio').value = p.bio || '';
+    renderBannerSwatches(p.bannerColor || p.avatarColor);
+    $('profile-actions').innerHTML = '';
+  } else {
+    const isFriend = (myProfile.friends || []).includes(username);
+    const outgoing = (myProfile.outgoingRequests || []).includes(username);
+    const incoming = (myProfile.incomingRequests || []).includes(username);
+    let friendBtn;
+    if (isFriend) friendBtn = `<span class="quest-claimed">Friends</span>`;
+    else if (outgoing) friendBtn = `<button class="btn-secondary slim" id="profile-cancel-req">Cancel Request</button>`;
+    else if (incoming) friendBtn = `<button class="btn-accent-inline slim" id="profile-accept-req">Accept Request</button>`;
+    else friendBtn = `<button class="btn-accent-inline slim" id="profile-add-friend">Add Friend</button>`;
+    $('profile-actions').innerHTML = `<div class="profile-action-row">
+      <button class="btn-accent-inline slim" id="profile-message-btn">Message</button>
+      ${friendBtn}
+      <button class="btn-secondary slim" id="profile-gift-btn">Gift Premium</button>
+    </div>`;
+    $('profile-message-btn').onclick = () => { closeModal('profile-modal'); startDMWith(username); };
+    if ($('profile-add-friend')) $('profile-add-friend').onclick = async () => {
+      await db.collection('users').doc(myUid).update({ outgoingRequests: FieldValue.arrayUnion(username) });
+      await db.collection('users').doc(username).update({ incomingRequests: FieldValue.arrayUnion(myUid) });
+      openProfileModal(username);
+    };
+    if ($('profile-cancel-req')) $('profile-cancel-req').onclick = async () => { await cancelFriendRequest(username); openProfileModal(username); };
+    if ($('profile-accept-req')) $('profile-accept-req').onclick = async () => { await respondFriendRequest(username, true); openProfileModal(username); };
+    $('profile-gift-btn').onclick = () => openGiftModal(username);
+
+    $('profile-note-input').value = '';
+    $('profile-note-input').dataset.target = username;
+    try {
+      const noteSnap = await db.collection('users').doc(username).collection('privateNotes').doc(myUid).get();
+      $('profile-note-input').value = noteSnap.exists ? (noteSnap.data().text || '') : '';
+    } catch (e) {}
+  }
+  openModal('profile-modal');
+}
+$('profile-note-input').addEventListener('blur', async (e) => {
+  const target = e.target.dataset.target;
+  if (!target) return;
+  try { await db.collection('users').doc(target).collection('privateNotes').doc(myUid).set({ text: e.target.value, updatedAt: FieldValue.serverTimestamp() }); } catch (err) {}
+});
+$('save-profile-btn').onclick = async () => {
+  const pronouns = $('edit-pronouns').value.trim();
+  const bio = $('edit-bio').value.trim();
+  const bannerColor = $('banner-color-swatches').dataset.chosen || myProfile.bannerColor;
+  try {
+    await db.collection('users').doc(myUid).update({ pronouns, bio, bannerColor });
+    toast('Profile updated.');
+  } catch (e) { toast('Could not save profile.', 'error'); }
+};
+
+$('gift-btn').onclick = () => { if (currentDMOtherUid) openGiftModal(currentDMOtherUid); };
+$('attach-btn').onclick = () => toast("File uploads aren't available yet.");
+$('gif-btn').onclick = () => toast("GIFs aren't available yet.");
+$('sticker-btn').onclick = () => toast("Stickers aren't available yet.");
+
+$('redeem-code-btn') && ($('redeem-code-btn').onclick = redeemCode);
+function renderCodesView() { /* form is static; nothing to refresh */ }
+
+// ============================================================
+// FRIENDS
+// ============================================================
+function updateFriendReqBadge() {
+  const n = (myProfile.incomingRequests || []).length;
+  $('friend-req-badge').classList.toggle('hidden', n === 0);
+  $('friend-req-badge').textContent = n;
+}
+
+document.querySelectorAll('.friends-tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.friends-tab').forEach(t => t.classList.remove('on'));
+    tab.classList.add('on');
+    $('friends-add-pane').classList.toggle('hidden', tab.dataset.friendsTab !== 'add');
+    $('friends-list-pane').classList.toggle('hidden', tab.dataset.friendsTab === 'add');
+    renderFriendsView(tab.dataset.friendsTab);
+  };
+});
+
+function friendRowHTML(username, kind) {
+  const p = profileCache[username] || { username, avatarColor: '#5865f2', status: 'offline' };
+  let actions = '';
+  if (kind === 'friend') {
+    actions = `<button class="btn-secondary slim" data-msg="${esc(username)}">Message</button><span class="hover-icon-btn" data-remove="${esc(username)}" title="Remove Friend">${icon('trash')}</span>`;
+  } else if (kind === 'incoming') {
+    actions = `<button class="btn-accent-inline slim" data-accept="${esc(username)}">Accept</button><button class="btn-secondary slim" data-decline="${esc(username)}">Decline</button>`;
+  } else {
+    actions = `<span class="quest-locked">Pending</span><button class="btn-secondary slim" data-cancel="${esc(username)}">Cancel</button>`;
+  }
+  return `<div class="friend-row">
+    ${avatarHTML(36, p.avatarColor, initials(p.username), p.status || 'offline')}
+    <span class="friend-row-name" data-openprofile="${esc(username)}">${esc(p.username)}${premiumStar(p)}${opTag(p)}</span>
+    <span class="friend-row-actions">${actions}</span>
+  </div>`;
+}
+function wireFriendRowButtons() {
+  document.querySelectorAll('[data-msg]').forEach(b => b.onclick = () => startDMWith(b.dataset.msg));
+  document.querySelectorAll('[data-remove]').forEach(b => b.onclick = () => removeFriend(b.dataset.remove));
+  document.querySelectorAll('[data-accept]').forEach(b => b.onclick = () => respondFriendRequest(b.dataset.accept, true));
+  document.querySelectorAll('[data-decline]').forEach(b => b.onclick = () => respondFriendRequest(b.dataset.decline, false));
+  document.querySelectorAll('[data-cancel]').forEach(b => b.onclick = () => cancelFriendRequest(b.dataset.cancel));
+  document.querySelectorAll('[data-openprofile]').forEach(b => b.onclick = () => openProfileModal(b.dataset.openprofile));
+}
+
+async function renderFriendsView(mode) {
+  const activeTab = document.querySelector('.friends-tab.on');
+  mode = mode || (activeTab && activeTab.dataset.friendsTab) || 'all';
+  updateFriendReqBadge();
+  const incoming = myProfile.incomingRequests || [];
+  const outgoing = myProfile.outgoingRequests || [];
+  $('pending-tab-badge').classList.toggle('hidden', incoming.length === 0);
+  $('pending-tab-badge').textContent = incoming.length;
+  if (mode === 'add') return;
+  const wrap = $('friends-list-pane');
+  if (mode === 'pending') {
+    await Promise.all([...incoming, ...outgoing].map(u => getProfile(u)));
+    let html = '';
+    if (incoming.length) html += `<div class="side-section-label">Incoming — ${incoming.length}</div>` + incoming.map(u => friendRowHTML(u, 'incoming')).join('');
+    if (outgoing.length) html += `<div class="side-section-label">Outgoing — ${outgoing.length}</div>` + outgoing.map(u => friendRowHTML(u, 'outgoing')).join('');
+    wrap.innerHTML = html || '<div class="empty">No pending requests.</div>';
+  } else {
+    const friends = myProfile.friends || [];
+    await Promise.all(friends.map(u => getProfile(u)));
+    wrap.innerHTML = friends.length
+      ? `<div class="side-section-label">All Friends — ${friends.length}</div>` + friends.map(u => friendRowHTML(u, 'friend')).join('')
+      : '<div class="empty">No friends yet — add some from the Add Friend tab.</div>';
+  }
+  wireFriendRowButtons();
+}
+
+$('send-friend-req-btn').onclick = async () => {
+  const uname = ($('add-friend-username').value || '').trim();
+  $('add-friend-error').textContent = '';
+  if (!uname) { $('add-friend-error').textContent = 'Enter a username.'; return; }
+  if (uname === myUid) { $('add-friend-error').textContent = "That's you!"; return; }
+  try {
+    const snap = await db.collection('users').doc(uname).get();
+    if (!snap.exists) { $('add-friend-error').textContent = 'No user found with that username.'; return; }
+    if ((myProfile.friends || []).includes(uname)) { $('add-friend-error').textContent = 'Already friends.'; return; }
+    if ((myProfile.outgoingRequests || []).includes(uname)) { $('add-friend-error').textContent = 'Request already sent.'; return; }
+    if ((myProfile.incomingRequests || []).includes(uname)) { await respondFriendRequest(uname, true); $('add-friend-username').value = ''; return; }
+    await db.collection('users').doc(myUid).update({ outgoingRequests: FieldValue.arrayUnion(uname) });
+    await db.collection('users').doc(uname).update({ incomingRequests: FieldValue.arrayUnion(myUid) });
+    $('add-friend-username').value = '';
+    toast('Friend request sent.');
+  } catch (e) { $('add-friend-error').textContent = 'Something went wrong.'; }
+};
+async function respondFriendRequest(username, accept) {
+  try {
+    await db.collection('users').doc(myUid).update({ incomingRequests: FieldValue.arrayRemove(username) });
+    await db.collection('users').doc(username).update({ outgoingRequests: FieldValue.arrayRemove(myUid) });
+    if (accept) {
+      await db.collection('users').doc(myUid).update({ friends: FieldValue.arrayUnion(username) });
+      await db.collection('users').doc(username).update({ friends: FieldValue.arrayUnion(myUid) });
+      toast(`You're now friends with ${username}.`);
+    }
+  } catch (e) { toast('Something went wrong.', 'error'); }
+}
+async function cancelFriendRequest(username) {
+  try {
+    await db.collection('users').doc(myUid).update({ outgoingRequests: FieldValue.arrayRemove(username) });
+    await db.collection('users').doc(username).update({ incomingRequests: FieldValue.arrayRemove(myUid) });
+  } catch (e) {}
+}
+async function removeFriend(username) {
+  if (!confirm(`Remove ${username} as a friend?`)) return;
+  try {
+    await db.collection('users').doc(myUid).update({ friends: FieldValue.arrayRemove(username) });
+    await db.collection('users').doc(username).update({ friends: FieldValue.arrayRemove(myUid) });
+  } catch (e) {}
 }
 
 // ============================================================
@@ -758,8 +1253,12 @@ $('delete-server-btn').onclick = async () => {
   } catch (e) { toast('Failed to delete server: ' + e.message, 'error'); }
 };
 
+let lastCategoriesList = [];
+let collapsedCategories = {};
+
 function subscribeChannels(serverId) {
   if (unsub.channels) unsub.channels();
+  if (unsub.categories) unsub.categories();
   unsub.channels = db.collection('servers').doc(serverId).collection('channels').orderBy('createdAt', 'asc')
     .onSnapshot(snap => {
       const channels = [];
@@ -768,26 +1267,53 @@ function subscribeChannels(serverId) {
       renderChannelRows(channels);
       if (!currentChannelId && channels.length) selectChannel(channels[0]);
     });
+  unsub.categories = db.collection('servers').doc(serverId).collection('categories').orderBy('createdAt', 'asc')
+    .onSnapshot(snap => {
+      const cats = [];
+      snap.forEach(d => cats.push({ id: d.id, ...d.data() }));
+      lastCategoriesList = cats;
+      renderChannelRows(lastChannelsList);
+      populateCategorySelect();
+    });
+}
+function populateCategorySelect() {
+  const sel = $('new-channel-category');
+  sel.innerHTML = '<option value="">No Category</option>' + lastCategoriesList.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
 }
 
 function renderChannelRows(channels) {
   const wrap = $('channel-rows');
   wrap.innerHTML = '';
-  channels.forEach(c => {
+  const canManage = currentServerData && (currentServerData.ownerId === myUid || isAdmin);
+
+  const buildChannelRow = (c) => {
     const row = document.createElement('div');
     row.className = 'channel-row' + (currentChannelId === c.id ? ' active' : '');
-    row.innerHTML = `<span class="hash">#</span><span class="cname">${esc(c.name)}</span><span class="del-channel" title="Delete channel">${icon('trash')}</span>`;
+    row.innerHTML = `<span class="hash">#</span><span class="cname">${esc(c.name)}</span>` + (canManage ? `<span class="del-channel" title="Delete channel">${icon('trash')}</span>` : '');
     row.querySelector('.cname').onclick = () => selectChannel(c);
-    row.querySelector('.del-channel').onclick = async (e) => {
+    if (canManage) row.querySelector('.del-channel').onclick = async (e) => {
       e.stopPropagation();
-      if (currentServerData.ownerId !== myUid && !isAdmin) { toast('Only the server owner can delete channels.'); return; }
       if (!confirm(`Delete #${c.name}?`)) return;
       const msgSnap = await db.collection('servers').doc(currentServerId).collection('channels').doc(c.id).collection('messages').get();
       await Promise.all(msgSnap.docs.map(m => m.ref.delete()));
       await db.collection('servers').doc(currentServerId).collection('channels').doc(c.id).delete();
       if (currentChannelId === c.id) { currentChannelId = null; showWelcome(); }
     };
-    wrap.appendChild(row);
+    return row;
+  };
+
+  const uncategorized = channels.filter(c => !c.categoryId);
+  uncategorized.forEach(c => wrap.appendChild(buildChannelRow(c)));
+
+  lastCategoriesList.forEach(cat => {
+    const inCat = channels.filter(c => c.categoryId === cat.id);
+    const header = document.createElement('div');
+    const collapsed = !!collapsedCategories[cat.id];
+    header.className = 'category-header';
+    header.innerHTML = `<svg class="cat-chevron${collapsed ? ' collapsed' : ''}" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg><span>${esc(cat.name)}</span>`;
+    header.onclick = () => { collapsedCategories[cat.id] = !collapsedCategories[cat.id]; renderChannelRows(lastChannelsList); };
+    wrap.appendChild(header);
+    if (!collapsed) inCat.forEach(c => wrap.appendChild(buildChannelRow(c)));
   });
 }
 
@@ -795,14 +1321,29 @@ $('channel-add-btn').onclick = () => {
   if (!currentServerId) return;
   if (currentServerData.ownerId !== myUid && !isAdmin) { toast('Only the server owner can create channels.'); return; }
   $('new-channel-name').value = '';
+  populateCategorySelect();
   openModal('create-channel-modal');
 };
 
 $('confirm-create-channel').onclick = async () => {
   const name = sanitizeChannelName($('new-channel-name').value || '');
+  const categoryId = $('new-channel-category').value || null;
   if (!currentServerId) return;
-  await db.collection('servers').doc(currentServerId).collection('channels').add({ name, createdAt: FieldValue.serverTimestamp() });
+  await db.collection('servers').doc(currentServerId).collection('channels').add({ name, categoryId, createdAt: FieldValue.serverTimestamp() });
   closeModal('create-channel-modal');
+};
+
+$('category-add-btn').onclick = () => {
+  if (!currentServerId) return;
+  if (currentServerData.ownerId !== myUid && !isAdmin) { toast('Only the server owner can create categories.'); return; }
+  $('new-category-name').value = '';
+  openModal('create-category-modal');
+};
+$('confirm-create-category').onclick = async () => {
+  const name = ($('new-category-name').value || '').trim().toUpperCase();
+  if (!name || !currentServerId) { toast('Enter a category name.'); return; }
+  await db.collection('servers').doc(currentServerId).collection('categories').add({ name, createdAt: FieldValue.serverTimestamp() });
+  closeModal('create-category-modal');
 };
 
 function selectChannel(channel) {
@@ -812,6 +1353,7 @@ function selectChannel(channel) {
   $('chat-header-title').textContent = channel.name;
   $('composer-input').placeholder = `Message #${channel.name}`;
   $('members-toggle').classList.remove('hidden');
+  $('gift-btn').classList.add('hidden');
   showHeaderActions();
   renderChannelRows(lastChannelsList);
   showChat();
@@ -870,12 +1412,17 @@ function renderPinnedList(pinned) {
     btn.onclick = () => togglePin(btn.closest('.pinned-row').dataset.mid, true);
   });
 }
+function msgRef(msgId) {
+  if (currentView === 'channel') return db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').doc(msgId);
+  if (currentView === 'dm') return db.collection('dms').doc(currentDMId).collection('messages').doc(msgId);
+  if (currentView === 'groupdm') return db.collection('groupDMs').doc(currentGroupDMId).collection('messages').doc(msgId);
+  return null;
+}
 async function togglePin(msgId, forceUnpin) {
   const msg = lastRawMessages.find(m => m.id === msgId);
   const newVal = forceUnpin ? false : !(msg && msg.pinned);
-  const ref = currentView === 'channel'
-    ? db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').doc(msgId)
-    : db.collection('dms').doc(currentDMId).collection('messages').doc(msgId);
+  const ref = msgRef(msgId);
+  if (!ref) return;
   try { await ref.update({ pinned: newVal }); } catch (e) { toast('Could not update pin.', 'error'); }
 }
 
@@ -900,6 +1447,7 @@ function showHeaderActions() {
   $('mute-toggle').classList.remove('hidden');
   $('pins-toggle').classList.remove('hidden');
   $('search-toggle').classList.remove('hidden');
+  $('add-member-toggle').classList.toggle('hidden', currentView !== 'groupdm');
   updateMuteIcon();
   searchActive = false;
   $('search-toggle').classList.remove('on');
@@ -909,6 +1457,8 @@ function hideHeaderActions() {
   $('mute-toggle').classList.add('hidden');
   $('pins-toggle').classList.add('hidden');
   $('search-toggle').classList.add('hidden');
+  $('add-member-toggle').classList.add('hidden');
+  $('gift-btn').classList.add('hidden');
   $('search-bar').classList.add('hidden');
 }
 
@@ -934,18 +1484,22 @@ async function renderMemberPanel(server) {
   $('online-count').textContent = online.length;
   $('offline-count').textContent = offline.length;
   const renderRows = (arr) => arr.map(({ uid, p }) => `
-    <div class="member-row">
+    <div class="member-row" data-u="${esc(uid)}">
       ${avatarHTML(32, p.avatarColor, initials(p.username), p.status || 'offline')}
       <span class="mname${p.status !== 'offline' ? ' online-name' : ''}">${esc(p.username)}${premiumStar(p)}${opTag(p)}${uid === server.ownerId ? '<span class="owner-tag">Owner</span>' : ''}</span>
     </div>`).join('');
   $('member-rows-online').innerHTML = renderRows(online);
   $('member-rows-offline').innerHTML = renderRows(offline);
+  $('member-panel').querySelectorAll('.member-row[data-u]').forEach(row => {
+    row.onclick = () => openProfileModal(row.dataset.u);
+  });
 }
 
 // ============================================================
 // CHAT VIEW SWITCH
 // ============================================================
 function showWelcome() {
+  hideMainPageViews();
   $('welcome-view').classList.remove('hidden');
   $('chat-view').classList.add('hidden');
   $('chat-header-hash').textContent = '';
@@ -954,12 +1508,13 @@ function showWelcome() {
   hideHeaderActions();
 }
 function showChat() {
+  hideMainPageViews();
   $('welcome-view').classList.add('hidden');
   $('chat-view').classList.remove('hidden');
 }
 
 function renderCurrentView() {
-  if (currentView === 'channel' || currentView === 'dm') renderMessages(lastRawMessages);
+  if (currentView === 'channel' || currentView === 'dm' || currentView === 'groupdm') renderMessages(lastRawMessages);
   if (currentServerData) renderMemberPanel(currentServerData);
   renderDMRows();
 }
@@ -1023,6 +1578,17 @@ async function renderMessages(rawMsgs) {
     return;
   }
 
+  if (!searching && !msgs.length) {
+    const name = currentView === 'channel' ? `#${$('chat-header-title').textContent}` : $('chat-header-title').textContent;
+    wrap.innerHTML = `
+      <div class="convo-start">
+        <span class="convo-start-icon">${currentView === 'channel' ? '#' : icon('people')}</span>
+        <h2>Welcome to ${esc(name)}!</h2>
+        <p>${currentView === 'channel' ? 'This is the start of the channel.' : 'This is the beginning of your conversation.'}</p>
+      </div>`;
+    return;
+  }
+
   let lastUid = null, lastMillis = 0, lastDay = null, groupEl = null;
 
   msgs.forEach(m => {
@@ -1044,6 +1610,7 @@ async function renderMessages(rawMsgs) {
     } else {
       groupEl = document.createElement('div');
       groupEl.className = 'msg-group';
+      groupEl.dataset.uid = m.uid;
       const body = document.createElement('div');
       body.className = 'msg-body';
       const meta = document.createElement('div');
@@ -1085,25 +1652,23 @@ function closeReactPopover() {
 }
 
 async function toggleReaction(msgId, emoji) {
-  if (currentView !== 'channel' && currentView !== 'dm') return;
-  const ref = currentView === 'channel'
-    ? db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').doc(msgId)
-    : db.collection('dms').doc(currentDMId).collection('messages').doc(msgId);
+  if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') return;
+  const ref = msgRef(msgId);
   const msg = lastRawMessages.find(m => m.id === msgId);
   const already = !!(msg && msg.reactions && (msg.reactions[emoji] || []).includes(myUid));
   try {
     await ref.update({ [`reactions.${emoji}`]: already ? FieldValue.arrayRemove(myUid) : FieldValue.arrayUnion(myUid) });
-    if (!already) db.collection('users').doc(myUid).update({ 'stats.reactionsGiven': FieldValue.increment(1) }).catch(() => {});
+    if (!already) db.collection('users').doc(myUid).update({
+      'stats.reactionsGiven': FieldValue.increment(1),
+      'dailyStats.reactionsGiven': FieldValue.increment(1),
+    }).catch(() => {});
   } catch (e) { toast('Could not react.', 'error'); }
 }
 
 async function deleteMessage(id) {
   try {
-    if (currentView === 'channel') {
-      await db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').doc(id).delete();
-    } else if (currentView === 'dm') {
-      await db.collection('dms').doc(currentDMId).collection('messages').doc(id).delete();
-    }
+    const ref = msgRef(id);
+    if (ref) await ref.delete();
   } catch (e) { toast('Could not delete message.', 'error'); }
 }
 
@@ -1118,14 +1683,23 @@ async function sendMessage() {
   try {
     if (currentView === 'channel') {
       await db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').add(payload);
+      db.collection('users').doc(myUid).update({ 'dailyStats.channelsMessaged': FieldValue.increment(1) }).catch(() => {});
     } else if (currentView === 'dm') {
       await db.collection('dms').doc(currentDMId).collection('messages').add(payload);
       await db.collection('dms').doc(currentDMId).update({ updatedAt: FieldValue.serverTimestamp() });
+      db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
+    } else if (currentView === 'groupdm') {
+      await db.collection('groupDMs').doc(currentGroupDMId).collection('messages').add(payload);
+      await db.collection('groupDMs').doc(currentGroupDMId).update({ updatedAt: FieldValue.serverTimestamp() });
+      db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
     }
-    db.collection('users').doc(myUid).update({ 'stats.messagesSent': FieldValue.increment(1) }).catch(() => {});
+    db.collection('users').doc(myUid).update({
+      'stats.messagesSent': FieldValue.increment(1),
+      'dailyStats.messagesSent': FieldValue.increment(1),
+    }).catch(() => {});
   } catch (e) { toast('Failed to send message.', 'error'); }
 }
-$('send-btn').onclick = sendMessage;
+// No explicit Send button — matches Discord's real composer (Enter to send).
 $('composer-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
@@ -1145,16 +1719,30 @@ function insertAtCursor(el, text) {
 function renderEmojiPickerGrids() {
   const q = ($('emoji-search').value || '').toLowerCase();
   const customWrap = $('ep-custom-grid');
-  const stdWrap = $('ep-standard-grid');
   const customNames = Object.keys(customEmojis).filter(n => !q || n.includes(q)).sort();
   customWrap.innerHTML = customNames.length
     ? customNames.map(n => `<button type="button" title=":${esc(n)}:"><img src="${customEmojis[n].dataUrl}" alt=":${esc(n)}:"></button>`).join('')
     : '<div class="ep-empty">No custom emoji yet</div>';
   customWrap.querySelectorAll('button').forEach((btn, i) => { btn.onclick = () => insertAtCursor($('composer-input'), `:${customNames[i]}:`); });
 
-  const stdNames = Object.keys(SHORTCODE_MAP).filter(n => !q || n.includes(q));
-  stdWrap.innerHTML = stdNames.map(n => `<button type="button" title=":${esc(n)}:">${SHORTCODE_MAP[n]}</button>`).join('');
-  stdWrap.querySelectorAll('button').forEach((btn, i) => { btn.onclick = () => insertAtCursor($('composer-input'), SHORTCODE_MAP[stdNames[i]]); });
+  const sectionsWrap = $('ep-standard-sections');
+  sectionsWrap.innerHTML = EMOJI_CATEGORIES.map(cat => {
+    const names = Object.keys(cat.items).filter(n => !q || n.includes(q));
+    if (!names.length) return '';
+    return `<div class="ep-section-label" id="ep-sec-${cat.key}">${esc(cat.label)}</div>
+      <div class="ep-grid">${names.map(n => `<button type="button" title=":${esc(n)}:">${cat.items[n]}</button>`).join('')}</div>`;
+  }).join('') || '<div class="ep-empty">No emoji match "' + esc(q) + '"</div>';
+  sectionsWrap.querySelectorAll('button').forEach(btn => {
+    btn.onclick = () => insertAtCursor($('composer-input'), btn.textContent);
+  });
+
+  $('ep-cats').innerHTML = EMOJI_CATEGORIES.map(cat => `<button type="button" class="ep-cat-btn" data-cat="${cat.key}" title="${esc(cat.label)}">${cat.icon}</button>`).join('');
+  $('ep-cats').querySelectorAll('.ep-cat-btn').forEach(btn => {
+    btn.onclick = () => {
+      const target = $('ep-sec-' + btn.dataset.cat);
+      if (target) target.scrollIntoView({ block: 'start' });
+    };
+  });
 }
 $('emoji-picker-btn').onclick = (e) => {
   e.stopPropagation();
@@ -1225,16 +1813,17 @@ function populateSettings() {
 function buildPremiumActionHTML() {
   const active = isPremium(myProfile);
   const balance = myProfile.orbs || 0;
+  const days = Math.round(PREMIUM_DURATION_MS / 86400000);
   if (active) {
     const until = new Date(myProfile.premiumUntil).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
     return `
       <span class="premium-active-badge">${icon('star')} Frixion Premium Active</span>
-      <p class="desc" style="margin-top:12px;">Renews on ${until}. Renewing early adds another ${PREMIUM_DURATION_MS / 86400000} days on top of your current expiry.</p>
+      <p class="desc" style="margin-top:12px;">Active until ${until}. Renewing early adds another ${days} days on top of your current expiry.</p>
       <button class="btn-accent-inline" style="width:100%;" data-premium-action="renew">Renew Now — ${PREMIUM_COST_ORBS} Orbs</button>`;
   }
   const canAfford = balance >= PREMIUM_COST_ORBS;
   return `
-    <button class="btn-accent-inline" style="width:100%;" data-premium-action="subscribe" ${canAfford ? '' : 'disabled'}>Subscribe — ${PREMIUM_COST_ORBS} Orbs / 30 days</button>
+    <button class="btn-accent-inline" style="width:100%;" data-premium-action="subscribe" ${canAfford ? '' : 'disabled'}>Subscribe — ${PREMIUM_COST_ORBS} Orbs / ${days} days</button>
     ${canAfford ? '' : `<p class="desc" style="margin-top:10px;">You have ${balance} Orbs. Complete quests to earn the rest.</p>`}`;
 }
 function wirePremiumActionButtons(containerId) {
@@ -1242,16 +1831,84 @@ function wirePremiumActionButtons(containerId) {
   if (btn) btn.onclick = subscribeToPremium;
 }
 
+function genRedeemCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const seg = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  return `FRX-${seg()}-${seg()}`;
+}
+async function createRedeemCode(type, value, createdBy) {
+  const code = genRedeemCode();
+  await db.collection('redeemCodes').doc(code).set({
+    code, type, value, createdBy, redeemedBy: null, createdAt: FieldValue.serverTimestamp(), redeemedAt: null,
+  });
+  return code;
+}
+function showCodeModal(code, description) {
+  $('code-reveal-text').textContent = code;
+  $('code-reveal-desc').textContent = description;
+  openModal('code-reveal-modal');
+}
+$('code-reveal-copy').onclick = () => {
+  navigator.clipboard.writeText($('code-reveal-text').textContent).then(() => toast('Code copied.')).catch(() => {});
+};
+
 async function subscribeToPremium() {
   const fresh = (await db.collection('users').doc(myUid).get()).data();
   if ((fresh.orbs || 0) < PREMIUM_COST_ORBS) { toast('Not enough Orbs — complete quests to earn more.'); return; }
-  const base = isPremium(fresh) ? fresh.premiumUntil : Date.now();
-  const newUntil = base + PREMIUM_DURATION_MS;
+  const days = Math.round(PREMIUM_DURATION_MS / 86400000);
   try {
-    await db.collection('users').doc(myUid).update({ orbs: FieldValue.increment(-PREMIUM_COST_ORBS), premiumUntil: newUntil });
-    toast('Frixion Premium is active!');
+    await db.collection('users').doc(myUid).update({ orbs: FieldValue.increment(-PREMIUM_COST_ORBS) });
+    const code = await createRedeemCode('premium', days, myUid);
     closeModal('premium-modal');
+    showCodeModal(code, `This code adds ${days} days of Frixion Premium. Redeem it any time from Codes.`);
   } catch (e) { toast('Something went wrong.', 'error'); }
+}
+
+async function giftPremiumTo(recipientUsername) {
+  const fresh = (await db.collection('users').doc(myUid).get()).data();
+  if ((fresh.orbs || 0) < PREMIUM_COST_ORBS) { toast(`You need ${PREMIUM_COST_ORBS} Orbs to gift Premium.`); return; }
+  if (!confirm(`Gift Frixion Premium to ${recipientUsername} for ${PREMIUM_COST_ORBS} Orbs?`)) return;
+  const days = Math.round(PREMIUM_DURATION_MS / 86400000);
+  try {
+    await db.collection('users').doc(myUid).update({ orbs: FieldValue.increment(-PREMIUM_COST_ORBS) });
+    const code = await createRedeemCode('premium', days, myUid);
+    const dmId = dmIdFor(myUid, recipientUsername);
+    const ref = db.collection('dms').doc(dmId);
+    const dsnap = await ref.get();
+    if (!dsnap.exists) await ref.set({ participants: [myUid, recipientUsername], createdAt: FieldValue.serverTimestamp() });
+    await ref.collection('messages').add({
+      text: `Gifted Frixion Premium! Redeem this code in Settings > Codes for ${days} days: ${code}`,
+      uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
+    });
+    await ref.update({ updatedAt: FieldValue.serverTimestamp() });
+    toast(`Gifted Premium to ${recipientUsername}!`);
+    closeModal('gift-modal');
+  } catch (e) { toast('Something went wrong.', 'error'); }
+}
+
+async function redeemCode() {
+  const code = ($('redeem-code-input').value || '').trim().toUpperCase();
+  $('redeem-code-error').textContent = '';
+  if (!code) { $('redeem-code-error').textContent = 'Enter a code.'; return; }
+  try {
+    const ref = db.collection('redeemCodes').doc(code);
+    const snap = await ref.get();
+    if (!snap.exists) { $('redeem-code-error').textContent = 'That code is invalid.'; return; }
+    const data = snap.data();
+    if (data.redeemedBy) { $('redeem-code-error').textContent = 'That code has already been redeemed.'; return; }
+    if (data.type === 'orbs') {
+      await db.collection('users').doc(myUid).update({ orbs: FieldValue.increment(data.value) });
+      toast(`+${data.value} Orbs redeemed!`);
+    } else if (data.type === 'premium') {
+      const fresh = (await db.collection('users').doc(myUid).get()).data();
+      const base = isPremium(fresh) ? fresh.premiumUntil : Date.now();
+      await db.collection('users').doc(myUid).update({ premiumUntil: base + data.value * 86400000 });
+      toast(`Frixion Premium extended by ${data.value} days!`);
+    }
+    await ref.update({ redeemedBy: myUid, redeemedAt: FieldValue.serverTimestamp() });
+    $('redeem-code-input').value = '';
+    renderCodesView();
+  } catch (e) { $('redeem-code-error').textContent = 'Something went wrong.'; }
 }
 
 function openPremiumModal() {
@@ -1277,11 +1934,10 @@ function renderThemeGrid() {
   });
 }
 
-function renderQuests() {
-  const wrap = $('quests-list');
-  const stats = myProfile.stats || {};
-  const claimed = myProfile.claimedQuests || [];
-  wrap.innerHTML = QUESTS.map(q => {
+function questRowsHTML(profile) {
+  const stats = profile.dailyStats || {};
+  const claimed = profile.claimedQuestsToday || [];
+  return QUESTS.map(q => {
     const progress = Math.min(stats[q.stat] || 0, q.goal);
     const pct = Math.round((progress / q.goal) * 100);
     const done = progress >= q.goal;
@@ -1302,20 +1958,29 @@ function renderQuests() {
       </div>
     </div>`;
   }).join('');
-  wrap.querySelectorAll('[data-qid]').forEach(btn => { btn.onclick = () => claimQuest(btn.dataset.qid); });
+}
+async function renderQuests() {
+  myProfile = await ensureQuestsFresh(myProfile);
+  const html = questRowsHTML(myProfile);
+  [$('quests-list'), $('quests-list-main')].forEach(el => { if (el) el.innerHTML = html; });
+  document.querySelectorAll('#quests-list [data-qid], #quests-list-main [data-qid]').forEach(btn => {
+    btn.onclick = () => claimQuest(btn.dataset.qid);
+  });
+  const note = 'Quests refresh every day at midnight.';
+  if ($('quests-reset-note-main')) $('quests-reset-note-main').textContent = note;
 }
 
 async function claimQuest(id) {
   const q = QUESTS.find(x => x.id === id);
   if (!q) return;
-  const fresh = (await db.collection('users').doc(myUid).get()).data();
-  const stats = fresh.stats || {};
-  const claimed = fresh.claimedQuests || [];
+  const fresh = await ensureQuestsFresh((await db.collection('users').doc(myUid).get()).data());
+  const stats = fresh.dailyStats || {};
+  const claimed = fresh.claimedQuestsToday || [];
   if (claimed.includes(id) || (stats[q.stat] || 0) < q.goal) return;
   try {
     await db.collection('users').doc(myUid).update({
       orbs: FieldValue.increment(q.reward),
-      claimedQuests: FieldValue.arrayUnion(id),
+      claimedQuestsToday: FieldValue.arrayUnion(id),
     });
     toast(`+${q.reward} Orbs — ${q.title} complete!`);
   } catch (e) { toast('Could not claim reward.', 'error'); }
@@ -1380,8 +2045,37 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
     $('admin-pane-' + tab.dataset.adminTab).classList.remove('hidden');
     if (tab.dataset.adminTab === 'emojis') renderAdminEmojiList();
     if (tab.dataset.adminTab === 'filter') renderAdminFilterList();
+    if (tab.dataset.adminTab === 'codes') renderAdminCodesList();
   };
 });
+
+$('gen-code-btn').onclick = async () => {
+  const type = $('gen-code-type').value;
+  const value = parseInt($('gen-code-value').value || '0', 10);
+  if (!value || value < 1) { toast('Enter an amount.'); return; }
+  try {
+    const code = await createRedeemCode(type, value, myUid);
+    toast(`Generated ${code}`);
+    $('gen-code-value').value = '';
+    renderAdminCodesList();
+  } catch (e) { toast('Could not generate code.', 'error'); }
+};
+
+async function renderAdminCodesList() {
+  const wrap = $('admin-codes-list');
+  wrap.innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    const snap = await db.collection('redeemCodes').orderBy('createdAt', 'desc').limit(50).get();
+    const rows = [];
+    snap.forEach(d => rows.push(d.data()));
+    wrap.innerHTML = rows.length ? rows.map(r => `
+      <div class="admin-row" style="cursor:default;">
+        <span class="ar-name" style="font-family:monospace;">${esc(r.code)}</span>
+        <span class="ab-note">${r.type === 'premium' ? r.value + 'd Premium' : r.value + ' Orbs'}</span>
+        <span class="${r.redeemedBy ? 'ban-tag' : 'op-tag'}">${r.redeemedBy ? ('Used by ' + esc(r.redeemedBy)) : 'Unused'}</span>
+      </div>`).join('') : '<div class="empty">No codes generated yet.</div>';
+  } catch (e) { wrap.innerHTML = '<div class="empty">Could not load codes.</div>'; }
+}
 
 function resizeImageToDataURL(file, w, h) {
   return new Promise((resolve, reject) => {
@@ -1498,6 +2192,14 @@ async function renderAdminActions() {
       </div>
     </div>
     <div class="admin-block">
+      <div class="ab-title">Frixion Premium — ${isPremium(u) ? ('Active until ' + new Date(u.premiumUntil).toLocaleDateString()) : 'Not active'}</div>
+      <div class="ab-row">
+        <input id="admin-premium-days" type="number" min="1" placeholder="Days" class="fld-input">
+        <button class="btn-accent-inline slim" id="admin-premium-grant">Grant</button>
+        <button class="btn-secondary slim" id="admin-premium-remove">Remove</button>
+      </div>
+    </div>
+    <div class="admin-block">
       <div class="ab-title">Operator</div>
       <div class="ab-row">
         <span class="ab-note">${u.op ? 'This user has full admin access with no password.' : 'Not an operator.'}</span>
@@ -1529,11 +2231,32 @@ async function renderAdminActions() {
 
   $('admin-orbs-grant').onclick = () => adminAdjustOrbs(u.username, 1);
   $('admin-orbs-remove').onclick = () => adminAdjustOrbs(u.username, -1);
+  $('admin-premium-grant').onclick = () => adminAdjustPremium(u.username, 1);
+  $('admin-premium-remove').onclick = () => adminAdjustPremium(u.username, -1);
   if (u.op) $('admin-deop-btn').onclick = () => adminSetOp(u.username, false);
   else $('admin-op-btn').onclick = () => adminSetOp(u.username, true);
   $('admin-ban-btn').onclick = adminBan;
   if (ban.banned) $('admin-unban-btn').onclick = adminUnban;
   $('admin-delete-btn').onclick = adminDelete;
+}
+
+async function adminAdjustPremium(username, sign) {
+  const days = parseInt($('admin-premium-days').value || '0', 10);
+  if (!days || days < 1) { toast('Enter a number of days.'); return; }
+  try {
+    const snap = await db.collection('users').doc(username).get();
+    const u = snap.data();
+    if (sign > 0) {
+      const base = isPremium(u) ? u.premiumUntil : Date.now();
+      await db.collection('users').doc(username).update({ premiumUntil: base + days * 86400000 });
+    } else {
+      const base = isPremium(u) ? u.premiumUntil : Date.now();
+      const newUntil = Math.max(Date.now() - 1, base - days * 86400000);
+      await db.collection('users').doc(username).update({ premiumUntil: newUntil });
+    }
+    toast(`${sign > 0 ? 'Granted' : 'Removed'} ${days} days of Premium ${sign > 0 ? 'to' : 'from'} ${username}.`);
+    renderAdminActions();
+  } catch (e) { toast('Could not update Premium.', 'error'); }
 }
 
 async function adminAdjustOrbs(username, sign) {

@@ -125,9 +125,27 @@
 
     <!-- DM list (home view) -->
     <div id="dm-list">
+      <div id="home-nav">
+        <div class="home-nav-item active" data-home-view="friends">
+          <span class="hn-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9" r="2.3"/><path d="M15 14.2c2.6.3 4.5 2.4 4.5 5.3"/></svg></span>
+          <span>Friends</span>
+          <span class="hn-badge hidden" id="friend-req-badge">0</span>
+        </div>
+        <div class="home-nav-item" data-home-view="quests">
+          <span class="hn-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5"/><path d="M8 13h8M8 17h5"/></svg></span>
+          <span>Quests</span>
+        </div>
+        <div class="home-nav-item" data-home-view="codes">
+          <span class="hn-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9l-4 3 4 3"/><path d="M16 9l4 3-4 3"/><path d="M13 6l-2 12"/></svg></span>
+          <span>Codes</span>
+        </div>
+      </div>
       <div class="side-section-label">
         <span>Direct Messages</span>
-        <span id="dm-add-btn" title="Add friend / DM" style="cursor:pointer;">+</span>
+        <span style="display:flex;gap:6px;">
+          <span id="new-group-dm-btn" title="Create Group DM" style="cursor:pointer;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.3 2.7-6 7-6s7 2.7 7 6"/><path d="M17 8h5M19.5 5.5v5"/></svg></span>
+          <span id="dm-add-btn" title="Add friend / DM" style="cursor:pointer;">+</span>
+        </span>
       </div>
       <div id="dm-rows"></div>
     </div>
@@ -135,8 +153,11 @@
     <!-- channel list (server view) -->
     <div id="channel-list" class="hidden">
       <div class="side-section-label">
-        <span>Text Channels</span>
-        <span id="channel-add-btn" title="Create channel" style="cursor:pointer;">+</span>
+        <span>Channels</span>
+        <span style="display:flex;gap:6px;">
+          <span id="category-add-btn" title="Create category" style="cursor:pointer;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v4M10 13h4"/></svg></span>
+          <span id="channel-add-btn" title="Create channel" style="cursor:pointer;">+</span>
+        </span>
       </div>
       <div id="channel-rows"></div>
     </div>
@@ -164,6 +185,9 @@
         <span class="hdr-icon-btn hidden" id="pins-toggle" title="Pinned Messages">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2 2-5 5-4 1 7 7 1-4 5-5 2 2"/><path d="M9 15l-5 5"/></svg>
         </span>
+        <span class="hdr-icon-btn hidden" id="add-member-toggle" title="Add Friend to Group">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.3 2.7-6 7-6s7 2.7 7 6"/><path d="M17 8h5M19.5 5.5v5"/></svg>
+        </span>
         <span class="hdr-icon-btn hidden" id="search-toggle" title="Search">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
         </span>
@@ -186,22 +210,66 @@
       <p>Pick a server, channel, or DM from the left to start chatting.</p>
     </div>
 
+    <!-- Friends / Quests / Codes main-content views -->
+    <div id="friends-view" class="hidden main-page-view">
+      <div class="mp-header">
+        <span>Friends</span>
+        <div class="friends-tabs">
+          <button class="friends-tab on" data-friends-tab="all">All</button>
+          <button class="friends-tab" data-friends-tab="pending">Pending<span class="hn-badge hidden" id="pending-tab-badge">0</span></button>
+          <button class="friends-tab" data-friends-tab="add">Add Friend</button>
+        </div>
+      </div>
+      <div class="mp-body">
+        <div id="friends-add-pane" class="hidden">
+          <div class="field"><label>Add Friend</label><input type="text" id="add-friend-username" placeholder="Enter a username" maxlength="24"></div>
+          <button class="btn-accent-inline" id="send-friend-req-btn">Send Friend Request</button>
+          <div class="auth-error" id="add-friend-error"></div>
+        </div>
+        <div id="friends-list-pane"></div>
+      </div>
+    </div>
+
+    <div id="quests-view" class="hidden main-page-view">
+      <div class="mp-header"><span>Quests</span></div>
+      <div class="mp-body">
+        <p class="desc">Complete quests to earn Orbs, then spend them on Frixion Premium. New quests every day.</p>
+        <div id="quests-list-main"></div>
+        <div class="hint" id="quests-reset-note-main"></div>
+      </div>
+    </div>
+
+    <div id="codes-view" class="hidden main-page-view">
+      <div class="mp-header"><span>Codes</span></div>
+      <div class="mp-body" style="max-width:420px;">
+        <p class="desc">Redeem a Frixion code for Orbs or Premium.</p>
+        <div class="field"><label>Code</label><input type="text" id="redeem-code-input" placeholder="FRX-XXXX-XXXX" style="text-transform:uppercase;"></div>
+        <button class="btn-accent-inline" id="redeem-code-btn" style="width:100%;">Redeem</button>
+        <div class="auth-error" id="redeem-code-error"></div>
+      </div>
+    </div>
+
     <div id="chat-view" class="hidden" style="display:contents;">
       <div id="messages"></div>
       <div id="composer-wrap">
         <div id="emoji-picker-panel" class="hidden">
           <div class="ep-search"><input type="text" id="emoji-search" placeholder="Search emoji"></div>
-          <div class="ep-scroll">
+          <div class="ep-cats" id="ep-cats"></div>
+          <div class="ep-scroll" id="ep-scroll">
             <div class="ep-section-label">Custom</div>
             <div class="ep-grid" id="ep-custom-grid"></div>
-            <div class="ep-section-label">Emoji</div>
-            <div class="ep-grid" id="ep-standard-grid"></div>
+            <div id="ep-standard-sections"></div>
           </div>
         </div>
         <div id="composer">
-          <button class="emoji-btn" id="emoji-picker-btn" title="Emoji"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 14c.8 1.2 2 2 3.5 2s2.7-.8 3.5-2" stroke-linecap="round"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/></svg></button>
+          <button class="composer-icon-btn" id="attach-btn" title="Upload a File"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></button>
           <textarea id="composer-input" rows="1" placeholder="Message"></textarea>
-          <button class="send-btn" id="send-btn">Send</button>
+          <div class="composer-right-icons">
+            <button class="composer-icon-btn" id="gift-btn" title="Gift Frixion Premium"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4"/><rect x="5" y="12" width="14" height="9"/><path d="M12 8v13"/><path d="M12 8c-1.2-2.5-3-3.5-4.2-3-1.2.5-1.3 2 .2 3zM12 8c1.2-2.5 3-3.5 4.2-3 1.2.5 1.3 2-.2 3z"/></svg></button>
+            <button class="composer-icon-btn" id="gif-btn" title="GIF">GIF</button>
+            <button class="composer-icon-btn" id="sticker-btn" title="Sticker"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h9a3 3 0 0 1 3 3v9l-6 6H8a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z"/><path d="M20 15h-4a2 2 0 0 0-2 2v4"/></svg></button>
+            <button class="composer-icon-btn" id="emoji-picker-btn" title="Emoji"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 14c.8 1.2 2 2 3.5 2s2.7-.8 3.5-2" stroke-linecap="round"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/></svg></button>
+          </div>
         </div>
       </div>
     </div>
@@ -277,9 +345,22 @@
   <div class="modal-box">
     <div class="modal-header-row"><h2>Create Text Channel</h2><span class="x" data-close="create-channel-modal">✕</span></div>
     <div class="field"><label>Channel Name</label><input type="text" id="new-channel-name" maxlength="30" placeholder="new-channel"></div>
+    <div class="field"><label>Category</label><select id="new-channel-category" class="fld-input"></select></div>
     <div class="modal-actions">
       <button class="btn-secondary" data-close="create-channel-modal">Cancel</button>
       <button class="btn-accent-inline" id="confirm-create-channel">Create Channel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: create category ============ -->
+<div class="modal-overlay hidden" id="create-category-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2>Create Category</h2><span class="x" data-close="create-category-modal">✕</span></div>
+    <div class="field"><label>Category Name</label><input type="text" id="new-category-name" maxlength="30" placeholder="NEW CATEGORY"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" data-close="create-category-modal">Cancel</button>
+      <button class="btn-accent-inline" id="confirm-create-category">Create Category</button>
     </div>
   </div>
 </div>
@@ -298,8 +379,100 @@
   </div>
 </div>
 
+<!-- ============ MODAL: new group DM ============ -->
+<div class="modal-overlay hidden" id="new-group-dm-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2>Create Group DM</h2><span class="x" data-close="new-group-dm-modal">✕</span></div>
+    <p class="desc">Pick friends to add to the group.</p>
+    <div id="group-dm-friend-picker" class="friend-picker"></div>
+    <div class="field"><label>Group Name (optional)</label><input type="text" id="new-group-dm-name" maxlength="40" placeholder="e.g. Study Group"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" data-close="new-group-dm-modal">Cancel</button>
+      <button class="btn-accent-inline" id="confirm-new-group-dm">Create Group</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: add member to group DM ============ -->
+<div class="modal-overlay hidden" id="add-to-group-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2>Add Friend to Group</h2><span class="x" data-close="add-to-group-modal">✕</span></div>
+    <div id="add-to-group-friend-picker" class="friend-picker"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" data-close="add-to-group-modal">Cancel</button>
+      <button class="btn-accent-inline" id="confirm-add-to-group">Add to Group</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: gift Frixion Premium ============ -->
+<div class="modal-overlay hidden" id="gift-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2>Gift Frixion Premium</h2><span class="x" data-close="gift-modal">✕</span></div>
+    <p class="desc" id="gift-modal-desc">Send Frixion Premium to this person.</p>
+    <div class="orb-balance-row"><span class="orb-chip"><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg><span id="gift-modal-orb-amt">0</span> Orbs</span></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" data-close="gift-modal">Cancel</button>
+      <button class="btn-accent-inline" id="confirm-gift-premium">Gift — 1400 Orbs</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: code reveal ============ -->
+<div class="modal-overlay hidden" id="code-reveal-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2>Here's your code</h2><span class="x" data-close="code-reveal-modal">✕</span></div>
+    <p class="desc" id="code-reveal-desc"></p>
+    <div class="code-display" id="code-reveal-text"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="code-reveal-copy">Copy Code</button>
+      <button class="btn-accent-inline" data-close="code-reveal-modal">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: profile view/edit ============ -->
+<div class="modal-overlay hidden" id="profile-modal">
+  <div class="modal-box profile-box">
+    <span class="x profile-close" data-close="profile-modal">✕</span>
+    <div class="profile-banner" id="profile-banner"></div>
+    <div class="profile-main">
+      <div class="profile-avatar-wrap"><div class="avatar profile-avatar" id="profile-avatar" style="width:80px;height:80px;font-size:32px;"></div></div>
+      <div class="profile-body">
+        <div class="profile-name-row">
+          <span class="profile-username" id="profile-username"></span>
+          <span id="profile-tags"></span>
+        </div>
+        <div class="profile-pronouns" id="profile-pronouns"></div>
+        <div class="profile-section" id="profile-bio-view"></div>
+        <div class="profile-section-label">Member Since</div>
+        <div class="profile-section" id="profile-member-since"></div>
+        <div id="profile-mutual" class="profile-section"></div>
+
+        <div id="profile-edit-fields" class="hidden">
+          <div class="field"><label>Pronouns</label><input type="text" id="edit-pronouns" maxlength="20" placeholder="e.g. they/them"></div>
+          <div class="field"><label>Bio</label><textarea id="edit-bio" maxlength="190" rows="3" placeholder="Tell people about yourself"></textarea></div>
+          <div class="field">
+            <label>Banner Color</label>
+            <div class="color-swatches" id="banner-color-swatches"></div>
+          </div>
+          <button class="btn-accent-inline" id="save-profile-btn">Save Profile</button>
+        </div>
+
+        <div id="profile-actions"></div>
+
+        <div id="profile-note-wrap" class="hidden">
+          <div class="profile-section-label">Note</div>
+          <textarea id="profile-note-input" class="profile-note-input" maxlength="256" placeholder="Click to add a note (only visible to you)"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL: user settings ============ -->
 <div class="modal-overlay hidden" id="settings-modal">
+
   <div class="modal-box">
     <div id="settings-nav">
       <div class="nav-label">User Settings</div>
@@ -410,6 +583,7 @@
       <button class="admin-tab on" data-admin-tab="players">Players</button>
       <button class="admin-tab" data-admin-tab="emojis">Emojis</button>
       <button class="admin-tab" data-admin-tab="filter">Filter</button>
+      <button class="admin-tab" data-admin-tab="codes">Codes</button>
     </div>
 
     <div class="admin-pane" id="admin-pane-players">
@@ -450,6 +624,24 @@
       <div class="admin-block">
         <div class="ab-title">Filtered Words</div>
         <div class="admin-emoji-list" id="admin-filter-list"></div>
+      </div>
+    </div>
+
+    <div class="admin-pane hidden" id="admin-pane-codes">
+      <div class="admin-block">
+        <div class="ab-title">Generate a Code</div>
+        <div class="ab-row">
+          <select class="fld-input" id="gen-code-type">
+            <option value="orbs">Orbs</option>
+            <option value="premium">Premium (days)</option>
+          </select>
+          <input class="fld-input" id="gen-code-value" type="number" min="1" placeholder="Amount">
+          <button class="btn-accent-inline slim" id="gen-code-btn">Generate</button>
+        </div>
+      </div>
+      <div class="admin-block">
+        <div class="ab-title">Recent Codes</div>
+        <div id="admin-codes-list" class="admin-user-list" style="max-height:320px;"></div>
       </div>
     </div>
   </div>
