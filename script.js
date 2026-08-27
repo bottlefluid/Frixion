@@ -65,6 +65,16 @@ const SESSION_KEY = 'frixion_user';
 const ADMIN_HASH = 'f7c323a01e4a88630c1301300a5212a6d21c874c5dee36d26de35cb9b75ca8d4'; // sha256("theflyisflying")
 
 const AVATAR_COLORS = ['#5865f2','#eb459e','#ed4245','#f0b232','#23a55a','#00a8fc','#9b59b6','#e67e22','#1abc9c'];
+const BANNER_GRADIENTS = [
+  'linear-gradient(135deg,#f5576c,#f093fb)',
+  'linear-gradient(135deg,#4facfe,#00f2fe)',
+  'linear-gradient(135deg,#43e97b,#38f9d7)',
+  'linear-gradient(135deg,#fa709a,#fee140)',
+  'linear-gradient(135deg,#30cfd0,#330867)',
+  'linear-gradient(135deg,#a18cd1,#fbc2eb)',
+  'linear-gradient(135deg,#ff9a9e,#fecfef)',
+  'linear-gradient(135deg,#5865f2,#eb459e)',
+];
 
 // Exact Discord appearance theme names. Dark/Light/Sync are free; Ash/Onyx are Premium-exclusive.
 const THEMES = [
@@ -110,6 +120,17 @@ async function ensureQuestsFresh(profile) {
 // UPDATE LOG — newest first. Add a new entry after every update.
 // ============================================================
 const UPDATES = [
+  { v: '1.7', date: '2026-08-25', title: 'Mobile support, gradient banners, and load-time fixes',
+    notes: [
+      'Added a phone-friendly layout: the server rail stays put and the channel/DM list slides over for the chat area, with a back button. (Tablets like iPad keep the regular desktop-style layout.)',
+      'Fixed the flash on refresh — Frixion now shows a loading splash instead of briefly flashing the login screen before signing you in.',
+      'Fixed a flash when opening a server — shows a loading spinner instead of an empty "no conversation" flicker while channels load.',
+      'Fixed a bug where switching from a channel in one server to another server could fail to select a channel at all.',
+      'Fixed a server with zero channels getting stuck instead of showing an empty state.',
+      'Frixion Premium members can now set a gradient banner on their profile, not just a solid color.',
+      'Fixed the bio field on profiles rendering as an unstyled white box.',
+      'Status (Online/Idle/Do Not Disturb/Invisible) is a setting you control yourself, not automatic presence — closing the tab without logging out can leave you shown as online until you sign back in.',
+    ] },
   { v: '1.6', date: '2026-08-24', title: 'Friends, profiles, group DMs, gifting, and a lot more',
     notes: [
       'Frixion Premium now costs 1400 Orbs and lasts 3 days, and Quests reset every day instead of being one-time.',
@@ -501,6 +522,7 @@ async function boot() {
 }
 
 function showAuthScreen() {
+  $('boot-screen').classList.add('hidden');
   $('auth-screen').classList.remove('hidden');
   $('app').classList.add('hidden');
   $('login-view').classList.remove('hidden');
@@ -508,6 +530,7 @@ function showAuthScreen() {
 }
 
 function enterApp() {
+  $('boot-screen').classList.add('hidden');
   $('auth-screen').classList.add('hidden');
   $('app').classList.remove('hidden');
   isAdmin = !!(myProfile && myProfile.op);
@@ -733,6 +756,18 @@ $('confirm-join-server').onclick = async () => {
 };
 
 // ============================================================
+// MOBILE (phone-width) LAYOUT
+// A phone screen shows one pane at a time: the server rail is always
+// visible; the channel/DM list and the chat area slide in and out via
+// a class on #app, driven by whichever navigation function is active.
+// ============================================================
+function isMobile() { return window.matchMedia('(max-width: 600px)').matches; }
+function setMobilePane(pane) {
+  $('app').classList.toggle('mobile-show-chat', pane === 'chat');
+}
+$('back-to-list-btn').onclick = () => setMobilePane('list');
+
+// ============================================================
 // HOME VIEW (DMs)
 // ============================================================
 function hideMainPageViews() {
@@ -758,6 +793,7 @@ function showHomeView() {
   document.querySelectorAll('.home-nav-item').forEach(i => i.classList.remove('active'));
   document.querySelector('.home-nav-item[data-home-view="friends"]').classList.add('active');
   openHomeMainView('friends');
+  setMobilePane('list');
   renderDMRows();
 }
 
@@ -781,6 +817,7 @@ function openHomeMainView(which) {
   if (which === 'friends') { currentView = 'friends'; $('chat-header-title').textContent = 'Friends'; $('friends-view').classList.remove('hidden'); renderFriendsView(); }
   else if (which === 'quests') { currentView = 'quests'; $('chat-header-title').textContent = 'Quests'; $('quests-view').classList.remove('hidden'); renderQuests(); }
   else if (which === 'codes') { currentView = 'codes'; $('chat-header-title').textContent = 'Codes'; $('codes-view').classList.remove('hidden'); }
+  setMobilePane('chat');
   renderDMRows();
 }
 
@@ -878,6 +915,7 @@ async function selectDM(id, otherUid) {
   showHeaderActions();
   renderDMRows();
   showChat();
+  setMobilePane('chat');
   if (unsub.messages) unsub.messages();
   unsub.messages = db.collection('dms').doc(id).collection('messages').orderBy('createdAt', 'asc')
     .onSnapshot(snap => {
@@ -906,6 +944,7 @@ async function selectGroupDM(id) {
   $('pins-toggle').classList.remove('hidden');
   renderDMRows();
   showChat();
+  setMobilePane('chat');
   if (unsub.messages) unsub.messages();
   unsub.messages = db.collection('groupDMs').doc(id).collection('messages').orderBy('createdAt', 'asc')
     .onSnapshot(snap => {
@@ -980,20 +1019,33 @@ $('user-panel').addEventListener('click', (e) => {
 
 function renderBannerSwatches(current) {
   const wrap = $('banner-color-swatches');
+  const gradWrap = $('banner-gradient-swatches');
   wrap.innerHTML = '';
   wrap.dataset.chosen = current;
-  AVATAR_COLORS.forEach(c => {
+  const clearSelected = () => document.querySelectorAll('#banner-color-swatches .swatch, #banner-gradient-swatches .swatch').forEach(s => s.classList.remove('selected'));
+  const makeSwatch = (bg, locked) => {
     const sw = document.createElement('div');
-    sw.className = 'swatch' + (current === c ? ' selected' : '');
-    sw.style.background = c;
-    sw.onclick = () => {
-      wrap.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
-      sw.classList.add('selected');
-      wrap.dataset.chosen = c;
-      $('profile-banner').style.background = c;
-    };
-    wrap.appendChild(sw);
-  });
+    sw.className = 'swatch' + (current === bg ? ' selected' : '') + (locked ? ' locked-swatch' : '');
+    sw.style.background = bg;
+    if (locked) {
+      sw.innerHTML = `<span class="swatch-lock">${icon('shield')}</span>`;
+      sw.onclick = () => openPremiumModal();
+    } else {
+      sw.onclick = () => {
+        clearSelected();
+        sw.classList.add('selected');
+        wrap.dataset.chosen = bg;
+        $('profile-banner').style.background = bg;
+      };
+    }
+    return sw;
+  };
+  AVATAR_COLORS.forEach(c => wrap.appendChild(makeSwatch(c, false)));
+
+  gradWrap.innerHTML = '';
+  const premium = isPremium(myProfile);
+  BANNER_GRADIENTS.forEach(g => gradWrap.appendChild(makeSwatch(g, !premium)));
+  $('banner-gradient-label').textContent = premium ? 'Gradient Banners' : 'Gradient Banners (Frixion Premium)';
 }
 
 function openGiftModal(username) {
@@ -1205,7 +1257,7 @@ async function removeFriend(username) {
 async function selectServer(server) {
   currentServerId = server.id;
   currentServerData = server;
-  currentDMId = null; currentDMOtherUid = null;
+  currentDMId = null; currentDMOtherUid = null; currentGroupDMId = null; currentChannelId = null;
   currentView = 'none';
   document.querySelectorAll('#server-rail-list .rail-item').forEach(e => e.classList.remove('active'));
   $('rail-home').classList.remove('active');
@@ -1213,7 +1265,8 @@ async function selectServer(server) {
   $('side-header-title').textContent = server.name;
   $('dm-list').classList.add('hidden');
   $('channel-list').classList.remove('hidden');
-  showWelcome();
+  showLoadingView();
+  setMobilePane('list');
   subscribeChannels(server.id);
   renderMemberPanel(server);
 }
@@ -1266,6 +1319,7 @@ function subscribeChannels(serverId) {
       lastChannelsList = channels;
       renderChannelRows(channels);
       if (!currentChannelId && channels.length) selectChannel(channels[0]);
+      else if (!channels.length) showWelcome();
     });
   unsub.categories = db.collection('servers').doc(serverId).collection('categories').orderBy('createdAt', 'asc')
     .onSnapshot(snap => {
@@ -1357,6 +1411,7 @@ function selectChannel(channel) {
   showHeaderActions();
   renderChannelRows(lastChannelsList);
   showChat();
+  setMobilePane('chat');
   if (unsub.messages) unsub.messages();
   unsub.messages = db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id)
     .collection('messages').orderBy('createdAt', 'asc')
@@ -1500,6 +1555,7 @@ async function renderMemberPanel(server) {
 // ============================================================
 function showWelcome() {
   hideMainPageViews();
+  $('loading-view').classList.add('hidden');
   $('welcome-view').classList.remove('hidden');
   $('chat-view').classList.add('hidden');
   $('chat-header-hash').textContent = '';
@@ -1509,8 +1565,19 @@ function showWelcome() {
 }
 function showChat() {
   hideMainPageViews();
+  $('loading-view').classList.add('hidden');
   $('welcome-view').classList.add('hidden');
   $('chat-view').classList.remove('hidden');
+}
+function showLoadingView() {
+  hideMainPageViews();
+  $('welcome-view').classList.add('hidden');
+  $('chat-view').classList.add('hidden');
+  $('loading-view').classList.remove('hidden');
+  $('members-toggle').classList.add('hidden');
+  hideHeaderActions();
+  $('chat-header-hash').textContent = '';
+  $('chat-header-title').textContent = '';
 }
 
 function renderCurrentView() {
@@ -2304,4 +2371,12 @@ async function adminDelete() {
 // ============================================================
 // BOOT
 // ============================================================
+// Best-effort only: browsers don't guarantee an async write finishes before
+// the page actually unloads, so a hard-closed tab can still get stuck
+// showing "online" until the next login. There's no full presence system
+// here (that needs Firebase Realtime Database's onDisconnect, not Firestore).
+window.addEventListener('beforeunload', () => {
+  if (myUid) { try { db.collection('users').doc(myUid).update({ status: 'offline' }); } catch (e) {} }
+});
+
 boot();
