@@ -1,6 +1,7 @@
 /* ============================================
    FRIXION — script.js
-   A Discord-style client backed by Firebase Firestore.
+   A Discord-style client backed by Firebase Firestore, with
+   Realtime Database for presence and Storage for uploads.
 
    AUTH: username + password only, no email — accounts are
    documents at users/{username}, same pattern as Toblox.
@@ -13,6 +14,53 @@
    as Toblox's admin panel. Operators (op:true on their user
    doc) skip the password entirely, same as Toblox.
 
+   PRESENCE: real online/offline detection needs the Realtime
+   Database product enabled on this Firebase project (separate
+   from Firestore — Console > Build > Realtime Database >
+   Create Database). Once enabled, its rules need to allow the
+   presence path:
+
+   {
+     "rules": {
+       "presence": { ".read": true, "$uid": { ".write": true } }
+     }
+   }
+
+   If Realtime Database isn't enabled, Frixion falls back to the
+   old manual-only status (this is caught automatically — see
+   initPresence below).
+
+   AUTO-DELETE: messages older than 7 days are swept client-side
+   whenever a conversation with auto-delete turned on is opened —
+   there's no server/cron here, so a conversation only actually
+   gets cleaned up the next time someone opens it, not on a fixed
+   schedule.
+
+   UPLOADS: images are uploaded to Imgur (free, anonymous, no
+   backend needed — see IMGUR_CLIENT_ID below). Firebase Storage
+   is NOT used for images, because as of Feb 2026 Google requires
+   every Firebase project to be on the paid Blaze plan just to use
+   Cloud Storage at all, even within the free quota — a real
+   paywall for a hobby project on the Spark plan, which is almost
+   certainly why uploads were failing before this change. Non-image
+   files still go through Firebase Storage as a fallback, so they'll
+   only work once this project is on Blaze; images and GIFs work
+   either way. If you do want general file uploads, the rules they'd
+   need are:
+
+   rules_version = '2';
+   service firebase.storage {
+     match /b/{bucket}/o {
+       match /{allPaths=**} { allow read, write: if true; }
+     }
+   }
+
+   GIFS: search is via the KLIPY API (Tenor shut its public API
+   down for good in mid-2026). Get a free key at
+   https://klipy.com/developers and set GIF_API_KEY below —
+   without one, the GIF button explains that it isn't configured
+   yet rather than failing silently.
+
    REQUIRED Firestore security rules (Firebase Console >
    Firestore > Rules):
 
@@ -20,21 +68,27 @@
    service cloud.firestore {
      match /databases/{database}/documents {
        match /users/{username} {
-         allow read: if request.auth == null || true;
-         allow write: if true;
-       }
-       match /config/{doc} {
          allow read: if true;
          allow write: if true;
+         match /privateNotes/{noteAuthor} { allow read, write: if true; }
        }
+       match /config/{doc} { allow read, write: if true; }
+       match /customEmojis/{id} { allow read, write: if true; }
+       match /stickers/{id} { allow read, write: if true; }
+       match /redeemCodes/{code} { allow read, write: if true; }
        match /servers/{sid} {
          allow read, write: if true;
+         match /categories/{cid} { allow read, write: if true; }
          match /channels/{cid} {
            allow read, write: if true;
            match /messages/{mid} { allow read, write: if true; }
          }
        }
        match /dms/{did} {
+         allow read, write: if true;
+         match /messages/{mid} { allow read, write: if true; }
+       }
+       match /groupDMs/{gid} {
          allow read, write: if true;
          match /messages/{mid} { allow read, write: if true; }
        }
@@ -59,6 +113,15 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const FieldValue = firebase.firestore.FieldValue;
+let rtdb = null;
+try { rtdb = firebase.database(); } catch (e) { console.warn('Realtime Database not available — presence will stay manual-only.', e); }
+let storage = null;
+try { storage = firebase.storage(); } catch (e) { console.warn('Storage not available — uploads will be disabled.', e); }
+
+// Get a free key at https://klipy.com/developers (their API is free, no billing needed) and paste it here to enable GIF search.
+const GIF_API_KEY = '';
+// Get a free Client ID at https://api.imgur.com/oauth2/addclient — pick "Anonymous usage without user authorization" — no billing needed, this is what makes image uploads/paste work.
+const IMGUR_CLIENT_ID = '';
 
 // ---------- constants ----------
 const SESSION_KEY = 'frixion_user';
@@ -120,6 +183,23 @@ async function ensureQuestsFresh(profile) {
 // UPDATE LOG — newest first. Add a new entry after every update.
 // ============================================================
 const UPDATES = [
+  { v: '1.9', date: '2026-08-30', title: 'Fixed uploads, switched off Tenor',
+    notes: [
+      'Tenor shut down its public API for good — switched GIF search to KLIPY, which is free and still issuing API keys. Set GIF_API_KEY near the top of script.js to turn it on.',
+      'Fixed image uploads and pasting: they now go through Imgur instead of Firebase Storage. As of Feb 2026, Firebase requires the paid Blaze plan just to use Cloud Storage at all, even for free-tier usage — almost certainly why uploads were failing. Imgur is free and needs no billing info, just a Client ID (see IMGUR_CLIENT_ID in script.js).',
+      'General (non-image) file uploads still use Firebase Storage, so those specifically will need the project on Blaze to work — images and GIFs no longer need that.',
+    ] },
+  { v: '1.8', date: '2026-08-26', title: 'Real presence, uploads, GIFs, stickers, and message expiry',
+    notes: [
+      'Added real online/offline presence using Realtime Database — it now knows when your connection actually drops (closed tab, crash, lost network), not just what status you last picked. Falls back to manual-only status if Realtime Database isn\'t enabled on the project.',
+      'Messages older than 7 days are now cleaned up automatically per-conversation. This runs the next time someone opens that conversation, not on a fixed schedule, since there\'s no backend cron here.',
+      'Admins can turn auto-delete on or off for any DM, group, or channel from a new Conversations tab in the Admin Panel.',
+      'You can now paste an image straight into the message box, or upload any file with the new attach button.',
+      'Added GIF search powered by Tenor.',
+      'Added stickers — admins publish them from the Admin Panel, everyone can send them from the new sticker picker.',
+      'Admins can now set a custom code instead of a random one when generating an Orb/Premium code.',
+      'The emoji shortcode list grew a lot — every common emoji you\'d expect, including :fire:, now has a :shortcode:.',
+    ] },
   { v: '1.7', date: '2026-08-25', title: 'Mobile support, gradient banners, and load-time fixes',
     notes: [
       'Added a phone-friendly layout: the server rail stays put and the channel/DM list slides over for the chat area, with a back button. (Tablets like iPad keep the regular desktop-style layout.)',
@@ -213,6 +293,7 @@ const ICONS = {
   smiley: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 14c.8 1.2 2 2 3.5 2s2.7-.8 3.5-2" stroke-linecap="round"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/></svg>',
   pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2 2-5 5-4 1 7 7 1-4 5-5 2 2"/><path d="M9 15l-5 5"/></svg>',
   orb: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg>',
+  file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
 };
 function icon(name, cls) { return `<span class="i ${cls||''}">${ICONS[name] || ''}</span>`; }
 
@@ -220,74 +301,112 @@ function icon(name, cls) { return `<span class="i ${cls||''}">${ICONS[name] || '
 const REACT_EMOJIS = ['👍','❤️','😂','🔥','😮','😢','🎉'];
 const EMOJI_CATEGORIES = [
   { key: 'smileys', label: 'Smileys', icon: '😀', items: {
-    grinning:'😀', smile:'😄', laughing:'😆', grin:'😁', joy:'😂', rofl:'🤣', slight_smile:'🙂',
-    upside_down:'🙃', wink:'😉', blush:'😊', innocent:'😇', heart_eyes:'😍', star_struck:'🤩',
-    kissing_heart:'😘', kissing:'😗', yum:'😋', stuck_out_tongue:'😛', sunglasses:'😎', smirk:'😏',
-    unamused:'😒', neutral:'😐', expressionless:'😑', thinking:'🤔', zipper_mouth:'🤐',
-    raised_eyebrow:'🤨', confused:'😕', worried:'😟', slight_frown:'🙁', frowning:'☹️',
-    open_mouth:'😮', hushed:'😯', astonished:'😲', flushed:'😳', pleading:'🥺', cry:'😢',
-    sob:'😭', scream:'😱', angry:'😠', rage:'😡', triumph:'😤', sleepy:'😪', sleeping:'😴',
-    drooling:'🤤', mask:'😷', dizzy_face:'😵', exploding_head:'🤯', cowboy:'🤠', partying:'🥳',
-    woozy:'🥴', nauseated:'🤢', shush:'🤫', clown:'🤡', poop:'💩', ghost:'👻', skull:'💀',
-    alien:'👽', robot:'🤖',
+    grinning:'😀', smiley:'😃', smile:'😄', grin:'😁', laughing:'😆', sweat_smile:'😅', joy:'😂', rofl:'🤣',
+    slight_smile:'🙂', upside_down:'🙃', melting:'🫠', wink:'😉', blush:'😊', innocent:'😇', heart_eyes:'😍',
+    star_struck:'🤩', heart_face:'🥰', kissing:'😗', kissing_closed_eyes:'😚', kissing_smiling_eyes:'😙',
+    kissing_heart:'😘', yum:'😋', stuck_out_tongue:'😛', stuck_out_tongue_winking:'😜',
+    zany:'🤪', sunglasses:'😎', nerd:'🤓', monocle:'🧐', smirk:'😏', unamused:'😒', neutral:'😐',
+    expressionless:'😑', no_mouth:'😶', relieved:'😌', pensive:'😔', sleepy:'😪', drooling:'🤤',
+    sleeping:'😴', thinking:'🤔', zipper_mouth:'🤐', raised_eyebrow:'🤨', money_mouth:'🤑', shush:'🤫',
+    hand_over_mouth:'🤭', yawn:'🥱', confused:'😕', slight_frown:'🙁', frowning:'☹️', open_mouth:'😮',
+    hushed:'😯', astonished:'😲', flushed:'😳', pleading:'🥺', worried:'😟', anguished:'😧',
+    fearful:'😨', cold_sweat:'😰', cry:'😢', sob:'😭', scream:'😱', confounded:'😖', persevere:'😣',
+    disappointed:'😞', sweat:'😓', weary:'😩', tired:'😫', angry:'😠', rage:'😡', triumph:'😤',
+    dizzy_face:'😵', exploding_head:'🤯', cowboy:'🤠', partying:'🥳', woozy:'🥴', sick:'🤢', vomit:'🤮',
+    sneeze:'🤧', hot:'🥵', cold:'🥶', mask:'😷', bandage_face:'🤕', clown:'🤡', poop:'💩',
+    ghost:'👻', skull:'💀', skull_crossbones:'☠️', alien:'👽', robot:'🤖', jack_o_lantern:'🎃',
   } },
   { key: 'people', label: 'People', icon: '👋', items: {
-    wave:'👋', raised_hand:'✋', ok_hand:'👌', pinch:'🤏', vulcan:'🖖', crossed_fingers:'🤞',
-    love_you:'🤟', metal:'🤘', point_up:'☝️', point_down:'👇', point_left:'👈', point_right:'👉',
-    thumbsup:'👍', thumbsdown:'👎', fist:'✊', punch:'👊', clap:'👏', raised_hands:'🙌',
-    pray:'🙏', handshake:'🤝', muscle:'💪', eyes:'👀', brain:'🧠', tongue:'👅', ear:'👂',
-    nose:'👃', baby:'👶', boy:'👦', girl:'👧', man:'👨', woman:'👩', older_man:'👴',
-    older_woman:'👵', cop:'👮', student:'🧑‍🎓', mage:'🧙', vampire:'🧛', zombie:'🧟',
-    superhero:'🦸', supervillain:'🦹',
+    wave:'👋', raised_hand:'✋', raised_back_hand:'🤚', hand_splayed:'🖐️', vulcan:'🖖', ok_hand:'👌',
+    pinch:'🤏', v:'✌️', crossed_fingers:'🤞', love_you:'🤟', metal:'🤘', point_up:'☝️', point_up_2:'👆',
+    point_down:'👇', point_left:'👈', point_right:'👉', middle_finger:'🖕', thumbsup:'👍', thumbsdown:'👎',
+    fist:'✊', fist_left:'🤛', fist_right:'🤜', punch:'👊', clap:'👏', raised_hands:'🙌', open_hands:'👐',
+    palms_up:'🤲', pray:'🙏', handshake:'🤝', writing_hand:'✍️', nail_care:'💅', muscle:'💪',
+    leg:'🦵', foot:'🦶', ear:'👂', nose:'👃', brain:'🧠', tooth:'🦷', eyes:'👀', eye:'👁️', tongue:'👅',
+    lips:'👄', baby:'👶', child:'🧒', boy:'👦', girl:'👧', adult:'🧑', man:'👨', woman:'👩',
+    older_adult:'🧓', older_man:'👴', older_woman:'👵', cop:'👮', guard:'💂', detective:'🕵️',
+    health_worker:'🧑‍⚕️', student:'🧑‍🎓', teacher:'🧑‍🏫', judge:'🧑‍⚖️', farmer:'🧑‍🌾', cook:'🧑‍🍳',
+    mechanic:'🧑‍🔧', scientist:'🧑‍🔬', artist:'🧑‍🎨', pilot:'🧑‍✈️', astronaut:'🧑‍🚀', firefighter:'🧑‍🚒',
+    mage:'🧙', fairy:'🧚', vampire:'🧛', mermaid:'🧜', elf:'🧝', genie:'🧞', zombie:'🧟',
+    superhero:'🦸', supervillain:'🦹', ninja:'🥷',
   } },
   { key: 'animals', label: 'Animals', icon: '🐶', items: {
-    dog:'🐶', cat:'🐱', mouse:'🐭', hamster:'🐹', rabbit:'🐰', fox:'🦊', bear:'🐻',
-    panda:'🐼', koala:'🐨', tiger:'🐯', lion:'🦁', cow:'🐮', pig:'🐷', frog:'🐸',
-    monkey:'🐵', chicken:'🐔', penguin:'🐧', bird:'🐦', unicorn:'🦄', bee:'🐝',
-    butterfly:'🦋', snail:'🐌', turtle:'🐢', snake:'🐍', octopus:'🐙', fish:'🐟',
-    dolphin:'🐬', whale:'🐳', shark:'🦈', crab:'🦀', dragon:'🐉', wolf:'🐺',
-    elephant:'🐘', horse:'🐴', dove:'🕊️',
+    dog:'🐶', cat:'🐱', mouse:'🐭', hamster:'🐹', rabbit:'🐰', fox:'🦊', bear:'🐻', panda:'🐼',
+    koala:'🐨', tiger:'🐯', lion:'🦁', cow:'🐮', pig:'🐷', frog:'🐸', monkey:'🐵', chicken:'🐔',
+    penguin:'🐧', bird:'🐦', baby_chick:'🐤', eagle:'🦅', owl:'🦉', bat:'🦇', wolf:'🐺', boar:'🐗',
+    horse:'🐴', unicorn:'🦄', bee:'🐝', bug:'🐛', butterfly:'🦋', snail:'🐌', ladybug:'🐞', ant:'🐜',
+    spider:'🕷️', scorpion:'🦂', turtle:'🐢', snake:'🐍', lizard:'🦎', t_rex:'🦖', sauropod:'🦕',
+    octopus:'🐙', squid:'🦑', shrimp:'🦐', crab:'🦀', lobster:'🦞', blowfish:'🐡', fish:'🐟',
+    dolphin:'🐬', whale:'🐳', shark:'🦈', crocodile:'🐊', elephant:'🐘', hippo:'🦛', rhino:'🦏',
+    camel:'🐫', giraffe:'🦒', kangaroo:'🦘', zebra:'🦓', gorilla:'🦍', sloth:'🦥', otter:'🦦',
+    skunk:'🦨', raccoon:'🦝', peacock:'🦚', parrot:'🦜', flamingo:'🦩', swan:'🦢', dove:'🕊️',
+    dragon:'🐉', dragon_face:'🐲', paw_prints:'🐾',
   } },
   { key: 'food', label: 'Food', icon: '🍕', items: {
-    apple:'🍎', banana:'🍌', grapes:'🍇', watermelon:'🍉', strawberry:'🍓', peach:'🍑',
-    pineapple:'🍍', carrot:'🥕', corn:'🌽', bread:'🍞', cheese:'🧀', egg:'🥚',
-    bacon:'🥓', pancakes:'🥞', pizza:'🍕', hamburger:'🍔', fries:'🍟', hotdog:'🌭',
-    taco:'🌮', burrito:'🌯', sushi:'🍣', ramen:'🍜', spaghetti:'🍝', popcorn:'🍿',
-    donut:'🍩', cookie:'🍪', cake:'🍰', birthday_cake:'🎂', chocolate:'🍫', candy:'🍬',
-    icecream:'🍦', coffee:'☕', tea:'🍵', beer:'🍺', wine:'🍷', cocktail:'🍸',
-    soda:'🥤',
+    apple:'🍎', green_apple:'🍏', pear:'🍐', tangerine:'🍊', lemon:'🍋', banana:'🍌', watermelon:'🍉',
+    grapes:'🍇', strawberry:'🍓', melon:'🍈', cherries:'🍒', peach:'🍑', mango:'🥭', pineapple:'🍍',
+    coconut:'🥥', kiwi:'🥝', tomato:'🍅', eggplant:'🍆', avocado:'🥑', broccoli:'🥦', carrot:'🥕',
+    corn:'🌽', hot_pepper:'🌶️', potato:'🥔', garlic:'🧄', onion:'🧅', bread:'🍞', croissant:'🥐',
+    baguette:'🥖', pretzel:'🥨', cheese:'🧀', egg:'🥚', bacon:'🥓', pancakes:'🥞', waffle:'🧇',
+    pizza:'🍕', hamburger:'🍔', fries:'🍟', hotdog:'🌭', sandwich:'🥪', taco:'🌮', burrito:'🌯',
+    salad:'🥗', popcorn:'🍿', sushi:'🍣', bento:'🍱', ramen:'🍜', spaghetti:'🍝', curry:'🍛',
+    dumpling:'🥟', shaved_ice:'🍧', icecream:'🍦', doughnut:'🍩', cookie:'🍪', birthday_cake:'🎂',
+    cake:'🍰', cupcake:'🧁', pie:'🥧', chocolate:'🍫', candy:'🍬', lollipop:'🍭', honey:'🍯',
+    coffee:'☕', tea:'🍵', boba:'🧋', beer:'🍺', beers:'🍻', wine:'🍷', champagne:'🍾', cocktail:'🍸',
+    tropical_drink:'🍹', soda:'🥤', milk:'🥛', chopsticks:'🥢',
   } },
   { key: 'activities', label: 'Activities', icon: '⚽', items: {
-    soccer:'⚽', basketball:'🏀', football:'🏈', baseball:'⚾', tennis:'🎾', volleyball:'🏐',
-    rugby:'🏉', pool_8ball:'🎱', bowling:'🎳', golf:'⛳', dart:'🎯', video_game:'🎮',
-    dice:'🎲', chess:'♟️', puzzle:'🧩', guitar:'🎸', microphone:'🎤', headphones:'🎧',
-    trophy:'🏆', medal:'🏅', tada:'🎉', confetti:'🎊', gift:'🎁', balloon:'🎈',
-    fishing:'🎣', skateboard:'🛹', running:'🏃', swimmer:'🏊', biking:'🚴',
+    soccer:'⚽', basketball:'🏀', football:'🏈', baseball:'⚾', softball:'🥎', tennis:'🎾',
+    volleyball:'🏐', rugby:'🏉', frisbee:'🥏', pool_8ball:'🎱', bowling:'🎳', golf:'⛳', dart:'🎯',
+    fishing:'🎣', boxing:'🥊', martial_arts:'🥋', running:'🏃', swimmer:'🏊', surfing:'🏄',
+    weightlifting:'🏋️', biking:'🚴', mountain_biking:'🚵', skateboard:'🛹', skiing:'⛷️',
+    snowboarding:'🏂', ice_skate:'⛸️', trophy:'🏆', medal:'🏅', first_place:'🥇', second_place:'🥈',
+    third_place:'🥉', video_game:'🎮', dice:'🎲', chess:'♟️', puzzle:'🧩', slot_machine:'🎰',
+    guitar:'🎸', piano:'🎹', drum:'🥁', violin:'🎻', trumpet:'🎺', microphone:'🎤', headphones:'🎧',
+    musical_note:'🎵', notes:'🎶', tada:'🎉', confetti:'🎊', gift:'🎁', balloon:'🎈', ticket:'🎫',
+    art:'🎨', clapper:'🎬', circus:'🎪', yoyo:'🪀', kite:'🪁',
   } },
   { key: 'travel', label: 'Travel', icon: '🚗', items: {
-    car:'🚗', taxi:'🚕', bus:'🚌', truck:'🚚', bike:'🚲', motorcycle:'🏍️',
-    train:'🚆', airplane:'✈️', rocket:'🚀', helicopter:'🚁', ship:'🚢', anchor:'⚓',
-    fuelpump:'⛽', traffic_light:'🚦', map:'🗺️', mountain:'⛰️', beach:'🏖️',
-    desert:'🏜️', camping:'🏕️', house:'🏠', city:'🏙️', castle:'🏰', bridge:'🌉',
-    sunrise:'🌅', sunset:'🌇', night:'🌃', rainbow:'🌈', star:'⭐', full_moon:'🌕',
-    sun:'☀️', cloud:'☁️', rain:'🌧️', snow:'❄️', lightning:'⚡', tornado:'🌪️',
+    car:'🚗', taxi:'🚕', bus:'🚌', police_car:'🚓', ambulance:'🚑', fire_truck:'🚒', truck:'🚚',
+    tractor:'🚜', bike:'🚲', scooter:'🛴', motorcycle:'🏍️', train:'🚆', bullettrain:'🚄', tram:'🚊',
+    monorail:'🚝', airplane:'✈️', small_airplane:'🛩️', rocket:'🚀', helicopter:'🚁', canoe:'🛶',
+    sailboat:'⛵', speedboat:'🚤', ship:'🚢', anchor:'⚓', fuelpump:'⛽', traffic_light:'🚦',
+    construction:'🚧', compass:'🧭', map:'🗺️', mountain:'⛰️', volcano:'🌋', camping:'🏕️',
+    beach:'🏖️', desert:'🏜️', island:'🏝️', stadium:'🏟️', house:'🏠', house_garden:'🏡',
+    school:'🏫', hospital:'🏥', bank:'🏦', hotel:'🏨', church:'⛪', mosque:'🕌', castle:'🏰',
+    tent:'⛺', city:'🏙️', bridge:'🌉', tokyo_tower:'🗼', statue_of_liberty:'🗽',
+    sunrise:'🌅', sunset:'🌇', night:'🌃', stars:'🌌', rainbow:'🌈', star:'⭐', star2:'🌟',
+    full_moon:'🌕', new_moon:'🌑', crescent_moon:'🌙', sun:'☀️', cloud:'☁️', partly_sunny:'⛅',
+    rain:'🌧️', thunder_cloud:'⛈️', snow_cloud:'🌨️', snowflake:'❄️', snowman:'⛄', comet:'☄️',
+    fire:'🔥', droplet:'💧', ocean_wave:'🌊', tornado:'🌪️', fog:'🌫️', wind:'🌬️',
   } },
   { key: 'objects', label: 'Objects', icon: '💡', items: {
-    bulb:'💡', flashlight:'🔦', candle:'🕯️', book:'📖', notebook:'📓', pencil:'✏️',
-    pen:'🖊️', paperclip:'📎', scissors:'✂️', lock:'🔒', unlock:'🔓', key:'🔑',
-    hammer:'🔨', wrench:'🔧', gear:'⚙️', magnet:'🧲', gem:'💎', money:'💵',
-    dollar:'💲', credit_card:'💳', envelope:'✉️', package:'📦', phone:'📱',
-    computer:'💻', camera:'📷', tv:'📺', battery:'🔋', bomb:'💣', knife:'🔪',
-    shield:'🛡️', crown:'👑', ring:'💍', umbrella:'☂️', clock:'🕐', hourglass:'⌛',
+    bulb:'💡', flashlight:'🔦', candle:'🕯️', lantern:'🏮', book:'📖', books:'📚', notebook:'📓',
+    bookmark:'🔖', newspaper:'📰', pencil:'✏️', pen:'🖊️', paperclip:'📎', pushpin:'📌', scissors:'✂️',
+    lock:'🔒', unlock:'🔓', key:'🔑', old_key:'🗝️', hammer:'🔨', axe:'🪓', pick:'⛏️', wrench:'🔧',
+    gear:'⚙️', chains:'⛓️', magnet:'🧲', gun:'🔫', bomb:'💣', knife:'🔪', dagger:'🗡️', shield:'🛡️',
+    smoking:'🚬', coffin:'⚰️', urn:'⚱️', gem:'💎', ring:'💍', crown:'👑', lipstick:'💄', hat:'🎩',
+    glasses:'👓', umbrella:'☂️', briefcase:'💼', luggage:'🧳', backpack:'🎒', money:'💵',
+    dollar:'💲', credit_card:'💳', receipt:'🧾', chart:'📈', envelope:'✉️', package:'📦',
+    mailbox:'📫', phone:'📱', telephone:'☎️', computer:'💻', keyboard:'⌨️', printer:'🖨️',
+    camera:'📷', video_camera:'📹', tv:'📺', radio:'📻', battery:'🔋', plug:'🔌', clock:'🕐',
+    alarm_clock:'⏰', hourglass:'⌛', thermometer:'🌡️', toilet:'🚽', shower:'🚿', bathtub:'🛁',
+    soap:'🧼', broom:'🧹', bed:'🛏️', couch:'🛋️', door:'🚪', mirror:'🪞', balloon2:'🎈',
   } },
   { key: 'symbols', label: 'Symbols', icon: '❤️', items: {
     heart:'❤️', orange_heart:'🧡', yellow_heart:'💛', green_heart:'💚', blue_heart:'💙',
-    purple_heart:'💜', black_heart:'🖤', white_heart:'🤍', broken_heart:'💔',
-    sparkling_heart:'💖', two_hearts:'💕', heartbeat:'💓', sparkles:'✨', star2:'🌟',
-    boom:'💥', dizzy:'💫', zzz:'💤', hundred:'💯', check:'✅', x:'❌',
-    warning:'⚠️', question:'❓', exclamation:'❗', no_entry:'🚫', recycle:'♻️',
-    infinity:'♾️', peace:'☮️', yinyang:'☯️', atom:'⚛️', radioactive:'☢️',
-    flag_checkered:'🏁', arrow_up:'⬆️', arrow_down:'⬇️', arrow_left:'⬅️', arrow_right:'➡️',
+    purple_heart:'💜', black_heart:'🖤', white_heart:'🤍', brown_heart:'🤎', broken_heart:'💔',
+    heart_exclamation:'❣️', sparkling_heart:'💖', two_hearts:'💕', revolving_hearts:'💞',
+    heartbeat:'💓', heartpulse:'💗', gift_heart:'💝', cupid:'💘', sparkles:'✨', boom:'💥',
+    dizzy:'💫', zzz:'💤', hundred:'💯', hundred_points:'💯', check:'✅', heavy_check_mark:'✔️',
+    x:'❌', negative_squared_cross_mark:'❎', warning:'⚠️', question:'❓', grey_question:'❔',
+    exclamation:'❗', grey_exclamation:'❕', no_entry:'🚫', prohibited:'🈲', recycle:'♻️',
+    infinity:'♾️', peace:'☮️', yinyang:'☯️', om:'🕉️', atom:'⚛️', radioactive:'☢️', biohazard:'☣️',
+    flag_checkered:'🏁', triangular_flag:'🚩', arrow_up:'⬆️', arrow_down:'⬇️', arrow_left:'⬅️',
+    arrow_right:'➡️', arrows_counterclockwise:'🔄', up_down_arrow:'↕️', musical_notes2:'🎶',
+    speech_balloon:'💬', thought_balloon:'💭', eye_speech_bubble:'👁️‍🗨️', red_circle:'🔴',
+    orange_circle:'🟠', yellow_circle:'🟡', green_circle:'🟢', blue_circle:'🔵', purple_circle:'🟣',
+    black_circle:'⚫', white_circle:'⚪', red_square:'🟥', blue_square:'🟦',
   } },
 ];
 const SHORTCODE_MAP = Object.assign({}, ...EMOJI_CATEGORIES.map(c => c.items));
@@ -384,8 +503,11 @@ function toast(msg, type = '') {
   $('toast-stack').appendChild(el);
   setTimeout(() => el.remove(), 4000);
 }
-function avatarHTML(size, color, letter, status) {
-  return `<div class="avatar" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.42)}px;background:${color}">${esc(letter)}${
+function avatarHTML(size, color, letter, status, avatarUrl) {
+  const inner = avatarUrl
+    ? `<img src="${esc(avatarUrl)}" alt="" loading="lazy">`
+    : esc(letter);
+  return `<div class="avatar${avatarUrl ? ' has-image' : ''}" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.42)}px;background:${avatarUrl ? 'transparent' : color}">${inner}${
     status ? `<span class="status-dot ${status}"></span>` : ''
   }</div>`;
 }
@@ -416,6 +538,61 @@ async function getProfile(uid) {
   } catch (e) {
     return { username: uid, avatarColor: '#5865f2', status: 'offline', premiumUntil: null };
   }
+}
+
+// ============================================================
+// PRESENCE (Realtime Database) — real connected/disconnected
+// state, layered under the user's own manual status. Falls back
+// to manual-only status if Realtime Database isn't enabled on
+// this Firebase project (rtdb stays null — see top of file).
+// ============================================================
+let presenceCache = {};       // uid -> true (connected) | false (disconnected)
+let presenceListeners = {};   // uid -> RTDB ref+callback, so we only subscribe once per uid
+function initPresence() {
+  if (!rtdb || !myUid) return;
+  try {
+    const myRef = rtdb.ref('presence/' + myUid);
+    rtdb.ref('.info/connected').on('value', (snap) => {
+      if (snap.val() === true) {
+        myRef.onDisconnect().set({ online: false, lastChanged: firebase.database.ServerValue.TIMESTAMP })
+          .then(() => myRef.set({ online: true, lastChanged: firebase.database.ServerValue.TIMESTAMP }));
+      }
+    });
+  } catch (e) { console.warn('Presence init failed', e); }
+}
+function teardownPresence() {
+  if (!rtdb || !myUid) return;
+  try { rtdb.ref('presence/' + myUid).set({ online: false, lastChanged: firebase.database.ServerValue.TIMESTAMP }); } catch (e) {}
+  Object.values(presenceListeners).forEach(l => { try { l.ref.off('value', l.cb); } catch (e) {} });
+  presenceListeners = {};
+  presenceCache = {};
+}
+function subscribePresence(uid) {
+  if (!rtdb || presenceListeners[uid]) return;
+  try {
+    const ref = rtdb.ref('presence/' + uid);
+    const cb = (snap) => {
+      const val = snap.val();
+      presenceCache[uid] = !!(val && val.online);
+      renderCurrentView();
+      renderDMRows();
+    };
+    ref.on('value', cb);
+    presenceListeners[uid] = { ref, cb };
+  } catch (e) {}
+}
+// Combines the user's manual status (online/idle/dnd/invisible) with whether
+// they're actually connected right now. "Invisible" always wins — that's the
+// point of it. Otherwise, if we know they're disconnected, show offline
+// regardless of their last manual status.
+function computeDisplayStatus(p, uid) {
+  if (!p) return 'offline';
+  if (p.status === 'offline') return 'offline';
+  if (rtdb) {
+    if (presenceCache[uid] === false) return 'offline';
+    if (presenceCache[uid] === undefined) subscribePresence(uid);
+  }
+  return p.status || 'online';
 }
 
 // ---------- modal wiring ----------
@@ -614,6 +791,7 @@ $('register-btn').onclick = async () => {
 };
 
 $('logout-btn').onclick = async () => {
+  teardownPresence();
   try { if (myUid) await db.collection('users').doc(myUid).update({ status: 'offline' }); } catch (e) {}
   cleanupAllListeners();
   setSession(null);
@@ -640,6 +818,7 @@ function cleanupAllListeners() {
 // APP INIT
 // ============================================================
 function initAppForUser() {
+  initPresence();
   unsub.self = db.collection('users').doc(myUid).onSnapshot(snap => {
     if (!snap.exists) return;
     myProfile = snap.data();
@@ -667,6 +846,7 @@ function initAppForUser() {
   subscribeDMList();
   subscribeCustomEmojis();
   subscribeMessageFilter();
+  subscribeStickers();
   showHomeView();
 }
 
@@ -689,7 +869,8 @@ function applyTheme(themeKey) {
 
 function renderSelfPanel() {
   if (!myProfile) return;
-  $('self-avatar').outerHTML = `<div class="avatar" id="self-avatar" style="width:32px;height:32px;font-size:13px;background:${myProfile.avatarColor}">${initials(myProfile.username)}<span class="status-dot ${myProfile.status || 'online'}"></span></div>`;
+  const inner = avatarHTML(32, myProfile.avatarColor, initials(myProfile.username), computeDisplayStatus(myProfile, myUid), myProfile.avatarUrl);
+  $('self-avatar').outerHTML = inner.replace('class="avatar', 'id="self-avatar" class="avatar');
   $('self-username').innerHTML = esc(myProfile.username) + premiumStar(myProfile) + opTag(myProfile);
   const st = STATUSES.find(s => s.key === (myProfile.status || 'online'));
   $('self-status-label').textContent = st ? st.label : 'Online';
@@ -728,7 +909,7 @@ $('confirm-create-server').onclick = async () => {
     const ref = await db.collection('servers').add({
       name, ownerId: myUid, members: [myUid], inviteCode: genCode(), createdAt: FieldValue.serverTimestamp(),
     });
-    await ref.collection('channels').add({ name: 'general', createdAt: FieldValue.serverTimestamp() });
+    await ref.collection('channels').add({ name: 'general', categoryId: null, autoDelete: true, createdAt: FieldValue.serverTimestamp() });
     $('new-server-name').value = '';
     closeModal('create-server-modal');
     toast('Server created.');
@@ -855,7 +1036,7 @@ function renderDMRows() {
     const p = profileCache[otherUid] || { username: '...', avatarColor: '#5865f2', status: 'offline' };
     const row = document.createElement('div');
     row.className = 'dm-row' + (currentDMId === dm.id ? ' active' : '');
-    row.innerHTML = avatarHTML(32, p.avatarColor, initials(p.username), p.status || 'offline') +
+    row.innerHTML = avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(p, otherUid), p.avatarUrl) +
       `<span class="dm-name">${esc(p.username)}${premiumStar(p)}${opTag(p)}</span>`;
     row.onclick = () => selectDM(dm.id, otherUid);
     wrap.appendChild(row);
@@ -882,7 +1063,7 @@ async function startDMWith(uname) {
   const ref = db.collection('dms').doc(id);
   const dsnap = await ref.get();
   if (!dsnap.exists) {
-    await ref.set({ participants: [myUid, uname], createdAt: FieldValue.serverTimestamp() });
+    await ref.set({ participants: [myUid, uname], autoDelete: true, createdAt: FieldValue.serverTimestamp() });
     db.collection('users').doc(myUid).update({ 'stats.dmsStarted': FieldValue.increment(1) }).catch(() => {});
   }
   selectDM(id, uname);
@@ -916,6 +1097,8 @@ async function selectDM(id, otherUid) {
   renderDMRows();
   showChat();
   setMobilePane('chat');
+  const dmDoc = (window.__myDMs || []).find(d => d.id === id);
+  if (!dmDoc || dmDoc.autoDelete !== false) sweepOldMessages(db.collection('dms').doc(id).collection('messages'));
   if (unsub.messages) unsub.messages();
   unsub.messages = db.collection('dms').doc(id).collection('messages').orderBy('createdAt', 'asc')
     .onSnapshot(snap => {
@@ -945,6 +1128,7 @@ async function selectGroupDM(id) {
   renderDMRows();
   showChat();
   setMobilePane('chat');
+  if (!g || g.autoDelete !== false) sweepOldMessages(db.collection('groupDMs').doc(id).collection('messages'));
   if (unsub.messages) unsub.messages();
   unsub.messages = db.collection('groupDMs').doc(id).collection('messages').orderBy('createdAt', 'asc')
     .onSnapshot(snap => {
@@ -986,7 +1170,7 @@ $('confirm-new-group-dm').onclick = async () => {
   try {
     const participants = [myUid, ...checks];
     const ref = await db.collection('groupDMs').add({
-      name: name || null, participants, ownerId: myUid, createdAt: FieldValue.serverTimestamp(),
+      name: name || null, participants, ownerId: myUid, autoDelete: true, createdAt: FieldValue.serverTimestamp(),
     });
     closeModal('new-group-dm-modal');
     toast('Group created.');
@@ -1066,8 +1250,13 @@ async function openProfileModal(username) {
   } catch (e) { toast('Could not load profile.', 'error'); return; }
 
   $('profile-banner').style.background = p.bannerColor || p.avatarColor || '#5865f2';
-  $('profile-avatar').style.background = p.avatarColor;
-  $('profile-avatar').textContent = initials(p.username);
+  if (p.avatarUrl) {
+    $('profile-avatar').style.background = 'transparent';
+    $('profile-avatar').innerHTML = `<img src="${esc(p.avatarUrl)}" alt="">`;
+  } else {
+    $('profile-avatar').style.background = p.avatarColor;
+    $('profile-avatar').textContent = initials(p.username);
+  }
   $('profile-username').innerHTML = esc(p.username) + premiumStar(p) + opTag(p);
   $('profile-pronouns').textContent = p.pronouns || '';
   $('profile-pronouns').classList.toggle('hidden', !p.pronouns);
@@ -1083,7 +1272,10 @@ async function openProfileModal(username) {
     $('edit-bio').value = p.bio || '';
     renderBannerSwatches(p.bannerColor || p.avatarColor);
     $('profile-actions').innerHTML = '';
+    $('change-avatar-btn').classList.remove('hidden');
+    $('remove-avatar-link').classList.toggle('hidden', !p.avatarUrl);
   } else {
+    $('change-avatar-btn').classList.add('hidden');
     const isFriend = (myProfile.friends || []).includes(username);
     const outgoing = (myProfile.outgoingRequests || []).includes(username);
     const incoming = (myProfile.incomingRequests || []).includes(username);
@@ -1131,10 +1323,196 @@ $('save-profile-btn').onclick = async () => {
   } catch (e) { toast('Could not save profile.', 'error'); }
 };
 
+$('change-avatar-btn').onclick = () => $('avatar-file-input').click();
+$('avatar-file-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { toast('Please choose an image.', 'error'); return; }
+  if (file.size > 8 * 1024 * 1024) { toast('That image is too big (8MB max).', 'error'); return; }
+  toast('Uploading avatar…');
+  try {
+    const url = await uploadImageToImgur(file);
+    await db.collection('users').doc(myUid).update({ avatarUrl: url });
+    toast('Avatar updated.');
+    openProfileModal(myUid);
+  } catch (err) { toast(err.message || 'Avatar upload failed.', 'error'); }
+});
+$('remove-avatar-link').onclick = async () => {
+  try {
+    await db.collection('users').doc(myUid).update({ avatarUrl: FieldValue.delete() });
+    toast('Custom avatar removed.');
+    openProfileModal(myUid);
+  } catch (e) { toast('Could not remove avatar.', 'error'); }
+};
+
 $('gift-btn').onclick = () => { if (currentDMOtherUid) openGiftModal(currentDMOtherUid); };
-$('attach-btn').onclick = () => toast("File uploads aren't available yet.");
-$('gif-btn').onclick = () => toast("GIFs aren't available yet.");
-$('sticker-btn').onclick = () => toast("Stickers aren't available yet.");
+
+// ============================================================
+// UPLOADS (images via Imgur, other files via Firebase Storage
+// as a fallback — see the note at the top of this file about
+// why Storage alone isn't enough anymore)
+// ============================================================
+function humanFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  const units = ['KB', 'MB', 'GB'];
+  let i = -1;
+  do { bytes /= 1024; i++; } while (bytes >= 1024 && i < units.length - 1);
+  return bytes.toFixed(1) + ' ' + units[i];
+}
+async function uploadImageToImgur(file) {
+  if (!IMGUR_CLIENT_ID) throw new Error('Image uploads need a free Imgur Client ID added in script.js (IMGUR_CLIENT_ID).');
+  const formData = new FormData();
+  formData.append('image', file);
+  const res = await fetch('https://api.imgur.com/3/image', {
+    method: 'POST',
+    headers: { Authorization: `Client-ID ${IMGUR_CLIENT_ID}` },
+    body: formData,
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error((data.data && data.data.error) || 'Imgur upload failed.');
+  return data.data.link;
+}
+async function uploadAndSend(file) {
+  if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
+  if (file.size > 10 * 1024 * 1024) { toast('Files over 10MB are not supported here.', 'error'); return; }
+  const isImage = file.type.startsWith('image/');
+  const bar = $('upload-progress');
+  bar.classList.remove('hidden');
+  bar.innerHTML = `<div class="spinner small"></div><span>Uploading ${esc(file.name)}…</span>`;
+  try {
+    let url;
+    if (isImage) {
+      url = await uploadImageToImgur(file);
+    } else if (storage) {
+      const path = `uploads/${myUid}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const ref = storage.ref().child(path);
+      await ref.put(file);
+      url = await ref.getDownloadURL();
+    } else {
+      throw new Error("General file uploads need Firebase Storage on the project's Blaze plan. Images and GIFs work without it.");
+    }
+    await sendToCurrentConversation({
+      text: '', uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
+      attachment: { url, type: isImage ? 'image' : 'file', name: file.name, size: file.size },
+    });
+  } catch (e) { toast(e.message || 'Upload failed.', 'error'); }
+  bar.classList.add('hidden');
+}
+$('attach-btn').onclick = () => $('file-input').click();
+$('file-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (file) uploadAndSend(file);
+});
+$('composer-input').addEventListener('paste', (e) => {
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type && item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) { e.preventDefault(); uploadAndSend(file); }
+      return;
+    }
+  }
+});
+
+// ============================================================
+// STICKERS
+// ============================================================
+let stickerCache = {};
+function subscribeStickers() {
+  db.collection('stickers').onSnapshot(snap => {
+    const map = {};
+    snap.forEach(d => { map[d.id] = d.data(); });
+    stickerCache = map;
+    renderStickerGrid();
+  });
+}
+function renderStickerGrid() {
+  const wrap = $('sticker-grid');
+  if (!wrap) return;
+  const names = Object.keys(stickerCache).sort();
+  wrap.innerHTML = names.length
+    ? names.map(n => `<button type="button" title="${esc(n)}"><img src="${stickerCache[n].dataUrl}" alt="${esc(n)}"></button>`).join('')
+    : '<div class="ep-empty">No stickers published yet</div>';
+  wrap.querySelectorAll('button').forEach((btn, i) => {
+    btn.onclick = async () => {
+      $('sticker-picker-panel').classList.add('hidden');
+      try {
+        await sendToCurrentConversation({
+          uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
+          sticker: { name: names[i], dataUrl: stickerCache[names[i]].dataUrl },
+        });
+      } catch (e) { toast('Could not send sticker.', 'error'); }
+    };
+  });
+}
+$('sticker-btn').onclick = (e) => {
+  e.stopPropagation();
+  $('emoji-picker-panel').classList.add('hidden');
+  $('gif-picker-panel').classList.add('hidden');
+  $('sticker-picker-panel').classList.toggle('hidden');
+  renderStickerGrid();
+};
+
+// ============================================================
+// GIFS (Tenor)
+// ============================================================
+async function klipySearch(query) {
+  const grid = $('gif-grid');
+  if (!GIF_API_KEY) {
+    grid.innerHTML = '<div class="ep-empty">GIF search needs a free KLIPY API key added in script.js (GIF_API_KEY).</div>';
+    return;
+  }
+  grid.innerHTML = '<div class="ep-empty">Searching…</div>';
+  try {
+    // KLIPY's own migration guide is "swap tenor.googleapis.com for api.klipy.com" —
+    // same query shape as Tenor's v2 API. If KLIPY has since changed this path,
+    // check https://docs.klipy.com/migrate-from-tenor for the current one.
+    const endpoint = query
+      ? `https://api.klipy.com/v2/search?q=${encodeURIComponent(query)}&key=${GIF_API_KEY}&limit=24&media_filter=tinygif`
+      : `https://api.klipy.com/v2/featured?key=${GIF_API_KEY}&limit=24&media_filter=tinygif`;
+    const res = await fetch(endpoint);
+    const data = await res.json();
+    const results = data.results || [];
+    grid.innerHTML = results.length
+      ? results.map(r => {
+          const gif = r.media_formats && (r.media_formats.tinygif || r.media_formats.gif);
+          return gif ? `<button type="button" class="gif-thumb"><img src="${gif.url}" alt=""></button>` : '';
+        }).join('')
+      : '<div class="ep-empty">No GIFs found.</div>';
+    grid.querySelectorAll('.gif-thumb').forEach((btn, i) => {
+      const gif = results[i].media_formats && (results[i].media_formats.gif || results[i].media_formats.tinygif);
+      btn.onclick = async () => {
+        $('gif-picker-panel').classList.add('hidden');
+        try {
+          await sendToCurrentConversation({
+            text: '', uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
+            gifUrl: gif.url,
+          });
+        } catch (e) { toast('Could not send GIF.', 'error'); }
+      };
+    });
+  } catch (e) { grid.innerHTML = '<div class="ep-empty">GIF search failed.</div>'; }
+}
+let gifSearchDebounce = null;
+$('gif-search').addEventListener('input', () => {
+  clearTimeout(gifSearchDebounce);
+  gifSearchDebounce = setTimeout(() => klipySearch($('gif-search').value.trim()), 350);
+});
+$('gif-btn').onclick = (e) => {
+  e.stopPropagation();
+  $('emoji-picker-panel').classList.add('hidden');
+  $('sticker-picker-panel').classList.add('hidden');
+  const willOpen = $('gif-picker-panel').classList.contains('hidden');
+  $('gif-picker-panel').classList.toggle('hidden');
+  if (willOpen) { $('gif-search').value = ''; klipySearch(''); }
+};
+document.addEventListener('click', (e) => {
+  if (!$('sticker-picker-panel').contains(e.target) && !e.target.closest('#sticker-btn')) $('sticker-picker-panel').classList.add('hidden');
+  if (!$('gif-picker-panel').contains(e.target) && !e.target.closest('#gif-btn')) $('gif-picker-panel').classList.add('hidden');
+});
 
 $('redeem-code-btn') && ($('redeem-code-btn').onclick = redeemCode);
 function renderCodesView() { /* form is static; nothing to refresh */ }
@@ -1169,7 +1547,7 @@ function friendRowHTML(username, kind) {
     actions = `<span class="quest-locked">Pending</span><button class="btn-secondary slim" data-cancel="${esc(username)}">Cancel</button>`;
   }
   return `<div class="friend-row">
-    ${avatarHTML(36, p.avatarColor, initials(p.username), p.status || 'offline')}
+    ${avatarHTML(36, p.avatarColor, initials(p.username), computeDisplayStatus(p, username), p.avatarUrl)}
     <span class="friend-row-name" data-openprofile="${esc(username)}">${esc(p.username)}${premiumStar(p)}${opTag(p)}</span>
     <span class="friend-row-actions">${actions}</span>
   </div>`;
@@ -1383,7 +1761,7 @@ $('confirm-create-channel').onclick = async () => {
   const name = sanitizeChannelName($('new-channel-name').value || '');
   const categoryId = $('new-channel-category').value || null;
   if (!currentServerId) return;
-  await db.collection('servers').doc(currentServerId).collection('channels').add({ name, categoryId, createdAt: FieldValue.serverTimestamp() });
+  await db.collection('servers').doc(currentServerId).collection('channels').add({ name, categoryId, autoDelete: true, createdAt: FieldValue.serverTimestamp() });
   closeModal('create-channel-modal');
 };
 
@@ -1412,6 +1790,7 @@ function selectChannel(channel) {
   renderChannelRows(lastChannelsList);
   showChat();
   setMobilePane('chat');
+  if (channel.autoDelete !== false) sweepOldMessages(db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id).collection('messages'));
   if (unsub.messages) unsub.messages();
   unsub.messages = db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id)
     .collection('messages').orderBy('createdAt', 'asc')
@@ -1455,7 +1834,7 @@ function renderPinnedList(pinned) {
   wrap.innerHTML = pinned.map(m => {
     const p = profileCache[m.uid] || { username: m.username || 'Unknown User', avatarColor: '#5865f2' };
     return `<div class="pinned-row" data-mid="${esc(m.id)}">
-      ${avatarHTML(34, p.avatarColor, initials(p.username))}
+      ${avatarHTML(34, p.avatarColor, initials(p.username), null, p.avatarUrl)}
       <div class="pr-body">
         <div class="pr-head"><span class="pr-author">${esc(p.username)}</span><span class="pr-time">${timeStr(m.createdAt)}</span></div>
         <div class="pr-text">${renderMessageText(m.text)}</div>
@@ -1472,6 +1851,27 @@ function msgRef(msgId) {
   if (currentView === 'dm') return db.collection('dms').doc(currentDMId).collection('messages').doc(msgId);
   if (currentView === 'groupdm') return db.collection('groupDMs').doc(currentGroupDMId).collection('messages').doc(msgId);
   return null;
+}
+function msgCollectionRef() {
+  if (currentView === 'channel') return db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages');
+  if (currentView === 'dm') return db.collection('dms').doc(currentDMId).collection('messages');
+  if (currentView === 'groupdm') return db.collection('groupDMs').doc(currentGroupDMId).collection('messages');
+  return null;
+}
+// Best-effort, client-triggered cleanup — there's no server/cron here, so a
+// conversation's old messages only actually get swept the next time someone
+// with auto-delete turned on for it opens the conversation.
+const MESSAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+async function sweepOldMessages(ref) {
+  if (!ref) return;
+  try {
+    const cutoff = firebase.firestore.Timestamp.fromMillis(Date.now() - MESSAGE_TTL_MS);
+    const snap = await ref.where('createdAt', '<', cutoff).get();
+    if (snap.empty) return;
+    const batch = db.batch();
+    snap.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  } catch (e) { console.warn('Auto-delete sweep failed', e); }
 }
 async function togglePin(msgId, forceUnpin) {
   const msg = lastRawMessages.find(m => m.id === msgId);
@@ -1534,14 +1934,15 @@ async function renderMemberPanel(server) {
   const online = [], offline = [];
   members.forEach(uid => {
     const p = profileCache[uid] || { username: uid, avatarColor: '#5865f2', status: 'offline' };
-    (p.status && p.status !== 'offline' ? online : offline).push({ uid, p });
+    const disp = computeDisplayStatus(p, uid);
+    (disp !== 'offline' ? online : offline).push({ uid, p, disp });
   });
   $('online-count').textContent = online.length;
   $('offline-count').textContent = offline.length;
-  const renderRows = (arr) => arr.map(({ uid, p }) => `
+  const renderRows = (arr) => arr.map(({ uid, p, disp }) => `
     <div class="member-row" data-u="${esc(uid)}">
-      ${avatarHTML(32, p.avatarColor, initials(p.username), p.status || 'offline')}
-      <span class="mname${p.status !== 'offline' ? ' online-name' : ''}">${esc(p.username)}${premiumStar(p)}${opTag(p)}${uid === server.ownerId ? '<span class="owner-tag">Owner</span>' : ''}</span>
+      ${avatarHTML(32, p.avatarColor, initials(p.username), disp, p.avatarUrl)}
+      <span class="mname${disp !== 'offline' ? ' online-name' : ''}">${esc(p.username)}${premiumStar(p)}${opTag(p)}${uid === server.ownerId ? '<span class="owner-tag">Owner</span>' : ''}</span>
     </div>`).join('');
   $('member-rows-online').innerHTML = renderRows(online);
   $('member-rows-offline').innerHTML = renderRows(offline);
@@ -1598,15 +1999,36 @@ function reactionsHTML(reactions) {
   ).join('') + `</div>`;
 }
 
+function attachmentHTML(m) {
+  if (m.attachment) {
+    if (m.attachment.type === 'image') {
+      return `<div class="msg-attachment"><img src="${esc(m.attachment.url)}" alt="${esc(m.attachment.name)}" loading="lazy"></div>`;
+    }
+    return `<a class="msg-file-card" href="${esc(m.attachment.url)}" target="_blank" rel="noopener">
+      <span class="mfc-icon">${icon('file')}</span>
+      <span class="mfc-body"><span class="mfc-name">${esc(m.attachment.name)}</span><span class="mfc-size">${esc(humanFileSize(m.attachment.size || 0))}</span></span>
+    </a>`;
+  }
+  if (m.gifUrl) {
+    return `<div class="msg-attachment"><img src="${esc(m.gifUrl)}" alt="GIF" loading="lazy"></div>`;
+  }
+  return '';
+}
+
 function buildMessageLineEl(m, canDelete) {
   const pinnable = canPin();
   const line = document.createElement('div');
   line.className = 'msg-line' + (m.pinned ? ' is-pinned' : '');
   const rowWrap = document.createElement('div');
-  rowWrap.className = 'msg-row-wrap';
-  rowWrap.innerHTML =
-    (m.pinned ? `<span class="pin-flag">${icon('pin')}Pinned</span>` : '') +
-    `<span class="msg-text">${renderMessageText(m.text)}</span>` +
+  rowWrap.className = 'msg-row-wrap' + (m.sticker ? ' is-sticker' : '');
+
+  const bodyHTML = m.sticker
+    ? `<img class="msg-sticker" src="${esc(m.sticker.dataUrl)}" alt="${esc(m.sticker.name)}" title="${esc(m.sticker.name)}">`
+    : (m.pinned ? `<span class="pin-flag">${icon('pin')}Pinned</span>` : '') +
+      (m.text ? `<span class="msg-text">${renderMessageText(m.text)}</span>` : '') +
+      attachmentHTML(m);
+
+  rowWrap.innerHTML = bodyHTML +
     `<span class="msg-hover-actions">` +
     `<span class="hover-icon-btn react-btn" title="Add Reaction">${icon('smiley')}</span>` +
     (pinnable ? `<span class="hover-icon-btn pin-msg${m.pinned ? ' on' : ''}" title="${m.pinned ? 'Unpin' : 'Pin Message'}">${icon('pin')}</span>` : '') +
@@ -1685,7 +2107,7 @@ async function renderMessages(rawMsgs) {
       meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}">${esc(p.username)}${premiumStar(p)}${opTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
       body.appendChild(meta);
       body.appendChild(buildMessageLineEl(m, canDelete));
-      groupEl.innerHTML = avatarHTML(40, p.avatarColor, initials(p.username));
+      groupEl.innerHTML = avatarHTML(40, p.avatarColor, initials(p.username), null, p.avatarUrl);
       groupEl.appendChild(body);
       wrap.appendChild(groupEl);
     }
@@ -1739,6 +2161,27 @@ async function deleteMessage(id) {
   } catch (e) { toast('Could not delete message.', 'error'); }
 }
 
+async function sendToCurrentConversation(payload) {
+  if (currentView === 'channel') {
+    await db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').add(payload);
+    db.collection('users').doc(myUid).update({ 'dailyStats.channelsMessaged': FieldValue.increment(1) }).catch(() => {});
+  } else if (currentView === 'dm') {
+    await db.collection('dms').doc(currentDMId).collection('messages').add(payload);
+    await db.collection('dms').doc(currentDMId).update({ updatedAt: FieldValue.serverTimestamp() });
+    db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
+  } else if (currentView === 'groupdm') {
+    await db.collection('groupDMs').doc(currentGroupDMId).collection('messages').add(payload);
+    await db.collection('groupDMs').doc(currentGroupDMId).update({ updatedAt: FieldValue.serverTimestamp() });
+    db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
+  } else {
+    throw new Error('No conversation selected.');
+  }
+  db.collection('users').doc(myUid).update({
+    'stats.messagesSent': FieldValue.increment(1),
+    'dailyStats.messagesSent': FieldValue.increment(1),
+  }).catch(() => {});
+}
+
 async function sendMessage() {
   const input = $('composer-input');
   const raw = input.value.trim();
@@ -1746,24 +2189,8 @@ async function sendMessage() {
   input.value = '';
   autoResize(input);
   const text = applyMessageFilter(raw);
-  const payload = { text, uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp() };
   try {
-    if (currentView === 'channel') {
-      await db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').add(payload);
-      db.collection('users').doc(myUid).update({ 'dailyStats.channelsMessaged': FieldValue.increment(1) }).catch(() => {});
-    } else if (currentView === 'dm') {
-      await db.collection('dms').doc(currentDMId).collection('messages').add(payload);
-      await db.collection('dms').doc(currentDMId).update({ updatedAt: FieldValue.serverTimestamp() });
-      db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
-    } else if (currentView === 'groupdm') {
-      await db.collection('groupDMs').doc(currentGroupDMId).collection('messages').add(payload);
-      await db.collection('groupDMs').doc(currentGroupDMId).update({ updatedAt: FieldValue.serverTimestamp() });
-      db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
-    }
-    db.collection('users').doc(myUid).update({
-      'stats.messagesSent': FieldValue.increment(1),
-      'dailyStats.messagesSent': FieldValue.increment(1),
-    }).catch(() => {});
+    await sendToCurrentConversation({ text, uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp() });
   } catch (e) { toast('Failed to send message.', 'error'); }
 }
 // No explicit Send button — matches Discord's real composer (Enter to send).
@@ -1903,8 +2330,10 @@ function genRedeemCode() {
   const seg = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
   return `FRX-${seg()}-${seg()}`;
 }
-async function createRedeemCode(type, value, createdBy) {
-  const code = genRedeemCode();
+async function createRedeemCode(type, value, createdBy, customCode) {
+  const code = (customCode || '').trim().toUpperCase() || genRedeemCode();
+  const existing = await db.collection('redeemCodes').doc(code).get();
+  if (existing.exists) throw new Error('That code is already in use.');
   await db.collection('redeemCodes').doc(code).set({
     code, type, value, createdBy, redeemedBy: null, createdAt: FieldValue.serverTimestamp(), redeemedAt: null,
   });
@@ -1942,7 +2371,7 @@ async function giftPremiumTo(recipientUsername) {
     const dmId = dmIdFor(myUid, recipientUsername);
     const ref = db.collection('dms').doc(dmId);
     const dsnap = await ref.get();
-    if (!dsnap.exists) await ref.set({ participants: [myUid, recipientUsername], createdAt: FieldValue.serverTimestamp() });
+    if (!dsnap.exists) await ref.set({ participants: [myUid, recipientUsername], autoDelete: true, createdAt: FieldValue.serverTimestamp() });
     await ref.collection('messages').add({
       text: `Gifted Frixion Premium! Redeem this code in Settings > Codes for ${days} days: ${code}`,
       uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
@@ -2111,22 +2540,103 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
     document.querySelectorAll('.admin-pane').forEach(p => p.classList.add('hidden'));
     $('admin-pane-' + tab.dataset.adminTab).classList.remove('hidden');
     if (tab.dataset.adminTab === 'emojis') renderAdminEmojiList();
+    if (tab.dataset.adminTab === 'stickers') renderAdminStickerList();
     if (tab.dataset.adminTab === 'filter') renderAdminFilterList();
     if (tab.dataset.adminTab === 'codes') renderAdminCodesList();
+    if (tab.dataset.adminTab === 'conversations') renderAdminConversationsList();
   };
 });
 
 $('gen-code-btn').onclick = async () => {
   const type = $('gen-code-type').value;
   const value = parseInt($('gen-code-value').value || '0', 10);
+  const custom = $('gen-code-custom').value.trim();
   if (!value || value < 1) { toast('Enter an amount.'); return; }
   try {
-    const code = await createRedeemCode(type, value, myUid);
+    const code = await createRedeemCode(type, value, myUid, custom);
     toast(`Generated ${code}`);
     $('gen-code-value').value = '';
+    $('gen-code-custom').value = '';
     renderAdminCodesList();
-  } catch (e) { toast('Could not generate code.', 'error'); }
+  } catch (e) { toast(e.message || 'Could not generate code.', 'error'); }
 };
+
+async function renderAdminConversationsList() {
+  const wrap = $('admin-conversations-list');
+  wrap.innerHTML = '<div class="empty">Loading...</div>';
+  const rows = [];
+  try {
+    const dmSnap = await db.collection('dms').get();
+    dmSnap.forEach(d => rows.push({ label: d.id, ref: d.ref, autoDelete: d.data().autoDelete !== false }));
+
+    const gSnap = await db.collection('groupDMs').get();
+    gSnap.forEach(d => {
+      const data = d.data();
+      const label = 'Group: ' + (data.name || (data.participants || []).join(', '));
+      rows.push({ label, ref: d.ref, autoDelete: data.autoDelete !== false });
+    });
+
+    const serversSnap = await db.collection('servers').get();
+    for (const sDoc of serversSnap.docs) {
+      const sData = sDoc.data();
+      const chSnap = await sDoc.ref.collection('channels').get();
+      chSnap.forEach(c => {
+        rows.push({ label: `${sData.name} / #${c.data().name}`, ref: c.ref, autoDelete: c.data().autoDelete !== false });
+      });
+    }
+  } catch (e) { wrap.innerHTML = '<div class="empty">Could not load conversations.</div>'; return; }
+
+  wrap.innerHTML = rows.length ? rows.map((r, i) => `
+    <div class="admin-row conv-row" style="cursor:default;">
+      <span class="ar-name">${esc(r.label)}</span>
+      <label class="toggle-switch">
+        <input type="checkbox" data-conv-idx="${i}" ${r.autoDelete ? 'checked' : ''}>
+        <span class="toggle-slider"></span>
+      </label>
+      <span class="ab-note">Auto-delete (7d)</span>
+    </div>`).join('') : '<div class="empty">No conversations yet.</div>';
+
+  wrap.querySelectorAll('[data-conv-idx]').forEach(input => {
+    input.onchange = async () => {
+      const row = rows[parseInt(input.dataset.convIdx, 10)];
+      try { await row.ref.update({ autoDelete: input.checked }); }
+      catch (e) { toast('Could not update.', 'error'); input.checked = !input.checked; }
+    };
+  });
+}
+
+function resizeImageToDataURLSized(file, w, h) { return resizeImageToDataURL(file, w, h); }
+
+$('admin-sticker-publish').onclick = async () => {
+  const file = $('admin-sticker-file').files[0];
+  const name = ($('admin-sticker-name').value || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (!file) { toast('Choose an image first.'); return; }
+  if (!name) { toast('Enter a name (letters, numbers, underscore).'); return; }
+  try {
+    const existing = await db.collection('stickers').doc(name).get();
+    if (existing.exists) { toast('That sticker name is already taken.'); return; }
+    const dataUrl = await resizeImageToDataURL(file, 160, 160);
+    await db.collection('stickers').doc(name).set({ name, dataUrl, createdBy: myUid, createdAt: FieldValue.serverTimestamp() });
+    $('admin-sticker-file').value = '';
+    $('admin-sticker-name').value = '';
+    toast(`Published sticker "${name}"`);
+  } catch (e) { toast(e.message || 'Failed to publish sticker.', 'error'); }
+};
+async function renderAdminStickerList() {
+  const wrap = $('admin-sticker-list');
+  wrap.innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    const snap = await db.collection('stickers').get();
+    const items = [];
+    snap.forEach(d => items.push(d.data()));
+    wrap.innerHTML = items.length
+      ? items.map(s => `<div class="admin-emoji-chip" data-n="${esc(s.name)}"><img src="${s.dataUrl}" alt="" style="width:32px;height:32px;"><span>${esc(s.name)}</span><span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
+      : '<div class="empty">No stickers yet.</div>';
+    wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
+      btn.onclick = async () => { await db.collection('stickers').doc(btn.closest('.admin-emoji-chip').dataset.n).delete(); renderAdminStickerList(); };
+    });
+  } catch (e) { wrap.innerHTML = '<div class="empty">Could not load stickers.</div>'; }
+}
 
 async function renderAdminCodesList() {
   const wrap = $('admin-codes-list');
@@ -2230,7 +2740,7 @@ async function renderAdminList() {
   list.innerHTML = users.map(u => {
     const ban = banStatus(u);
     return `<div class="admin-row ${adminSelectedUser === u.username ? 'on' : ''}" data-u="${esc(u.username)}">
-      ${avatarHTML(30, u.avatarColor, initials(u.username))}
+      ${avatarHTML(30, u.avatarColor, initials(u.username), null, u.avatarUrl)}
       <span class="ar-name">${esc(u.username)}</span>
       ${u.op ? '<span class="op-tag">Admin</span>' : ''}${ban.banned ? '<span class="ban-tag">Banned</span>' : ''}
     </div>`;
@@ -2249,7 +2759,7 @@ async function renderAdminActions() {
   const u = snap.data();
   const ban = banStatus(u);
   wrap.innerHTML = `
-    <div class="admin-sel-head">${avatarHTML(44, u.avatarColor, initials(u.username))}<div><div class="as-name">${esc(u.username)}${u.op ? '<span class="op-tag">Admin</span>' : ''}</div><div class="as-sub">${ban.banned ? ('Banned — ' + esc(ban.reason)) : 'Not banned'}</div></div></div>
+    <div class="admin-sel-head">${avatarHTML(44, u.avatarColor, initials(u.username), null, u.avatarUrl)}<div><div class="as-name">${esc(u.username)}${u.op ? '<span class="op-tag">Admin</span>' : ''}</div><div class="as-sub">${ban.banned ? ('Banned — ' + esc(ban.reason)) : 'Not banned'}</div></div></div>
     <div class="admin-block">
       <div class="ab-title">Orbs — Balance: ${u.orbs || 0}</div>
       <div class="ab-row">
