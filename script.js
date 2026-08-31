@@ -183,6 +183,16 @@ async function ensureQuestsFresh(profile) {
 // UPDATE LOG — newest first. Add a new entry after every update.
 // ============================================================
 const UPDATES = [
+  { v: '2.0', date: '2026-08-31', title: 'Custom avatars, mobile swipe, and a bunch of bug fixes',
+    notes: [
+      'You can now upload a custom profile picture instead of the color-and-initial avatar — open your profile and tap the pencil icon (uploads through Imgur, same as image uploads in chat).',
+      'Mobile now animates between the list and chat like Discord\'s app instead of just cutting between them.',
+      'Added swipe gestures for Direct Messages on mobile only: swipe right to close a DM back to the list, swipe left to reopen it. Servers still use taps, not swipes.',
+      'Fixed a real bug: channel rows only responded to clicks on the text itself, not the row around it — this was very likely why switching channels sometimes felt "frozen," you just had to click the exact word. The whole row is clickable now.',
+      'Fixed the flash when opening a server or switching conversations — loading only shows a spinner if it genuinely takes a moment, so fast loads (the common case) show the real content directly instead of flashing through a blank or loading screen first.',
+      'Direct messages now have noticeably more breathing room between them, on both mobile and desktop.',
+      'Turned off text selection across the UI (buttons, names, labels) so dragging around the app doesn\'t highlight text — message content, bios, notes, and anything you type into are still fully selectable.',
+    ] },
   { v: '1.9', date: '2026-08-30', title: 'Fixed uploads, switched off Tenor',
     notes: [
       'Tenor shut down its public API for good — switched GIF search to KLIPY, which is free and still issuing API keys. Set GIF_API_KEY near the top of script.js to turn it on.',
@@ -948,6 +958,79 @@ function setMobilePane(pane) {
 }
 $('back-to-list-btn').onclick = () => setMobilePane('list');
 
+// ---- swipe to open/close, DMs only (not servers) ----
+// Right = close the open DM (back to the list). Left = reopen whatever
+// DM/group/tab you last had open. Dragging follows your finger in real
+// time; the CSS transition only takes back over once you lift your
+// finger, same trick used for the tap-driven pane switches above.
+(function setupDMSwipe() {
+  const zone = $('page-body');
+  let tracking = false, dragging = false, startX = 0, startY = 0, dx = 0;
+
+  function eligible() {
+    return isMobile() && !currentServerId && currentView !== 'none';
+  }
+
+  zone.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1 || !eligible()) { tracking = false; return; }
+    if (e.target.closest('.modal-overlay:not(.hidden)') || e.target.closest('textarea, input')) { tracking = false; return; }
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    tracking = true;
+    dragging = false;
+    dx = 0;
+  }, { passive: true });
+
+  zone.addEventListener('touchmove', (e) => {
+    if (!tracking) return;
+    const x = e.touches[0].clientX, y = e.touches[0].clientY;
+    dx = x - startX;
+    const dy = y - startY;
+    if (!dragging) {
+      if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+      if (Math.abs(dy) > Math.abs(dx)) { tracking = false; return; }
+      dragging = true;
+      $('app').classList.add('mobile-dragging');
+    }
+    const list = $('side-panel'), chat = $('main-col');
+    const width = window.innerWidth;
+    const showingChat = $('app').classList.contains('mobile-show-chat');
+    if (showingChat) {
+      const t = Math.max(0, Math.min(dx, width));
+      chat.style.transform = `translateX(${t}px)`;
+      list.style.transform = `translateX(${t - width}px)`;
+    } else {
+      const t = Math.min(0, Math.max(dx, -width));
+      list.style.transform = `translateX(${t}px)`;
+      chat.style.transform = `translateX(${t + width}px)`;
+    }
+    e.preventDefault();
+  }, { passive: false });
+
+  zone.addEventListener('touchend', () => {
+    if (!dragging) { tracking = false; return; }
+    tracking = false; dragging = false;
+    const width = window.innerWidth;
+    const showingChat = $('app').classList.contains('mobile-show-chat');
+    const toChat = showingChat ? !(dx > width * 0.28) : (dx < -width * 0.28);
+    $('app').classList.remove('mobile-dragging');
+    requestAnimationFrame(() => {
+      $('side-panel').style.transform = '';
+      $('main-col').style.transform = '';
+      setMobilePane(toChat ? 'chat' : 'list');
+    });
+  });
+  zone.addEventListener('touchcancel', () => {
+    if (!dragging) { tracking = false; return; }
+    tracking = false; dragging = false;
+    $('app').classList.remove('mobile-dragging');
+    requestAnimationFrame(() => {
+      $('side-panel').style.transform = '';
+      $('main-col').style.transform = '';
+    });
+  });
+})();
+
 // ============================================================
 // HOME VIEW (DMs)
 // ============================================================
@@ -1097,6 +1180,7 @@ async function selectDM(id, otherUid) {
   renderDMRows();
   showChat();
   setMobilePane('chat');
+  scheduleMsgLoading();
   const dmDoc = (window.__myDMs || []).find(d => d.id === id);
   if (!dmDoc || dmDoc.autoDelete !== false) sweepOldMessages(db.collection('dms').doc(id).collection('messages'));
   if (unsub.messages) unsub.messages();
@@ -1128,6 +1212,7 @@ async function selectGroupDM(id) {
   renderDMRows();
   showChat();
   setMobilePane('chat');
+  scheduleMsgLoading();
   if (!g || g.autoDelete !== false) sweepOldMessages(db.collection('groupDMs').doc(id).collection('messages'));
   if (unsub.messages) unsub.messages();
   unsub.messages = db.collection('groupDMs').doc(id).collection('messages').orderBy('createdAt', 'asc')
@@ -1643,7 +1728,7 @@ async function selectServer(server) {
   $('side-header-title').textContent = server.name;
   $('dm-list').classList.add('hidden');
   $('channel-list').classList.remove('hidden');
-  showLoadingView();
+  scheduleLoadingView();
   setMobilePane('list');
   subscribeChannels(server.id);
   renderMemberPanel(server);
@@ -1722,7 +1807,7 @@ function renderChannelRows(channels) {
     const row = document.createElement('div');
     row.className = 'channel-row' + (currentChannelId === c.id ? ' active' : '');
     row.innerHTML = `<span class="hash">#</span><span class="cname">${esc(c.name)}</span>` + (canManage ? `<span class="del-channel" title="Delete channel">${icon('trash')}</span>` : '');
-    row.querySelector('.cname').onclick = () => selectChannel(c);
+    row.onclick = () => selectChannel(c);
     if (canManage) row.querySelector('.del-channel').onclick = async (e) => {
       e.stopPropagation();
       if (!confirm(`Delete #${c.name}?`)) return;
@@ -1790,6 +1875,7 @@ function selectChannel(channel) {
   renderChannelRows(lastChannelsList);
   showChat();
   setMobilePane('chat');
+  scheduleMsgLoading();
   if (channel.autoDelete !== false) sweepOldMessages(db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id).collection('messages'));
   if (unsub.messages) unsub.messages();
   unsub.messages = db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id)
@@ -1918,6 +2004,7 @@ function hideHeaderActions() {
 }
 
 function onMessagesUpdate(msgs) {
+  cancelMsgLoading();
   lastRawMessages = msgs;
   renderMessages(msgs);
   if (!$('pinned-modal').classList.contains('hidden')) renderPinnedList(msgs.filter(m => m.pinned));
@@ -1954,7 +2041,27 @@ async function renderMemberPanel(server) {
 // ============================================================
 // CHAT VIEW SWITCH
 // ============================================================
+// Both of these use a short delay before actually showing a spinner —
+// if the data arrives before the delay is up (typical, especially from
+// Firestore's local cache), nothing ever flashes on screen at all.
+let loadingViewTimer = null;
+function scheduleLoadingView() {
+  clearTimeout(loadingViewTimer);
+  loadingViewTimer = setTimeout(showLoadingView, 150);
+}
+function cancelLoadingView() { clearTimeout(loadingViewTimer); }
+
+let msgLoadTimer = null;
+function scheduleMsgLoading() {
+  clearTimeout(msgLoadTimer);
+  msgLoadTimer = setTimeout(() => {
+    $('messages').innerHTML = `<div class="msg-loading"><div class="spinner small"></div></div>`;
+  }, 150);
+}
+function cancelMsgLoading() { clearTimeout(msgLoadTimer); }
+
 function showWelcome() {
+  cancelLoadingView();
   hideMainPageViews();
   $('loading-view').classList.add('hidden');
   $('welcome-view').classList.remove('hidden');
@@ -1965,12 +2072,14 @@ function showWelcome() {
   hideHeaderActions();
 }
 function showChat() {
+  cancelLoadingView();
   hideMainPageViews();
   $('loading-view').classList.add('hidden');
   $('welcome-view').classList.add('hidden');
   $('chat-view').classList.remove('hidden');
 }
 function showLoadingView() {
+  cancelLoadingView();
   hideMainPageViews();
   $('welcome-view').classList.add('hidden');
   $('chat-view').classList.add('hidden');

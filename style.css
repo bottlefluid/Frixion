@@ -5,6 +5,17 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Discord's UI chrome isn't selectable — dragging across buttons, names,
+   and labels shouldn't highlight text. Message content, bios, notes, and
+   anything you'd actually type into stay selectable. */
+* { user-select: none; -webkit-user-select: none; -moz-user-select: none; }
+input, textarea,
+.msg-text, .native-emoji, .pinned-row .pr-text, .code-display,
+.profile-section, .profile-username, .mfc-name,
+.ue-notes li, .help-row, .toast {
+  user-select: text; -webkit-user-select: text; -moz-user-select: text;
+}
+
 :root {
   /* ---- default "Frixion Dark" theme ---- */
   --bg-deepest: #1e1f22;      /* server rail */
@@ -130,6 +141,7 @@ a { color: var(--text-link); text-decoration: none; }
 #loading-view {
   flex: 1; display: flex; align-items: center; justify-content: center;
 }
+.msg-loading { flex: 1; display: flex; align-items: center; justify-content: center; }
 
 /* ============ AUTH SCREEN ============ */
 #auth-screen {
@@ -242,6 +254,7 @@ a { color: var(--text-link); text-decoration: none; }
 .channel-row:hover .del-channel { opacity: 1; }
 .channel-row .del-channel:hover { color: var(--danger); }
 
+.dm-row { padding: 9px 8px; margin-bottom: 6px; gap: 10px; }
 .dm-row .avatar { width: 32px; height: 32px; }
 .dm-row .dm-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -788,15 +801,19 @@ a { color: var(--text-link); text-decoration: none; }
   .tb-brand-word { display: none; }
   .tb-win-btn, .tb-sep { display: none; }
 
-  #app, #app.member-list-open { grid-template-columns: 56px 1fr; }
+  #app, #app.member-list-open { grid-template-columns: 56px 1fr; overflow: hidden; }
   #server-rail { width: 56px; }
   .rail-item { width: 42px; height: 42px; font-size: 13px; }
 
-  #side-panel, #main-col { grid-column: 2 / 3; grid-row: 1; min-width: 0; }
-  #side-panel { display: flex; }
-  #main-col { display: none; }
-  #app.mobile-show-chat #side-panel { display: none; }
-  #app.mobile-show-chat #main-col { display: flex; }
+  #side-panel, #main-col {
+    grid-column: 2 / 3; grid-row: 1; min-width: 0; display: flex;
+    transition: transform .28s cubic-bezier(.25,.75,.4,1);
+  }
+  #side-panel { transform: translateX(0); }
+  #main-col { transform: translateX(100%); }
+  #app.mobile-show-chat #side-panel { transform: translateX(-100%); }
+  #app.mobile-show-chat #main-col { transform: translateX(0); }
+  #app.mobile-dragging #side-panel, #app.mobile-dragging #main-col { transition: none; }
 
   .mobile-back-btn { display: flex; }
 
