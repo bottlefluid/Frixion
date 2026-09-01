@@ -67,7 +67,7 @@
     <div class="help-row"><kbd>Shift</kbd> + <kbd>Enter</kbd><span>New line</span></div>
     <div class="help-row"><kbd>:name:</kbd><span>Insert an emoji</span></div>
   </div>
-  <div class="help-foot">Frixion v1.4 — see what's new in Settings → Update Log.</div>
+  <div class="help-foot">Frixion v2.2 — see what's new in Settings → Update Log.</div>
 </div>
 
 <div id="page-body">
@@ -253,18 +253,26 @@
     </div>
 
     <div id="codes-view" class="hidden main-page-view">
-      <div class="mp-header"><span>Codes</span></div>
-      <div class="mp-body" style="max-width:420px;">
-        <p class="desc">Redeem a Frixion code for Orbs or Premium.</p>
-        <div class="field"><label>Code</label><input type="text" id="redeem-code-input" placeholder="FRX-XXXX-XXXX" style="text-transform:uppercase;"></div>
-        <button class="btn-accent-inline" id="redeem-code-btn" style="width:100%;">Redeem</button>
-        <div class="auth-error" id="redeem-code-error"></div>
+      <div class="mp-body codes-page">
+        <section class="codes-card">
+          <div class="codes-kicker">Frixion wallet</div>
+          <h2>Redeem a code</h2>
+          <p class="desc">Enter a code for Orbs or Frixion Premium.</p>
+          <div class="field"><label>Code</label><input type="text" id="redeem-code-input" placeholder="FRX-XXXX-XXXX" style="text-transform:uppercase;"></div>
+          <button class="btn-accent-inline" id="redeem-code-btn">Redeem code</button>
+          <div class="auth-error" id="redeem-code-error"></div>
+        </section>
       </div>
     </div>
 
     <div id="chat-view" class="hidden" style="display:contents;">
       <div id="messages"></div>
       <div id="composer-wrap">
+        <div id="composer-action-menu" class="composer-action-menu hidden">
+          <button type="button" id="attach-file-menu"><span>↥</span>Upload a file</button>
+          <button type="button" id="create-poll-menu"><span>☷</span>Create poll</button>
+          <button type="button" id="use-apps-menu" disabled title="Apps are coming later"><span>✦</span>Use apps <small>Soon</small></button>
+        </div>
         <div id="emoji-picker-panel" class="hidden">
           <div class="ep-search"><input type="text" id="emoji-search" placeholder="Search emoji"></div>
           <div class="ep-cats" id="ep-cats"></div>
@@ -284,8 +292,9 @@
           <div class="gif-grid" id="gif-grid"></div>
         </div>
         <input type="file" id="file-input" class="hidden" accept="image/*,.pdf,.txt,.zip,.mp4,.mp3">
+        <div id="attachment-draft" class="attachment-draft hidden"></div>
         <div id="composer">
-          <button class="composer-icon-btn" id="attach-btn" title="Upload a File"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></button>
+          <button class="composer-icon-btn" id="attach-btn" title="Add attachment or more"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></button>
           <textarea id="composer-input" rows="1" placeholder="Message"></textarea>
           <div class="composer-right-icons">
             <button class="composer-icon-btn" id="gift-btn" title="Gift Frixion Premium"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4"/><rect x="5" y="12" width="14" height="9"/><path d="M12 8v13"/><path d="M12 8c-1.2-2.5-3-3.5-4.2-3-1.2.5-1.3 2 .2 3zM12 8c1.2-2.5 3-3.5 4.2-3 1.2.5 1.3 2-.2 3z"/></svg></button>
@@ -710,6 +719,47 @@
 </div>
 
 <!-- ============ MODAL: pinned messages ============ -->
+<div class="modal-overlay hidden" id="poll-modal">
+  <div class="modal-box poll-modal-box">
+    <div class="modal-header-row"><h2>Create a Poll</h2><span class="x" data-close="poll-modal">✕</span></div>
+    <div class="field"><label>Question</label><input type="text" id="poll-question" maxlength="300" placeholder="What do you want to ask?"></div>
+    <div class="field">
+      <label>Answers</label>
+      <div id="poll-answer-list" class="poll-answer-list"></div>
+      <button type="button" class="btn-secondary slim poll-add-answer" id="poll-add-answer">+ Add another answer</button>
+    </div>
+    <div class="field"><label>Duration</label>
+      <select id="poll-duration" class="fld-input">
+        <option value="3600000">1 hour</option>
+        <option value="14400000">4 hours</option>
+        <option value="86400000" selected>24 hours</option>
+        <option value="259200000">3 days</option>
+        <option value="604800000">7 days</option>
+      </select>
+    </div>
+    <label class="poll-multiple"><input type="checkbox" id="poll-multiple"> Allow multiple answers</label>
+    <div class="modal-actions"><button class="btn-secondary" data-close="poll-modal">Cancel</button><button class="btn-accent-inline" id="poll-submit">Post poll</button></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: friend nickname ============ -->
+<div class="modal-overlay hidden" id="nickname-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2>Edit Friend Nickname</h2><span class="x" data-close="nickname-modal">✕</span></div>
+    <p class="desc" id="nickname-modal-desc"></p>
+    <div class="field"><label>Nickname</label><input type="text" id="friend-nickname-input" maxlength="32" placeholder="Use their username"></div>
+    <div class="modal-actions"><button class="btn-secondary" id="clear-friend-nickname">Reset</button><button class="btn-accent-inline" id="save-friend-nickname">Save</button></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: server discovery ============ -->
+<div class="modal-overlay hidden" id="explore-servers-modal">
+  <div class="modal-box wide explore-modal-box">
+    <div class="modal-header-row"><div><h2>Explore Servers</h2><p class="desc">Every server currently created in Frixion.</p></div><span class="x" data-close="explore-servers-modal">✕</span></div>
+    <div id="explore-server-list" class="explore-server-list"></div>
+  </div>
+</div>
+
 <div class="modal-overlay hidden" id="pinned-modal">
   <div class="modal-box">
     <div class="modal-header-row"><h2>Pinned Messages</h2><span class="x" data-close="pinned-modal">✕</span></div>

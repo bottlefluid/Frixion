@@ -196,6 +196,13 @@ async function ensureQuestsFresh(profile) {
 // UPDATE LOG — newest first. Add a new entry after every update.
 // ============================================================
 const UPDATES = [
+  { v: '2.2', date: '2026-09-01', title: 'Mobile polish, conversation previews, and cleaner themes',
+    notes: [
+      'Phone conversations now use the full screen. The compact server rail stays with the list, instead of squeezing the chat and composer into the remaining space.',
+      'The composer now follows the visible browser viewport when the on-screen keyboard opens or closes, so it stays docked above the keyboard instead of being covered or jumping around.',
+      'Direct messages now show a short recent-message preview on phones. Existing conversations pick up their latest message too, and images, files, GIFs, and stickers get a useful label instead of a blank line.',
+      'Dark, Light, Ash, and Onyx now carry through the settings navigation, account controls, hover surfaces, and popovers as well as the main chat.',
+    ] },
   { v: '2.1', date: '2026-09-01', title: 'Switched to ImgBB, fixed GIF search',
     notes: [
       'Imgur quietly stopped issuing new API keys — image uploads and pasting now go through ImgBB instead. Set IMGBB_API_KEY near the top of script.js (free, no billing) to turn it on.',
@@ -881,10 +888,13 @@ function initAppForUser() {
 
 let systemThemeListenerAdded = false;
 function applyTheme(themeKey) {
-  document.body.className = '';
-  if (themeKey === 'sync') {
+  const key = THEMES.some(theme => theme.key === themeKey) ? themeKey : 'dark';
+  document.body.classList.remove('theme-light', 'theme-ash', 'theme-onyx');
+  document.body.dataset.theme = key;
+  if (key === 'sync') {
     const wantsLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
     if (wantsLight) document.body.classList.add('theme-light');
+    document.documentElement.style.colorScheme = wantsLight ? 'light' : 'dark';
     if (!systemThemeListenerAdded && window.matchMedia) {
       systemThemeListenerAdded = true;
       window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
@@ -893,7 +903,8 @@ function applyTheme(themeKey) {
     }
     return;
   }
-  if (themeKey && themeKey !== 'dark') document.body.classList.add('theme-' + themeKey);
+  document.documentElement.style.colorScheme = key === 'light' ? 'light' : 'dark';
+  if (key !== 'dark') document.body.classList.add('theme-' + key);
 }
 
 function renderSelfPanel() {
@@ -976,6 +987,25 @@ function setMobilePane(pane) {
   $('app').classList.toggle('mobile-show-chat', pane === 'chat');
 }
 $('back-to-list-btn').onclick = () => setMobilePane('list');
+
+// On iOS and some Android webviews, the layout viewport keeps its original
+// height while the software keyboard overlays the page. Use the visual
+// viewport when it is available so the flex layout ends at the keyboard.
+function syncMobileViewport() {
+  const root = document.documentElement;
+  if (!isMobile()) {
+    root.style.removeProperty('--mobile-viewport-height');
+    return;
+  }
+  const visibleHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  root.style.setProperty('--mobile-viewport-height', `${Math.round(visibleHeight)}px`);
+}
+window.addEventListener('resize', syncMobileViewport);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', syncMobileViewport);
+  window.visualViewport.addEventListener('scroll', syncMobileViewport);
+}
+syncMobileViewport();
 
 // ---- swipe to open/close, DMs only (not servers) ----
 // Right = close the open DM (back to the list). Left = reopen whatever
@@ -1111,6 +1141,7 @@ function subscribeDMList() {
     snap.forEach(d => dms.push({ id: d.id, ...d.data() }));
     window.__myDMs = dms;
     await Promise.all(dms.map(dm => getProfile(dm.participants.find(p => p !== myUid))));
+    hydrateConversationPreviews('dms', dms);
     if (currentView !== 'channel') renderDMRows();
   });
   if (unsub.groupDms) unsub.groupDms();
@@ -1119,6 +1150,7 @@ function subscribeDMList() {
     snap.forEach(d => gs.push({ id: d.id, ...d.data() }));
     window.__myGroupDMs = gs;
     await Promise.all(gs.flatMap(g => g.participants.filter(p => p !== myUid).map(p => getProfile(p))));
+    hydrateConversationPreviews('groupDMs', gs);
     if (currentView !== 'channel') renderDMRows();
   });
 }
@@ -1129,26 +1161,61 @@ function groupDMDisplayName(g) {
   return others.map(u => (profileCache[u] || { username: u }).username).join(', ') || 'Group';
 }
 
+function previewForMessage(message, includeAuthor = false) {
+  if (!message) return 'No messages yet';
+  if (typeof message === 'string') return message;
+  let text = (message.text || '').trim();
+  if (!text && message.attachment) text = message.attachment.type === 'image' ? 'Sent a photo' : `Sent ${message.attachment.name || 'a file'}`;
+  if (!text && message.gifUrl) text = 'Sent a GIF';
+  if (!text && message.sticker) text = `Sent a sticker${message.sticker.name ? `: ${message.sticker.name}` : ''}`;
+  if (!text) text = 'New message';
+  return includeAuthor && message.username ? `${message.username}: ${text}` : text;
+}
+
+function timeValue(timestamp) {
+  if (!timestamp) return 0;
+  if (typeof timestamp.toMillis === 'function') return timestamp.toMillis();
+  if (timestamp instanceof Date) return timestamp.getTime();
+  return typeof timestamp === 'number' ? timestamp : 0;
+}
+
+const conversationPreviewCache = new Map();
+async function hydrateConversationPreviews(collection, conversations) {
+  const missing = conversations.filter(conversation => !conversation.lastMessage && !conversationPreviewCache.has(`${collection}:${conversation.id}`));
+  if (!missing.length) return;
+  await Promise.all(missing.map(async conversation => {
+    const key = `${collection}:${conversation.id}`;
+    try {
+      const snap = await db.collection(collection).doc(conversation.id).collection('messages')
+        .orderBy('createdAt', 'desc').limit(1).get();
+      conversationPreviewCache.set(key, snap.empty ? null : snap.docs[0].data());
+    } catch (e) {
+      conversationPreviewCache.set(key, null);
+    }
+  }));
+  renderDMRows();
+}
+
 function renderDMRows() {
   const wrap = $('dm-rows');
   wrap.innerHTML = '';
-  const dms = window.__myDMs || [];
+  const dms = [...(window.__myDMs || [])].sort((a, b) => timeValue(b.updatedAt) - timeValue(a.updatedAt));
   dms.forEach(dm => {
     const otherUid = dm.participants.find(p => p !== myUid);
     const p = profileCache[otherUid] || { username: '...', avatarColor: '#5865f2', status: 'offline' };
     const row = document.createElement('div');
     row.className = 'dm-row' + (currentDMId === dm.id ? ' active' : '');
     row.innerHTML = avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(p, otherUid), p.avatarUrl) +
-      `<span class="dm-name">${esc(p.username)}${premiumStar(p)}${opTag(p)}</span>`;
+      `<div class="dm-copy"><span class="dm-name">${esc(p.username)}${premiumStar(p)}${opTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div>`;
     row.onclick = () => selectDM(dm.id, otherUid);
     wrap.appendChild(row);
   });
-  const groups = window.__myGroupDMs || [];
+  const groups = [...(window.__myGroupDMs || [])].sort((a, b) => timeValue(b.updatedAt) - timeValue(a.updatedAt));
   groups.forEach(g => {
     const name = groupDMDisplayName(g);
     const row = document.createElement('div');
     row.className = 'dm-row' + (currentGroupDMId === g.id ? ' active' : '');
-    row.innerHTML = `<div class="avatar group-avatar" style="width:32px;height:32px;">${icon('people')}</div><span class="dm-name">${esc(name)}</span>`;
+    row.innerHTML = `<div class="avatar group-avatar" style="width:32px;height:32px;">${icon('people')}</div><div class="dm-copy"><span class="dm-name">${esc(name)}</span><span class="dm-preview">${esc(previewForMessage(g.lastMessage || conversationPreviewCache.get(`groupDMs:${g.id}`), true))}</span></div>`;
     row.onclick = () => selectGroupDM(g.id);
     wrap.appendChild(row);
   });
@@ -2321,11 +2388,17 @@ async function sendToCurrentConversation(payload) {
     db.collection('users').doc(myUid).update({ 'dailyStats.channelsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else if (currentView === 'dm') {
     await db.collection('dms').doc(currentDMId).collection('messages').add(payload);
-    await db.collection('dms').doc(currentDMId).update({ updatedAt: FieldValue.serverTimestamp() });
+    await db.collection('dms').doc(currentDMId).update({
+      updatedAt: FieldValue.serverTimestamp(),
+      lastMessage: { text: previewForMessage(payload), username: myProfile.username },
+    });
     db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else if (currentView === 'groupdm') {
     await db.collection('groupDMs').doc(currentGroupDMId).collection('messages').add(payload);
-    await db.collection('groupDMs').doc(currentGroupDMId).update({ updatedAt: FieldValue.serverTimestamp() });
+    await db.collection('groupDMs').doc(currentGroupDMId).update({
+      updatedAt: FieldValue.serverTimestamp(),
+      lastMessage: { text: previewForMessage(payload), username: myProfile.username },
+    });
     db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else {
     throw new Error('No conversation selected.');
