@@ -801,8 +801,19 @@ a { color: var(--text-link); text-decoration: none; }
    safely above this threshold). One pane visible at a time:
    the server rail stays put, and the channel/DM list slides
    for the chat area via a class on #app.
+
+   This has to trigger the same way in landscape as it does in
+   portrait, or rotating the phone drops back into the desktop
+   layout. Checking max-width alone only catches portrait — a
+   phone turned sideways reports a viewport width around 700-900px,
+   which used to fall into the tablet/desktop breakpoint instead.
+   So this checks whichever dimension is the "short" one (width in
+   portrait, height in landscape), scoped to touch devices via
+   (hover: none) and (pointer: coarse) so a resized desktop browser
+   window doesn't get mistaken for a phone.
    ============================================================ */
-@media (max-width: 600px) {
+@media (hover: none) and (pointer: coarse) and (max-width: 600px),
+       (hover: none) and (pointer: coarse) and (max-height: 600px) {
   /* Mobile browsers do not always resize the layout viewport for the
      software keyboard. script.js keeps this variable in sync with the
      visible viewport, so the composer stays immediately above it. */
@@ -814,7 +825,14 @@ a { color: var(--text-link); text-decoration: none; }
      chat span the entire screen. Keeping it beside the chat was what made
      the composer and messages feel cramped on narrow phones. */
   #app, #app.member-list-open { grid-template-columns: 56px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); overflow: hidden; }
-  #server-rail { width: 56px; padding: 8px 0; }
+  /* #main-col spans column 1/-1 (so it can slide over the rail) and
+     #side-panel is pinned to column 2 — both have explicit placement.
+     Without an explicit placement of its own, #server-rail's auto-placement
+     finds row 1 already fully claimed by those two spans and drops itself
+     into a new implicit row instead, which is what pushed it below the
+     rest of the layout instead of beside it. Pin it explicitly so it
+     always lands in row 1, column 1. */
+  #server-rail { grid-column: 1; grid-row: 1; width: 56px; padding: 8px 0; }
   .rail-item { width: 42px; height: 42px; font-size: 13px; }
 
   #side-panel, #main-col {

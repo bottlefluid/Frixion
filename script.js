@@ -982,7 +982,15 @@ $('confirm-join-server').onclick = async () => {
 // visible; the channel/DM list and the chat area slide in and out via
 // a class on #app, driven by whichever navigation function is active.
 // ============================================================
-function isMobile() { return window.matchMedia('(max-width: 600px)').matches; }
+// Keep this in sync with the phone-layout breakpoint in style.css: short
+// side of the screen (whichever axis rotation makes narrow) under 600px,
+// scoped to touch devices so it doesn't also catch a small desktop window.
+function isMobile() {
+  return window.matchMedia(
+    '(hover: none) and (pointer: coarse) and (max-width: 600px), ' +
+    '(hover: none) and (pointer: coarse) and (max-height: 600px)'
+  ).matches;
+}
 function setMobilePane(pane) {
   $('app').classList.toggle('mobile-show-chat', pane === 'chat');
 }
