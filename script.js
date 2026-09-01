@@ -36,17 +36,23 @@
    gets cleaned up the next time someone opens it, not on a fixed
    schedule.
 
-   UPLOADS: images are uploaded to Imgur (free, anonymous, no
-   backend needed — see IMGUR_CLIENT_ID below). Firebase Storage
-   is NOT used for images, because as of Feb 2026 Google requires
-   every Firebase project to be on the paid Blaze plan just to use
-   Cloud Storage at all, even within the free quota — a real
-   paywall for a hobby project on the Spark plan, which is almost
-   certainly why uploads were failing before this change. Non-image
-   files still go through Firebase Storage as a fallback, so they'll
-   only work once this project is on Blaze; images and GIFs work
-   either way. If you do want general file uploads, the rules they'd
-   need are:
+   UPLOADS: images are uploaded to ImgBB (free, no backend needed —
+   see IMGBB_API_KEY below). Not Imgur — Imgur quietly stopped
+   issuing new API applications in late 2025, so that path no longer
+   works for new keys. Not Firebase Storage either, because as of
+   Feb 2026 Google requires every Firebase project to be on the paid
+   Blaze plan just to use Cloud Storage at all, even within the free
+   quota — a real paywall for a hobby project on the Spark plan,
+   which is almost certainly why uploads were failing originally.
+   Non-image files still go through Firebase Storage as a fallback,
+   so they'll only work once this project is on Blaze; images and
+   GIFs work either way. One honest tradeoff: unlike Imgur's
+   Client-ID, an ImgBB key is tied to your personal account and
+   isn't really meant to be public — it's embedded in script.js
+   here anyway, consistent with how the rest of this app already
+   exposes its Firebase config client-side, but worth knowing if you
+   ever want to lock this down harder. If you do want general file
+   uploads, the Storage rules they'd need are:
 
    rules_version = '2';
    service firebase.storage {
@@ -59,7 +65,13 @@
    down for good in mid-2026). Get a free key at
    https://klipy.com/developers and set GIF_API_KEY below —
    without one, the GIF button explains that it isn't configured
-   yet rather than failing silently.
+   yet rather than failing silently. KLIPY's exact response shape
+   for image URLs isn't fully nailed down here (their docs site is
+   a JS app that wouldn't render for me to read directly), so the
+   URL-extraction code tries a few plausible shapes and logs the
+   raw response to the browser console if none of them match —
+   check there and tell me what the real field names are if GIFs
+   still don't show up, and I'll fix it precisely.
 
    REQUIRED Firestore security rules (Firebase Console >
    Firestore > Rules):
@@ -85,6 +97,7 @@
          }
        }
        match /dms/{did} {
+       
          allow read, write: if true;
          match /messages/{mid} { allow read, write: if true; }
        }
@@ -119,9 +132,9 @@ let storage = null;
 try { storage = firebase.storage(); } catch (e) { console.warn('Storage not available — uploads will be disabled.', e); }
 
 // Get a free key at https://klipy.com/developers (their API is free, no billing needed) and paste it here to enable GIF search.
-const GIF_API_KEY = '';
-// Get a free Client ID at https://api.imgur.com/oauth2/addclient — pick "Anonymous usage without user authorization" — no billing needed, this is what makes image uploads/paste work.
-const IMGUR_CLIENT_ID = '';
+const GIF_API_KEY = 'TAGiarX1tDFDJvipS3zo71rD97RUMgnAm0iKBjLVVfJdds2DaeGxJEkcCu6GQU2Z';
+// Get a free key at https://api.imgbb.com/ (click "Get API key", sign in free, no billing needed) — this is what makes image uploads/paste work.
+const IMGBB_API_KEY = '5e07186440c75758ee7f6bd003b1fcd6';
 
 // ---------- constants ----------
 const SESSION_KEY = 'frixion_user';
@@ -183,6 +196,12 @@ async function ensureQuestsFresh(profile) {
 // UPDATE LOG — newest first. Add a new entry after every update.
 // ============================================================
 const UPDATES = [
+  { v: '2.1', date: '2026-09-01', title: 'Switched to ImgBB, fixed GIF search',
+    notes: [
+      'Imgur quietly stopped issuing new API keys — image uploads and pasting now go through ImgBB instead. Set IMGBB_API_KEY near the top of script.js (free, no billing) to turn it on.',
+      'Rebuilt GIF search against KLIPY\'s actual API — the previous version used a "drop-in Tenor replacement" shape from their marketing page that turned out not to work. This one uses their documented native endpoint. If GIFs still don\'t appear, open the browser console — it now logs exactly what KLIPY sent back so the last piece can be wired up precisely.',
+      'Confirmed real presence (online/offline that reflects an actual dropped connection, not just your last manual status) is already in place from a previous update — it needs Realtime Database turned on for this Firebase project to take effect; check the browser console on load for a warning if it isn\'t.',
+    ] },
   { v: '2.0', date: '2026-08-31', title: 'Custom avatars, mobile swipe, and a bunch of bug fixes',
     notes: [
       'You can now upload a custom profile picture instead of the color-and-initial avatar — open your profile and tap the pencil icon (uploads through Imgur, same as image uploads in chat).',
@@ -1417,7 +1436,7 @@ $('avatar-file-input').addEventListener('change', async (e) => {
   if (file.size > 8 * 1024 * 1024) { toast('That image is too big (8MB max).', 'error'); return; }
   toast('Uploading avatar…');
   try {
-    const url = await uploadImageToImgur(file);
+    const url = await uploadImageToImgbb(file);
     await db.collection('users').doc(myUid).update({ avatarUrl: url });
     toast('Avatar updated.');
     openProfileModal(myUid);
@@ -1434,7 +1453,7 @@ $('remove-avatar-link').onclick = async () => {
 $('gift-btn').onclick = () => { if (currentDMOtherUid) openGiftModal(currentDMOtherUid); };
 
 // ============================================================
-// UPLOADS (images via Imgur, other files via Firebase Storage
+// UPLOADS (images via ImgBB, other files via Firebase Storage
 // as a fallback — see the note at the top of this file about
 // why Storage alone isn't enough anymore)
 // ============================================================
@@ -1445,18 +1464,17 @@ function humanFileSize(bytes) {
   do { bytes /= 1024; i++; } while (bytes >= 1024 && i < units.length - 1);
   return bytes.toFixed(1) + ' ' + units[i];
 }
-async function uploadImageToImgur(file) {
-  if (!IMGUR_CLIENT_ID) throw new Error('Image uploads need a free Imgur Client ID added in script.js (IMGUR_CLIENT_ID).');
+async function uploadImageToImgbb(file) {
+  if (!IMGBB_API_KEY) throw new Error('Image uploads need a free ImgBB API key added in script.js (IMGBB_API_KEY).');
   const formData = new FormData();
   formData.append('image', file);
-  const res = await fetch('https://api.imgur.com/3/image', {
+  const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
     method: 'POST',
-    headers: { Authorization: `Client-ID ${IMGUR_CLIENT_ID}` },
     body: formData,
   });
   const data = await res.json();
-  if (!data.success) throw new Error((data.data && data.data.error) || 'Imgur upload failed.');
-  return data.data.link;
+  if (!data.success) throw new Error((data.error && data.error.message) || 'ImgBB upload failed.');
+  return data.data.url;
 }
 async function uploadAndSend(file) {
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
@@ -1468,7 +1486,7 @@ async function uploadAndSend(file) {
   try {
     let url;
     if (isImage) {
-      url = await uploadImageToImgur(file);
+      url = await uploadImageToImgbb(file);
     } else if (storage) {
       const path = `uploads/${myUid}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
       const ref = storage.ref().child(path);
@@ -1544,6 +1562,25 @@ $('sticker-btn').onclick = (e) => {
 // ============================================================
 // GIFS (Tenor)
 // ============================================================
+// KLIPY's real API puts the key in the URL path and needs a customer_id
+// (their term for "your app's own user id" — Frixion's username works fine).
+// Their exact field names for the actual GIF URL inside each result aren't
+// fully confirmed here, so this tries a few likely shapes and logs the raw
+// item to the console if none of them match — check there if GIFs still
+// don't show up, and the real field name can be wired in precisely.
+function extractKlipyUrl(item) {
+  const f = item.file || item.files || {};
+  return (
+    (f.md && f.md.gif && f.md.gif.url) ||
+    (f.sm && f.sm.gif && f.sm.gif.url) ||
+    (f.hd && f.hd.gif && f.hd.gif.url) ||
+    (f.tiny && f.tiny.gif && f.tiny.gif.url) ||
+    (f.gif && f.gif.url) ||
+    (typeof f.gif === 'string' ? f.gif : null) ||
+    item.url ||
+    null
+  );
+}
 async function klipySearch(query) {
   const grid = $('gif-grid');
   if (!GIF_API_KEY) {
@@ -1552,34 +1589,42 @@ async function klipySearch(query) {
   }
   grid.innerHTML = '<div class="ep-empty">Searching…</div>';
   try {
-    // KLIPY's own migration guide is "swap tenor.googleapis.com for api.klipy.com" —
-    // same query shape as Tenor's v2 API. If KLIPY has since changed this path,
-    // check https://docs.klipy.com/migrate-from-tenor for the current one.
+    const customerId = encodeURIComponent(myUid || 'frixion-guest');
     const endpoint = query
-      ? `https://api.klipy.com/v2/search?q=${encodeURIComponent(query)}&key=${GIF_API_KEY}&limit=24&media_filter=tinygif`
-      : `https://api.klipy.com/v2/featured?key=${GIF_API_KEY}&limit=24&media_filter=tinygif`;
+      ? `https://api.klipy.com/api/v1/${GIF_API_KEY}/gifs/search?q=${encodeURIComponent(query)}&customer_id=${customerId}&per_page=24`
+      : `https://api.klipy.com/api/v1/${GIF_API_KEY}/gifs/trending?customer_id=${customerId}&per_page=24`;
     const res = await fetch(endpoint);
     const data = await res.json();
-    const results = data.results || [];
+    if (data.result === false) {
+      console.warn('KLIPY error response:', data);
+      grid.innerHTML = '<div class="ep-empty">GIF search failed — see the browser console for details.</div>';
+      return;
+    }
+    const results = (data.data && data.data.data) || data.results || [];
+    if (results.length) console.log('KLIPY sample result (for wiring up the exact URL field if needed):', results[0]);
+    const urls = results.map(extractKlipyUrl);
     grid.innerHTML = results.length
-      ? results.map(r => {
-          const gif = r.media_formats && (r.media_formats.tinygif || r.media_formats.gif);
-          return gif ? `<button type="button" class="gif-thumb"><img src="${gif.url}" alt=""></button>` : '';
-        }).join('')
+      ? results.map((r, i) => urls[i] ? `<button type="button" class="gif-thumb" data-i="${i}"><img src="${esc(urls[i])}" alt=""></button>` : '').join('')
       : '<div class="ep-empty">No GIFs found.</div>';
-    grid.querySelectorAll('.gif-thumb').forEach((btn, i) => {
-      const gif = results[i].media_formats && (results[i].media_formats.gif || results[i].media_formats.tinygif);
+    if (results.length && !urls.some(Boolean)) {
+      grid.innerHTML = '<div class="ep-empty">Found results but couldn\'t read their URLs — check the browser console, the sample result logged there shows the real field names.</div>';
+    }
+    grid.querySelectorAll('.gif-thumb').forEach((btn) => {
+      const url = urls[parseInt(btn.dataset.i, 10)];
       btn.onclick = async () => {
         $('gif-picker-panel').classList.add('hidden');
         try {
           await sendToCurrentConversation({
             text: '', uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
-            gifUrl: gif.url,
+            gifUrl: url,
           });
         } catch (e) { toast('Could not send GIF.', 'error'); }
       };
     });
-  } catch (e) { grid.innerHTML = '<div class="ep-empty">GIF search failed.</div>'; }
+  } catch (e) {
+    console.warn('KLIPY search error:', e);
+    grid.innerHTML = '<div class="ep-empty">GIF search failed — see the browser console for details.</div>';
+  }
 }
 let gifSearchDebounce = null;
 $('gif-search').addEventListener('input', () => {
