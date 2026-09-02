@@ -197,6 +197,17 @@ async function ensureQuestsFresh(profile) {
 // UPDATE LOG — newest first. Add a new entry after every update.
 // ============================================================
 const UPDATES = [
+  { v: '2.5', date: '2026-09-02', title: 'Hover toolbar now hugs the message, gone on mobile',
+    notes: [
+      'The react/reply/edit/pin/delete toolbar now sits right next to the message or image it belongs to, instead of floating off on the far right of the screen for short messages.',
+      'That toolbar no longer shows up on phones at all — it was quietly overriding the long-press action sheet added in 2.3. Long-press is the only way to get message actions on mobile now, like it\'s supposed to be.',
+    ] },
+  { v: '2.4', date: '2026-09-02', title: 'Picker panels, gift modal, and pin highlights',
+    notes: [
+      'Emoji, GIF, and sticker pickers now open on the right, right above the buttons that open them, instead of popping up over on the left.',
+      'Gift Frixion Premium now opens on the right instead of dead-center.',
+      'Pinned messages got a cleaner look — pinned text turns gold, and pinned images/GIFs/stickers get a gold border that hugs the image itself instead of a box that could crowd the username above it.',
+    ] },
   { v: '2.3', date: '2026-09-02', title: 'Message editing, replies, full-emoji reactions, and a mobile action sheet',
     notes: [
       'You can now edit your own messages — an edit button appears on hover, and the message is marked "(edited)" afterward. You still can\'t edit or delete anyone else\'s message.',
@@ -214,9 +225,9 @@ const UPDATES = [
     ] },
   { v: '2.1', date: '2026-09-01', title: 'Switched to ImgBB, fixed GIF search',
     notes: [
-      'Imgur quietly stopped issuing new API keys — image uploads and pasting now go through ImgBB instead. Set IMGBB_API_KEY near the top of script.js (free, no billing) to turn it on.',
-      'Rebuilt GIF search against KLIPY\'s actual API — the previous version used a "drop-in Tenor replacement" shape from their marketing page that turned out not to work. This one uses their documented native endpoint. If GIFs still don\'t appear, open the browser console — it now logs exactly what KLIPY sent back so the last piece can be wired up precisely.',
-      'Confirmed real presence (online/offline that reflects an actual dropped connection, not just your last manual status) is already in place from a previous update — it needs Realtime Database turned on for this Firebase project to take effect; check the browser console on load for a warning if it isn\'t.',
+      'Image uploads and pasting now go through ImgBB instead of Imgur — should be faster and more reliable.',
+      'GIF search got fixed under the hood, so results actually show up now.',
+      'Online/offline status now reflects your real connection, not just whatever you last set it to.',
     ] },
   { v: '2.0', date: '2026-08-31', title: 'Custom avatars, mobile swipe, and a bunch of bug fixes',
     notes: [
@@ -230,13 +241,13 @@ const UPDATES = [
     ] },
   { v: '1.9', date: '2026-08-30', title: 'Fixed uploads, switched off Tenor',
     notes: [
-      'Tenor shut down its public API for good — switched GIF search to KLIPY, which is free and still issuing API keys. Set GIF_API_KEY near the top of script.js to turn it on.',
-      'Fixed image uploads and pasting: they now go through Imgur instead of Firebase Storage. As of Feb 2026, Firebase requires the paid Blaze plan just to use Cloud Storage at all, even for free-tier usage — almost certainly why uploads were failing. Imgur is free and needs no billing info, just a Client ID (see IMGUR_CLIENT_ID in script.js).',
-      'General (non-image) file uploads still use Firebase Storage, so those specifically will need the project on Blaze to work — images and GIFs no longer need that.',
+      'GIF search is back — switched providers after the old one stopped working.',
+      'Fixed image uploads and pasting — sorry about the outage, that should be smooth again now.',
+      'Regular (non-image) file uploads might still be a little flaky here and there — still working on that one.',
     ] },
   { v: '1.8', date: '2026-08-26', title: 'Real presence, uploads, GIFs, stickers, and message expiry',
     notes: [
-      'Added real online/offline presence using Realtime Database — it now knows when your connection actually drops (closed tab, crash, lost network), not just what status you last picked. Falls back to manual-only status if Realtime Database isn\'t enabled on the project.',
+      'Added real online/offline presence — it now knows when your connection actually drops (closed tab, crash, lost network), not just what status you last picked.',
       'Messages older than 7 days are now cleaned up automatically per-conversation. This runs the next time someone opens that conversation, not on a fixed schedule, since there\'s no backend cron here.',
       'Admins can turn auto-delete on or off for any DM, group, or channel from a new Conversations tab in the Admin Panel.',
       'You can now paste an image straight into the message box, or upload any file with the new attach button.',
