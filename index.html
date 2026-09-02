@@ -67,7 +67,7 @@
     <div class="help-row"><kbd>Shift</kbd> + <kbd>Enter</kbd><span>New line</span></div>
     <div class="help-row"><kbd>:name:</kbd><span>Insert an emoji</span></div>
   </div>
-  <div class="help-foot">Frixion v2.2 — see what's new in Settings → Update Log.</div>
+  <div class="help-foot">Frixion v2.3 — see what's new in Settings → Update Log.</div>
 </div>
 
 <div id="page-body">
@@ -268,6 +268,10 @@
     <div id="chat-view" class="hidden" style="display:contents;">
       <div id="messages"></div>
       <div id="composer-wrap">
+        <div id="reply-bar" class="hidden">
+          <div class="rb-text">Replying to <b id="reply-bar-username"></b></div>
+          <span class="rb-close" id="reply-bar-close">✕</span>
+        </div>
         <div id="composer-action-menu" class="composer-action-menu hidden">
           <button type="button" id="attach-file-menu"><span>↥</span>Upload a file</button>
           <button type="button" id="create-poll-menu"><span>☷</span>Create poll</button>
@@ -537,10 +541,6 @@
         <div class="field">
           <label>Avatar Color</label>
           <div class="color-swatches" id="avatar-color-swatches"></div>
-        </div>
-        <div class="field">
-          <label>Status</label>
-          <div class="status-picker" id="status-picker"></div>
         </div>
         <button class="btn-accent-inline" id="save-account-btn">Save Changes</button>
       </div>

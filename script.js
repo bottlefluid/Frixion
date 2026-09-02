@@ -160,11 +160,12 @@ const THEMES = [
   { key: 'ash',    name: 'Ash',               premium: true },
   { key: 'onyx',   name: 'Onyx',              premium: true },
 ];
+// Status is fully automatic now (see computeDisplayStatus) — this is just
+// a label/color lookup, not a user-editable list anymore.
 const STATUSES = [
   { key: 'online', label: 'Online' },
   { key: 'idle', label: 'Idle' },
-  { key: 'dnd', label: 'Do Not Disturb' },
-  { key: 'offline', label: 'Invisible' },
+  { key: 'offline', label: 'Offline' },
 ];
 
 // ---------- Frixion Premium economy ----------
@@ -196,6 +197,14 @@ async function ensureQuestsFresh(profile) {
 // UPDATE LOG — newest first. Add a new entry after every update.
 // ============================================================
 const UPDATES = [
+  { v: '2.3', date: '2026-09-02', title: 'Message editing, replies, full-emoji reactions, and a mobile action sheet',
+    notes: [
+      'You can now edit your own messages — an edit button appears on hover, and the message is marked "(edited)" afterward. You still can\'t edit or delete anyone else\'s message.',
+      'Added replies. Hit reply on any message and your next message carries a quoted reference to it; tapping that reference jumps to and briefly highlights the original.',
+      'Emoji reactions are no longer limited to a small fixed set — the reaction picker is now the full searchable emoji picker, including your server\'s custom emoji.',
+      'Fixed the sticker and emoji pickers being able to stay open at the same time.',
+      'On phones, holding down a message now brings up a Discord-mobile-style action sheet (quick reactions plus Edit, Reply, Copy Text, Pin, Delete) instead of relying on hover icons that don\'t really work with touch.',
+    ] },
   { v: '2.2', date: '2026-09-01', title: 'Mobile polish, conversation previews, and cleaner themes',
     notes: [
       'Phone conversations now use the full screen. The compact server rail stays with the list, instead of squeezing the chat and composer into the remaining space.',
@@ -330,6 +339,10 @@ const ICONS = {
   pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2 2-5 5-4 1 7 7 1-4 5-5 2 2"/><path d="M9 15l-5 5"/></svg>',
   orb: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg>',
   file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
+  reply: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  crown: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 8.5l4 3 5-6 5 6 4-3-1.6 9.5a1 1 0 0 1-1 .8H5.6a1 1 0 0 1-1-.8z"/></svg>',
 };
 function icon(name, cls) { return `<span class="i ${cls||''}">${ICONS[name] || ''}</span>`; }
 
@@ -509,6 +522,10 @@ let currentGroupDMId = null;
 let currentView = 'none';    // 'none' | 'channel' | 'dm' | 'groupdm' | 'friends' | 'quests' | 'codes'
 let lastRawMessages = [];
 let lastChannelsList = [];
+// Member list panel: open by default in channels/group DMs (except on mobile,
+// where it's a full-screen overlay instead of a 4th column) until the user
+// manually toggles it — then their choice sticks for the rest of the session.
+let memberListManualOverride = null;
 
 let unsub = { servers: null, channels: null, categories: null, messages: null, dms: null, groupDms: null, self: null };
 
@@ -549,6 +566,7 @@ function avatarHTML(size, color, letter, status, avatarUrl) {
 }
 function premiumStar(profile) { return isPremium(profile) ? icon('star', 'premium-star') : ''; }
 function opTag(profile) { return profile && profile.op ? '<span class="op-tag">Admin</span>' : ''; }
+function ownerCrown(uid, ownerId) { return uid === ownerId ? `<span class="i owner-crown" title="Owner">${ICONS.crown}</span>` : ''; }
 function timeStr(ts) {
   if (!ts) return '';
   const d = ts.toDate ? ts.toDate() : new Date(ts);
@@ -577,12 +595,15 @@ async function getProfile(uid) {
 }
 
 // ============================================================
-// PRESENCE (Realtime Database) — real connected/disconnected
-// state, layered under the user's own manual status. Falls back
-// to manual-only status if Realtime Database isn't enabled on
+// PRESENCE (Realtime Database) — fully automatic now: online means
+// actually connected, idle means connected but the tab isn't visible
+// (see the visibilitychange listener below), offline means
+// disconnected. There's no manual status anymore. Falls back to
+// showing everyone as online if Realtime Database isn't enabled on
 // this Firebase project (rtdb stays null — see top of file).
 // ============================================================
 let presenceCache = {};       // uid -> true (connected) | false (disconnected)
+let idleCache = {};           // uid -> true (tab hidden) | false (tab visible)
 let presenceListeners = {};   // uid -> RTDB ref+callback, so we only subscribe once per uid
 function initPresence() {
   if (!rtdb || !myUid) return;
@@ -590,18 +611,25 @@ function initPresence() {
     const myRef = rtdb.ref('presence/' + myUid);
     rtdb.ref('.info/connected').on('value', (snap) => {
       if (snap.val() === true) {
-        myRef.onDisconnect().set({ online: false, lastChanged: firebase.database.ServerValue.TIMESTAMP })
-          .then(() => myRef.set({ online: true, lastChanged: firebase.database.ServerValue.TIMESTAMP }));
+        myRef.onDisconnect().set({ online: false, idle: false, lastChanged: firebase.database.ServerValue.TIMESTAMP })
+          .then(() => myRef.set({ online: true, idle: document.hidden, lastChanged: firebase.database.ServerValue.TIMESTAMP }));
       }
     });
   } catch (e) { console.warn('Presence init failed', e); }
 }
+// Whenever the tab is backgrounded or restored, tell everyone else —
+// this is what makes idle show up for other people, not just you.
+document.addEventListener('visibilitychange', () => {
+  if (!rtdb || !myUid) return;
+  try { rtdb.ref('presence/' + myUid).update({ idle: document.hidden, lastChanged: firebase.database.ServerValue.TIMESTAMP }); } catch (e) {}
+});
 function teardownPresence() {
   if (!rtdb || !myUid) return;
-  try { rtdb.ref('presence/' + myUid).set({ online: false, lastChanged: firebase.database.ServerValue.TIMESTAMP }); } catch (e) {}
+  try { rtdb.ref('presence/' + myUid).set({ online: false, idle: false, lastChanged: firebase.database.ServerValue.TIMESTAMP }); } catch (e) {}
   Object.values(presenceListeners).forEach(l => { try { l.ref.off('value', l.cb); } catch (e) {} });
   presenceListeners = {};
   presenceCache = {};
+  idleCache = {};
 }
 function subscribePresence(uid) {
   if (!rtdb || presenceListeners[uid]) return;
@@ -610,25 +638,22 @@ function subscribePresence(uid) {
     const cb = (snap) => {
       const val = snap.val();
       presenceCache[uid] = !!(val && val.online);
+      idleCache[uid] = !!(val && val.idle);
       renderCurrentView();
       renderDMRows();
+      renderSelfPanel();
+      if (currentView === 'friends') renderFriendsView();
     };
     ref.on('value', cb);
     presenceListeners[uid] = { ref, cb };
   } catch (e) {}
 }
-// Combines the user's manual status (online/idle/dnd/invisible) with whether
-// they're actually connected right now. "Invisible" always wins — that's the
-// point of it. Otherwise, if we know they're disconnected, show offline
-// regardless of their last manual status.
-function computeDisplayStatus(p, uid) {
-  if (!p) return 'offline';
-  if (p.status === 'offline') return 'offline';
-  if (rtdb) {
-    if (presenceCache[uid] === false) return 'offline';
-    if (presenceCache[uid] === undefined) subscribePresence(uid);
-  }
-  return p.status || 'online';
+// online/idle/offline, purely from real connection + tab-visibility state.
+function computeDisplayStatus(uid) {
+  if (!rtdb) return 'online';
+  if (presenceCache[uid] === undefined) { subscribePresence(uid); return 'offline'; }
+  if (presenceCache[uid] === false) return 'offline';
+  return idleCache[uid] ? 'idle' : 'online';
 }
 
 // ---------- modal wiring ----------
@@ -777,7 +802,6 @@ $('login-btn').onclick = async () => {
     }
     if (ban.expired) { await db.collection('users').doc(username).update({ banned: false, banReason: '', bannedUntil: null }); data.banned = false; }
     await normalizeProfile(username, data);
-    await db.collection('users').doc(username).update({ status: data.status === 'offline' ? 'online' : data.status });
     myUid = username; myProfile = data; profileCache[myUid] = data;
     setSession(username);
     enterApp();
@@ -909,10 +933,10 @@ function applyTheme(themeKey) {
 
 function renderSelfPanel() {
   if (!myProfile) return;
-  const inner = avatarHTML(32, myProfile.avatarColor, initials(myProfile.username), computeDisplayStatus(myProfile, myUid), myProfile.avatarUrl);
+  const inner = avatarHTML(32, myProfile.avatarColor, initials(myProfile.username), computeDisplayStatus(myUid), myProfile.avatarUrl);
   $('self-avatar').outerHTML = inner.replace('class="avatar', 'id="self-avatar" class="avatar');
   $('self-username').innerHTML = esc(myProfile.username) + premiumStar(myProfile) + opTag(myProfile);
-  const st = STATUSES.find(s => s.key === (myProfile.status || 'online'));
+  const st = STATUSES.find(s => s.key === computeDisplayStatus(myUid));
   $('self-status-label').textContent = st ? st.label : 'Online';
 }
 
@@ -993,6 +1017,13 @@ function isMobile() {
 }
 function setMobilePane(pane) {
   $('app').classList.toggle('mobile-show-chat', pane === 'chat');
+}
+// Applied whenever a channel or group DM is opened. Respects a manual
+// toggle made earlier this session; otherwise defaults to open, but never
+// auto-opens on mobile (there it's a full-screen overlay, not a column).
+function applyDefaultMemberListState() {
+  const open = memberListManualOverride !== null ? memberListManualOverride : !isMobile();
+  $('app').classList.toggle('member-list-open', open);
 }
 $('back-to-list-btn').onclick = () => setMobilePane('list');
 
@@ -1146,7 +1177,7 @@ function subscribeDMList() {
   if (unsub.dms) unsub.dms();
   unsub.dms = db.collection('dms').where('participants', 'array-contains', myUid).onSnapshot(async snap => {
     const dms = [];
-    snap.forEach(d => dms.push({ id: d.id, ...d.data() }));
+    snap.forEach(d => dms.push({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }));
     window.__myDMs = dms;
     await Promise.all(dms.map(dm => getProfile(dm.participants.find(p => p !== myUid))));
     hydrateConversationPreviews('dms', dms);
@@ -1155,7 +1186,7 @@ function subscribeDMList() {
   if (unsub.groupDms) unsub.groupDms();
   unsub.groupDms = db.collection('groupDMs').where('participants', 'array-contains', myUid).onSnapshot(async snap => {
     const gs = [];
-    snap.forEach(d => gs.push({ id: d.id, ...d.data() }));
+    snap.forEach(d => gs.push({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }));
     window.__myGroupDMs = gs;
     await Promise.all(gs.flatMap(g => g.participants.filter(p => p !== myUid).map(p => getProfile(p))));
     hydrateConversationPreviews('groupDMs', gs);
@@ -1213,7 +1244,7 @@ function renderDMRows() {
     const p = profileCache[otherUid] || { username: '...', avatarColor: '#5865f2', status: 'offline' };
     const row = document.createElement('div');
     row.className = 'dm-row' + (currentDMId === dm.id ? ' active' : '');
-    row.innerHTML = avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(p, otherUid), p.avatarUrl) +
+    row.innerHTML = avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(otherUid), p.avatarUrl) +
       `<div class="dm-copy"><span class="dm-name">${esc(p.username)}${premiumStar(p)}${opTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div>`;
     row.onclick = () => selectDM(dm.id, otherUid);
     wrap.appendChild(row);
@@ -1258,6 +1289,7 @@ $('confirm-new-dm').onclick = async () => {
 };
 
 async function selectDM(id, otherUid) {
+  clearReplyTarget();
   currentServerId = null; currentServerData = null; currentChannelId = null; currentGroupDMId = null;
   currentView = 'dm'; currentDMId = id; currentDMOtherUid = otherUid;
   document.querySelectorAll('#server-rail-list .rail-item').forEach(e => e.classList.remove('active'));
@@ -1287,13 +1319,12 @@ async function selectDM(id, otherUid) {
 }
 
 async function selectGroupDM(id) {
+  clearReplyTarget();
   currentServerId = null; currentServerData = null; currentChannelId = null;
   currentDMId = null; currentDMOtherUid = null;
   currentView = 'groupdm'; currentGroupDMId = id;
   document.querySelectorAll('#server-rail-list .rail-item').forEach(e => e.classList.remove('active'));
   $('rail-home').classList.add('active');
-  $('members-toggle').classList.add('hidden');
-  $('app').classList.remove('member-list-open');
   hideMainPageViews();
   const g = (window.__myGroupDMs || []).find(x => x.id === id);
   const name = g ? groupDMDisplayName(g) : 'Group';
@@ -1301,8 +1332,11 @@ async function selectGroupDM(id) {
   $('chat-header-title').textContent = name;
   $('composer-input').placeholder = `Message ${name}`;
   $('gift-btn').classList.add('hidden');
+  $('members-toggle').classList.remove('hidden');
+  applyDefaultMemberListState();
   showHeaderActions();
   $('pins-toggle').classList.remove('hidden');
+  renderMemberPanel(g ? g.participants : [], g ? g.ownerId : null);
   renderDMRows();
   showChat();
   setMobilePane('chat');
@@ -1375,7 +1409,6 @@ $('messages').addEventListener('click', (e) => {
   const group = e.target.closest('.msg-group');
   if (hit && group && group.dataset.uid) openProfileModal(group.dataset.uid);
 });
-$('open-my-settings').addEventListener('dblclick', () => openProfileModal(myUid));
 $('user-panel').addEventListener('click', (e) => {
   if (e.target.closest('#self-avatar')) { e.stopPropagation(); openProfileModal(myUid); }
 });
@@ -1752,7 +1785,7 @@ function friendRowHTML(username, kind) {
     actions = `<span class="quest-locked">Pending</span><button class="btn-secondary slim" data-cancel="${esc(username)}">Cancel</button>`;
   }
   return `<div class="friend-row">
-    ${avatarHTML(36, p.avatarColor, initials(p.username), computeDisplayStatus(p, username), p.avatarUrl)}
+    ${avatarHTML(36, p.avatarColor, initials(p.username), computeDisplayStatus(username), p.avatarUrl)}
     <span class="friend-row-name" data-openprofile="${esc(username)}">${esc(p.username)}${premiumStar(p)}${opTag(p)}</span>
     <span class="friend-row-actions">${actions}</span>
   </div>`;
@@ -1851,7 +1884,7 @@ async function selectServer(server) {
   scheduleLoadingView();
   setMobilePane('list');
   subscribeChannels(server.id);
-  renderMemberPanel(server);
+  renderMemberPanel(server.members || [], server.ownerId);
 }
 
 $('side-header').onclick = () => {
@@ -1984,12 +2017,14 @@ $('confirm-create-category').onclick = async () => {
 };
 
 function selectChannel(channel) {
+  clearReplyTarget();
   currentChannelId = channel.id;
   currentView = 'channel';
   $('chat-header-hash').textContent = '#';
   $('chat-header-title').textContent = channel.name;
   $('composer-input').placeholder = `Message #${channel.name}`;
   $('members-toggle').classList.remove('hidden');
+  applyDefaultMemberListState();
   $('gift-btn').classList.add('hidden');
   showHeaderActions();
   renderChannelRows(lastChannelsList);
@@ -2131,17 +2166,114 @@ function onMessagesUpdate(msgs) {
 }
 
 // ============================================================
+// MOBILE MESSAGE ACTION SHEET — hold down a message (like Discord
+// mobile) to bring up a quick-react row plus a list of actions,
+// instead of relying on hover icons that don't really work on touch.
+// ============================================================
+const QUICK_REACT_EMOJIS = REACT_EMOJIS.slice(0, 6);
+let openActionSheet = null;
+function closeActionSheet() {
+  if (!openActionSheet) return;
+  openActionSheet.remove();
+  openActionSheet = null;
+  document.body.classList.remove('action-sheet-open');
+}
+function openMessageActionSheet(msgId) {
+  const m = lastRawMessages.find(x => x.id === msgId);
+  if (!m) return;
+  closeActionSheet();
+  closeReactPopover();
+
+  const canDel = m.uid === myUid;
+  const canEditThis = m.uid === myUid && !m.sticker;
+  const pinnable = canPin();
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'action-sheet-backdrop';
+  backdrop.innerHTML = `
+    <div class="action-sheet">
+      <div class="as-quick-react">
+        ${QUICK_REACT_EMOJIS.map(e => `<button type="button" class="as-quick-emoji" data-e="${e}">${e}</button>`).join('')}
+        <button type="button" class="as-quick-emoji as-more-react" title="More reactions">${icon('plus')}</button>
+      </div>
+      <div class="as-actions">
+        ${canEditThis ? `<button type="button" class="as-item" data-act="edit">${icon('edit')}<span>Edit Message</span></button>` : ''}
+        <button type="button" class="as-item" data-act="reply">${icon('reply')}<span>Reply</span></button>
+        ${m.text ? `<button type="button" class="as-item" data-act="copy">${icon('copy')}<span>Copy Text</span></button>` : ''}
+        ${pinnable ? `<button type="button" class="as-item" data-act="pin">${icon('pin')}<span>${m.pinned ? 'Unpin Message' : 'Pin Message'}</span></button>` : ''}
+        ${canDel ? `<button type="button" class="as-item as-danger" data-act="delete">${icon('trash')}<span>Delete Message</span></button>` : ''}
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  document.body.classList.add('action-sheet-open');
+
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeActionSheet(); });
+  backdrop.querySelectorAll('.as-quick-emoji[data-e]').forEach(btn => {
+    btn.onclick = () => { toggleReaction(msgId, btn.dataset.e); closeActionSheet(); };
+  });
+  backdrop.querySelector('.as-more-react').onclick = () => {
+    closeActionSheet();
+    const anchor = document.querySelector(`.msg-line[data-mid="${CSS.escape(msgId)}"] .react-btn`) || backdrop;
+    toggleReactPopover(anchor, msgId);
+  };
+  backdrop.querySelectorAll('.as-item').forEach(btn => {
+    btn.onclick = () => {
+      const act = btn.dataset.act;
+      closeActionSheet();
+      if (act === 'edit') startEditMessage(msgId);
+      else if (act === 'reply') setReplyTarget(msgId);
+      else if (act === 'copy') copyMessageText(m);
+      else if (act === 'pin') togglePin(msgId);
+      else if (act === 'delete') deleteMessage(msgId);
+    };
+  });
+
+  openActionSheet = backdrop;
+}
+// Long-press detection (touch only) — a firm ~450ms hold on a message
+// opens the sheet; moving your finger more than a few px cancels it,
+// so it doesn't fire while scrolling.
+(function setupMessageLongPress() {
+  const wrap = $('messages');
+  let timer = null, startX = 0, startY = 0, targetId = null;
+  const HOLD_MS = 450, MOVE_TOLERANCE = 10;
+  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } targetId = null; };
+  wrap.addEventListener('touchstart', (e) => {
+    if (!isMobile() || e.touches.length !== 1) return;
+    const line = e.target.closest('.msg-line');
+    if (!line || !line.dataset.mid) return;
+    targetId = line.dataset.mid;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    timer = setTimeout(() => {
+      timer = null;
+      if (navigator.vibrate) navigator.vibrate(10);
+      openMessageActionSheet(targetId);
+    }, HOLD_MS);
+  }, { passive: true });
+  wrap.addEventListener('touchmove', (e) => {
+    if (!timer) return;
+    const dx = Math.abs(e.touches[0].clientX - startX), dy = Math.abs(e.touches[0].clientY - startY);
+    if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) cancel();
+  }, { passive: true });
+  wrap.addEventListener('touchend', cancel);
+  wrap.addEventListener('touchcancel', cancel);
+})();
+
+// ============================================================
 // MEMBER PANEL
 // ============================================================
-$('members-toggle').onclick = () => $('app').classList.toggle('member-list-open');
+$('members-toggle').onclick = () => {
+  memberListManualOverride = !$('app').classList.contains('member-list-open');
+  $('app').classList.toggle('member-list-open', memberListManualOverride);
+};
 
-async function renderMemberPanel(server) {
-  const members = server.members || [];
+async function renderMemberPanel(members, ownerId) {
+  members = members || [];
   await Promise.all(members.map(uid => getProfile(uid)));
   const online = [], offline = [];
   members.forEach(uid => {
-    const p = profileCache[uid] || { username: uid, avatarColor: '#5865f2', status: 'offline' };
-    const disp = computeDisplayStatus(p, uid);
+    const p = profileCache[uid] || { username: uid, avatarColor: '#5865f2' };
+    const disp = computeDisplayStatus(uid);
     (disp !== 'offline' ? online : offline).push({ uid, p, disp });
   });
   $('online-count').textContent = online.length;
@@ -2149,7 +2281,7 @@ async function renderMemberPanel(server) {
   const renderRows = (arr) => arr.map(({ uid, p, disp }) => `
     <div class="member-row" data-u="${esc(uid)}">
       ${avatarHTML(32, p.avatarColor, initials(p.username), disp, p.avatarUrl)}
-      <span class="mname${disp !== 'offline' ? ' online-name' : ''}">${esc(p.username)}${premiumStar(p)}${opTag(p)}${uid === server.ownerId ? '<span class="owner-tag">Owner</span>' : ''}</span>
+      <span class="mname${disp !== 'offline' ? ' online-name' : ''}">${esc(p.username)}${premiumStar(p)}${opTag(p)}${ownerCrown(uid, ownerId)}</span>
     </div>`).join('');
   $('member-rows-online').innerHTML = renderRows(online);
   $('member-rows-offline').innerHTML = renderRows(offline);
@@ -2212,19 +2344,31 @@ function showLoadingView() {
 
 function renderCurrentView() {
   if (currentView === 'channel' || currentView === 'dm' || currentView === 'groupdm') renderMessages(lastRawMessages);
-  if (currentServerData) renderMemberPanel(currentServerData);
+  if (currentView === 'channel' && currentServerData) {
+    renderMemberPanel(currentServerData.members || [], currentServerData.ownerId);
+  } else if (currentView === 'groupdm') {
+    const g = (window.__myGroupDMs || []).find(x => x.id === currentGroupDMId);
+    if (g) renderMemberPanel(g.participants || [], g.ownerId);
+  }
   renderDMRows();
 }
 
 // ============================================================
 // MESSAGES
 // ============================================================
+function reactionEmojiMarkup(e) {
+  const custom = /^:(.+):$/.exec(e);
+  if (custom && customEmojis[custom[1]]) {
+    return `<img class="reaction-emoji-img" src="${customEmojis[custom[1]].dataUrl}" alt=":${esc(custom[1])}:">`;
+  }
+  return esc(e);
+}
 function reactionsHTML(reactions) {
   if (!reactions) return '';
   const entries = Object.entries(reactions).filter(([, arr]) => arr && arr.length);
   if (!entries.length) return '';
   return `<div class="reaction-row">` + entries.map(([e, arr]) =>
-    `<button type="button" class="reaction-pill${arr.includes(myUid) ? ' mine' : ''}" data-e="${esc(e)}">${e}<span>${arr.length}</span></button>`
+    `<button type="button" class="reaction-pill${arr.includes(myUid) ? ' mine' : ''}" data-e="${esc(e)}">${reactionEmojiMarkup(e)}<span>${arr.length}</span></button>`
   ).join('') + `</div>`;
 }
 
@@ -2246,26 +2390,37 @@ function attachmentHTML(m) {
 
 function buildMessageLineEl(m, canDelete) {
   const pinnable = canPin();
+  const canEditThis = m.uid === myUid && !m.sticker;
   const line = document.createElement('div');
   line.className = 'msg-line' + (m.pinned ? ' is-pinned' : '');
+  line.dataset.mid = m.id;
   const rowWrap = document.createElement('div');
   rowWrap.className = 'msg-row-wrap' + (m.sticker ? ' is-sticker' : '');
 
-  const bodyHTML = m.sticker
+  const replyHTML = m.replyTo
+    ? `<div class="msg-reply-ref" data-jump="${esc(m.replyTo.id)}">${icon('reply')}<span class="mrr-user">${esc(m.replyTo.username)}</span><span class="mrr-text">${esc(m.replyTo.text || '')}</span></div>`
+    : '';
+
+  const bodyHTML = replyHTML + (m.sticker
     ? `<img class="msg-sticker" src="${esc(m.sticker.dataUrl)}" alt="${esc(m.sticker.name)}" title="${esc(m.sticker.name)}">`
-    : (m.pinned ? `<span class="pin-flag">${icon('pin')}Pinned</span>` : '') +
-      (m.text ? `<span class="msg-text">${renderMessageText(m.text)}</span>` : '') +
-      attachmentHTML(m);
+    : (m.text ? `<span class="msg-text">${renderMessageText(m.text)}</span>${m.edited ? `<span class="edited-tag">(edited)</span>` : ''}` : '') +
+      attachmentHTML(m));
 
   rowWrap.innerHTML = bodyHTML +
     `<span class="msg-hover-actions">` +
     `<span class="hover-icon-btn react-btn" title="Add Reaction">${icon('smiley')}</span>` +
+    `<span class="hover-icon-btn reply-msg" title="Reply">${icon('reply')}</span>` +
+    (canEditThis ? `<span class="hover-icon-btn edit-msg" title="Edit">${icon('edit')}</span>` : '') +
     (pinnable ? `<span class="hover-icon-btn pin-msg${m.pinned ? ' on' : ''}" title="${m.pinned ? 'Unpin' : 'Pin Message'}">${icon('pin')}</span>` : '') +
     (canDelete ? `<span class="hover-icon-btn del-msg" title="Delete">${icon('trash')}</span>` : '') +
     `</span>`;
   rowWrap.querySelector('.react-btn').onclick = (e) => { e.stopPropagation(); toggleReactPopover(e.currentTarget, m.id); };
+  rowWrap.querySelector('.reply-msg').onclick = () => setReplyTarget(m.id);
+  if (canEditThis) rowWrap.querySelector('.edit-msg').onclick = () => startEditMessage(m.id);
   if (pinnable) rowWrap.querySelector('.pin-msg').onclick = () => togglePin(m.id);
   if (canDelete) rowWrap.querySelector('.del-msg').onclick = () => deleteMessage(m.id);
+  const replyRefEl = rowWrap.querySelector('.msg-reply-ref');
+  if (replyRefEl) replyRefEl.onclick = () => jumpToMessage(replyRefEl.dataset.jump);
   line.appendChild(rowWrap);
 
   const rx = reactionsHTML(m.reactions);
@@ -2277,6 +2432,13 @@ function buildMessageLineEl(m, canDelete) {
     line.appendChild(rxEl);
   }
   return line;
+}
+function jumpToMessage(id) {
+  const el = document.querySelector(`.msg-line[data-mid="${CSS.escape(id)}"]`);
+  if (!el) { toast('Original message isn\'t loaded here.'); return; }
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add('flash-highlight');
+  setTimeout(() => el.classList.remove('flash-highlight'), 1200);
 }
 
 async function renderMessages(rawMsgs) {
@@ -2311,7 +2473,13 @@ async function renderMessages(rawMsgs) {
 
   msgs.forEach(m => {
     const millis = m.createdAt && m.createdAt.toMillis ? m.createdAt.toMillis() : Date.now();
-    const day = dayStr(m.createdAt) || 'Today';
+    // dayStr() always formats a real date (e.g. "September 2, 2026") — it never
+    // returns the word "Today". A message you just sent has no createdAt yet
+    // (pending server timestamp), so falling back to the literal word "Today"
+    // created a mismatched, brand-new divider that merged once the real
+    // timestamp arrived. Fall back to today's *formatted* date instead so it
+    // matches the divider your other messages from today are already under.
+    const day = dayStr(m.createdAt) || dayStr(new Date(millis));
     if (day !== lastDay) {
       const div = document.createElement('div');
       div.className = 'day-divider';
@@ -2321,7 +2489,7 @@ async function renderMessages(rawMsgs) {
     }
     const p = profileCache[m.uid] || { username: m.username || 'Unknown User', avatarColor: '#5865f2' };
     const sameGroup = !searching && m.uid === lastUid && (millis - lastMillis) < 5 * 60 * 1000;
-    const canDelete = m.uid === myUid || isAdmin || (currentServerData && currentServerData.ownerId === myUid);
+    const canDelete = m.uid === myUid;
 
     if (sameGroup && groupEl) {
       groupEl.querySelector('.msg-body').appendChild(buildMessageLineEl(m, canDelete));
@@ -2346,21 +2514,59 @@ async function renderMessages(rawMsgs) {
   if (!searching && (wasAtBottom || msgs.length <= 20)) wrap.scrollTop = wrap.scrollHeight;
 }
 
-// ---------- reaction popover ----------
+// ---------- reaction popover (full emoji picker: standard + custom) ----------
 let openReactPopover = null;
 function toggleReactPopover(anchorEl, msgId) {
   closeReactPopover();
   const pop = document.createElement('div');
-  pop.className = 'react-popover';
-  pop.innerHTML = REACT_EMOJIS.map(e => `<button type="button" class="react-pick">${e}</button>`).join('');
+  pop.className = 'react-popover full-react-popover';
+  pop.innerHTML = `
+    <div class="ep-search"><input type="text" class="rp-search" placeholder="Search emoji"></div>
+    <div class="ep-cats rp-cats"></div>
+    <div class="ep-scroll">
+      <div class="ep-section-label">Custom</div>
+      <div class="ep-grid rp-custom-grid"></div>
+      <div class="rp-standard-sections"></div>
+    </div>`;
   document.body.appendChild(pop);
+
   const r = anchorEl.getBoundingClientRect();
-  const pw = pop.offsetWidth || 260;
+  const pw = 320, ph = Math.min(360, window.innerHeight - 16);
+  pop.style.width = pw + 'px';
+  pop.style.maxHeight = ph + 'px';
   pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8)) + 'px';
-  pop.style.top = Math.max(8, r.top - pop.offsetHeight - 8) + 'px';
-  pop.querySelectorAll('.react-pick').forEach((btn, i) => {
-    btn.onclick = () => { toggleReaction(msgId, REACT_EMOJIS[i]); closeReactPopover(); };
+  pop.style.top = Math.max(8, Math.min(r.top - ph - 8, window.innerHeight - ph - 8)) + 'px';
+
+  const doReact = (emojiKey) => { toggleReaction(msgId, emojiKey); closeReactPopover(); };
+
+  function renderGrids(q) {
+    q = (q || '').toLowerCase();
+    const customNames = Object.keys(customEmojis).filter(n => !q || n.includes(q)).sort();
+    const customWrap = pop.querySelector('.rp-custom-grid');
+    customWrap.innerHTML = customNames.length
+      ? customNames.map(n => `<button type="button" title=":${esc(n)}:"><img src="${customEmojis[n].dataUrl}" alt=":${esc(n)}:"></button>`).join('')
+      : '<div class="ep-empty">No custom emoji yet</div>';
+    customWrap.querySelectorAll('button').forEach((btn, i) => { btn.onclick = () => doReact(`:${customNames[i]}:`); });
+
+    const sectionsWrap = pop.querySelector('.rp-standard-sections');
+    sectionsWrap.innerHTML = EMOJI_CATEGORIES.map(cat => {
+      const names = Object.keys(cat.items).filter(n => !q || n.includes(q));
+      if (!names.length) return '';
+      return `<div class="ep-section-label" id="rp-sec-${cat.key}">${esc(cat.label)}</div>
+        <div class="ep-grid">${names.map(n => `<button type="button" title=":${esc(n)}:">${cat.items[n]}</button>`).join('')}</div>`;
+    }).join('') || '<div class="ep-empty">No emoji match "' + esc(q) + '"</div>';
+    sectionsWrap.querySelectorAll('button').forEach(btn => { btn.onclick = () => doReact(btn.textContent); });
+  }
+
+  pop.querySelector('.rp-cats').innerHTML = EMOJI_CATEGORIES.map(cat => `<button type="button" class="ep-cat-btn" data-cat="${cat.key}" title="${esc(cat.label)}">${cat.icon}</button>`).join('');
+  pop.querySelectorAll('.rp-cats .ep-cat-btn').forEach(btn => {
+    btn.onclick = () => { const t = pop.querySelector('#rp-sec-' + btn.dataset.cat); if (t) t.scrollIntoView({ block: 'start' }); };
   });
+  const searchInput = pop.querySelector('.rp-search');
+  searchInput.addEventListener('input', () => renderGrids(searchInput.value));
+  renderGrids('');
+  setTimeout(() => searchInput.focus(), 0);
+
   openReactPopover = pop;
   setTimeout(() => document.addEventListener('click', outsideReactClose), 0);
 }
@@ -2389,6 +2595,77 @@ async function deleteMessage(id) {
     if (ref) await ref.delete();
   } catch (e) { toast('Could not delete message.', 'error'); }
 }
+
+// ---------- editing (own messages only) ----------
+function startEditMessage(msgId) {
+  const m = lastRawMessages.find(x => x.id === msgId);
+  if (!m || m.uid !== myUid) return; // only your own messages, ever
+  const line = document.querySelector(`.msg-line[data-mid="${CSS.escape(msgId)}"]`);
+  const rowWrap = line && line.querySelector('.msg-row-wrap');
+  if (!rowWrap || rowWrap.querySelector('.msg-edit-box')) return;
+  closeActionSheet();
+
+  const original = m.text || '';
+  const textSpan = rowWrap.querySelector('.msg-text');
+  const editedTag = rowWrap.querySelector('.edited-tag');
+  const box = document.createElement('div');
+  box.className = 'msg-edit-box';
+  box.innerHTML = `<textarea class="msg-edit-input" rows="1"></textarea>
+    <div class="msg-edit-hint">escape to <a class="med-cancel">cancel</a> &bull; enter to <a class="med-save">save</a></div>`;
+  if (textSpan) textSpan.replaceWith(box); else rowWrap.insertBefore(box, rowWrap.firstChild);
+  if (editedTag) editedTag.remove();
+
+  const ta = box.querySelector('.msg-edit-input');
+  ta.value = original;
+  autoResize(ta);
+  ta.addEventListener('input', () => autoResize(ta));
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+
+  const finish = async (save) => {
+    if (save) {
+      const newText = applyMessageFilter(ta.value.trim());
+      if (!newText) { toast('Message can\'t be empty — delete it instead if you want it gone.'); return; }
+      if (newText !== original) {
+        try { await msgRef(msgId).update({ text: newText, edited: true }); }
+        catch (e) { toast('Could not save edit.', 'error'); }
+      }
+    }
+    renderMessages(lastRawMessages);
+  };
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  box.querySelector('.med-save').onclick = () => finish(true);
+  box.querySelector('.med-cancel').onclick = () => finish(false);
+}
+
+async function copyMessageText(m) {
+  try {
+    await navigator.clipboard.writeText(m.text || '');
+    toast('Copied.');
+  } catch (e) { toast('Could not copy — your browser blocked clipboard access.', 'error'); }
+}
+
+// ---------- replying ----------
+let replyTarget = null;
+function setReplyTarget(msgId) {
+  const m = lastRawMessages.find(x => x.id === msgId);
+  if (!m) return;
+  closeActionSheet();
+  const uname = (profileCache[m.uid] && profileCache[m.uid].username) || m.username || 'Unknown User';
+  const preview = m.sticker ? `Sent a sticker: ${m.sticker.name}` : m.gifUrl ? 'Sent a GIF' : m.attachment ? `Sent a file: ${m.attachment.name || ''}` : (m.text || '');
+  replyTarget = { id: m.id, uid: m.uid, username: uname, text: preview.slice(0, 150) };
+  $('reply-bar-username').textContent = uname;
+  $('reply-bar').classList.remove('hidden');
+  $('composer-input').focus();
+}
+function clearReplyTarget() {
+  replyTarget = null;
+  $('reply-bar').classList.add('hidden');
+}
+$('reply-bar-close').onclick = clearReplyTarget;
 
 async function sendToCurrentConversation(payload) {
   if (currentView === 'channel') {
@@ -2424,8 +2701,11 @@ async function sendMessage() {
   input.value = '';
   autoResize(input);
   const text = applyMessageFilter(raw);
+  const payload = { text, uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp() };
+  if (replyTarget) payload.replyTo = { id: replyTarget.id, uid: replyTarget.uid, username: replyTarget.username, text: replyTarget.text };
   try {
-    await sendToCurrentConversation({ text, uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp() });
+    await sendToCurrentConversation(payload);
+    clearReplyTarget();
   } catch (e) { toast('Failed to send message.', 'error'); }
 }
 // No explicit Send button — matches Discord's real composer (Enter to send).
@@ -2475,6 +2755,8 @@ function renderEmojiPickerGrids() {
 }
 $('emoji-picker-btn').onclick = (e) => {
   e.stopPropagation();
+  $('sticker-picker-panel').classList.add('hidden');
+  $('gif-picker-panel').classList.add('hidden');
   const panel = $('emoji-picker-panel');
   const willOpen = panel.classList.contains('hidden');
   panel.classList.toggle('hidden');
@@ -2491,7 +2773,7 @@ document.addEventListener('click', (e) => {
 // ============================================================
 // SETTINGS MODAL
 // ============================================================
-$('open-my-settings').onclick = openSettings;
+$('open-my-settings').onclick = () => openProfileModal(myUid);
 $('open-settings-gear').onclick = openSettings;
 function openSettings() { populateSettings(); openModal('settings-modal'); }
 
@@ -2519,16 +2801,6 @@ function populateSettings() {
     sw.style.background = c;
     sw.onclick = async () => { await db.collection('users').doc(myUid).update({ avatarColor: c }); };
     swatchWrap.appendChild(sw);
-  });
-
-  const statusWrap = $('status-picker');
-  statusWrap.innerHTML = '';
-  STATUSES.forEach(s => {
-    const row = document.createElement('div');
-    row.className = 'status-opt' + ((myProfile.status || 'online') === s.key ? ' selected' : '');
-    row.innerHTML = `<span class="dot status-dot ${s.key}" style="position:static;border:none;"></span><span>${s.label}</span>`;
-    row.onclick = async () => { await db.collection('users').doc(myUid).update({ status: s.key }); };
-    statusWrap.appendChild(row);
   });
 
   $('orb-balance-amt').textContent = myProfile.orbs || 0;

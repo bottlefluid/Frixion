@@ -336,7 +336,6 @@ a { color: var(--text-link); text-decoration: none; }
 }
 .msg-group { padding: 2px 16px; display: flex; gap: 16px; position: relative; }
 .msg-group:hover { background: var(--message-hover); }
-.msg-group.is-pinned { background: rgba(88,101,242,.06); border-left: 2px solid var(--accent); padding-left: 14px; }
 .msg-group .avatar { width: 40px; height: 40px; margin-top: 2px; cursor: pointer; }
 .msg-body { flex: 1; min-width: 0; }
 .msg-meta { display: flex; align-items: baseline; gap: 8px; }
@@ -344,10 +343,40 @@ a { color: var(--text-link); text-decoration: none; }
 .msg-meta .author:hover { text-decoration: underline; }
 .msg-meta .author.own { color: var(--accent); }
 .msg-meta .time { font-size: 11px; color: var(--text-faint); }
-.msg-meta .pin-flag { font-size: 11px; color: var(--accent); font-weight: 700; display: inline-flex; align-items: center; gap: 3px; }
 .msg-text { font-size: 15px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+.edited-tag { font-size: 10px; color: var(--text-faint); margin-left: 4px; }
+.msg-reply-ref {
+  display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--text-muted);
+  margin-bottom: 3px; cursor: pointer; width: 100%; min-width: 0;
+}
+.msg-reply-ref:hover { color: var(--text-normal); }
+.msg-reply-ref .i svg { width: 13px; height: 13px; }
+.msg-reply-ref .mrr-user { font-weight: 600; color: var(--text-normal); flex-shrink: 0; }
+.msg-reply-ref .mrr-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-edit-box { width: 100%; }
+.msg-edit-input {
+  display: block; width: 100%; background: var(--bg-input); border: 1px solid var(--accent);
+  border-radius: 6px; color: var(--text-normal); font-size: 15px; line-height: 1.4;
+  padding: 8px 10px; resize: none; outline: none; font-family: inherit;
+}
+.msg-edit-hint { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+.msg-edit-hint a { color: var(--accent); cursor: pointer; }
+.msg-edit-hint a:hover { text-decoration: underline; }
+@keyframes msgFlash { from { background: var(--accent-soft); } to { background: transparent; } }
+.flash-highlight { animation: msgFlash 1.2s ease; border-radius: 6px; }
 .msg-line { position: relative; }
 .msg-row-wrap { position: relative; display: flex; align-items: flex-start; gap: 6px; flex-wrap: wrap; }
+/* Pinned highlight: hug the actual text/image content (shrink-to-fit via
+   inline-flex) instead of stretching across the whole message row width. */
+.msg-line.is-pinned .msg-row-wrap {
+  display: inline-flex;
+  max-width: 100%;
+  outline: 2px solid #f0b132;
+  outline-offset: 4px;
+  border-radius: 6px;
+  background: rgba(240, 177, 50, .07);
+}
+.msg-line.is-pinned .msg-row-wrap.is-sticker { display: inline-block; }
 .msg-hover-actions {
   display: none; position: absolute; top: -16px; right: 0; align-items: center; gap: 1px;
   background: var(--bg-primary); border: 1px solid var(--divider); border-radius: 8px;
@@ -369,6 +398,7 @@ a { color: var(--text-link); text-decoration: none; }
 .reaction-pill:hover { border-color: var(--text-faint); }
 .reaction-pill.mine { background: var(--accent-soft); border-color: var(--accent); }
 .reaction-pill span { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+.reaction-emoji-img { width: 16px; height: 16px; object-fit: contain; }
 
 .react-popover {
   position: fixed; z-index: 200; background: var(--bg-floating); border-radius: 8px;
@@ -376,11 +406,58 @@ a { color: var(--text-link); text-decoration: none; }
 }
 .react-pick { font-size: 20px; padding: 5px; border-radius: 6px; line-height: 1; }
 .react-pick:hover { background: var(--bg-modifier-hover); }
+.full-react-popover {
+  flex-direction: column; gap: 0; padding: 10px 10px 0; overflow: hidden;
+}
+.full-react-popover .ep-search input { margin-bottom: 8px; }
+.full-react-popover .ep-scroll { max-height: none; flex: 1; overflow-y: auto; padding-bottom: 10px; }
+
+/* ---- mobile long-press message action sheet ---- */
+.action-sheet-backdrop {
+  position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,.5);
+  display: flex; align-items: flex-end; justify-content: center;
+  animation: sheetFadeIn .15s ease;
+}
+@keyframes sheetFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.action-sheet {
+  width: 100%; max-width: 480px; background: var(--bg-floating); border-radius: 14px 14px 0 0;
+  padding: 14px 8px calc(14px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -4px 24px var(--shadow-color); animation: sheetSlideUp .18s ease;
+}
+@keyframes sheetSlideUp { from { transform: translateY(24px); opacity: .6; } to { transform: translateY(0); opacity: 1; } }
+.as-quick-react {
+  display: flex; align-items: center; justify-content: space-between; gap: 4px;
+  background: var(--bg-input); border-radius: 24px; padding: 6px 10px; margin: 0 6px 12px;
+}
+.as-quick-emoji {
+  display: flex; align-items: center; justify-content: center; width: 34px; height: 34px;
+  font-size: 20px; border-radius: 50%; line-height: 1; color: var(--text-muted);
+}
+.as-quick-emoji:hover, .as-quick-emoji:active { background: var(--bg-modifier-hover); }
+.as-quick-emoji.as-more-react .i svg { width: 16px; height: 16px; }
+.as-actions { display: flex; flex-direction: column; }
+.as-item {
+  display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+  padding: 12px 14px; border-radius: 8px; font-size: 15px; color: var(--text-normal);
+}
+.as-item:hover, .as-item:active { background: var(--bg-modifier-hover); }
+.as-item .i svg { width: 18px; height: 18px; }
+.as-item.as-danger { color: var(--danger); }
+body.action-sheet-open { overflow: hidden; }
 
 .day-divider { display: flex; align-items: center; gap: 12px; color: var(--text-faint); font-size: 12px; font-weight: 600; margin: 16px 16px 8px; }
 .day-divider::before, .day-divider::after { content: ''; flex: 1; height: 1px; background: var(--divider); }
 
 #composer-wrap { padding: 0 16px 24px; flex-shrink: 0; position: relative; }
+#reply-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--bg-input); border-radius: 8px 8px 0 0; padding: 8px 12px;
+  font-size: 13px; color: var(--text-muted); margin-bottom: -1px;
+}
+#reply-bar.hidden { display: none; }
+#reply-bar .rb-text b { color: var(--text-normal); }
+#reply-bar .rb-close { cursor: pointer; color: var(--text-muted); font-size: 14px; padding: 2px 4px; border-radius: 4px; }
+#reply-bar .rb-close:hover { color: var(--text-normal); background: var(--bg-modifier-hover); }
 #composer {
   background: var(--bg-input); border-radius: 8px; display: flex; align-items: center;
   padding: 0 12px; gap: 4px; min-height: 44px;
@@ -594,21 +671,54 @@ a { color: var(--text-link); text-decoration: none; }
   #app.member-list-open #member-panel { display: none; }
 }
 
+/* Narrow windows in general — a resized or split-screen desktop browser
+   window is just as tight as a phone, even with a mouse. This mirrors
+   the phone layout below (single pane at a time, sliding panel nav)
+   without the touch-only bits like long-press or on-screen-keyboard
+   tracking, which live in the touch-scoped media query further down. */
+@media (max-width: 700px) {
+  #app, #app.member-list-open { grid-template-columns: 56px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+  #server-rail { grid-column: 1; grid-row: 1; width: 56px; padding: 8px 0; }
+  .rail-item { width: 42px; height: 42px; font-size: 13px; }
+  #side-panel, #main-col {
+    grid-row: 1; min-width: 0; display: flex;
+    transition: transform .28s cubic-bezier(.25,.75,.4,1);
+  }
+  #side-panel { grid-column: 2 / 3; transform: translateX(0); }
+  #main-col { grid-column: 1 / -1; z-index: 2; transform: translateX(100%); }
+  #app.mobile-show-chat #side-panel { transform: translateX(-100%); }
+  #app.mobile-show-chat #main-col { transform: translateX(0); }
+  .mobile-back-btn { display: flex; }
+
+  #member-panel { display: none; }
+  #app.member-list-open #member-panel {
+    display: block; position: fixed; inset: 0; top: 32px; z-index: 45;
+    width: 100%; height: calc(100% - 32px); padding: 16px 12px;
+  }
+
+  #settings-modal .modal-box { flex-direction: column; height: 88vh; }
+  #settings-nav { width: 100%; display: flex; flex-wrap: wrap; gap: 2px; padding: 10px; }
+  #settings-nav .nav-label { display: none; }
+  .admin-layout { flex-direction: column; height: auto; }
+  .admin-left { width: 100%; }
+  .admin-right { border-left: none; border-top: 1px solid var(--divider); padding-left: 0; padding-top: 16px; }
+}
+
 /* ============ ICONS (no emoji anywhere — plain inline SVG) ============ */
 .i { display: inline-flex; width: 14px; height: 14px; vertical-align: middle; flex-shrink: 0; }
 .i svg { width: 100%; height: 100%; display: block; }
 .premium-star { color: #f4a4ff; width: 12px; height: 12px; margin-left: 3px; }
+.owner-crown { color: var(--idle); width: 13px; height: 13px; margin-left: 3px; }
 .del-msg .i, .del-channel .i { width: 13px; height: 13px; }
 .lock-badge { width: 13px; height: 13px; opacity: .8; }
 .big-choice .em { display: flex; align-items: center; justify-content: center; color: var(--text-muted); width: 26px; }
 
 /* ============ ROLE / STATE TAGS ============ */
-.op-tag, .owner-tag, .ban-tag {
+.op-tag, .ban-tag {
   display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
   padding: 1px 6px; border-radius: 3px; margin-left: 5px; vertical-align: middle; letter-spacing: .3px;
 }
 .op-tag { background: var(--accent-soft); color: var(--accent); }
-.owner-tag { background: rgba(240,178,50,.18); color: var(--idle); }
 .ban-tag { background: rgba(218,55,60,.18); color: var(--danger); }
 
 /* ============ ADMIN PANEL ============ */
@@ -820,6 +930,10 @@ a { color: var(--text-link); text-decoration: none; }
   html, body { height: var(--mobile-viewport-height, 100dvh); min-height: var(--mobile-viewport-height, 100dvh); }
   #title-bar { display: none; }
   #page-body { height: 100%; min-height: 0; }
+
+  /* Hover doesn't really exist on touch — hold a message to bring up
+     the action sheet instead (see setupMessageLongPress in script.js). */
+  .msg-line:hover .msg-hover-actions, .msg-hover-actions { display: none !important; }
 
   /* Keep the compact rail in the conversation list, but let the active
      chat span the entire screen. Keeping it beside the chat was what made
