@@ -197,6 +197,12 @@ async function ensureQuestsFresh(profile) {
 // UPDATE LOG — newest first. Add a new entry after every update.
 // ============================================================
 const UPDATES = [
+  { v: '2.6', date: '2026-09-02', title: 'Toolbar overlap and keyboard docking, actually fixed',
+    notes: [
+      'The message toolbar redesign in 2.5 fixed images but still overlapped the username or the message above it for short text — that\'s fixed now too, it only ever sits on top of its own message.',
+      'Fixed the on-screen keyboard leaving a gap above itself instead of the composer actually docking against it.',
+      'iPads now get that same keyboard docking — they still get the roomier desktop-style layout otherwise, this was just about the keyboard.',
+    ] },
   { v: '2.5', date: '2026-09-02', title: 'Hover toolbar now hugs the message, gone on mobile',
     notes: [
       'The react/reply/edit/pin/delete toolbar now sits right next to the message or image it belongs to, instead of floating off on the far right of the screen for short messages.',
@@ -1026,6 +1032,14 @@ function isMobile() {
     '(hover: none) and (pointer: coarse) and (max-height: 600px)'
   ).matches;
 }
+// Touch device of ANY size — phone or tablet (iPad included). Used only
+// for the on-screen-keyboard docking fix below, which a tablet needs just
+// as much as a phone does. isMobile() above stays phone-only on purpose:
+// an iPad should still get the roomy desktop-style layout (grid columns,
+// title bar, etc.), just with the keyboard handled correctly.
+function isTouchDevice() {
+  return window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+}
 function setMobilePane(pane) {
   $('app').classList.toggle('mobile-show-chat', pane === 'chat');
 }
@@ -1041,14 +1055,29 @@ $('back-to-list-btn').onclick = () => setMobilePane('list');
 // On iOS and some Android webviews, the layout viewport keeps its original
 // height while the software keyboard overlays the page. Use the visual
 // viewport when it is available so the flex layout ends at the keyboard.
+//
+// That alone isn't quite enough on iOS: focusing a field pans the visual
+// viewport up rather than resizing the layout viewport in place, so even
+// with the height corrected, the page can still be scrolled such that the
+// bottom of our now-shorter layout sits above the keyboard instead of
+// right on top of it — a gap the size of that pan. Shifting #app up by
+// visualViewport.offsetTop cancels that out so the composer actually
+// docks against the keyboard instead of floating above it. This runs for
+// any touch device (phone or tablet), not just phones, so an iPad's
+// keyboard docks the same way — it just keeps its own desktop-style
+// layout otherwise, since isMobile() (unlike isTouchDevice()) is unchanged.
 function syncMobileViewport() {
   const root = document.documentElement;
-  if (!isMobile()) {
+  const appEl = $('app');
+  if (!isTouchDevice()) {
     root.style.removeProperty('--mobile-viewport-height');
+    if (appEl) appEl.style.transform = '';
     return;
   }
-  const visibleHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const vv = window.visualViewport;
+  const visibleHeight = vv ? vv.height : window.innerHeight;
   root.style.setProperty('--mobile-viewport-height', `${Math.round(visibleHeight)}px`);
+  if (appEl) appEl.style.transform = (vv && vv.offsetTop) ? `translateY(${vv.offsetTop}px)` : '';
 }
 window.addEventListener('resize', syncMobileViewport);
 if (window.visualViewport) {

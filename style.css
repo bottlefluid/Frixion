@@ -70,7 +70,14 @@ body.theme-onyx {
 }
 
 html, body {
-  height: 100%;
+  /* Mobile/tablet browsers don't always resize the layout viewport for the
+     software keyboard — script.js keeps --mobile-viewport-height in sync
+     with the actual visible viewport on touch devices (see
+     syncMobileViewport), so the composer stays docked right above the
+     keyboard instead of being covered by it or leaving a gap. On desktop
+     the variable is never set, so this just falls back to 100dvh. */
+  height: var(--mobile-viewport-height, 100dvh);
+  min-height: var(--mobile-viewport-height, 100dvh);
   font-family: var(--font);
   background: var(--bg-deepest);
   color: var(--text-normal);
@@ -372,7 +379,7 @@ a { color: var(--text-link); text-decoration: none; }
    very short messages (a single short word, say) wide enough that the
    toolbar still has room to sit within the row instead of overhanging
    off its left edge into the username line above. */
-.msg-row-wrap { position: relative; display: inline-flex; max-width: 100%; min-width: 130px; align-items: flex-start; gap: 6px; flex-wrap: wrap; }
+.msg-row-wrap { position: relative; display: inline-flex; max-width: 100%; min-width: 138px; align-items: flex-start; gap: 6px; flex-wrap: wrap; }
 /* Pinned highlight: treat text vs. media differently. Plain text turns
    gold rather than getting boxed in, and media (images/GIFs/stickers/
    files) gets a border that hugs its own exact edges via a negative
@@ -390,8 +397,14 @@ a { color: var(--text-link); text-decoration: none; }
   outline-offset: -2px;
   background: rgba(240, 177, 50, .07);
 }
+/* top: 0 keeps the toolbar's top edge flush with its own row's top edge
+   instead of floating above it — reaching upward (even a little) was
+   what let it land on top of the username line for the first message in
+   a group, or the previous message's text for a grouped one directly
+   below it. This way it only ever overlaps its own row, never a
+   different line. */
 .msg-hover-actions {
-  display: none; position: absolute; top: -16px; right: 0; align-items: center; gap: 1px;
+  display: none; position: absolute; top: 0; right: 0; align-items: center; gap: 1px;
   background: var(--bg-primary); border: 1px solid var(--divider); border-radius: 8px;
   padding: 3px; box-shadow: 0 2px 10px var(--shadow-color); z-index: 6;
 }
@@ -907,7 +920,7 @@ body.action-sheet-open { overflow: hidden; }
 /* inline-block (not block) so this shrinks to the sticker's own width —
    same reasoning as .msg-row-wrap above, so the hover toolbar sits next
    to the sticker instead of off to the right of the whole row. */
-.msg-row-wrap.is-sticker { display: inline-block; min-width: 130px; }
+.msg-row-wrap.is-sticker { display: inline-block; min-width: 138px; }
 .msg-sticker { width: 128px; height: 128px; object-fit: contain; display: block; }
 #sticker-picker-panel {
   position: absolute; bottom: 74px; right: 16px; width: 300px; max-width: calc(100% - 32px);
@@ -947,10 +960,6 @@ body.action-sheet-open { overflow: hidden; }
    ============================================================ */
 @media (hover: none) and (pointer: coarse) and (max-width: 600px),
        (hover: none) and (pointer: coarse) and (max-height: 600px) {
-  /* Mobile browsers do not always resize the layout viewport for the
-     software keyboard. script.js keeps this variable in sync with the
-     visible viewport, so the composer stays immediately above it. */
-  html, body { height: var(--mobile-viewport-height, 100dvh); min-height: var(--mobile-viewport-height, 100dvh); }
   #title-bar { display: none; }
   #page-body { height: 100%; min-height: 0; }
 
