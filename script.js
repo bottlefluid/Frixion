@@ -197,6 +197,12 @@ async function ensureQuestsFresh(profile) {
 // UPDATE LOG — newest first. Add a new entry after every update.
 // ============================================================
 const UPDATES = [
+  { v: '2.7', date: '2026-09-02', title: 'Keyboard docking on more browsers',
+    notes: [
+      'Told Android browsers (Chrome, Edge, Samsung Internet) to resize the page for the keyboard themselves, which is the more reliable way to handle it there.',
+      'Added a fallback re-check right when a text field is focused or unfocused, for any browser that\'s slow to report the keyboard opening.',
+      'iOS Safari, Chrome, Firefox, and Edge on iPhone/iPad were already covered, since Apple requires them all to use the same engine under the hood.',
+    ] },
   { v: '2.6', date: '2026-09-02', title: 'Toolbar overlap and keyboard docking, actually fixed',
     notes: [
       'The message toolbar redesign in 2.5 fixed images but still overlapped the username or the message above it for short text — that\'s fixed now too, it only ever sits on top of its own message.',
@@ -1066,6 +1072,23 @@ $('back-to-list-btn').onclick = () => setMobilePane('list');
 // any touch device (phone or tablet), not just phones, so an iPad's
 // keyboard docks the same way — it just keeps its own desktop-style
 // layout otherwise, since isMobile() (unlike isTouchDevice()) is unchanged.
+//
+// Cross-browser notes, since this API is handled a bit differently
+// everywhere:
+// - iOS: every browser (Safari, Chrome, Firefox, Edge, in-app browsers)
+//   is required by Apple to use Safari's WebKit engine under the hood, so
+//   whatever works in Safari here works identically in all of them.
+// - Android Chrome/Edge/Samsung Internet (Chromium): the
+//   interactive-widget=resizes-content viewport meta tag in index.html
+//   asks the browser to resize the actual layout viewport for the
+//   keyboard, which — where it's honored — makes visualViewport.height
+//   equal window.innerHeight and offsetTop naturally 0, so the code below
+//   just becomes a no-op confirming what the browser already did right.
+// - Android Firefox and anything else without visualViewport support:
+//   falls back to window.innerHeight, which has reflected the on-screen
+//   keyboard via the resize event since long before visualViewport
+//   existed, so height-tracking still works even if the offsetTop
+//   compensation (an iOS-specific quirk) never applies.
 function syncMobileViewport() {
   const root = document.documentElement;
   const appEl = $('app');
@@ -1084,6 +1107,22 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', syncMobileViewport);
   window.visualViewport.addEventListener('scroll', syncMobileViewport);
 }
+// Belt-and-suspenders for browsers/webviews that fire the events above
+// late, or not at all, relative to the keyboard's own show/hide animation:
+// re-check shortly after any text field gains or loses focus too. Two
+// delays cover both a fast keyboard and a slower ~250-300ms animation.
+document.addEventListener('focusin', (e) => {
+  if (e.target.matches && e.target.matches('input, textarea')) {
+    setTimeout(syncMobileViewport, 60);
+    setTimeout(syncMobileViewport, 350);
+  }
+});
+document.addEventListener('focusout', (e) => {
+  if (e.target.matches && e.target.matches('input, textarea')) {
+    setTimeout(syncMobileViewport, 60);
+    setTimeout(syncMobileViewport, 350);
+  }
+});
 syncMobileViewport();
 
 // ---- swipe to open/close, DMs only (not servers) ----
