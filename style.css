@@ -1021,7 +1021,7 @@ body.action-sheet-open { overflow: hidden; }
     padding: 0 8px max(10px, env(safe-area-inset-bottom));
     background: var(--bg-primary); z-index: 3;
   }
-  #composer { min-height: 48px; border-radius: 24px; padding: 0 8px; gap: 2px; }
+  #composer { min-height: 48px; border-radius: 8px; padding: 0 8px; gap: 2px; }
   #composer textarea { min-width: 0; min-height: 46px; padding: 12px 4px; font-size: 16px; }
   .composer-icon-btn { width: 32px; height: 34px; }
   #emoji-picker-panel, #sticker-picker-panel, #gif-picker-panel { bottom: 66px; }
