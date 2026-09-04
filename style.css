@@ -85,6 +85,11 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  /* Block pinch-zoom and double-tap-zoom on touch devices. Panning (scroll
+     lists, drag-to-reorder, etc.) stays allowed — only the zoom gestures
+     are excluded. The viewport meta tag's user-scalable=no covers older
+     browsers; this covers modern ones that ignore that. */
+  touch-action: pan-x pan-y;
 }
 body { display: flex; flex-direction: column; }
 
@@ -187,6 +192,10 @@ a { color: var(--text-link); text-decoration: none; }
 .auth-card p.sub { color: var(--text-muted); text-align: center; font-size: 14px; margin-bottom: 20px; line-height: 1.4; }
 .field { margin-bottom: 16px; }
 .field label { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.setting-row-text { flex: 1; }
+.setting-row-title { font-size: 15px; font-weight: 500; color: var(--text-normal); margin-bottom: 2px; }
+.setting-row-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
 .field input, .field textarea, .field select {
   width: 100%; padding: 10px 12px; border-radius: 4px; border: none;
   background: var(--bg-input); color: var(--text-normal); font-size: 15px; outline: none;
@@ -501,6 +510,51 @@ body.action-sheet-open { overflow: hidden; }
 .composer-icon-btn:hover { color: var(--text-normal); background: var(--bg-modifier-hover); }
 .composer-icon-btn svg { display: block; }
 #gift-btn.hidden { display: none; }
+
+/* ---- custom on-screen keyboard (mobile composer, edit box, and any wired search field) ---- */
+#custom-keyboard {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 4px calc(8px + env(safe-area-inset-bottom, 0px));
+  margin-top: 8px; background: var(--bg-deepest); border-radius: 10px;
+  user-select: none; -webkit-user-select: none;
+}
+#custom-keyboard.hidden { display: none; }
+.ck-row { display: flex; gap: 5px; }
+.ck-tool-row { gap: 6px; padding: 0 2px 2px; }
+.ck-key.ck-tool {
+  flex: 1; height: 30px; font-size: 12px; font-weight: 600; color: var(--text-muted);
+  background: var(--bg-input); border-radius: 5px; box-shadow: none;
+}
+.ck-key.ck-tool:active { background: var(--bg-modifier-hover); color: var(--text-normal); }
+.ck-key {
+  flex: 1; min-width: 0; height: 42px; display: flex; align-items: center; justify-content: center;
+  background: var(--bg-input); color: var(--text-normal); border-radius: 6px;
+  font-size: 16px; font-weight: 500; box-shadow: 0 1px 0 rgba(0,0,0,.25);
+}
+.ck-key:active { background: var(--bg-modifier-hover); transform: translateY(1px); }
+.ck-key.ck-wide { flex: 1.6; font-size: 13px; }
+.ck-key .i svg { width: 18px; height: 18px; display: block; }
+.ck-shift.on, .ck-shift.caps { color: var(--accent); }
+.ck-shift.caps { background: var(--accent-soft, rgba(88,101,242,.18)); }
+.ck-bottom-row { align-items: stretch; }
+.ck-key.ck-tag { flex: 1; font-size: 13px; font-weight: 700; }
+.ck-key.ck-space { flex: 4; font-size: 13px; color: var(--text-muted); }
+.ck-key.ck-enter { flex: 1.4; background: var(--accent); color: #fff; }
+.ck-key.ck-enter:active { background: var(--accent-hover); }
+.ck-key.ck-enter .i svg { width: 17px; height: 17px; }
+
+/* Custom blinking cursor — readOnly fields don't reliably show a
+   native caret, so this is drawn separately and positioned via JS
+   (measureCaretOffset/positionCkCursor) to track wherever the
+   selection currently is in whichever field is active. */
+#ck-cursor {
+  position: fixed; display: none; width: 2px; background: var(--accent);
+  z-index: 250; pointer-events: none; border-radius: 1px;
+}
+#ck-cursor.ck-blink { animation: ckCursorBlink 1s step-end infinite; }
+@keyframes ckCursorBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+/* "Select All" visual feedback on whichever field is targeted */
+.ck-all-selected { background: var(--accent-soft, rgba(88,101,242,.25)) !important; }
 
 /* ---- emoji picker popover above composer ---- */
 /* Anchored to the right, matching where the emoji/GIF/sticker buttons
@@ -915,6 +969,61 @@ body.action-sheet-open { overflow: hidden; }
 .mfc-name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mfc-size { font-size: 12px; color: var(--text-faint); }
 #upload-progress { padding: 6px 4px 0; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-muted); }
+.msg-attachment-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; max-width: 400px;
+}
+.msg-attachment-grid img { width: 100%; height: 140px; max-height: 140px; object-fit: cover; }
+
+/* ============ STAGED ATTACHMENTS (draft strip above composer) ============ */
+.attachment-draft {
+  display: flex; gap: 10px; padding: 12px 16px 0; overflow-x: auto;
+}
+.draft-card { flex-shrink: 0; width: 88px; }
+.draft-card-thumb {
+  position: relative; width: 88px; height: 88px; border-radius: 8px; overflow: hidden;
+  background: var(--bg-input); display: flex; align-items: center; justify-content: center;
+}
+.draft-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.draft-file-icon { color: var(--text-muted); width: 32px; height: 32px; }
+.draft-card-actions {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px;
+  background: rgba(0,0,0,.45); opacity: 0; transition: opacity .1s ease;
+}
+.draft-card-thumb:hover .draft-card-actions { opacity: 1; }
+.draft-action-btn {
+  width: 26px; height: 26px; border-radius: 50%; background: rgba(30,31,34,.85); color: #fff;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.draft-action-btn .i { width: 14px; height: 14px; }
+.draft-action-btn:hover { background: var(--bg-modifier-selected); }
+.draft-action-btn.danger:hover { background: var(--danger); }
+.draft-card-name {
+  font-size: 11px; color: var(--text-muted); margin-top: 4px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ============ MENTIONS ============ */
+.mention-pill { color: var(--text-link); background: var(--accent-soft); border-radius: 3px; padding: 0 2px; font-weight: 500; }
+.mention-pill.mention-glow { color: #fff; background: rgba(88,101,242,.4); }
+.mention-pill.mention-glow.mention-self { font-weight: 700; }
+
+#mention-popup {
+  position: fixed; width: 240px; max-width: calc(100% - 32px);
+  background: var(--bg-floating); border-radius: 8px; padding: 6px; box-shadow: 0 8px 30px var(--shadow-color); z-index: 60;
+}
+.mention-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
+.mention-row .avatar { flex-shrink: 0; }
+.mention-row-name { font-size: 14px; font-weight: 500; color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mention-row-you { margin-left: auto; font-size: 11px; color: var(--text-faint); flex-shrink: 0; }
+.mention-row.selected { background: var(--accent); }
+.mention-row.selected .mention-row-name, .mention-row.selected .mention-row-you { color: #fff; }
+.mention-hint { font-size: 11px; color: var(--text-faint); padding: 6px 8px 2px; border-top: 1px solid var(--divider); margin-top: 4px; }
+
+/* ============ IMAGE PREVIEW MODAL (staged attachment eye icon) ============ */
+.image-preview-box { position: relative; max-width: 92vw; max-height: 90vh; }
+.image-preview-box img { display: block; max-width: 92vw; max-height: 90vh; border-radius: 8px; }
+.image-preview-close { position: absolute; top: -32px; right: 0; color: #fff; font-size: 22px; cursor: pointer; }
+.image-preview-close:hover { color: var(--text-muted); }
 
 /* ============ STICKERS ============ */
 /* inline-block (not block) so this shrinks to the sticker's own width —

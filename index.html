@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
 <title>Frixion</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%235865f2'/%3E%3Cpath d='M8 8h9a1 1 0 0 1 1 1v5.2a1 1 0 0 1-1 1h-4.6L9.8 18v-2.8H8a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z' fill='white'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -295,8 +295,9 @@
           <div class="gif-attribution">Powered by KLIPY</div>
           <div class="gif-grid" id="gif-grid"></div>
         </div>
-        <input type="file" id="file-input" class="hidden" accept="image/*,.pdf,.txt,.zip,.mp4,.mp3">
+        <input type="file" id="file-input" class="hidden" accept="image/*,.pdf,.txt,.zip,.mp4,.mp3" multiple>
         <div id="attachment-draft" class="attachment-draft hidden"></div>
+        <div id="mention-popup" class="hidden"></div>
         <div id="composer">
           <button class="composer-icon-btn" id="attach-btn" title="Add attachment or more"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></button>
           <textarea id="composer-input" rows="1" placeholder="Message" autocomplete="off" autocapitalize="sentences" inputmode="text"></textarea>
@@ -308,6 +309,8 @@
           </div>
         </div>
         <div id="upload-progress" class="hidden"></div>
+        <div id="custom-keyboard" class="hidden"></div>
+        <div id="ck-cursor"></div>
       </div>
     </div>
   </div>
@@ -542,6 +545,17 @@
           <label>Avatar Color</label>
           <div class="color-swatches" id="avatar-color-swatches"></div>
         </div>
+        <div class="field">
+          <label>Keyboard</label>
+          <div class="setting-row">
+            <div class="setting-row-text">
+              <div class="setting-row-title">Autocorrect</div>
+              <div class="setting-row-desc">Fixes common typos as you type, on desktop and the on-screen keyboard on mobile.</div>
+            </div>
+            <label class="toggle-switch"><input type="checkbox" id="autocorrect-toggle"><span class="toggle-slider"></span></label>
+          </div>
+          <p class="desc" style="margin:8px 0 0;font-size:12px;">Off by default. Checks common English words only — it won't touch usernames, mentions, or custom emoji shortcodes. Synced to your account.</p>
+        </div>
         <button class="btn-accent-inline" id="save-account-btn">Save Changes</button>
       </div>
 
@@ -757,6 +771,13 @@
   <div class="modal-box wide explore-modal-box">
     <div class="modal-header-row"><div><h2>Explore Servers</h2><p class="desc">Every server currently created in Frixion.</p></div><span class="x" data-close="explore-servers-modal">✕</span></div>
     <div id="explore-server-list" class="explore-server-list"></div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="image-preview-modal">
+  <div class="image-preview-box">
+    <span class="x image-preview-close" data-close="image-preview-modal">✕</span>
+    <img id="image-preview-img" src="" alt="Preview">
   </div>
 </div>
 

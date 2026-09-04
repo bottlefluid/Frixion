@@ -136,6 +136,9 @@ const GIF_API_KEY = 'TAGiarX1tDFDJvipS3zo71rD97RUMgnAm0iKBjLVVfJdds2DaeGxJEkcCu6
 // Get a free key at https://api.imgbb.com/ (click "Get API key", sign in free, no billing needed) — this is what makes image uploads/paste work.
 const IMGBB_API_KEY = '5e07186440c75758ee7f6bd003b1fcd6';
 
+// Shown in place of the color-and-initial avatar for anyone who hasn't uploaded a custom profile picture.
+const DEFAULT_AVATAR_URL = 'data:image/png;base64,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';
+
 // ---------- constants ----------
 const SESSION_KEY = 'frixion_user';
 const ADMIN_HASH = 'f7c323a01e4a88630c1301300a5212a6d21c874c5dee36d26de35cb9b75ca8d4'; // sha256("theflyisflying")
@@ -366,6 +369,8 @@ const ICONS = {
   edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>',
   copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   crown: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 8.5l4 3 5-6 5 6 4-3-1.6 9.5a1 1 0 0 1-1 .8H5.6a1 1 0 0 1-1-.8z"/></svg>',
+  send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2.5-7.5L3 11z"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
 };
 function icon(name, cls) { return `<span class="i ${cls||''}">${ICONS[name] || ''}</span>`; }
 
@@ -494,11 +499,19 @@ function subscribeCustomEmojis() {
 }
 function renderMessageText(rawText) {
   const safe = esc(rawText);
-  return safe.replace(/:([a-z0-9_]+):/gi, (whole, name) => {
+  const withEmoji = safe.replace(/:([a-z0-9_]+):/gi, (whole, name) => {
     const key = name.toLowerCase();
     if (customEmojis[key]) return `<img class="custom-emoji" src="${customEmojis[key].dataUrl}" alt=":${esc(key)}:" title=":${esc(key)}:">`;
     if (SHORTCODE_MAP[key]) return `<span class="native-emoji">${SHORTCODE_MAP[key]}</span>`;
     return whole;
+  });
+  // @mentions only "glow" when that user is actually in the current
+  // server/DM/group — otherwise it renders as a plain, dim mention.
+  const contextMembers = currentContextUsernames();
+  return withEmoji.replace(/(^|[\s(>])@([A-Za-z0-9_]{3,24})\b/g, (whole, lead, name) => {
+    const inContext = contextMembers.includes(name);
+    const cls = 'mention-pill' + (inContext ? ' mention-glow' : '') + (inContext && name === myUid ? ' mention-self' : '');
+    return `${lead}<span class="${cls}">@${esc(name)}</span>`;
   });
 }
 
@@ -580,10 +593,8 @@ function toast(msg, type = '') {
   setTimeout(() => el.remove(), 4000);
 }
 function avatarHTML(size, color, letter, status, avatarUrl) {
-  const inner = avatarUrl
-    ? `<img src="${esc(avatarUrl)}" alt="" loading="lazy">`
-    : esc(letter);
-  return `<div class="avatar${avatarUrl ? ' has-image' : ''}" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.42)}px;background:${avatarUrl ? 'transparent' : color}">${inner}${
+  const inner = `<img src="${esc(avatarUrl || DEFAULT_AVATAR_URL)}" alt="" loading="lazy">`;
+  return `<div class="avatar has-image" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.42)}px;background:transparent">${inner}${
     status ? `<span class="status-dot ${status}"></span>` : ''
   }</div>`;
 }
@@ -1125,6 +1136,22 @@ document.addEventListener('focusout', (e) => {
 });
 syncMobileViewport();
 
+// ---- block browser/OS zoom (pinch, ctrl+scroll, ctrl+plus/minus) ----
+// The viewport meta tag + touch-action:pan-x pan-y in CSS handle most of
+// this already; the listeners below catch the cases those two can't:
+// trackpad/ctrl+wheel zoom and Safari's gesture events on desktop.
+window.addEventListener('wheel', (e) => {
+  if (e.ctrlKey) e.preventDefault();
+}, { passive: false });
+['gesturestart', 'gesturechange', 'gestureend'].forEach((evt) => {
+  document.addEventListener(evt, (e) => e.preventDefault());
+});
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && ['=', '+', '-', '_', '0'].includes(e.key)) {
+    e.preventDefault();
+  }
+});
+
 // ---- swipe to open/close, DMs only (not servers) ----
 // Right = close the open DM (back to the list). Left = reopen whatever
 // DM/group/tab you last had open. Dragging follows your finger in real
@@ -1283,6 +1310,11 @@ function previewForMessage(message, includeAuthor = false) {
   if (!message) return 'No messages yet';
   if (typeof message === 'string') return message;
   let text = (message.text || '').trim();
+  if (!text && message.attachments && message.attachments.length) {
+    text = message.attachments.length > 1
+      ? `Sent ${message.attachments.length} photos`
+      : (message.attachments[0].type === 'image' ? 'Sent a photo' : `Sent ${message.attachments[0].name || 'a file'}`);
+  }
   if (!text && message.attachment) text = message.attachment.type === 'image' ? 'Sent a photo' : `Sent ${message.attachment.name || 'a file'}`;
   if (!text && message.gifUrl) text = 'Sent a GIF';
   if (!text && message.sticker) text = `Sent a sticker${message.sticker.name ? `: ${message.sticker.name}` : ''}`;
@@ -1541,13 +1573,9 @@ async function openProfileModal(username) {
   } catch (e) { toast('Could not load profile.', 'error'); return; }
 
   $('profile-banner').style.background = p.bannerColor || p.avatarColor || '#5865f2';
-  if (p.avatarUrl) {
-    $('profile-avatar').style.background = 'transparent';
-    $('profile-avatar').innerHTML = `<img src="${esc(p.avatarUrl)}" alt="">`;
-  } else {
-    $('profile-avatar').style.background = p.avatarColor;
-    $('profile-avatar').textContent = initials(p.username);
-  }
+  $('profile-avatar').style.background = 'transparent';
+  $('profile-avatar').classList.add('has-image');
+  $('profile-avatar').innerHTML = `<img src="${esc(p.avatarUrl || DEFAULT_AVATAR_URL)}" alt="">`;
   $('profile-username').innerHTML = esc(p.username) + premiumStar(p) + opTag(p);
   $('profile-pronouns').textContent = p.pronouns || '';
   $('profile-pronouns').classList.toggle('hidden', !p.pronouns);
@@ -1663,48 +1691,93 @@ async function uploadImageToImgbb(file) {
   if (!data.success) throw new Error((data.error && data.error.message) || 'ImgBB upload failed.');
   return data.data.url;
 }
-async function uploadAndSend(file) {
-  if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
-  if (file.size > 10 * 1024 * 1024) { toast('Files over 10MB are not supported here.', 'error'); return; }
-  const isImage = file.type.startsWith('image/');
-  const bar = $('upload-progress');
-  bar.classList.remove('hidden');
-  bar.innerHTML = `<div class="spinner small"></div><span>Uploading ${esc(file.name)}…</span>`;
-  try {
-    let url;
-    if (isImage) {
-      url = await uploadImageToImgbb(file);
-    } else if (storage) {
-      const path = `uploads/${myUid}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-      const ref = storage.ref().child(path);
-      await ref.put(file);
-      url = await ref.getDownloadURL();
-    } else {
-      throw new Error("General file uploads need Firebase Storage on the project's Blaze plan. Images and GIFs work without it.");
-    }
-    await sendToCurrentConversation({
-      text: '', uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
-      attachment: { url, type: isImage ? 'image' : 'file', name: file.name, size: file.size },
-    });
-  } catch (e) { toast(e.message || 'Upload failed.', 'error'); }
-  bar.classList.add('hidden');
+async function uploadFileGeneric(file, isImage) {
+  if (isImage) return uploadImageToImgbb(file);
+  if (!storage) throw new Error("General file uploads need Firebase Storage on the project's Blaze plan. Images and GIFs work without it.");
+  const path = `uploads/${myUid}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  const ref = storage.ref().child(path);
+  await ref.put(file);
+  return ref.getDownloadURL();
 }
+
+// ---- staged attachments ----
+// Files picked or pasted sit in a draft strip above the composer instead
+// of sending instantly — lets you drop the wrong one and send several
+// together as one message, matching how the real Discord client stages
+// images before you hit send.
+let draftAttachments = []; // { id, file, type: 'image'|'file', previewUrl }
+function stageFile(file) {
+  if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
+  if (file.size > 10 * 1024 * 1024) { toast(`${file.name} is over 10MB — not supported here.`, 'error'); return; }
+  const isImage = file.type.startsWith('image/');
+  if (!isImage && !storage) { toast("General file uploads need Firebase Storage on the project's Blaze plan. Images and GIFs work without it.", 'error'); return; }
+  draftAttachments.push({
+    id: 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    file, type: isImage ? 'image' : 'file',
+    previewUrl: isImage ? URL.createObjectURL(file) : null,
+  });
+  renderAttachmentDraft();
+}
+function removeDraftAttachment(id) {
+  const idx = draftAttachments.findIndex(d => d.id === id);
+  if (idx === -1) return;
+  if (draftAttachments[idx].previewUrl) URL.revokeObjectURL(draftAttachments[idx].previewUrl);
+  draftAttachments.splice(idx, 1);
+  renderAttachmentDraft();
+}
+function clearDraftAttachments() {
+  draftAttachments.forEach(d => { if (d.previewUrl) URL.revokeObjectURL(d.previewUrl); });
+  draftAttachments = [];
+  renderAttachmentDraft();
+}
+function previewDraftAttachment(id) {
+  const d = draftAttachments.find(x => x.id === id);
+  if (!d) return;
+  if (d.type === 'image') {
+    $('image-preview-img').src = d.previewUrl;
+    openModal('image-preview-modal');
+  } else {
+    window.open(URL.createObjectURL(d.file), '_blank');
+  }
+}
+function renderAttachmentDraft() {
+  const wrap = $('attachment-draft');
+  if (!draftAttachments.length) { wrap.classList.add('hidden'); wrap.innerHTML = ''; return; }
+  wrap.classList.remove('hidden');
+  wrap.innerHTML = draftAttachments.map(d => `
+    <div class="draft-card" data-did="${d.id}">
+      <div class="draft-card-thumb">
+        ${d.type === 'image' ? `<img src="${d.previewUrl}" alt="${esc(d.file.name)}">` : `<div class="draft-file-icon">${icon('file')}</div>`}
+        <div class="draft-card-actions">
+          <button type="button" class="draft-action-btn" data-act="view" title="Preview">${icon('eye')}</button>
+          <button type="button" class="draft-action-btn danger" data-act="remove" title="Remove">${icon('trash')}</button>
+        </div>
+      </div>
+      <div class="draft-card-name">${esc(d.file.name)}</div>
+    </div>`).join('');
+  wrap.querySelectorAll('.draft-card').forEach(card => {
+    const id = card.dataset.did;
+    card.querySelector('[data-act="view"]').onclick = () => previewDraftAttachment(id);
+    card.querySelector('[data-act="remove"]').onclick = () => removeDraftAttachment(id);
+  });
+}
+
 $('attach-btn').onclick = () => $('file-input').click();
 $('file-input').addEventListener('change', (e) => {
-  const file = e.target.files[0];
+  Array.from(e.target.files || []).forEach(stageFile);
   e.target.value = '';
-  if (file) uploadAndSend(file);
 });
 $('composer-input').addEventListener('paste', (e) => {
   const items = e.clipboardData && e.clipboardData.items;
   if (!items) return;
+  let handled = false;
   for (const item of items) {
     if (item.type && item.type.startsWith('image/')) {
       const file = item.getAsFile();
-      if (file) { e.preventDefault(); uploadAndSend(file); }
-      return;
+      if (file) { stageFile(file); handled = true; }
     }
   }
+  if (handled) e.preventDefault();
 });
 
 // ============================================================
@@ -1742,6 +1815,7 @@ $('sticker-btn').onclick = (e) => {
   e.stopPropagation();
   $('emoji-picker-panel').classList.add('hidden');
   $('gif-picker-panel').classList.add('hidden');
+  $('custom-keyboard').classList.add('hidden');
   $('sticker-picker-panel').classList.toggle('hidden');
   renderStickerGrid();
 };
@@ -1822,6 +1896,7 @@ $('gif-btn').onclick = (e) => {
   e.stopPropagation();
   $('emoji-picker-panel').classList.add('hidden');
   $('sticker-picker-panel').classList.add('hidden');
+  $('custom-keyboard').classList.add('hidden');
   const willOpen = $('gif-picker-panel').classList.contains('hidden');
   $('gif-picker-panel').classList.toggle('hidden');
   if (willOpen) { $('gif-search').value = ''; klipySearch(''); }
@@ -2452,14 +2527,17 @@ function reactionsHTML(reactions) {
 }
 
 function attachmentHTML(m) {
-  if (m.attachment) {
-    if (m.attachment.type === 'image') {
-      return `<div class="msg-attachment"><img src="${esc(m.attachment.url)}" alt="${esc(m.attachment.name)}" loading="lazy"></div>`;
-    }
-    return `<a class="msg-file-card" href="${esc(m.attachment.url)}" target="_blank" rel="noopener">
-      <span class="mfc-icon">${icon('file')}</span>
-      <span class="mfc-body"><span class="mfc-name">${esc(m.attachment.name)}</span><span class="mfc-size">${esc(humanFileSize(m.attachment.size || 0))}</span></span>
-    </a>`;
+  // m.attachments (array) covers new multi-image messages; m.attachment
+  // (singular) is kept for backward compatibility with older messages.
+  const atts = m.attachments || (m.attachment ? [m.attachment] : []);
+  if (atts.length) {
+    const gridCls = atts.length > 1 ? ' msg-attachment-grid' : '';
+    return `<div class="msg-attachment${gridCls}">` + atts.map(a => a.type === 'image'
+      ? `<img src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy">`
+      : `<a class="msg-file-card" href="${esc(a.url)}" target="_blank" rel="noopener">
+          <span class="mfc-icon">${icon('file')}</span>
+          <span class="mfc-body"><span class="mfc-name">${esc(a.name)}</span><span class="mfc-size">${esc(humanFileSize(a.size || 0))}</span></span>
+        </a>`).join('') + `</div>`;
   }
   if (m.gifUrl) {
     return `<div class="msg-attachment"><img src="${esc(m.gifUrl)}" alt="GIF" loading="lazy"></div>`;
@@ -2698,8 +2776,6 @@ function startEditMessage(msgId) {
   ta.value = original;
   autoResize(ta);
   ta.addEventListener('input', () => autoResize(ta));
-  ta.focus();
-  ta.setSelectionRange(ta.value.length, ta.value.length);
 
   const finish = async (save) => {
     if (save) {
@@ -2710,12 +2786,21 @@ function startEditMessage(msgId) {
         catch (e) { toast('Could not save edit.', 'error'); }
       }
     }
+    if (isMobile()) hideCustomKeyboard();
     renderMessages(lastRawMessages);
   };
-  ta.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true); }
-    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
-  });
+
+  if (isMobile()) {
+    ta.selectionStart = ta.selectionEnd = ta.value.length;
+    showCustomKeyboardFor(ta, { onEnter: () => finish(true), multiline: true });
+  } else {
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+  }
   box.querySelector('.med-save').onclick = () => finish(true);
   box.querySelector('.med-cancel').onclick = () => finish(false);
 }
@@ -2734,15 +2819,19 @@ function setReplyTarget(msgId) {
   if (!m) return;
   closeActionSheet();
   const uname = (profileCache[m.uid] && profileCache[m.uid].username) || m.username || 'Unknown User';
-  const preview = m.sticker ? `Sent a sticker: ${m.sticker.name}` : m.gifUrl ? 'Sent a GIF' : m.attachment ? `Sent a file: ${m.attachment.name || ''}` : (m.text || '');
+  const atts = m.attachments || (m.attachment ? [m.attachment] : []);
+  const preview = m.sticker ? `Sent a sticker: ${m.sticker.name}` : m.gifUrl ? 'Sent a GIF' :
+    atts.length > 1 ? `Sent ${atts.length} files` : atts.length ? `Sent a file: ${atts[0].name || ''}` : (m.text || '');
   replyTarget = { id: m.id, uid: m.uid, username: uname, text: preview.slice(0, 150) };
   $('reply-bar-username').textContent = uname;
   $('reply-bar').classList.remove('hidden');
-  $('composer-input').focus();
+  if (isMobile()) showCustomKeyboard(); else $('composer-input').focus();
 }
 function clearReplyTarget() {
   replyTarget = null;
   $('reply-bar').classList.add('hidden');
+  clearDraftAttachments();
+  closeMentionPopup();
 }
 $('reply-bar-close').onclick = clearReplyTarget;
 
@@ -2776,34 +2865,628 @@ async function sendToCurrentConversation(payload) {
 async function sendMessage() {
   const input = $('composer-input');
   const raw = input.value.trim();
-  if (!raw) return;
+  const pendingAttachments = draftAttachments.slice();
+  if (!raw && !pendingAttachments.length) return;
+  if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
   input.value = '';
   autoResize(input);
-  const text = applyMessageFilter(raw);
+  closeMentionPopup();
+  draftAttachments = [];
+  renderAttachmentDraft();
+  const text = raw ? applyMessageFilter(raw) : '';
   const payload = { text, uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp() };
   if (replyTarget) payload.replyTo = { id: replyTarget.id, uid: replyTarget.uid, username: replyTarget.username, text: replyTarget.text };
   try {
+    if (pendingAttachments.length) {
+      const bar = $('upload-progress');
+      bar.classList.remove('hidden');
+      bar.innerHTML = `<div class="spinner small"></div><span>Uploading ${pendingAttachments.length > 1 ? pendingAttachments.length + ' files' : esc(pendingAttachments[0].file.name)}…</span>`;
+      const uploaded = [];
+      for (const d of pendingAttachments) {
+        const url = await uploadFileGeneric(d.file, d.type === 'image');
+        uploaded.push({ url, type: d.type, name: d.file.name, size: d.file.size });
+        if (d.previewUrl) URL.revokeObjectURL(d.previewUrl);
+      }
+      bar.classList.add('hidden');
+      payload.attachments = uploaded;
+    }
     await sendToCurrentConversation(payload);
     clearReplyTarget();
-  } catch (e) { toast('Failed to send message.', 'error'); }
+  } catch (e) {
+    $('upload-progress').classList.add('hidden');
+    toast(e.message || 'Failed to send message.', 'error');
+  }
 }
 // No explicit Send button — matches Discord's real composer (Enter to send).
 $('composer-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  if (mentionState) {
+    if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); completeMention(mentionCandidates[mentionSelectedIndex]); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); mentionSelectedIndex = (mentionSelectedIndex + 1) % mentionCandidates.length; renderMentionPopup(); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); mentionSelectedIndex = (mentionSelectedIndex - 1 + mentionCandidates.length) % mentionCandidates.length; renderMentionPopup(); return; }
+    if (e.key === 'Escape') { closeMentionPopup(); return; }
+  }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ckWordBoundaryCheck(e.target); sendMessage(); }
+});
+// Autocorrect on desktop: the word-boundary check only ran through the
+// mobile custom keyboard's own key handlers before, so a real keyboard
+// typing space never triggered it. This covers that path; Enter is
+// handled above right before sendMessage() clears the field.
+$('composer-input').addEventListener('keyup', (e) => {
+  if (e.key === ' ' && !(ckField && ckField.el === e.target)) ckWordBoundaryCheck(e.target);
 });
 function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 200) + 'px'; }
-$('composer-input').addEventListener('input', (e) => autoResize(e.target));
+$('composer-input').addEventListener('input', (e) => { autoResize(e.target); updateMentionState(e.target); });
+
+// ============================================================
+// MENTIONS (@ autocomplete + rendering)
+// Typing "@" plus a few letters pops up matching members from whichever
+// server/DM/group is currently open, top match highlighted; Tab, Enter,
+// or tapping a row completes it (see positionMentionPopup — reuses the
+// same caret-measuring trick as the mobile keyboard's cursor overlay).
+// Rendered mentions only get the "glow" style when that user is actually
+// in the current conversation.
+// ============================================================
+function currentContextUsernames() {
+  if (currentView === 'channel' && currentServerData) return currentServerData.members || [];
+  if (currentView === 'dm') return [myUid, currentDMOtherUid].filter(Boolean);
+  if (currentView === 'groupdm') {
+    const g = (window.__myGroupDMs || []).find(x => x.id === currentGroupDMId);
+    return g ? (g.participants || []) : [];
+  }
+  return [];
+}
+
+let mentionState = null;      // { el, start, query } — start is the index of "@" in el.value
+let mentionCandidates = [];
+let mentionSelectedIndex = 0;
+
+function updateMentionState(el) {
+  const pos = el.selectionStart;
+  if (pos == null) { closeMentionPopup(); return; }
+  const before = el.value.slice(0, pos);
+  const m = /(?:^|\s)@([A-Za-z0-9_]{0,24})$/.exec(before);
+  if (!m) { closeMentionPopup(); return; }
+  const query = m[1];
+  const start = pos - query.length - 1;
+  const lowerQ = query.toLowerCase();
+  const candidates = currentContextUsernames()
+    .filter(u => u && u.toLowerCase().startsWith(lowerQ))
+    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .slice(0, 6);
+  if (!candidates.length) { closeMentionPopup(); return; }
+  mentionState = { el, start, query };
+  mentionCandidates = candidates;
+  mentionSelectedIndex = 0;
+  renderMentionPopup();
+}
+function closeMentionPopup() {
+  mentionState = null; mentionCandidates = []; mentionSelectedIndex = 0;
+  $('mention-popup').classList.add('hidden');
+}
+function positionMentionPopup(el) {
+  const popup = $('mention-popup');
+  const fRect = el.getBoundingClientRect();
+  const off = measureCaretOffset(el);
+  popup.style.left = Math.max(8, Math.min(fRect.left + off.x - (el.scrollLeft || 0), window.innerWidth - popup.offsetWidth - 8)) + 'px';
+  popup.style.bottom = (window.innerHeight - fRect.top + 8) + 'px';
+}
+function renderMentionPopup() {
+  const popup = $('mention-popup');
+  popup.innerHTML = mentionCandidates.map((u, i) => {
+    const p = profileCache[u] || { username: u, avatarColor: '#5865f2' };
+    return `<div class="mention-row${i === mentionSelectedIndex ? ' selected' : ''}" data-idx="${i}">
+      ${avatarHTML(22, p.avatarColor, initials(p.username), null, p.avatarUrl)}
+      <span class="mention-row-name">${esc(p.username)}</span>
+      ${u === myUid ? '<span class="mention-row-you">you</span>' : ''}
+    </div>`;
+  }).join('') + `<div class="mention-hint">Tab to autofill</div>`;
+  popup.classList.remove('hidden');
+  popup.querySelectorAll('.mention-row').forEach(row => {
+    row.onclick = () => completeMention(mentionCandidates[+row.dataset.idx]);
+  });
+  positionMentionPopup(mentionState.el);
+}
+function completeMention(username) {
+  if (!mentionState || username == null) return;
+  const { el, start, query } = mentionState;
+  const before = el.value.slice(0, start);
+  const after = el.value.slice(start + 1 + query.length);
+  const insertion = '@' + username + ' ';
+  el.value = before + insertion + after;
+  el.selectionStart = el.selectionEnd = before.length + insertion.length;
+  closeMentionPopup();
+  autoResize(el);
+  ckFireInput(el);
+  if (ckField && ckField.el === el) positionCkCursor();
+}
+document.addEventListener('click', (e) => {
+  if (!mentionState) return;
+  if (e.target.closest('#mention-popup') || e.target.closest('#composer-input')) return;
+  closeMentionPopup();
+});
 
 // ---------- emoji picker (composer) ----------
+
+// ============================================================
+// CUSTOM ON-SCREEN KEYBOARD (mobile only)
+// The OS's own accessory bar (Prev/Next/Done) above the keyboard
+// can't be removed from a webpage — confirmed against current iOS
+// documentation, not assumed — because it belongs to the native
+// WKWebView, not our DOM. The only way around it is to never let a
+// real native keyboard attach to a field at all: every field this
+// drives is set readOnly on mobile (readOnly fields can still be
+// read/written via JS, they just don't summon the OS keyboard) and
+// never receives real focus either — instead this renders its own
+// blinking cursor overlay, since readOnly fields don't reliably show
+// a native caret (that's the exact bug that got reported). Every key
+// writes through insertAtCursor()/autoResize() and fires a synthetic
+// 'input' event, so existing listeners (search-as-you-type, etc.)
+// keep working without knowing a keystroke came from here. Desktop
+// is untouched — isMobile() gates all of this.
+// ============================================================
+const CK_LETTERS = [
+  ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+  ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
+  [{ act: 'shift', label: '⇧' }, 'z', 'x', 'c', 'v', 'b', 'n', 'm', { act: 'backspace', label: '⌫' }],
+];
+// Mirrors the real iOS two-page 123 / #+= symbol layout.
+const CK_SYMBOLS_1 = [
+  ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+  ['-', '/', ':', ';', '(', ')', '$', '&', '@', '"'],
+  [{ act: 'page2', label: '#+=' }, '.', ',', '?', '!', "'", { act: 'backspace', label: '⌫' }],
+];
+const CK_SYMBOLS_2 = [
+  ['[', ']', '{', '}', '#', '%', '^', '*', '+', '='],
+  ['_', '\\', '|', '~', '<', '>', '€', '£', '¥', '•'],
+  [{ act: 'page1', label: '123' }, '.', ',', '?', '!', "'", { act: 'backspace', label: '⌫' }],
+];
+
+// ---- optional autocorrect (off by default) ----
+// Top ~1000 words from Google's public-domain word-frequency corpus
+// (github.com/first20hours/google-10000-english). Deliberately a
+// common-words list, not a full dictionary — good for catching
+// everyday typos without being large enough to slow down a tap.
+const CK_DICTIONARY = new Set([
+  'the','of','and','to','a','in','for','is','on','that','by','this','with','i','you','it','not','or','be',
+  'are','from','at','as','your','all','have','new','more','an','was','we','will','home','can','us','about',
+  'if','page','my','has','search','free','but','our','one','other','do','no','information','time','they',
+  'site','he','up','may','what','which','their','news','out','use','any','there','see','only','so','his',
+  'when','contact','here','business','who','web','also','now','help','get','view','online','first','am',
+  'been','would','how','were','me','services','some','these','click','its','like','service','than','find',
+  'price','date','back','top','people','had','list','name','just','over','state','year','day','into','email',
+  'two','health','world','next','used','go','work','last','most','products','music','buy','data','make',
+  'them','should','product','system','post','her','city','add','policy','number','such','please','available',
+  'copyright','support','message','after','best','software','then','good','video','well','where','info',
+  'rights','public','books','high','school','through','each','links','she','review','years','order','very',
+  'privacy','book','items','company','read','group','need','many','user','said','does','set','under','general',
+  'research','university','mail','full','map','reviews','program','life','know','games','way','days',
+  'management','part','could','great','united','hotel','real','item','international','center','must','store',
+  'travel','comments','made','development','report','off','member','details','line','terms','before','hotels',
+  'did','send','right','type','because','local','those','using','results','office','education','national',
+  'car','design','take','posted','internet','address','community','within','states','area','want','phone',
+  'shipping','reserved','subject','between','forum','family','long','based','code','show','even','black',
+  'check','special','prices','website','index','being','women','much','sign','file','link','open','today',
+  'technology','south','case','project','same','pages','version','section','own','found','sports','house',
+  'related','security','both','county','american','photo','game','members','power','while','care','network',
+  'down','computer','systems','three','total','place','end','following','download','him','without','per',
+  'access','think','north','resources','current','posts','big','media','law','control','water','history',
+  'pictures','size','art','personal','since','including','guide','shop','directory','board','location',
+  'change','white','text','small','rating','rate','government','children','during','return','students',
+  'shopping','account','times','sites','level','digital','profile','previous','form','events','love','old',
+  'john','main','call','hours','image','department','title','description','another','why','shall','property',
+  'class','still','money','quality','every','listing','content','country','private','little','visit','save',
+  'tools','low','reply','customer','december','compare','movies','include','college','value','article','york',
+  'man','card','jobs','provide','food','source','author','different','press','learn','sale','around','print',
+  'course','job','canada','process','room','stock','training','too','credit','point','join','science','men',
+  'categories','advanced','west','sales','look','english','left','team','estate','box','conditions','select',
+  'windows','photos','thread','week','category','note','live','large','gallery','table','register','however',
+  'june','october','november','market','library','really','action','start','series','model','features','air',
+  'industry','plan','human','provided','tv','yes','required','second','hot','accessories','cost','movie',
+  'forums','march','better','say','questions','july','going','medical','test','friend','come','server','pc',
+  'study','application','cart','staff','articles','feedback','again','play','looking','issues','april','never',
+  'users','complete','street','topic','comment','financial','things','working','against','standard','tax',
+  'person','below','mobile','less','got','blog','party','payment','equipment','login','student','let',
+  'programs','offers','legal','above','recent','park','stores','side','act','problem','red','give','memory',
+  'performance','social','august','quote','language','story','sell','options','experience','rates','create',
+  'key','body','young','america','important','field','few','east','paper','single','age','activities','club',
+  'example','girls','additional','password','latest','something','road','gift','question','changes','night',
+  'hard','texas','pay','four','status','browse','issue','range','building','seller','court','february',
+  'always','result','audio','light','write','war','offer','blue','groups','easy','given','files','event',
+  'release','analysis','request','china','making','picture','needs','possible','might','professional','yet',
+  'month','major','star','areas','future','space','committee','hand','sun','cards','problems','london',
+  'washington','meeting','become','interest','child','keep','enter','california','share','similar','garden',
+  'schools','million','added','reference','companies','listed','baby','learning','energy','run','delivery',
+  'net','popular','term','film','stories','put','computers','journal','reports','try','welcome','central',
+  'images','president','notice','original','head','radio','until','cell','color','self','council','away',
+  'includes','track','australia','discussion','archive','once','others','entertainment','agreement','format',
+  'least','society','months','log','safety','friends','sure','trade','edition','cars','messages','marketing',
+  'tell','further','updated','association','able','having','provides','david','fun','already','green',
+  'studies','close','common','drive','specific','several','gold','living','collection','called','short','arts',
+  'lot','ask','display','limited','powered','solutions','means','director','daily','beach','past','natural',
+  'whether','due','electronics','five','upon','period','planning','database','says','official','weather',
+  'land','average','done','technical','window','france','region','island','record','direct','microsoft',
+  'conference','environment','records','district','calendar','costs','style','front','statement','update',
+  'parts','ever','downloads','early','miles','sound','resource','present','applications','either','ago',
+  'document','word','works','material','bill','written','talk','federal','hosting','rules','final','adult',
+  'tickets','thing','centre','requirements','via','cheap','kids','finance','true','minutes','else','mark',
+  'third','rock','gifts','europe','reading','topics','bad','individual','tips','plus','auto','cover','usually',
+  'edit','together','videos','percent','fast','function','fact','unit','getting','global','tech','meet','far',
+  'economic','player','projects','lyrics','often','subscribe','submit','germany','amount','watch','included',
+  'feel','though','bank','risk','thanks','everything','deals','various','words','production','commercial',
+  'james','weight','town','heart','advertising','received','choose','treatment','newsletter','archives',
+  'points','knowledge','magazine','error','camera','girl','currently','construction','toys','registered',
+  'clear','golf','receive','domain','methods','chapter','makes','protection','policies','loan','wide','beauty',
+  'manager','india','position','taken','sort','listings','models','michael','known','half','cases','step',
+  'engineering','florida','simple','quick','none','wireless','license','paul','friday','lake','whole','annual',
+  'published','later','basic','shows','corporate','google','church','method','purchase','customers','active',
+  'response','practice','hardware','figure','materials','fire','holiday','chat','enough','designed','along',
+  'among','death','writing','speed','html','countries','loss','face','brand','discount','higher','effects',
+  'created','remember','standards','oil','bit','yellow','political','increase','advertise','kingdom','base',
+  'near','environmental','thought','stuff','french','storage','japan','doing','loans','shoes','entry','stay',
+  'nature','orders','availability','ground','overview','owners','disease','italy','perfect','classic','basis',
+  'command','cities','william','express','award','distance','peter','ensure','involved','extra','partners',
+  'budget','rated','guides','success','maximum','existing','quite','selected','amazon','patients','warning',
+  'horse','forward','flowers','stars','lists','owner','retail','animals','useful','directly','housing','takes',
+  'bring','catalog','searches','trying','mother','traffic','joined','input','strategy','agent','valid',
+  'modern','senior','ireland','teaching','grand','testing','trial','charge','units','instead','canadian',
+  'normal','wrote','ships','entire','leading','metal','positive','fitness','chinese','opinion','football',
+  'abstract','output','funds','greater','likely','develop','artists','guest','seems','trust','contains',
+  'session','multi','republic','vacation','century','academic','graphics','indian','expected','grade',
+  'dating','pacific','mountain','filter','mailing','vehicle','longer','consider','northern','behind','panel',
+  'floor','german','buying','match','proposed','default','require','outdoor','morning','allows','protein',
+  'plant','reported','politics','partner','authors','boards','faculty','parties','mission','string','sense',
+  'modified','released','stage','internal','goods','recommended','forecast','db','signal','buttons','na',
+  'israel','bought','indicate','row','wall','includ','nutrition','anti','anniversary','pricing','yourself',
+  'shall','seniors','entered','discovery','lodge','hopefully','iron','disabled','vitamin','ranked','summer',
+  'dollars','appliances','planet','democratic','identified','operation','desk','worldwide','recognition',
+  'presented','citizens','carbon','tourism','described','stainless','holdings','beat','breast','sea','flat',
+  'transactions','entries','margin','vietnam','offset','directors','shot','coupon','operating','hosted',
+  'valuable','pool','digest','beauty','operators','stainless','simply','audience','clean','rehabilitation',
+  'agriculture','forestry','equity','francisco','sports','circuit','anchor','runner','absolutely','underground',
+  'physicians','adjustable','massage','deputy','danger','pittsburgh','knight','vice','rap','flowers','tone',
+  'reasonable','victoria','filed','allowing','wishlist','vacations','recipe','ties','ranging','stability',
+  'reasonably','offshore','flooring','gorgeous','fought','entirely','packaging','ranking','extras','argument',
+  'shoulder','pontiac','vulnerable','township','islamic','critics','powerful','remained','sad','circulation',
+]);
+// Synced to the account (users/{username}.autocorrect) instead of
+// localStorage, so it follows you between devices — same pattern as
+// avatarColor. myProfile is kept current by the users/{myUid} snapshot
+// listener in initAppForUser().
+function isAutocorrectEnabled() { return !!(myProfile && myProfile.autocorrect); }
+let ckLastAutocorrect = null; // { start, end, original } — lets one immediate backspace undo the last correction
+$('autocorrect-toggle').addEventListener('change', async (e) => {
+  const on = e.target.checked;
+  try { await db.collection('users').doc(myUid).update({ autocorrect: on }); }
+  catch (err) { e.target.checked = !on; toast('Could not save that setting.', 'error'); }
+});
+function levenshtein(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 99;
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+function ckFindClosestWord(word) {
+  const maxDist = word.length <= 4 ? 1 : 2;
+  let best = null, bestDist = maxDist + 1;
+  for (const w of CK_DICTIONARY) {
+    if (Math.abs(w.length - word.length) > maxDist) continue;
+    if (w[0] !== word[0]) continue; // cheap prune — typos rarely change the first letter, keeps this fast
+    const d = levenshtein(word, w);
+    if (d < bestDist) { bestDist = d; best = w; if (d === 0) break; }
+  }
+  return bestDist <= maxDist ? best : null;
+}
+// Runs on space/punctuation/enter — checks only the word that was just
+// completed, not the whole field, so this stays cheap regardless of
+// message length.
+function ckWordBoundaryCheck(el) {
+  if (!isAutocorrectEnabled()) return;
+  const pos = el.selectionStart;
+  if (pos == null) return;
+  // Called right after a space is inserted (cursor now sits after that
+  // space) or right before Enter (cursor sits right after the word,
+  // nothing trailing yet) — back up past a trailing space so either
+  // way we're looking at the word that was actually just completed.
+  let checkPos = pos;
+  if (checkPos > 0 && el.value[checkPos - 1] === ' ') checkPos -= 1;
+  const before = el.value.slice(0, checkPos);
+  const m = /([A-Za-z]+)$/.exec(before);
+  if (!m) return;
+  const word = m[1];
+  if (word.length < 3) return;
+  const wordStart = checkPos - word.length;
+  const lower = word.toLowerCase();
+  if (CK_DICTIONARY.has(lower)) return;
+  const corrected = ckFindClosestWord(lower);
+  if (!corrected || corrected === lower) return;
+  const finalWord = word[0] === word[0].toUpperCase() ? corrected[0].toUpperCase() + corrected.slice(1) : corrected;
+  el.value = el.value.slice(0, wordStart) + finalWord + el.value.slice(checkPos);
+  const newPos = wordStart + finalWord.length + (pos - checkPos);
+  el.selectionStart = el.selectionEnd = newPos;
+  ckLastAutocorrect = { start: wordStart, end: wordStart + finalWord.length, original: word };
+  autoResize(el);
+  ckFireInput(el);
+  if (ckField && ckField.el === el) positionCkCursor();
+}
+
+let ckField = null;       // { el, onEnter(el), multiline } — field currently being driven
+let ckShiftOn = false;    // capitalizes just the next letter
+let ckCapsLock = false;   // capitalizes until toggled off again
+let ckPage = 'letters';   // 'letters' | 'symbols1' | 'symbols2'
+let ckLastShiftTap = 0;
+
+function ckFireInput(el) { el.dispatchEvent(new Event('input', { bubbles: true })); }
+
 function insertAtCursor(el, text) {
+  ckLastAutocorrect = null;
   const start = el.selectionStart != null ? el.selectionStart : el.value.length;
   const end = el.selectionEnd != null ? el.selectionEnd : el.value.length;
   el.value = el.value.slice(0, start) + text + el.value.slice(end);
   const pos = start + text.length;
   el.selectionStart = el.selectionEnd = pos;
-  el.focus();
   autoResize(el);
+  ckFireInput(el);
+  if (ckField && ckField.el === el) positionCkCursor();
 }
+function deleteAtCursor(el) {
+  // One immediate backspace right after an autocorrect undoes it
+  // instead of just chopping its last letter — matches how phone
+  // keyboards handle this. Covers both the space-triggered case
+  // (cursor sits one past the word, after the space) and the
+  // Enter-triggered case (cursor sits right at the word's end).
+  if (ckLastAutocorrect && el.selectionStart === el.selectionEnd) {
+    const { start, end, original } = ckLastAutocorrect;
+    const sel = el.selectionStart;
+    const atSpaceAfter = sel === end + 1 && el.value[end] === ' ';
+    if (sel === end || atSpaceAfter) {
+      el.value = el.value.slice(0, start) + original + el.value.slice(sel);
+      el.selectionStart = el.selectionEnd = start + original.length;
+      ckLastAutocorrect = null;
+      autoResize(el);
+      ckFireInput(el);
+      if (ckField && ckField.el === el) positionCkCursor();
+      return;
+    }
+  }
+  ckLastAutocorrect = null;
+  const start = el.selectionStart != null ? el.selectionStart : el.value.length;
+  const end = el.selectionEnd != null ? el.selectionEnd : el.value.length;
+  if (start === end) {
+    if (start === 0) return;
+    el.value = el.value.slice(0, start - 1) + el.value.slice(end);
+    el.selectionStart = el.selectionEnd = start - 1;
+  } else {
+    el.value = el.value.slice(0, start) + el.value.slice(end);
+    el.selectionStart = el.selectionEnd = start;
+  }
+  autoResize(el);
+  ckFireInput(el);
+  if (ckField && ckField.el === el) positionCkCursor();
+}
+
+// ---- blinking cursor overlay (readOnly fields don't reliably show a native caret) ----
+function measureCaretOffset(field) {
+  let mirror = document.getElementById('ck-mirror');
+  if (!mirror) { mirror = document.createElement('div'); mirror.id = 'ck-mirror'; document.body.appendChild(mirror); }
+  const cs = window.getComputedStyle(field);
+  ['boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+    'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'lineHeight',
+    'textTransform', 'textIndent'].forEach(p => { mirror.style[p] = cs[p]; });
+  mirror.style.position = 'fixed';
+  mirror.style.top = '-9999px';
+  mirror.style.left = '0';
+  mirror.style.visibility = 'hidden';
+  mirror.style.whiteSpace = field.tagName === 'TEXTAREA' ? 'pre-wrap' : 'pre';
+  mirror.style.wordWrap = 'break-word';
+  mirror.style.overflowWrap = 'break-word';
+
+  const pos = field.selectionEnd != null ? field.selectionEnd : field.value.length;
+  mirror.textContent = '';
+  mirror.appendChild(document.createTextNode(field.value.slice(0, pos)));
+  const marker = document.createElement('span');
+  marker.textContent = '\u200b';
+  mirror.appendChild(marker);
+  mirror.appendChild(document.createTextNode(field.value.slice(pos) || '.'));
+
+  const mRect = mirror.getBoundingClientRect();
+  const markerRect = marker.getBoundingClientRect();
+  return {
+    x: markerRect.left - mRect.left,
+    y: markerRect.top - mRect.top,
+    h: markerRect.height || parseFloat(cs.lineHeight) || 18,
+  };
+}
+function positionCkCursor() {
+  const field = ckField && ckField.el;
+  const cur = $('ck-cursor');
+  if (!field || !cur) return;
+  const fRect = field.getBoundingClientRect();
+  const off = measureCaretOffset(field);
+  const y = off.y - (field.scrollTop || 0);
+  cur.style.left = (fRect.left + off.x - (field.scrollLeft || 0)) + 'px';
+  cur.style.top = (fRect.top + y) + 'px';
+  cur.style.height = off.h + 'px';
+  cur.style.display = (y < -2 || y > fRect.height) ? 'none' : 'block';
+  cur.classList.remove('ck-blink'); void cur.offsetWidth; cur.classList.add('ck-blink');
+}
+
+// ---- floating emoji/gif/sticker panels sit above whichever field is
+// active; when the keyboard grows underneath the composer, nudge them
+// up by its height so they don't get covered ----
+function ckAdjustFloatingPanels(open) {
+  ['emoji-picker-panel', 'gif-picker-panel', 'sticker-picker-panel'].forEach(id => {
+    const el = $(id);
+    if (open) {
+      if (!el.dataset.ckBaseBottom) el.dataset.ckBaseBottom = window.getComputedStyle(el).bottom;
+      el.style.bottom = `calc(${el.dataset.ckBaseBottom} + ${$('custom-keyboard').offsetHeight || 0}px)`;
+    } else {
+      el.style.bottom = '';
+    }
+  });
+}
+
+function ckConsumeOneShotShift() {
+  if (ckShiftOn && !ckCapsLock) { ckShiftOn = false; renderCustomKeyboard(); }
+}
+function ckTapLetter(ch) {
+  if (!ckField) return;
+  const upper = ckPage === 'letters' && (ckShiftOn || ckCapsLock);
+  insertAtCursor(ckField.el, upper ? ch.toUpperCase() : ch);
+  ckConsumeOneShotShift();
+}
+function ckTapShift() {
+  const now = Date.now();
+  if (now - ckLastShiftTap < 350) { ckCapsLock = !ckCapsLock; ckShiftOn = false; }
+  else { ckShiftOn = !ckShiftOn; ckCapsLock = false; }
+  ckLastShiftTap = now;
+  renderCustomKeyboard();
+}
+function ckTapEnter() {
+  if (!ckField) return;
+  if (mentionState && mentionState.el === ckField.el) { completeMention(mentionCandidates[mentionSelectedIndex]); return; }
+  ckWordBoundaryCheck(ckField.el);
+  if (ckField.multiline && ckShiftOn) { insertAtCursor(ckField.el, '\n'); ckShiftOn = false; renderCustomKeyboard(); }
+  else ckField.onEnter(ckField.el);
+}
+function ckTapEmoji() {
+  $('sticker-picker-panel').classList.add('hidden');
+  $('gif-picker-panel').classList.add('hidden');
+  const panel = $('emoji-picker-panel');
+  const willOpen = panel.classList.contains('hidden');
+  panel.classList.toggle('hidden');
+  $('custom-keyboard').classList.toggle('hidden', willOpen);
+  ckAdjustFloatingPanels(!willOpen);
+  if (willOpen) { $('emoji-search').value = ''; renderEmojiPickerGrids(); }
+}
+async function ckTapCopy() {
+  if (!ckField) return;
+  const el = ckField.el;
+  const start = el.selectionStart != null ? el.selectionStart : 0;
+  const end = el.selectionEnd != null ? el.selectionEnd : el.value.length;
+  const text = start !== end ? el.value.slice(start, end) : el.value;
+  if (!text) return;
+  try { await navigator.clipboard.writeText(text); toast('Copied.'); }
+  catch (e) { toast('Could not copy — clipboard access was blocked.', 'error'); }
+}
+async function ckTapPaste() {
+  if (!ckField) return;
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) insertAtCursor(ckField.el, text);
+  } catch (e) { toast('Could not paste — allow clipboard access and try again.', 'error'); }
+}
+function ckTapSelectAll() {
+  if (!ckField) return;
+  const el = ckField.el;
+  el.selectionStart = 0;
+  el.selectionEnd = el.value.length;
+  el.classList.add('ck-all-selected');
+  positionCkCursor();
+}
+function ckClearSelectionHighlight() { if (ckField) ckField.el.classList.remove('ck-all-selected'); }
+
+function renderCustomKeyboard() {
+  const kb = $('custom-keyboard');
+  const rows = ckPage === 'letters' ? CK_LETTERS : (ckPage === 'symbols1' ? CK_SYMBOLS_1 : CK_SYMBOLS_2);
+  const upper = ckShiftOn || ckCapsLock;
+  const keyHTML = (item) => {
+    if (typeof item === 'string') {
+      const disp = ckPage !== 'letters' ? item : (upper ? item.toUpperCase() : item);
+      return `<button type="button" class="ck-key" data-ch="${esc(item)}">${esc(disp)}</button>`;
+    }
+    const wideCls = item.act === 'shift' ? `ck-shift${upper ? ' on' : ''}${ckCapsLock ? ' caps' : ''}` : '';
+    return `<button type="button" class="ck-key ck-wide ${wideCls}" data-act="${item.act}">${esc(item.label)}</button>`;
+  };
+  const toolRow = `
+    <div class="ck-row ck-tool-row">
+      <button type="button" class="ck-key ck-tool" data-act="select-all">Select All</button>
+      <button type="button" class="ck-key ck-tool" data-act="copy">Copy</button>
+      <button type="button" class="ck-key ck-tool" data-act="paste">Paste</button>
+    </div>`;
+  const bottomRow = `
+    <div class="ck-row ck-bottom-row">
+      <button type="button" class="ck-key ck-tag" data-act="toggle-symbols">${ckPage === 'letters' ? '123' : 'ABC'}</button>
+      <button type="button" class="ck-key ck-tag" data-act="emoji">${icon('smiley')}</button>
+      <button type="button" class="ck-key ck-space" data-act="space">space</button>
+      <button type="button" class="ck-key ck-tag ck-enter" data-act="enter">${ckField && ckField.multiline && ckShiftOn ? '⏎' : icon('send')}</button>
+    </div>`;
+  kb.innerHTML = toolRow + rows.map(row => `<div class="ck-row">${row.map(keyHTML).join('')}</div>`).join('') + bottomRow;
+
+  kb.querySelectorAll('.ck-key[data-ch]').forEach(btn => {
+    btn.addEventListener('click', () => { ckClearSelectionHighlight(); ckTapLetter(btn.dataset.ch); });
+  });
+  kb.querySelectorAll('.ck-key[data-act]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const act = btn.dataset.act;
+      if (act !== 'select-all' && act !== 'copy') ckClearSelectionHighlight();
+      if (act === 'shift') ckTapShift();
+      else if (act === 'backspace') { if (ckField) deleteAtCursor(ckField.el); }
+      else if (act === 'space') { if (ckField) { insertAtCursor(ckField.el, ' '); ckConsumeOneShotShift(); ckWordBoundaryCheck(ckField.el); } }
+      else if (act === 'enter') ckTapEnter();
+      else if (act === 'toggle-symbols') { ckPage = ckPage === 'letters' ? 'symbols1' : 'letters'; renderCustomKeyboard(); }
+      else if (act === 'page1') { ckPage = 'symbols1'; renderCustomKeyboard(); }
+      else if (act === 'page2') { ckPage = 'symbols2'; renderCustomKeyboard(); }
+      else if (act === 'emoji') ckTapEmoji();
+      else if (act === 'select-all') ckTapSelectAll();
+      else if (act === 'copy') ckTapCopy();
+      else if (act === 'paste') ckTapPaste();
+    });
+  });
+}
+function showCustomKeyboardFor(el, opts) {
+  ['emoji-picker-panel', 'sticker-picker-panel', 'gif-picker-panel'].forEach(id => {
+    const panel = $(id);
+    if (!panel.contains(el)) panel.classList.add('hidden');
+  });
+  if (ckField && ckField.el !== el) ckClearSelectionHighlight();
+  ckField = { el, onEnter: (opts && opts.onEnter) || (() => hideCustomKeyboard()), multiline: !!(opts && opts.multiline) };
+  ckShiftOn = false;
+  ckPage = 'letters';
+  ckLastAutocorrect = null;
+  el.readOnly = true;
+  renderCustomKeyboard();
+  $('custom-keyboard').classList.remove('hidden');
+  ckAdjustFloatingPanels(true);
+  positionCkCursor();
+  // readOnly should already stop the native keyboard on its own (this is
+  // the documented iOS behavior), but that's less consistently documented
+  // across every Android browser. As a safety net, blur right after in
+  // case any browser sneaks a native keyboard open anyway — doesn't
+  // affect the custom keyboard, since nothing here depends on real focus.
+  setTimeout(() => { if (document.activeElement === el) el.blur(); }, 0);
+}
+function showCustomKeyboard() { showCustomKeyboardFor($('composer-input'), { onEnter: () => sendMessage(), multiline: true }); }
+function hideCustomKeyboard() {
+  $('custom-keyboard').classList.add('hidden');
+  $('ck-cursor').style.display = 'none';
+  ckAdjustFloatingPanels(false);
+  ckClearSelectionHighlight();
+  ckField = null;
+  closeMentionPopup();
+}
+if (isMobile()) {
+  const wireField = (el, opts) => { el.readOnly = true; el.addEventListener('click', () => showCustomKeyboardFor(el, opts)); };
+  wireField($('composer-input'), { onEnter: () => sendMessage(), multiline: true });
+  wireField($('emoji-search'), { onEnter: () => hideCustomKeyboard(), multiline: false });
+  wireField($('gif-search'), { onEnter: () => hideCustomKeyboard(), multiline: false });
+  document.addEventListener('click', (e) => {
+    if ($('custom-keyboard').classList.contains('hidden')) return;
+    if (e.target.closest('#custom-keyboard') || e.target.closest('#composer-input') ||
+      e.target.closest('#emoji-search') || e.target.closest('#gif-search') || e.target.closest('#emoji-picker-btn')) return;
+    hideCustomKeyboard();
+  });
+  window.addEventListener('resize', () => { if (ckField && !$('custom-keyboard').classList.contains('hidden')) positionCkCursor(); });
+}
+
+// ---- emoji picker (composer) ----
 function renderEmojiPickerGrids() {
   const q = ($('emoji-search').value || '').toLowerCase();
   const customWrap = $('ep-custom-grid');
@@ -2811,7 +3494,7 @@ function renderEmojiPickerGrids() {
   customWrap.innerHTML = customNames.length
     ? customNames.map(n => `<button type="button" title=":${esc(n)}:"><img src="${customEmojis[n].dataUrl}" alt=":${esc(n)}:"></button>`).join('')
     : '<div class="ep-empty">No custom emoji yet</div>';
-  customWrap.querySelectorAll('button').forEach((btn, i) => { btn.onclick = () => insertAtCursor($('composer-input'), `:${customNames[i]}:`); });
+  customWrap.querySelectorAll('button').forEach((btn, i) => { btn.onclick = () => insertAtCursor((ckField && ckField.el) || $('composer-input'), `:${customNames[i]}:`); });
 
   const sectionsWrap = $('ep-standard-sections');
   sectionsWrap.innerHTML = EMOJI_CATEGORIES.map(cat => {
@@ -2821,7 +3504,7 @@ function renderEmojiPickerGrids() {
       <div class="ep-grid">${names.map(n => `<button type="button" title=":${esc(n)}:">${cat.items[n]}</button>`).join('')}</div>`;
   }).join('') || '<div class="ep-empty">No emoji match "' + esc(q) + '"</div>';
   sectionsWrap.querySelectorAll('button').forEach(btn => {
-    btn.onclick = () => insertAtCursor($('composer-input'), btn.textContent);
+    btn.onclick = () => insertAtCursor((ckField && ckField.el) || $('composer-input'), btn.textContent);
   });
 
   $('ep-cats').innerHTML = EMOJI_CATEGORIES.map(cat => `<button type="button" class="ep-cat-btn" data-cat="${cat.key}" title="${esc(cat.label)}">${cat.icon}</button>`).join('');
@@ -2839,7 +3522,8 @@ $('emoji-picker-btn').onclick = (e) => {
   const panel = $('emoji-picker-panel');
   const willOpen = panel.classList.contains('hidden');
   panel.classList.toggle('hidden');
-  if (willOpen) { $('emoji-search').value = ''; renderEmojiPickerGrids(); $('emoji-search').focus(); }
+  if (isMobile()) $('custom-keyboard').classList.toggle('hidden', willOpen);
+  if (willOpen) { $('emoji-search').value = ''; renderEmojiPickerGrids(); if (!isMobile()) $('emoji-search').focus(); }
 };
 $('emoji-search').addEventListener('input', renderEmojiPickerGrids);
 document.addEventListener('click', (e) => {
@@ -2871,6 +3555,7 @@ $('open-admin-panel').onclick = () => { closeModal('settings-modal'); openAdminE
 function populateSettings() {
   if (!myProfile) return;
   $('set-username').value = myProfile.username;
+  $('autocorrect-toggle').checked = isAutocorrectEnabled();
 
   const swatchWrap = $('avatar-color-swatches');
   swatchWrap.innerHTML = '';
