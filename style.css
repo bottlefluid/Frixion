@@ -247,8 +247,6 @@ a { color: var(--text-link); text-decoration: none; }
 .rail-item.action:hover { color: #fff; background: var(--online); }
 .rail-item.explore-btn { color: var(--text-muted); }
 .rail-item.explore-btn:hover { color: #fff; background: var(--accent); }
-.rail-item.premium-btn { color: #f4a4ff; }
-.rail-item.premium-btn:hover { background: var(--premium-grad); color: #fff; }
 
 /* ---- second column: channel/dm sidebar ---- */
 #side-panel { background: var(--bg-secondary); display: flex; flex-direction: column; min-width: 0; }
@@ -297,12 +295,18 @@ a { color: var(--text-link); text-decoration: none; }
 .avatar {
   border-radius: 50%; display: flex; align-items: center; justify-content: center;
   font-weight: 700; color: #fff; flex-shrink: 0; position: relative; user-select: none;
-  overflow: hidden;
+  /* No overflow:hidden here on purpose: the img below clips itself (it has its
+     own border-radius), and keeping this box unclipped means the status dot
+     (positioned right at the corner) renders as a full circle instead of
+     getting sliced by this element's own circular clip path. */
 }
 .avatar.has-image img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
 .avatar .status-dot {
-  position: absolute; width: 10px; height: 10px; border-radius: 50%; bottom: -1px; right: -1px;
-  border: 3px solid var(--bg-secondary); box-sizing: content-box;
+  /* Size and position are set inline per-avatar (see avatarHTML in script.js) so
+     they scale correctly with whatever size that avatar is rendered at. The
+     avatar itself gets a mask cutout so this dot always sits on a clean punched
+     hole instead of a border trying to guess the background color. */
+  position: absolute; border-radius: 50%;
 }
 .status-dot.online { background: var(--online); }
 .status-dot.idle { background: var(--idle); }
@@ -538,10 +542,17 @@ body.action-sheet-open { overflow: hidden; }
 .ck-shift.caps { background: var(--accent-soft, rgba(88,101,242,.18)); }
 .ck-bottom-row { align-items: stretch; }
 .ck-key.ck-tag { flex: 1; font-size: 13px; font-weight: 700; }
+.ck-key.ck-tag.on { color: var(--accent); background: var(--accent-soft, rgba(88,101,242,.18)); }
 .ck-key.ck-space { flex: 4; font-size: 13px; color: var(--text-muted); }
 .ck-key.ck-enter { flex: 1.4; background: var(--accent); color: #fff; }
 .ck-key.ck-enter:active { background: var(--accent-hover); }
 .ck-key.ck-enter .i svg { width: 17px; height: 17px; }
+/* the keyboard's own emoji page (tapping the smiley key swaps in these
+   rows in place, same shell as letters/symbols, instead of hiding the
+   keyboard and popping the separate floating emoji-picker-panel open) */
+.ck-emoji-scroll { max-height: 148px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+.ck-emoji-key { font-size: 20px; }
+.ck-emoji-key img { width: 22px; height: 22px; object-fit: contain; display: block; }
 
 /* Custom blinking cursor — readOnly fields don't reliably show a
    native caret, so this is drawn separately and positioned via JS
@@ -555,6 +566,29 @@ body.action-sheet-open { overflow: hidden; }
 @keyframes ckCursorBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 /* "Select All" visual feedback on whichever field is targeted */
 .ck-all-selected { background: var(--accent-soft, rgba(88,101,242,.25)) !important; }
+
+/* ---- "+" button menu: upload a file / create a poll ---- */
+/* Anchored to the left, matching where the attach button sits. */
+.composer-action-menu {
+  position: absolute; bottom: 74px; left: 16px; width: 220px;
+  background: var(--bg-floating); border-radius: 8px; padding: 6px; box-shadow: 0 8px 30px var(--shadow-color); z-index: 50;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.composer-action-menu button {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 10px; border-radius: 4px;
+  color: var(--text-normal); font-size: 14px; font-weight: 500; text-align: left;
+}
+.composer-action-menu button span:first-child {
+  width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); font-size: 17px;
+}
+.composer-action-menu button:hover:not(:disabled) { background: var(--bg-modifier-hover); }
+.composer-action-menu button:hover:not(:disabled) span:first-child { color: var(--text-normal); }
+.composer-action-menu button:disabled { color: var(--text-faint); cursor: default; }
+.composer-action-menu button small {
+  margin-left: auto; background: var(--bg-modifier-selected); color: var(--text-muted); font-size: 10px;
+  font-weight: 700; text-transform: uppercase; padding: 2px 5px; border-radius: 3px;
+}
 
 /* ---- emoji picker popover above composer ---- */
 /* Anchored to the right, matching where the emoji/GIF/sticker buttons
@@ -617,6 +651,100 @@ body.action-sheet-open { overflow: hidden; }
    the composer/profile panel, so it makes more sense anchored there than
    dead-center like the rest of the modals. */
 #gift-modal { justify-content: flex-end; padding-right: 60px; }
+
+/* ---- explore servers ---- */
+.explore-server-list { display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow-y: auto; }
+.explore-server-row {
+  display: flex; align-items: center; gap: 14px; padding: 10px 12px; border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.explore-server-row .explore-server-icon {
+  width: 44px; height: 44px; flex-shrink: 0; font-size: 16px; background: var(--bg-tertiary);
+}
+.explore-server-info { flex: 1; min-width: 0; }
+.explore-server-name { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.explore-server-meta { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.explore-server-join { flex-shrink: 0; }
+.explore-server-join.joined { background: transparent; border: 1px solid var(--bg-modifier-selected); }
+.explore-server-join.joined:hover { background: var(--bg-modifier-hover); }
+.explore-loading, .explore-empty { padding: 40px 0; text-align: center; color: var(--text-muted); font-size: 14px; }
+
+/* ---- create-a-poll modal ---- */
+.poll-modal-box { width: 480px; }
+.poll-char-count { text-align: right; font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+.poll-answer-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.poll-answer-row { display: flex; align-items: center; gap: 8px; }
+.poll-answer-row .poll-answer-input {
+  flex: 1; padding: 10px 12px; border-radius: 4px; border: none;
+  background: var(--bg-input); color: var(--text-normal); font-size: 14px; outline: none; font-family: inherit;
+}
+.poll-answer-row .poll-answer-input:focus { box-shadow: 0 0 0 2px var(--accent); }
+.poll-answer-row .poll-answer-input::placeholder { color: var(--text-faint); }
+.poll-answer-emoji-btn, .poll-answer-remove {
+  width: 36px; height: 36px; flex-shrink: 0; border-radius: 4px; background: var(--bg-input);
+  display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 16px;
+}
+.poll-answer-emoji-btn:hover { background: var(--bg-modifier-selected); color: var(--text-normal); }
+.poll-answer-remove:hover { background: var(--bg-modifier-selected); color: var(--danger); }
+.poll-answer-remove.hidden { visibility: hidden; }
+.poll-add-answer { width: 100%; text-align: center; }
+.poll-multiple {
+  display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text-normal);
+  margin: 4px 0 4px; cursor: pointer;
+}
+.poll-multiple input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
+
+/* small emoji-select popover for a poll answer row */
+.poll-emoji-popover {
+  position: fixed; z-index: 200; background: var(--bg-floating); border-radius: 8px; padding: 8px;
+  box-shadow: 0 8px 30px var(--shadow-color); display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
+  width: 252px; max-height: 220px; overflow-y: auto;
+}
+.poll-emoji-popover button { font-size: 19px; padding: 5px 0; border-radius: 4px; }
+.poll-emoji-popover button:hover { background: var(--bg-modifier-hover); }
+
+/* ---- poll message card (in the chat itself) ---- */
+.poll-card {
+  border: 1px solid var(--divider); border-radius: 8px; padding: 12px 14px; margin-top: 4px;
+  max-width: 440px; background: var(--bg-secondary);
+}
+.poll-card-question {
+  display: flex; align-items: flex-start; gap: 8px; font-weight: 600; font-size: 15px;
+  color: var(--text-normal); margin-bottom: 12px; line-height: 1.3;
+}
+.poll-card-question .i { flex-shrink: 0; margin-top: 1px; color: var(--text-muted); }
+.poll-card-question .i svg { width: 17px; height: 17px; }
+.poll-options { display: flex; flex-direction: column; gap: 6px; }
+.poll-option {
+  position: relative; display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  padding: 9px 12px; border-radius: 6px; border: 1px solid var(--bg-modifier-selected); overflow: hidden;
+  background: var(--bg-primary); color: var(--text-normal); font-size: 14px; cursor: pointer;
+}
+.poll-option:hover:not(.locked) { border-color: var(--accent); }
+.poll-option.voted { border-color: var(--accent); }
+.poll-option.locked { cursor: default; }
+.poll-option.winning { border-color: var(--online); }
+.poll-option-fill {
+  position: absolute; inset: 0; width: 0; background: var(--bg-modifier-selected);
+  transition: width .25s ease; z-index: 0;
+}
+.poll-option.voted .poll-option-fill { background: var(--accent-soft, rgba(88,101,242,.25)); }
+.poll-option.winning .poll-option-fill { background: rgba(35,165,90,.22); }
+.poll-option-main { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.poll-option-check {
+  width: 16px; height: 16px; flex-shrink: 0; border-radius: 50%; border: 1.5px solid var(--text-muted);
+  display: flex; align-items: center; justify-content: center; color: transparent;
+}
+.poll-option.voted .poll-option-check { border-color: var(--accent); background: var(--accent); color: #fff; }
+.poll-option-check .i svg { width: 10px; height: 10px; }
+.poll-option-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.poll-option-emoji { margin-right: 2px; }
+.poll-option-pct { position: relative; z-index: 1; flex-shrink: 0; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.poll-card-footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px;
+  font-size: 12px; color: var(--text-muted);
+}
+.poll-multi-tag { font-style: italic; }
 
 /* settings modal layout */
 #settings-modal .modal-box { display: flex; padding: 0; width: 780px; height: 560px; max-height: 86vh; }
@@ -1133,7 +1261,7 @@ body.action-sheet-open { overflow: hidden; }
   #composer { min-height: 48px; border-radius: 8px; padding: 0 8px; gap: 2px; }
   #composer textarea { min-width: 0; min-height: 46px; padding: 12px 4px; font-size: 16px; }
   .composer-icon-btn { width: 32px; height: 34px; }
-  #emoji-picker-panel, #sticker-picker-panel, #gif-picker-panel { bottom: 66px; }
+  #emoji-picker-panel, #sticker-picker-panel, #gif-picker-panel, .composer-action-menu { bottom: 66px; }
 
   /* modals: fit the screen, stack multi-column layouts */
   .modal-box, .modal-box.wide, .admin-box, .profile-box { width: 94vw; max-width: 94vw; }
@@ -1148,8 +1276,15 @@ body.action-sheet-open { overflow: hidden; }
   .ab-row { flex-wrap: wrap; }
 
   #emoji-picker-panel, #sticker-picker-panel, #gif-picker-panel { left: 8px; right: 8px; width: auto; }
+  .composer-action-menu { left: 8px; width: 200px; }
   .mp-header { gap: 12px; padding: 0 12px; flex-wrap: wrap; height: auto; min-height: 48px; padding-top: 8px; padding-bottom: 8px; }
   .friends-tabs { flex-wrap: wrap; }
+
+  /* polls: give the card the full message width instead of a fixed max,
+     and keep the emoji popover from choosing an answer's emoji off-screen. */
+  .poll-card { max-width: 100%; }
+  .poll-modal-box { width: 94vw; }
+  .poll-emoji-popover { width: 224px; grid-template-columns: repeat(6, 1fr); }
 }
 
 /* Keep the essentials reachable on very narrow phone screens. */

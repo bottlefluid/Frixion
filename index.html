@@ -121,8 +121,6 @@
     <div class="rail-item explore-btn" id="rail-explore" title="Explore Servers">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg>
     </div>
-    <div class="rail-divider"></div>
-    <div class="rail-item premium-btn" id="rail-premium" title="Frixion Premium"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2.5l2.95 6.4 7 .63-5.3 4.66 1.6 6.86-6.25-3.78-6.25 3.78 1.6-6.86-5.3-4.66 7-.63z"/></svg></div>
   </div>
 
   <!-- second column -->
@@ -732,11 +730,15 @@
   </div>
 </div>
 
-<!-- ============ MODAL: pinned messages ============ -->
+<!-- ============ MODAL: create a poll ============ -->
 <div class="modal-overlay hidden" id="poll-modal">
   <div class="modal-box poll-modal-box">
     <div class="modal-header-row"><h2>Create a Poll</h2><span class="x" data-close="poll-modal">✕</span></div>
-    <div class="field"><label>Question</label><input type="text" id="poll-question" maxlength="300" placeholder="What do you want to ask?"></div>
+    <div class="field">
+      <label>Question</label>
+      <input type="text" id="poll-question" maxlength="300" placeholder="What do you want to ask?">
+      <div class="poll-char-count" id="poll-question-count">0/300</div>
+    </div>
     <div class="field">
       <label>Answers</label>
       <div id="poll-answer-list" class="poll-answer-list"></div>

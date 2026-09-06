@@ -200,6 +200,13 @@ async function ensureQuestsFresh(profile) {
 // UPDATE LOG — newest first. Add a new entry after every update.
 // ============================================================
 const UPDATES = [
+  { v: '2.8', date: '2026-09-05', title: 'Polls, server discovery, and a cleaner status dot',
+    notes: [
+      'Polls: hit the "+" button next to the message box (or just type /poll) to build one — question, up to 10 answers, optional per-answer emoji, a duration, and an optional "allow multiple answers" toggle. Posted polls show live vote bars right in the chat and lock to "Final results" once they expire. They auto-delete after 7 days along with the rest of a conversation\'s messages, same as everything else, unless that conversation has auto-delete turned off.',
+      'Explore Servers actually works now — it lists every server that exists, with member counts, and lets you join one straight from there instead of needing an invite.',
+      'The online/idle/dnd status dot on avatars is a real cutout now instead of a colored border guessing at the background behind it, so it no longer looks slightly off depending on where an avatar shows up.',
+      'Removed the Nitro-style ad button from the server rail.',
+    ] },
   { v: '2.7', date: '2026-09-02', title: 'Keyboard docking on more browsers',
     notes: [
       'Told Android browsers (Chrome, Edge, Samsung Internet) to resize the page for the keyboard themselves, which is the more reliable way to handle it there.',
@@ -371,6 +378,8 @@ const ICONS = {
   crown: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 8.5l4 3 5-6 5 6 4-3-1.6 9.5a1 1 0 0 1-1 .8H5.6a1 1 0 0 1-1-.8z"/></svg>',
   send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2.5-7.5L3 11z"/></svg>',
   eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
+  poll: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10"/><path d="M12 20V4"/><path d="M20 20v-7"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>',
 };
 function icon(name, cls) { return `<span class="i ${cls||''}">${ICONS[name] || ''}</span>`; }
 
@@ -593,10 +602,26 @@ function toast(msg, type = '') {
   setTimeout(() => el.remove(), 4000);
 }
 function avatarHTML(size, color, letter, status, avatarUrl) {
-  const inner = `<img src="${esc(avatarUrl || DEFAULT_AVATAR_URL)}" alt="" loading="lazy">`;
-  return `<div class="avatar has-image" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.42)}px;background:transparent">${inner}${
-    status ? `<span class="status-dot ${status}"></span>` : ''
-  }</div>`;
+  let maskStyle = '';
+  let dotHTML = '';
+  if (status) {
+    // Discord-style status indicator: a real cutout via CSS mask instead of a
+    // border colored to guess whatever's behind the avatar. That guess was
+    // wrong on half the screens in the app (avatars sit on several different
+    // background colors), so the ring never quite matched. A mask always
+    // looks right because it just reveals whatever is truly there.
+    // The mask goes on the <img> itself (not the wrapping div) so the dot,
+    // a sibling of the img, doesn't get cut away by its own parent's mask.
+    const dotD = Math.max(9, Math.round(size * 0.315));
+    const holeR = Math.round(dotD / 2 + Math.max(2, Math.round(size * 0.07)));
+    const center = Math.round(dotD / 2 + Math.max(1, Math.round(size * 0.02)));
+    const dotOffset = center - dotD / 2;
+    const grad = `radial-gradient(circle ${holeR}px at calc(100% - ${center}px) calc(100% - ${center}px), transparent ${holeR - 1}px, #000 ${holeR}px)`;
+    maskStyle = `-webkit-mask-image:${grad};mask-image:${grad};`;
+    dotHTML = `<span class="status-dot ${status}" style="width:${dotD}px;height:${dotD}px;right:${dotOffset}px;bottom:${dotOffset}px;"></span>`;
+  }
+  const inner = `<img src="${esc(avatarUrl || DEFAULT_AVATAR_URL)}" alt="" loading="lazy" style="${maskStyle}">`;
+  return `<div class="avatar has-image" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.42)}px;background:transparent">${inner}${dotHTML}</div>`;
 }
 function premiumStar(profile) { return isPremium(profile) ? icon('star', 'premium-star') : ''; }
 function opTag(profile) { return profile && profile.op ? '<span class="op-tag">Admin</span>' : ''; }
@@ -738,7 +763,61 @@ $('tb-close-btn').onclick = () => {
   try { window.close(); } catch (e) {}
   setTimeout(() => toast("Browsers don't let a page close its own tab — close it manually."), 50);
 };
-$('rail-explore').onclick = () => toast('Server discovery is coming soon.');
+$('rail-explore').onclick = () => { openModal('explore-servers-modal'); loadExploreServers(); };
+
+async function loadExploreServers() {
+  const wrap = $('explore-server-list');
+  wrap.innerHTML = `<div class="explore-loading">Loading servers…</div>`;
+  try {
+    const snap = await db.collection('servers').get();
+    const servers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderExploreServers(servers);
+  } catch (e) {
+    wrap.innerHTML = `<div class="explore-loading">Couldn't load servers right now.</div>`;
+  }
+}
+
+function renderExploreServers(servers) {
+  const wrap = $('explore-server-list');
+  wrap.innerHTML = '';
+  if (!servers.length) {
+    wrap.innerHTML = `<div class="explore-empty">No servers exist yet — create one to get things started.</div>`;
+    return;
+  }
+  servers
+    .slice()
+    .sort((a, b) => (b.members || []).length - (a.members || []).length || (a.name || '').localeCompare(b.name || ''))
+    .forEach(s => {
+      const memberCount = (s.members || []).length;
+      const joined = (s.members || []).includes(myUid);
+      const row = document.createElement('div');
+      row.className = 'explore-server-row';
+      row.innerHTML = `
+        <div class="rail-item explore-server-icon">${esc(serverInitials(s.name))}</div>
+        <div class="explore-server-info">
+          <div class="explore-server-name">${esc(s.name || 'Unnamed server')}</div>
+          <div class="explore-server-meta">${memberCount} member${memberCount === 1 ? '' : 's'}</div>
+        </div>
+        <button type="button" class="btn-secondary slim explore-server-join${joined ? ' joined' : ''}">${joined ? 'Open' : 'Join'}</button>
+      `;
+      row.querySelector('.explore-server-join').onclick = () => joinExploreServer(s, joined);
+      wrap.appendChild(row);
+    });
+}
+
+async function joinExploreServer(server, alreadyJoined) {
+  try {
+    let s = server;
+    if (!alreadyJoined) {
+      await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayUnion(myUid) });
+      db.collection('users').doc(myUid).update({ 'stats.serversCount': FieldValue.increment(1) }).catch(() => {});
+      s = { ...server, members: [...(server.members || []), myUid] };
+      toast(`Joined ${s.name}.`);
+    }
+    closeModal('explore-servers-modal');
+    selectServer(s);
+  } catch (e) { toast(e.message || 'Could not join that server.', 'error'); }
+}
 
 // ============================================================
 // SESSION
@@ -994,7 +1073,6 @@ function renderServerRail(servers) {
 
 $('rail-home').onclick = () => showHomeView();
 $('rail-add-server').onclick = () => openModal('server-choice-modal');
-$('rail-premium').onclick = () => openPremiumModal();
 
 $('choice-create').onclick = () => { closeModal('server-choice-modal'); openModal('create-server-modal'); };
 $('choice-join').onclick = () => { closeModal('server-choice-modal'); openModal('join-server-modal'); };
@@ -1318,6 +1396,7 @@ function previewForMessage(message, includeAuthor = false) {
   if (!text && message.attachment) text = message.attachment.type === 'image' ? 'Sent a photo' : `Sent ${message.attachment.name || 'a file'}`;
   if (!text && message.gifUrl) text = 'Sent a GIF';
   if (!text && message.sticker) text = `Sent a sticker${message.sticker.name ? `: ${message.sticker.name}` : ''}`;
+  if (!text && message.poll) text = `📊 Poll: ${message.poll.question}`;
   if (!text) text = 'New message';
   return includeAuthor && message.username ? `${message.username}: ${text}` : text;
 }
@@ -1762,7 +1841,22 @@ function renderAttachmentDraft() {
   });
 }
 
-$('attach-btn').onclick = () => $('file-input').click();
+$('attach-btn').onclick = (e) => {
+  e.stopPropagation();
+  $('emoji-picker-panel').classList.add('hidden');
+  $('sticker-picker-panel').classList.add('hidden');
+  $('gif-picker-panel').classList.add('hidden');
+  $('custom-keyboard').classList.add('hidden');
+  $('composer-action-menu').classList.toggle('hidden');
+};
+$('attach-file-menu').onclick = () => { $('composer-action-menu').classList.add('hidden'); $('file-input').click(); };
+$('create-poll-menu').onclick = () => { $('composer-action-menu').classList.add('hidden'); openPollModal(); };
+document.addEventListener('click', (e) => {
+  const menu = $('composer-action-menu');
+  if (!menu.classList.contains('hidden') && !menu.contains(e.target) && !e.target.closest('#attach-btn')) {
+    menu.classList.add('hidden');
+  }
+});
 $('file-input').addEventListener('change', (e) => {
   Array.from(e.target.files || []).forEach(stageFile);
   e.target.value = '';
@@ -1816,6 +1910,7 @@ $('sticker-btn').onclick = (e) => {
   $('emoji-picker-panel').classList.add('hidden');
   $('gif-picker-panel').classList.add('hidden');
   $('custom-keyboard').classList.add('hidden');
+  $('composer-action-menu').classList.add('hidden');
   $('sticker-picker-panel').classList.toggle('hidden');
   renderStickerGrid();
 };
@@ -1897,6 +1992,7 @@ $('gif-btn').onclick = (e) => {
   $('emoji-picker-panel').classList.add('hidden');
   $('sticker-picker-panel').classList.add('hidden');
   $('custom-keyboard').classList.add('hidden');
+  $('composer-action-menu').classList.add('hidden');
   const willOpen = $('gif-picker-panel').classList.contains('hidden');
   $('gif-picker-panel').classList.toggle('hidden');
   if (willOpen) { $('gif-search').value = ''; klipySearch(''); }
@@ -2232,7 +2328,7 @@ function renderPinnedList(pinned) {
       ${avatarHTML(34, p.avatarColor, initials(p.username), null, p.avatarUrl)}
       <div class="pr-body">
         <div class="pr-head"><span class="pr-author">${esc(p.username)}</span><span class="pr-time">${timeStr(m.createdAt)}</span></div>
-        <div class="pr-text">${renderMessageText(m.text)}</div>
+        <div class="pr-text">${m.poll ? `📊 ${esc(m.poll.question)}` : renderMessageText(m.text)}</div>
       </div>
       ${canPin() ? `<span class="pr-unpin" title="Unpin">${icon('trash')}</span>` : ''}
     </div>`;
@@ -2545,9 +2641,82 @@ function attachmentHTML(m) {
   return '';
 }
 
+// ---------- polls (the message-card side — creation is up near the composer) ----------
+function pollExpiresAtMs(poll) {
+  return poll.expiresAt && typeof poll.expiresAt.toMillis === 'function' ? poll.expiresAt.toMillis() : (poll.expiresAt || 0);
+}
+function pollTimeLeft(expiresAtMs) {
+  const ms = expiresAtMs - Date.now();
+  if (ms <= 0) return 'Final results';
+  const mins = Math.round(ms / 60000);
+  if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} left`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} left`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} left`;
+}
+function pollHTML(m) {
+  const poll = m.poll;
+  if (!poll) return '';
+  const votes = poll.votes || {};
+  const counts = poll.answers.map((_, i) => Object.values(votes).filter(arr => Array.isArray(arr) && arr.includes(i)).length);
+  const totalVoters = Object.keys(votes).length;
+  const totalVotes = counts.reduce((a, b) => a + b, 0);
+  const myVotes = votes[myUid] || [];
+  const expiresAtMs = pollExpiresAtMs(poll);
+  const expired = Date.now() >= expiresAtMs;
+  const topCount = expired && totalVotes > 0 ? Math.max(...counts) : -1;
+
+  const rows = poll.answers.map((ans, i) => {
+    const c = counts[i];
+    const pct = totalVotes ? Math.round((c / totalVotes) * 100) : 0;
+    const mine = myVotes.includes(i);
+    const isWinner = expired && totalVotes > 0 && c === topCount;
+    return `<button type="button" class="poll-option${mine ? ' voted' : ''}${expired ? ' locked' : ''}${isWinner ? ' winning' : ''}" data-idx="${i}"${expired ? ' disabled' : ''}>
+      <span class="poll-option-fill" style="width:${pct}%"></span>
+      <span class="poll-option-main">
+        <span class="poll-option-check">${icon('check')}</span>
+        <span class="poll-option-text">${ans.emoji ? `<span class="poll-option-emoji">${esc(ans.emoji)}</span>` : ''}${esc(ans.text)}</span>
+      </span>
+      <span class="poll-option-pct">${totalVotes ? pct + '%' : ''}</span>
+    </button>`;
+  }).join('');
+
+  const footerLeft = `${totalVoters} vote${totalVoters === 1 ? '' : 's'} • ${pollTimeLeft(expiresAtMs)}`;
+  return `<div class="poll-card" data-mid="${esc(m.id)}">
+    <div class="poll-card-question">${icon('poll')}<span>${esc(poll.question)}</span></div>
+    <div class="poll-options">${rows}</div>
+    <div class="poll-card-footer"><span>${footerLeft}</span>${poll.allowMultiple ? '<span class="poll-multi-tag">Pick one or more</span>' : ''}</div>
+  </div>`;
+}
+async function togglePollVote(msgId, idx) {
+  if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') return;
+  const ref = msgRef(msgId);
+  if (!ref) return;
+  try {
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return;
+      const data = snap.data();
+      const poll = data.poll;
+      if (!poll) return;
+      if (Date.now() >= pollExpiresAtMs(poll)) return; // voting closed, no-op
+      const votes = { ...(poll.votes || {}) };
+      let mine = Array.isArray(votes[myUid]) ? [...votes[myUid]] : [];
+      if (poll.allowMultiple) {
+        mine = mine.includes(idx) ? mine.filter(i => i !== idx) : [...mine, idx];
+      } else {
+        mine = (mine.length === 1 && mine[0] === idx) ? [] : [idx];
+      }
+      if (mine.length) votes[myUid] = mine; else delete votes[myUid];
+      tx.update(ref, { 'poll.votes': votes });
+    });
+  } catch (e) { toast('Could not update your vote.', 'error'); }
+}
+
 function buildMessageLineEl(m, canDelete) {
   const pinnable = canPin();
-  const canEditThis = m.uid === myUid && !m.sticker;
+  const canEditThis = m.uid === myUid && !m.sticker && !m.poll;
   const line = document.createElement('div');
   line.className = 'msg-line' + (m.pinned ? ' is-pinned' : '');
   line.dataset.mid = m.id;
@@ -2560,6 +2729,8 @@ function buildMessageLineEl(m, canDelete) {
 
   const bodyHTML = replyHTML + (m.sticker
     ? `<img class="msg-sticker" src="${esc(m.sticker.dataUrl)}" alt="${esc(m.sticker.name)}" title="${esc(m.sticker.name)}">`
+    : m.poll
+    ? pollHTML(m)
     : (m.text ? `<span class="msg-text">${renderMessageText(m.text)}</span>${m.edited ? `<span class="edited-tag">(edited)</span>` : ''}` : '') +
       attachmentHTML(m));
 
@@ -2578,6 +2749,12 @@ function buildMessageLineEl(m, canDelete) {
   if (canDelete) rowWrap.querySelector('.del-msg').onclick = () => deleteMessage(m.id);
   const replyRefEl = rowWrap.querySelector('.msg-reply-ref');
   if (replyRefEl) replyRefEl.onclick = () => jumpToMessage(replyRefEl.dataset.jump);
+  if (m.poll) {
+    rowWrap.querySelectorAll('.poll-option').forEach(btn => {
+      btn.onclick = () => togglePollVote(m.id, parseInt(btn.dataset.idx, 10));
+    });
+  }
+  if (m.id === editingMessageId) buildEditBoxInto(rowWrap, m);
   line.appendChild(rowWrap);
 
   const rx = reactionsHTML(m.reactions);
@@ -2601,7 +2778,7 @@ function jumpToMessage(id) {
 async function renderMessages(rawMsgs) {
   const searching = searchActive;
   const q = searching ? ($('search-input').value || '').trim().toLowerCase() : '';
-  const msgs = q ? rawMsgs.filter(m => (m.text || '').toLowerCase().includes(q)) : rawMsgs;
+  const msgs = q ? rawMsgs.filter(m => `${m.text || ''} ${m.poll ? m.poll.question : ''}`.toLowerCase().includes(q)) : rawMsgs;
   if (searching) $('search-count').textContent = q ? `${msgs.length} result${msgs.length === 1 ? '' : 's'}` : '';
 
   const uids = [...new Set(msgs.map(m => m.uid))];
@@ -2754,15 +2931,9 @@ async function deleteMessage(id) {
 }
 
 // ---------- editing (own messages only) ----------
-function startEditMessage(msgId) {
-  const m = lastRawMessages.find(x => x.id === msgId);
-  if (!m || m.uid !== myUid) return; // only your own messages, ever
-  const line = document.querySelector(`.msg-line[data-mid="${CSS.escape(msgId)}"]`);
-  const rowWrap = line && line.querySelector('.msg-row-wrap');
-  if (!rowWrap || rowWrap.querySelector('.msg-edit-box')) return;
-  closeActionSheet();
-
-  const original = m.text || '';
+let editingMessageId = null; // message currently being edited, if any
+let editingDraft = '';       // its in-progress text — survives a re-render triggered by unrelated activity (a new message, a reaction, a poll vote) arriving while the user is mid-edit
+function buildEditBoxInto(rowWrap, m) {
   const textSpan = rowWrap.querySelector('.msg-text');
   const editedTag = rowWrap.querySelector('.edited-tag');
   const box = document.createElement('div');
@@ -2773,26 +2944,48 @@ function startEditMessage(msgId) {
   if (editedTag) editedTag.remove();
 
   const ta = box.querySelector('.msg-edit-input');
-  ta.value = original;
+  ta.value = editingDraft;
   autoResize(ta);
-  ta.addEventListener('input', () => autoResize(ta));
+  ta.addEventListener('input', () => { editingDraft = ta.value; autoResize(ta); });
 
   const finish = async (save) => {
     if (save) {
       const newText = applyMessageFilter(ta.value.trim());
       if (!newText) { toast('Message can\'t be empty — delete it instead if you want it gone.'); return; }
-      if (newText !== original) {
-        try { await msgRef(msgId).update({ text: newText, edited: true }); }
-        catch (e) { toast('Could not save edit.', 'error'); }
+      if (newText !== (m.text || '')) {
+        try { await msgRef(m.id).update({ text: newText, edited: true }); }
+        catch (e) { toast('Could not save edit.', 'error'); return; }
       }
     }
+    editingMessageId = null;
+    editingDraft = '';
     if (isMobile()) hideCustomKeyboard();
     renderMessages(lastRawMessages);
   };
 
   if (isMobile()) {
     ta.selectionStart = ta.selectionEnd = ta.value.length;
-    showCustomKeyboardFor(ta, { onEnter: () => finish(true), multiline: true });
+    ta.readOnly = true;
+    // A silent rebuild mid-edit (renderMessages fired for some unrelated
+    // reason while this same message was still being edited) replaces this
+    // textarea with a fresh one. If the keyboard's already open and driving
+    // this exact edit, just repoint it at the new element instead of
+    // reopening — reopening would reset shift/caps-lock and the current page.
+    if (ckField && editingMessageId === m.id && !$('custom-keyboard').classList.contains('hidden')) {
+      ckField.el = ta;
+      ckField.onEnter = () => finish(true);
+      positionCkCursor();
+    } else {
+      showCustomKeyboardFor(ta, { onEnter: () => finish(true), multiline: true });
+    }
+    // Unlike the composer/search boxes, this element doesn't live for the
+    // life of the page — it's rebuilt per edit — so it needs its own
+    // click-to-reopen wiring rather than the one-time setup those get.
+    // Covers tapping back into the field after the keyboard was dismissed
+    // by a tap elsewhere (e.g. on the message row outside the edit box).
+    ta.addEventListener('click', () => {
+      if (!ckField || ckField.el !== ta) showCustomKeyboardFor(ta, { onEnter: () => finish(true), multiline: true });
+    });
   } else {
     ta.focus();
     ta.setSelectionRange(ta.value.length, ta.value.length);
@@ -2803,6 +2996,17 @@ function startEditMessage(msgId) {
   }
   box.querySelector('.med-save').onclick = () => finish(true);
   box.querySelector('.med-cancel').onclick = () => finish(false);
+}
+function startEditMessage(msgId) {
+  const m = lastRawMessages.find(x => x.id === msgId);
+  if (!m || m.uid !== myUid) return; // only your own messages, ever
+  const line = document.querySelector(`.msg-line[data-mid="${CSS.escape(msgId)}"]`);
+  const rowWrap = line && line.querySelector('.msg-row-wrap');
+  if (!rowWrap || rowWrap.querySelector('.msg-edit-box')) return;
+  closeActionSheet();
+  editingMessageId = msgId;
+  editingDraft = m.text || '';
+  buildEditBoxInto(rowWrap, m);
 }
 
 async function copyMessageText(m) {
@@ -2821,6 +3025,7 @@ function setReplyTarget(msgId) {
   const uname = (profileCache[m.uid] && profileCache[m.uid].username) || m.username || 'Unknown User';
   const atts = m.attachments || (m.attachment ? [m.attachment] : []);
   const preview = m.sticker ? `Sent a sticker: ${m.sticker.name}` : m.gifUrl ? 'Sent a GIF' :
+    m.poll ? `📊 Poll: ${m.poll.question}` :
     atts.length > 1 ? `Sent ${atts.length} files` : atts.length ? `Sent a file: ${atts[0].name || ''}` : (m.text || '');
   replyTarget = { id: m.id, uid: m.uid, username: uname, text: preview.slice(0, 150) };
   $('reply-bar-username').textContent = uname;
@@ -2834,6 +3039,159 @@ function clearReplyTarget() {
   closeMentionPopup();
 }
 $('reply-bar-close').onclick = clearReplyTarget;
+
+// ============================================================
+// POLLS — create modal, dynamic answer rows, and the emoji picker
+// used per answer. Poll *messages* (the interactive card that shows
+// up in chat, and voting) live further down near message rendering.
+// ============================================================
+const ALL_EMOJI_FLAT = EMOJI_CATEGORIES.flatMap(cat => Object.values(cat.items));
+
+function pollAnswerRowHTML() {
+  return `<div class="poll-answer-row">
+    <button type="button" class="poll-answer-emoji-btn" title="Add an emoji">${icon('smiley')}</button>
+    <input type="text" class="poll-answer-input" maxlength="55" placeholder="Type your answer">
+    <button type="button" class="poll-answer-remove" title="Remove this answer">${icon('trash')}</button>
+  </div>`;
+}
+
+function wirePollAnswerRows() {
+  const wrap = $('poll-answer-list');
+  const rows = [...wrap.querySelectorAll('.poll-answer-row')];
+  rows.forEach((row, i) => {
+    const removeBtn = row.querySelector('.poll-answer-remove');
+    removeBtn.classList.toggle('hidden', rows.length <= 2);
+    removeBtn.onclick = () => { row.remove(); wirePollAnswerRows(); updatePollAddButtonState(); };
+    const emojiBtn = row.querySelector('.poll-answer-emoji-btn');
+    emojiBtn.onclick = (e) => { e.stopPropagation(); openPollEmojiPicker(row, emojiBtn); };
+    const input = row.querySelector('.poll-answer-input');
+    if (!input.dataset.wired) {
+      input.dataset.wired = '1';
+      // Discord's own poll composer auto-adds a new empty answer field the
+      // moment you start typing in the last one, so you never have to reach
+      // for "+ Add another answer" mid-flow — mirror that here.
+      input.addEventListener('input', () => {
+        const allRows = [...wrap.querySelectorAll('.poll-answer-row')];
+        const isLast = row === allRows[allRows.length - 1];
+        if (isLast && input.value.trim() && allRows.length < 10) addPollAnswerRow();
+      });
+    }
+  });
+}
+
+function addPollAnswerRow() {
+  const wrap = $('poll-answer-list');
+  if (wrap.querySelectorAll('.poll-answer-row').length >= 10) return;
+  wrap.insertAdjacentHTML('beforeend', pollAnswerRowHTML());
+  wirePollAnswerRows();
+  updatePollAddButtonState();
+}
+
+function updatePollAddButtonState() {
+  const count = $('poll-answer-list').querySelectorAll('.poll-answer-row').length;
+  $('poll-add-answer').classList.toggle('hidden', count >= 10);
+}
+
+function openPollEmojiPicker(row, btn) {
+  closePollEmojiPicker();
+  const pop = document.createElement('div');
+  pop.className = 'poll-emoji-popover';
+  pop.id = 'poll-emoji-popover';
+  const clearBtn = row.dataset.emoji
+    ? `<button type="button" data-clear="1" style="grid-column:1/-1;font-size:12px;color:var(--text-muted);padding:6px 0;">Remove emoji</button>`
+    : '';
+  pop.innerHTML = clearBtn + ALL_EMOJI_FLAT.map(e => `<button type="button">${e}</button>`).join('');
+  document.body.appendChild(pop);
+  const r = btn.getBoundingClientRect();
+  const popW = 252, popH = Math.min(220, pop.scrollHeight || 220);
+  let left = Math.min(r.left, window.innerWidth - popW - 8);
+  left = Math.max(8, left);
+  let top = r.bottom + 6;
+  if (top + popH > window.innerHeight - 8) top = Math.max(8, r.top - popH - 6);
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+  pop.querySelectorAll('button').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      if (b.dataset.clear) { delete row.dataset.emoji; btn.innerHTML = icon('smiley'); }
+      else { row.dataset.emoji = b.textContent; btn.textContent = b.textContent; }
+      closePollEmojiPicker();
+    };
+  });
+  setTimeout(() => document.addEventListener('click', pollEmojiPopoverOutsideClick), 0);
+}
+function pollEmojiPopoverOutsideClick(e) {
+  const pop = $('poll-emoji-popover');
+  if (pop && !pop.contains(e.target)) closePollEmojiPicker();
+}
+function closePollEmojiPicker() {
+  const pop = $('poll-emoji-popover');
+  if (pop) pop.remove();
+  document.removeEventListener('click', pollEmojiPopoverOutsideClick);
+}
+
+function resetPollModal() {
+  $('poll-question').value = '';
+  $('poll-question-count').textContent = '0/300';
+  $('poll-answer-list').innerHTML = '';
+  addPollAnswerRow();
+  addPollAnswerRow();
+  $('poll-duration').value = '86400000';
+  $('poll-multiple').checked = false;
+  closePollEmojiPicker();
+}
+
+function openPollModal() {
+  if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
+  resetPollModal();
+  openModal('poll-modal');
+  setTimeout(() => $('poll-question').focus(), 50);
+}
+
+$('poll-add-answer').onclick = addPollAnswerRow;
+$('poll-question').addEventListener('input', () => {
+  $('poll-question-count').textContent = `${$('poll-question').value.length}/300`;
+});
+
+async function submitPoll() {
+  const question = $('poll-question').value.trim();
+  if (!question) { toast('Please enter a poll question.', 'error'); return; }
+  const answers = [...$('poll-answer-list').querySelectorAll('.poll-answer-row')]
+    .map(row => ({ text: row.querySelector('.poll-answer-input').value.trim(), emoji: row.dataset.emoji || null }))
+    .filter(a => a.text);
+  if (answers.length < 2) { toast('Add at least 2 answers.', 'error'); return; }
+  if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
+  const durationMs = parseInt($('poll-duration').value, 10) || 86400000;
+  const allowMultiple = $('poll-multiple').checked;
+  const payload = {
+    uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
+    type: 'poll',
+    poll: {
+      question, answers, allowMultiple,
+      expiresAt: firebase.firestore.Timestamp.fromMillis(Date.now() + durationMs),
+      votes: {},
+    },
+  };
+  const btn = $('poll-submit');
+  btn.disabled = true;
+  try {
+    await sendToCurrentConversation(payload);
+    closeModal('poll-modal');
+    toast('Poll posted.');
+  } catch (e) { toast(e.message || 'Could not post the poll.', 'error'); }
+  finally { btn.disabled = false; }
+}
+$('poll-submit').onclick = submitPoll;
+
+// Typing "/poll" on its own in the composer opens the poll composer right
+// away, same as Discord's slash command — no need to press Enter first.
+$('composer-input').addEventListener('input', (e) => {
+  if (e.target.value.trim().toLowerCase() === '/poll') {
+    e.target.value = '';
+    autoResize(e.target);
+    openPollModal();
+  }
+});
 
 async function sendToCurrentConversation(payload) {
   if (currentView === 'channel') {
@@ -3219,7 +3577,7 @@ function ckWordBoundaryCheck(el) {
 let ckField = null;       // { el, onEnter(el), multiline } — field currently being driven
 let ckShiftOn = false;    // capitalizes just the next letter
 let ckCapsLock = false;   // capitalizes until toggled off again
-let ckPage = 'letters';   // 'letters' | 'symbols1' | 'symbols2'
+let ckPage = 'letters';   // 'letters' | 'symbols1' | 'symbols2' | 'emoji'
 let ckLastShiftTap = 0;
 
 function ckFireInput(el) { el.dispatchEvent(new Event('input', { bubbles: true })); }
@@ -3356,15 +3714,14 @@ function ckTapEnter() {
   if (ckField.multiline && ckShiftOn) { insertAtCursor(ckField.el, '\n'); ckShiftOn = false; renderCustomKeyboard(); }
   else ckField.onEnter(ckField.el);
 }
-function ckTapEmoji() {
-  $('sticker-picker-panel').classList.add('hidden');
-  $('gif-picker-panel').classList.add('hidden');
-  const panel = $('emoji-picker-panel');
-  const willOpen = panel.classList.contains('hidden');
-  panel.classList.toggle('hidden');
-  $('custom-keyboard').classList.toggle('hidden', willOpen);
-  ckAdjustFloatingPanels(!willOpen);
-  if (willOpen) { $('emoji-search').value = ''; renderEmojiPickerGrids(); }
+function ckTapEmojiToggle() {
+  // Switches the keyboard's own middle rows to an emoji grid, in place —
+  // same shell (tool row, bottom row), just different keys, exactly like
+  // the 123/ABC toggle. Nothing about the keyboard hides or swaps out for
+  // a separate floating panel here anymore.
+  ckPage = ckPage === 'emoji' ? 'letters' : 'emoji';
+  ckShiftOn = false;
+  renderCustomKeyboard();
 }
 async function ckTapCopy() {
   if (!ckField) return;
@@ -3414,17 +3771,37 @@ function renderCustomKeyboard() {
   const bottomRow = `
     <div class="ck-row ck-bottom-row">
       <button type="button" class="ck-key ck-tag" data-act="toggle-symbols">${ckPage === 'letters' ? '123' : 'ABC'}</button>
-      <button type="button" class="ck-key ck-tag" data-act="emoji">${icon('smiley')}</button>
-      <button type="button" class="ck-key ck-space" data-act="space">space</button>
+      <button type="button" class="ck-key ck-tag${ckPage === 'emoji' ? ' on' : ''}" data-act="emoji">${icon('smiley')}</button>
+      ${ckPage === 'emoji'
+        ? `<button type="button" class="ck-key ck-space" data-act="backspace">⌫</button>`
+        : `<button type="button" class="ck-key ck-space" data-act="space">space</button>`}
       <button type="button" class="ck-key ck-tag ck-enter" data-act="enter">${ckField && ckField.multiline && ckShiftOn ? '⏎' : icon('send')}</button>
     </div>`;
-  kb.innerHTML = toolRow + rows.map(row => `<div class="ck-row">${row.map(keyHTML).join('')}</div>`).join('') + bottomRow;
+  const bodyHTML = ckPage === 'emoji' ? ckEmojiRowsHTML() : rows.map(row => `<div class="ck-row">${row.map(keyHTML).join('')}</div>`).join('');
+  kb.innerHTML = toolRow + bodyHTML + bottomRow;
 
+  // Every key handler below stops propagation. Without it, a key like
+  // shift/123/emoji that calls renderCustomKeyboard() (rebuilding this
+  // whole element mid-click) detaches the very button that was clicked
+  // before the click finishes bubbling up to the document-level
+  // "click outside closes the keyboard" listener — which then sees a
+  // target with no live parent chain, fails to recognize it as part of
+  // #custom-keyboard, and closes the keyboard right out from under the tap.
   kb.querySelectorAll('.ck-key[data-ch]').forEach(btn => {
-    btn.addEventListener('click', () => { ckClearSelectionHighlight(); ckTapLetter(btn.dataset.ch); });
+    btn.addEventListener('click', (e) => { e.stopPropagation(); ckClearSelectionHighlight(); ckTapLetter(btn.dataset.ch); });
+  });
+  kb.querySelectorAll('.ck-key[data-custom-emoji]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!ckField) return;
+      ckClearSelectionHighlight();
+      insertAtCursor(ckField.el, `:${btn.dataset.customEmoji}:`);
+      ckConsumeOneShotShift();
+    });
   });
   kb.querySelectorAll('.ck-key[data-act]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const act = btn.dataset.act;
       if (act !== 'select-all' && act !== 'copy') ckClearSelectionHighlight();
       if (act === 'shift') ckTapShift();
@@ -3434,12 +3811,25 @@ function renderCustomKeyboard() {
       else if (act === 'toggle-symbols') { ckPage = ckPage === 'letters' ? 'symbols1' : 'letters'; renderCustomKeyboard(); }
       else if (act === 'page1') { ckPage = 'symbols1'; renderCustomKeyboard(); }
       else if (act === 'page2') { ckPage = 'symbols2'; renderCustomKeyboard(); }
-      else if (act === 'emoji') ckTapEmoji();
+      else if (act === 'emoji') ckTapEmojiToggle();
       else if (act === 'select-all') ckTapSelectAll();
       else if (act === 'copy') ckTapCopy();
       else if (act === 'paste') ckTapPaste();
     });
   });
+}
+// Flattens custom server emoji (as image tiles, inserted as :name:) and the
+// full standard emoji set (as literal characters) into rows the same shape
+// as the letter/symbol rows, so they pick up identical key styling.
+function ckEmojiRowsHTML() {
+  const customTiles = Object.keys(customEmojis).sort().map(n =>
+    `<button type="button" class="ck-key ck-emoji-key" data-custom-emoji="${esc(n)}" title=":${esc(n)}:"><img src="${customEmojis[n].dataUrl}" alt=":${esc(n)}:"></button>`);
+  const stdTiles = ALL_EMOJI_FLAT.map(e => `<button type="button" class="ck-key ck-emoji-key" data-ch="${esc(e)}">${e}</button>`);
+  const tiles = customTiles.concat(stdTiles);
+  const perRow = 7;
+  const rowsArr = [];
+  for (let i = 0; i < tiles.length; i += perRow) rowsArr.push(tiles.slice(i, i + perRow));
+  return `<div class="ck-emoji-scroll">${rowsArr.map(r => `<div class="ck-row">${r.join('')}</div>`).join('')}</div>`;
 }
 function showCustomKeyboardFor(el, opts) {
   ['emoji-picker-panel', 'sticker-picker-panel', 'gif-picker-panel'].forEach(id => {
@@ -3480,7 +3870,8 @@ if (isMobile()) {
   document.addEventListener('click', (e) => {
     if ($('custom-keyboard').classList.contains('hidden')) return;
     if (e.target.closest('#custom-keyboard') || e.target.closest('#composer-input') ||
-      e.target.closest('#emoji-search') || e.target.closest('#gif-search') || e.target.closest('#emoji-picker-btn')) return;
+      e.target.closest('#emoji-search') || e.target.closest('#gif-search') || e.target.closest('#emoji-picker-btn') ||
+      e.target.closest('.msg-edit-box')) return;
     hideCustomKeyboard();
   });
   window.addEventListener('resize', () => { if (ckField && !$('custom-keyboard').classList.contains('hidden')) positionCkCursor(); });
@@ -3519,6 +3910,7 @@ $('emoji-picker-btn').onclick = (e) => {
   e.stopPropagation();
   $('sticker-picker-panel').classList.add('hidden');
   $('gif-picker-panel').classList.add('hidden');
+  $('composer-action-menu').classList.add('hidden');
   const panel = $('emoji-picker-panel');
   const willOpen = panel.classList.contains('hidden');
   panel.classList.toggle('hidden');
