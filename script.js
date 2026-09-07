@@ -1502,9 +1502,9 @@ async function selectDM(id, otherUid) {
   if (!dmDoc || dmDoc.autoDelete !== false) sweepOldMessages(db.collection('dms').doc(id).collection('messages'));
   if (unsub.messages) unsub.messages();
   unsub.messages = db.collection('dms').doc(id).collection('messages').orderBy('createdAt', 'asc')
-    .onSnapshot(snap => {
+    .onSnapshot({ includeMetadataChanges: true }, snap => {
       const msgs = [];
-      snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+      snap.forEach(d => msgs.push({ id: d.id, ...d.data(), pendingWrite: d.metadata.hasPendingWrites }));
       onMessagesUpdate(msgs);
     });
 }
@@ -1535,9 +1535,9 @@ async function selectGroupDM(id) {
   if (!g || g.autoDelete !== false) sweepOldMessages(db.collection('groupDMs').doc(id).collection('messages'));
   if (unsub.messages) unsub.messages();
   unsub.messages = db.collection('groupDMs').doc(id).collection('messages').orderBy('createdAt', 'asc')
-    .onSnapshot(snap => {
+    .onSnapshot({ includeMetadataChanges: true }, snap => {
       const msgs = [];
-      snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+      snap.forEach(d => msgs.push({ id: d.id, ...d.data(), pendingWrite: d.metadata.hasPendingWrites }));
       onMessagesUpdate(msgs);
     });
 }
@@ -2286,9 +2286,9 @@ function selectChannel(channel) {
   if (unsub.messages) unsub.messages();
   unsub.messages = db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id)
     .collection('messages').orderBy('createdAt', 'asc')
-    .onSnapshot(snap => {
+    .onSnapshot({ includeMetadataChanges: true }, snap => {
       const msgs = [];
-      snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+      snap.forEach(d => msgs.push({ id: d.id, ...d.data(), pendingWrite: d.metadata.hasPendingWrites }));
       onMessagesUpdate(msgs);
     });
 }
@@ -2379,15 +2379,15 @@ $('search-toggle').onclick = () => {
   $('search-toggle').classList.toggle('on', searchActive);
   $('search-bar').classList.toggle('hidden', !searchActive);
   if (searchActive) { $('search-input').value = ''; $('search-input').focus(); }
-  renderMessages(lastRawMessages);
+  renderCurrentMessages();
 };
 $('search-close').onclick = () => {
   searchActive = false;
   $('search-toggle').classList.remove('on');
   $('search-bar').classList.add('hidden');
-  renderMessages(lastRawMessages);
+  renderCurrentMessages();
 };
-$('search-input').addEventListener('input', () => renderMessages(lastRawMessages));
+$('search-input').addEventListener('input', renderCurrentMessages);
 $('search-input').addEventListener('keydown', (e) => { if (e.key === 'Escape') $('search-close').click(); });
 
 function showHeaderActions() {
@@ -2409,10 +2409,78 @@ function hideHeaderActions() {
   $('search-bar').classList.add('hidden');
 }
 
+// Local-only echoes for messages whose attachments are still uploading —
+// see addPendingMessage/sendMessage. Firestore already echoes plain
+// writes (text, polls) to your own client instantly; this exists only
+// for the one case Firestore can't help with: the file isn't uploaded
+// yet, so there's no document to write until that finishes.
+let pendingMessages = [];
+// localIds of pending echoes whose real doc has already arrived but is
+// being held back from rendering — see onMessagesUpdate. Without this,
+// the moment the real doc appears we'd swap from an already-loaded local
+// blob preview to a brand-new CDN url the browser hasn't fetched yet,
+// which is the "blue outline vanishes, then it takes a while" flicker.
+let holdingLocalIds = new Set();
+// Every re-render of the current conversation should go through here, not
+// renderMessages(lastRawMessages) directly — otherwise an in-flight
+// upload's pending bubble would vanish for a frame on any unrelated
+// re-render (search, edit-cancel, view switches...) until the next real
+// snapshot update put it back.
+function renderCurrentMessages() {
+  const shown = lastRawMessages.filter(m => !(m.localId && holdingLocalIds.has(m.localId)));
+  renderMessages(shown.concat(pendingMessages));
+}
+function revokePendingPreviews(p) {
+  (p.attachments || []).forEach(a => { if (a.url && a.url.startsWith('blob:')) URL.revokeObjectURL(a.url); });
+}
+function addPendingMessage(localId, payload, previewAttachments) {
+  pendingMessages.push({
+    id: localId, localId, localOnly: true,
+    uid: payload.uid, username: payload.username,
+    text: payload.text || '', replyTo: payload.replyTo || null,
+    attachments: previewAttachments,
+    createdAt: { toDate: () => new Date() },
+    pendingWrite: true,
+  });
+  renderCurrentMessages();
+}
+function removePendingMessage(localId) {
+  const p = pendingMessages.find(x => x.localId === localId);
+  if (p) revokePendingPreviews(p);
+  pendingMessages = pendingMessages.filter(x => x.localId !== localId);
+  holdingLocalIds.delete(localId);
+  renderCurrentMessages();
+}
+function finalizePendingSwap(localId) {
+  holdingLocalIds.delete(localId);
+  const p = pendingMessages.find(x => x.localId === localId);
+  if (p) revokePendingPreviews(p);
+  pendingMessages = pendingMessages.filter(x => x.localId !== localId);
+  renderCurrentMessages();
+}
 function onMessagesUpdate(msgs) {
   cancelMsgLoading();
   lastRawMessages = msgs;
-  renderMessages(msgs);
+  pendingMessages.forEach(p => {
+    if (holdingLocalIds.has(p.localId)) return; // already preloading its replacement
+    const real = msgs.find(m => m.localId && m.localId === p.localId);
+    if (!real) return;
+    const imgs = (real.attachments || []).filter(a => a.type === 'image');
+    if (!imgs.length) { finalizePendingSwap(p.localId); return; }
+    // Preload the real image(s) in the background; keep showing the local
+    // blob preview (still has its blue outline) until they're actually
+    // ready, then swap in one frame instead of flashing empty first.
+    holdingLocalIds.add(p.localId);
+    let remaining = imgs.length, settled = false;
+    const finish = () => { if (settled) return; settled = true; finalizePendingSwap(p.localId); };
+    imgs.forEach(a => {
+      const img = new Image();
+      img.onload = img.onerror = () => { if (--remaining <= 0) finish(); };
+      img.src = a.url;
+    });
+    setTimeout(finish, 8000); // safety net if a load/error event never fires
+  });
+  renderCurrentMessages();
   if (!$('pinned-modal').classList.contains('hidden')) renderPinnedList(msgs.filter(m => m.pinned));
 }
 
@@ -2594,7 +2662,7 @@ function showLoadingView() {
 }
 
 function renderCurrentView() {
-  if (currentView === 'channel' || currentView === 'dm' || currentView === 'groupdm') renderMessages(lastRawMessages);
+  if (currentView === 'channel' || currentView === 'dm' || currentView === 'groupdm') renderCurrentMessages();
   if (currentView === 'channel' && currentServerData) {
     renderMemberPanel(currentServerData.members || [], currentServerData.ownerId);
   } else if (currentView === 'groupdm') {
@@ -2674,7 +2742,9 @@ function emojiTokenHTML(token) {
 function pollHTML(m) {
   const poll = m.poll;
   if (!poll) return '';
-  const votes = poll.votes || {};
+  // A vote you just cast is applied here immediately, before the transaction
+  // that actually records it comes back — see togglePollVote.
+  const votes = optimisticPollVotes[m.id] || poll.votes || {};
   const counts = poll.answers.map((_, i) => Object.values(votes).filter(arr => Array.isArray(arr) && arr.includes(i)).length);
   const totalVoters = Object.keys(votes).length;
   const totalVotes = counts.reduce((a, b) => a + b, 0);
@@ -2705,36 +2775,59 @@ function pollHTML(m) {
     <div class="poll-card-footer"><span>${footerLeft}</span>${poll.allowMultiple ? '<span class="poll-multi-tag">Pick one or more</span>' : ''}</div>
   </div>`;
 }
-async function togglePollVote(msgId, idx) {
+// Votes go through a transaction (see below) so two people voting at once
+// can't stomp on each other — but transactions get zero help from
+// Firestore's local-write echo, so without this a vote would sit there
+// doing nothing until the round trip finishes. optimisticPollVotes
+// applies your own vote to the render immediately; pollHTML reads it
+// ahead of the real poll.votes, and it's cleared once the transaction
+// settles (the real data will have caught up by then either way).
+let optimisticPollVotes = {};
+function computeToggledVotes(baseVotes, allowMultiple, uid, idx) {
+  const votes = { ...baseVotes };
+  let mine = Array.isArray(votes[uid]) ? [...votes[uid]] : [];
+  if (allowMultiple) {
+    mine = mine.includes(idx) ? mine.filter(i => i !== idx) : [...mine, idx];
+  } else {
+    mine = (mine.length === 1 && mine[0] === idx) ? [] : [idx];
+  }
+  if (mine.length) votes[uid] = mine; else delete votes[uid];
+  return votes;
+}
+function togglePollVote(msgId, idx) {
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') return;
   const ref = msgRef(msgId);
   if (!ref) return;
-  try {
-    await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      if (!snap.exists) return;
-      const data = snap.data();
-      const poll = data.poll;
-      if (!poll) return;
-      if (Date.now() >= pollExpiresAtMs(poll)) return; // voting closed, no-op
-      const votes = { ...(poll.votes || {}) };
-      let mine = Array.isArray(votes[myUid]) ? [...votes[myUid]] : [];
-      if (poll.allowMultiple) {
-        mine = mine.includes(idx) ? mine.filter(i => i !== idx) : [...mine, idx];
-      } else {
-        mine = (mine.length === 1 && mine[0] === idx) ? [] : [idx];
-      }
-      if (mine.length) votes[myUid] = mine; else delete votes[myUid];
-      tx.update(ref, { 'poll.votes': votes });
+  const m = lastRawMessages.find(x => x.id === msgId);
+  if (!m || !m.poll) return;
+  if (Date.now() >= pollExpiresAtMs(m.poll)) return; // voting closed, no-op
+  const baseVotes = optimisticPollVotes[msgId] || m.poll.votes || {};
+  optimisticPollVotes[msgId] = computeToggledVotes(baseVotes, m.poll.allowMultiple, myUid, idx);
+  renderCurrentMessages();
+  db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return;
+    const data = snap.data();
+    const poll = data.poll;
+    if (!poll) return;
+    if (Date.now() >= pollExpiresAtMs(poll)) return; // voting closed, no-op
+    tx.update(ref, { 'poll.votes': computeToggledVotes(poll.votes || {}, poll.allowMultiple, myUid, idx) });
+  }).catch(() => toast('Could not update your vote.', 'error'))
+    .finally(() => {
+      delete optimisticPollVotes[msgId];
+      renderCurrentMessages();
     });
-  } catch (e) { toast('Could not update your vote.', 'error'); }
 }
 
 function buildMessageLineEl(m, canDelete) {
-  const pinnable = canPin();
-  const canEditThis = m.uid === myUid && !m.sticker && !m.poll;
+  if (m.localOnly) canDelete = false; // no real doc yet — nothing to act on
+  const pinnable = canPin() && !m.localOnly;
+  const canEditThis = m.uid === myUid && !m.sticker && !m.poll && !m.localOnly;
   const line = document.createElement('div');
-  line.className = 'msg-line' + (m.pinned ? ' is-pinned' : '');
+  // Blue = sent from here but not yet confirmed by the server for
+  // everyone else to see — either a genuine Firestore local echo
+  // (hasPendingWrites) or one of ours still uploading (localOnly).
+  line.className = 'msg-line' + (m.pinned ? ' is-pinned' : '') + ((m.pendingWrite || m.localOnly) ? ' is-pending' : '');
   line.dataset.mid = m.id;
   const rowWrap = document.createElement('div');
   rowWrap.className = 'msg-row-wrap' + (m.sticker ? ' is-sticker' : '');
@@ -2750,19 +2843,21 @@ function buildMessageLineEl(m, canDelete) {
     : (m.text ? `<span class="msg-text">${renderMessageText(m.text)}</span>${m.edited ? `<span class="edited-tag">(edited)</span>` : ''}` : '') +
       attachmentHTML(m, canDelete));
 
-  rowWrap.innerHTML = bodyHTML +
+  rowWrap.innerHTML = bodyHTML + (m.localOnly ? '' :
     `<span class="msg-hover-actions">` +
     `<span class="hover-icon-btn react-btn" title="Add Reaction">${icon('smiley')}</span>` +
     `<span class="hover-icon-btn reply-msg" title="Reply">${icon('reply')}</span>` +
     (canEditThis ? `<span class="hover-icon-btn edit-msg" title="Edit">${icon('edit')}</span>` : '') +
     (pinnable ? `<span class="hover-icon-btn pin-msg${m.pinned ? ' on' : ''}" title="${m.pinned ? 'Unpin' : 'Pin Message'}">${icon('pin')}</span>` : '') +
     (canDelete ? `<span class="hover-icon-btn del-msg" title="Delete">${icon('trash')}</span>` : '') +
-    `</span>`;
-  rowWrap.querySelector('.react-btn').onclick = (e) => { e.stopPropagation(); toggleReactPopover(e.currentTarget, m.id); };
-  rowWrap.querySelector('.reply-msg').onclick = () => setReplyTarget(m.id);
-  if (canEditThis) rowWrap.querySelector('.edit-msg').onclick = () => startEditMessage(m.id);
-  if (pinnable) rowWrap.querySelector('.pin-msg').onclick = () => togglePin(m.id);
-  if (canDelete) rowWrap.querySelector('.del-msg').onclick = () => deleteMessage(m.id);
+    `</span>`);
+  if (!m.localOnly) {
+    rowWrap.querySelector('.react-btn').onclick = (e) => { e.stopPropagation(); toggleReactPopover(e.currentTarget, m.id); };
+    rowWrap.querySelector('.reply-msg').onclick = () => setReplyTarget(m.id);
+    if (canEditThis) rowWrap.querySelector('.edit-msg').onclick = () => startEditMessage(m.id);
+    if (pinnable) rowWrap.querySelector('.pin-msg').onclick = () => togglePin(m.id);
+    if (canDelete) rowWrap.querySelector('.del-msg').onclick = () => deleteMessage(m.id);
+  }
   rowWrap.querySelectorAll('.msg-att-del').forEach(btn => {
     btn.onclick = (e) => { e.stopPropagation(); deleteMessageAttachment(m.id, parseInt(btn.dataset.attidx, 10)); };
   });
@@ -3009,7 +3104,7 @@ function buildEditBoxInto(rowWrap, m) {
     editingMessageId = null;
     editingDraft = '';
     if (isMobile() && useCustomKeyboard()) hideCustomKeyboard();
-    renderMessages(lastRawMessages);
+    renderCurrentMessages();
   };
 
   if (isMobile() && useCustomKeyboard()) {
@@ -3204,14 +3299,17 @@ async function submitPoll() {
       votes: {},
     },
   };
-  const btn = $('poll-submit');
-  btn.disabled = true;
-  try {
-    await sendToCurrentConversation(payload);
-    closeModal('poll-modal');
-    toast('Poll posted.');
-  } catch (e) { toast(e.message || 'Could not post the poll.', 'error'); }
-  finally { btn.disabled = false; }
+  // Close right away and clear the "/poll" that's been sitting in the
+  // composer this whole time — the write itself (and Firestore's local
+  // echo of it) happens in the background; no reason to hold the modal
+  // open waiting on the round trip.
+  closeModal('poll-modal');
+  if ($('composer-input').value.trim().toLowerCase() === '/poll') {
+    $('composer-input').value = '';
+    autoResize($('composer-input'));
+  }
+  toast('Poll posted.');
+  sendToCurrentConversation(payload).catch(e => toast(e.message || 'Could not post the poll.', 'error'));
 }
 $('poll-submit').onclick = submitPoll;
 // Closing the poll modal (X or Cancel) while its emoji picker is open
@@ -3252,13 +3350,10 @@ async function sendMessage() {
   const raw = input.value.trim();
   const pendingAttachments = draftAttachments.slice();
   // Typing "/poll" alone and hitting Enter opens the poll composer instead
-  // of sending it as a message — same trigger word, but it now behaves
-  // like every other slash command (acts on send, not on keystroke), and
-  // the "/poll" text is cleared the same way any other sent text would be.
+  // of sending it as a message. The text stays in the composer (same as
+  // any slash command you haven't actually sent yet) — it only clears
+  // once the poll is actually posted, in submitPoll().
   if (!pendingAttachments.length && raw.toLowerCase() === '/poll') {
-    input.value = '';
-    autoResize(input);
-    closeMentionPopup();
     openPollModal();
     return;
   }
@@ -3272,24 +3367,34 @@ async function sendMessage() {
   const text = raw ? applyMessageFilter(raw) : '';
   const payload = { text, uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp() };
   if (replyTarget) payload.replyTo = { id: replyTarget.id, uid: replyTarget.uid, username: replyTarget.username, text: replyTarget.text };
+  clearReplyTarget();
+
+  if (!pendingAttachments.length) {
+    // Nothing to upload — Firestore already echoes a write to your own
+    // client instantly (see the is-pending styling driven by
+    // hasPendingWrites), so there's nothing to wait on here.
+    sendToCurrentConversation(payload).catch(e => toast(e.message || 'Failed to send message.', 'error'));
+    return;
+  }
+
+  // Has attachments: the real bottleneck was always the upload, not
+  // Firestore — so show the image(s) right away from the local file
+  // (blue outline = not confirmed on other clients yet) and swap in the
+  // real message once the upload and write finish in the background.
+  const localId = 'local_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const previewAttachments = pendingAttachments.map(d => ({ url: d.previewUrl, type: d.type, name: d.file.name, size: d.file.size }));
+  addPendingMessage(localId, payload, previewAttachments);
   try {
-    if (pendingAttachments.length) {
-      const bar = $('upload-progress');
-      bar.classList.remove('hidden');
-      bar.innerHTML = `<div class="spinner small"></div><span>Uploading ${pendingAttachments.length > 1 ? pendingAttachments.length + ' files' : esc(pendingAttachments[0].file.name)}…</span>`;
-      const uploaded = [];
-      for (const d of pendingAttachments) {
-        const url = await uploadFileGeneric(d.file, d.type === 'image');
-        uploaded.push({ url, type: d.type, name: d.file.name, size: d.file.size });
-        if (d.previewUrl) URL.revokeObjectURL(d.previewUrl);
-      }
-      bar.classList.add('hidden');
-      payload.attachments = uploaded;
+    const uploaded = [];
+    for (const d of pendingAttachments) {
+      const url = await uploadFileGeneric(d.file, d.type === 'image');
+      uploaded.push({ url, type: d.type, name: d.file.name, size: d.file.size });
     }
+    payload.attachments = uploaded;
+    payload.localId = localId;
     await sendToCurrentConversation(payload);
-    clearReplyTarget();
   } catch (e) {
-    $('upload-progress').classList.add('hidden');
+    removePendingMessage(localId);
     toast(e.message || 'Failed to send message.', 'error');
   }
 }
