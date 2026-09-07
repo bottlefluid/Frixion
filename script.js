@@ -202,7 +202,7 @@ async function ensureQuestsFresh(profile) {
 const UPDATES = [
   { v: '2.8', date: '2026-09-05', title: 'Polls, server discovery, and a cleaner status dot',
     notes: [
-      'Polls: hit the "+" button next to the message box (or just type /poll) to build one — question, up to 10 answers, optional per-answer emoji, a duration, and an optional "allow multiple answers" toggle. Posted polls show live vote bars right in the chat and lock to "Final results" once they expire. They auto-delete after 7 days along with the rest of a conversation\'s messages, same as everything else, unless that conversation has auto-delete turned off.',
+      'Polls: hit the "+" button next to the message box (or type /poll and hit Enter) to build one — question, up to 10 answers, optional per-answer emoji, a duration, and an optional "allow multiple answers" toggle. Posted polls show live vote bars right in the chat and lock to "Final results" once they expire. They auto-delete after 7 days along with the rest of a conversation\'s messages, same as everything else, unless that conversation has auto-delete turned off.',
       'Explore Servers actually works now — it lists every server that exists, with member counts, and lets you join one straight from there instead of needing an invite.',
       'The online/idle/dnd status dot on avatars is a real cutout now instead of a colored border guessing at the background behind it, so it no longer looks slightly off depending on where an avatar shows up.',
       'Removed the Nitro-style ad button from the server rail.',
@@ -998,6 +998,7 @@ function initAppForUser() {
     profileCache[myUid] = myProfile;
     isAdmin = !!myProfile.op;
     applyTheme(myProfile.theme || 'default');
+    applyCustomKeyboardSetting();
     renderSelfPanel();
     updateFriendReqBadge();
     if (!$('settings-modal').classList.contains('hidden')) populateSettings();
@@ -2622,18 +2623,21 @@ function reactionsHTML(reactions) {
   ).join('') + `</div>`;
 }
 
-function attachmentHTML(m) {
+function attachmentHTML(m, canDelete) {
   // m.attachments (array) covers new multi-image messages; m.attachment
   // (singular) is kept for backward compatibility with older messages.
   const atts = m.attachments || (m.attachment ? [m.attachment] : []);
   if (atts.length) {
     const gridCls = atts.length > 1 ? ' msg-attachment-grid' : '';
-    return `<div class="msg-attachment${gridCls}">` + atts.map(a => a.type === 'image'
-      ? `<img src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy">`
-      : `<a class="msg-file-card" href="${esc(a.url)}" target="_blank" rel="noopener">
-          <span class="mfc-icon">${icon('file')}</span>
-          <span class="mfc-body"><span class="mfc-name">${esc(a.name)}</span><span class="mfc-size">${esc(humanFileSize(a.size || 0))}</span></span>
-        </a>`).join('') + `</div>`;
+    return `<div class="msg-attachment${gridCls}">` + atts.map((a, i) => {
+      const delBtn = canDelete ? `<button type="button" class="msg-att-del" data-attidx="${i}" title="Delete this image">${icon('trash')}</button>` : '';
+      return a.type === 'image'
+        ? `<div class="msg-att-item"><img src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy">${delBtn}</div>`
+        : `<div class="msg-att-item"><a class="msg-file-card" href="${esc(a.url)}" target="_blank" rel="noopener">
+            <span class="mfc-icon">${icon('file')}</span>
+            <span class="mfc-body"><span class="mfc-name">${esc(a.name)}</span><span class="mfc-size">${esc(humanFileSize(a.size || 0))}</span></span>
+          </a>${delBtn}</div>`;
+    }).join('') + `</div>`;
   }
   if (m.gifUrl) {
     return `<div class="msg-attachment"><img src="${esc(m.gifUrl)}" alt="GIF" loading="lazy"></div>`;
@@ -2655,6 +2659,18 @@ function pollTimeLeft(expiresAtMs) {
   const days = Math.round(hours / 24);
   return `${days} day${days === 1 ? '' : 's'} left`;
 }
+// A poll answer's emoji is either a plain unicode character or a custom
+// emoji shortcode (":name:") picked from the real emoji picker — render
+// either the same way messages do.
+function emojiTokenHTML(token) {
+  if (!token) return '';
+  const m = /^:([a-z0-9_]+):$/i.exec(token);
+  if (m && customEmojis[m[1].toLowerCase()]) {
+    const ce = customEmojis[m[1].toLowerCase()];
+    return `<img class="custom-emoji" src="${esc(ce.dataUrl)}" alt=":${esc(ce.name)}:" title=":${esc(ce.name)}:">`;
+  }
+  return esc(token);
+}
 function pollHTML(m) {
   const poll = m.poll;
   if (!poll) return '';
@@ -2675,8 +2691,8 @@ function pollHTML(m) {
     return `<button type="button" class="poll-option${mine ? ' voted' : ''}${expired ? ' locked' : ''}${isWinner ? ' winning' : ''}" data-idx="${i}"${expired ? ' disabled' : ''}>
       <span class="poll-option-fill" style="width:${pct}%"></span>
       <span class="poll-option-main">
-        <span class="poll-option-check">${icon('check')}</span>
-        <span class="poll-option-text">${ans.emoji ? `<span class="poll-option-emoji">${esc(ans.emoji)}</span>` : ''}${esc(ans.text)}</span>
+        <span class="poll-option-check"></span>
+        <span class="poll-option-text">${ans.emoji ? `<span class="poll-option-emoji">${emojiTokenHTML(ans.emoji)}</span>` : ''}${esc(ans.text)}</span>
       </span>
       <span class="poll-option-pct">${totalVotes ? pct + '%' : ''}</span>
     </button>`;
@@ -2732,7 +2748,7 @@ function buildMessageLineEl(m, canDelete) {
     : m.poll
     ? pollHTML(m)
     : (m.text ? `<span class="msg-text">${renderMessageText(m.text)}</span>${m.edited ? `<span class="edited-tag">(edited)</span>` : ''}` : '') +
-      attachmentHTML(m));
+      attachmentHTML(m, canDelete));
 
   rowWrap.innerHTML = bodyHTML +
     `<span class="msg-hover-actions">` +
@@ -2747,6 +2763,9 @@ function buildMessageLineEl(m, canDelete) {
   if (canEditThis) rowWrap.querySelector('.edit-msg').onclick = () => startEditMessage(m.id);
   if (pinnable) rowWrap.querySelector('.pin-msg').onclick = () => togglePin(m.id);
   if (canDelete) rowWrap.querySelector('.del-msg').onclick = () => deleteMessage(m.id);
+  rowWrap.querySelectorAll('.msg-att-del').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); deleteMessageAttachment(m.id, parseInt(btn.dataset.attidx, 10)); };
+  });
   const replyRefEl = rowWrap.querySelector('.msg-reply-ref');
   if (replyRefEl) replyRefEl.onclick = () => jumpToMessage(replyRefEl.dataset.jump);
   if (m.poll) {
@@ -2923,11 +2942,41 @@ async function toggleReaction(msgId, emoji) {
   } catch (e) { toast('Could not react.', 'error'); }
 }
 
+// Text and images now delete independently: the message-level trash icon
+// only clears the text if the message also carries an image/file (the
+// attachment stays); the per-image trash icon (see attachmentHTML) only
+// drops that one attachment and leaves the text alone. A message with
+// only one or the other still deletes outright — nothing would be left.
 async function deleteMessage(id) {
   try {
     const ref = msgRef(id);
-    if (ref) await ref.delete();
+    if (!ref) return;
+    const snap = await ref.get();
+    const data = snap.data();
+    const hasAttachment = !!(data && ((data.attachments && data.attachments.length) || data.attachment));
+    if (hasAttachment && data.text && data.text.trim()) {
+      await ref.update({ text: '', edited: false });
+    } else {
+      await ref.delete();
+    }
   } catch (e) { toast('Could not delete message.', 'error'); }
+}
+async function deleteMessageAttachment(id, idx) {
+  try {
+    const ref = msgRef(id);
+    if (!ref) return;
+    const snap = await ref.get();
+    const data = snap.data();
+    if (!data) return;
+    const atts = (data.attachments || (data.attachment ? [data.attachment] : [])).slice();
+    if (idx < 0 || idx >= atts.length) return;
+    atts.splice(idx, 1);
+    if (!atts.length && !(data.text && data.text.trim())) {
+      await ref.delete();
+    } else {
+      await ref.update({ attachments: atts, attachment: FieldValue.delete() });
+    }
+  } catch (e) { toast('Could not delete image.', 'error'); }
 }
 
 // ---------- editing (own messages only) ----------
@@ -2959,11 +3008,11 @@ function buildEditBoxInto(rowWrap, m) {
     }
     editingMessageId = null;
     editingDraft = '';
-    if (isMobile()) hideCustomKeyboard();
+    if (isMobile() && useCustomKeyboard()) hideCustomKeyboard();
     renderMessages(lastRawMessages);
   };
 
-  if (isMobile()) {
+  if (isMobile() && useCustomKeyboard()) {
     ta.selectionStart = ta.selectionEnd = ta.value.length;
     ta.readOnly = true;
     // A silent rebuild mid-edit (renderMessages fired for some unrelated
@@ -2984,7 +3033,7 @@ function buildEditBoxInto(rowWrap, m) {
     // Covers tapping back into the field after the keyboard was dismissed
     // by a tap elsewhere (e.g. on the message row outside the edit box).
     ta.addEventListener('click', () => {
-      if (!ckField || ckField.el !== ta) showCustomKeyboardFor(ta, { onEnter: () => finish(true), multiline: true });
+      if (useCustomKeyboard() && (!ckField || ckField.el !== ta)) showCustomKeyboardFor(ta, { onEnter: () => finish(true), multiline: true });
     });
   } else {
     ta.focus();
@@ -3030,7 +3079,7 @@ function setReplyTarget(msgId) {
   replyTarget = { id: m.id, uid: m.uid, username: uname, text: preview.slice(0, 150) };
   $('reply-bar-username').textContent = uname;
   $('reply-bar').classList.remove('hidden');
-  if (isMobile()) showCustomKeyboard(); else $('composer-input').focus();
+  if (isMobile() && useCustomKeyboard()) showCustomKeyboard(); else $('composer-input').focus();
 }
 function clearReplyTarget() {
   replyTarget = null;
@@ -3093,42 +3142,25 @@ function updatePollAddButtonState() {
 }
 
 function openPollEmojiPicker(row, btn) {
-  closePollEmojiPicker();
-  const pop = document.createElement('div');
-  pop.className = 'poll-emoji-popover';
-  pop.id = 'poll-emoji-popover';
-  const clearBtn = row.dataset.emoji
-    ? `<button type="button" data-clear="1" style="grid-column:1/-1;font-size:12px;color:var(--text-muted);padding:6px 0;">Remove emoji</button>`
-    : '';
-  pop.innerHTML = clearBtn + ALL_EMOJI_FLAT.map(e => `<button type="button">${e}</button>`).join('');
-  document.body.appendChild(pop);
+  emojiPickerTarget = { type: 'poll', row, btn };
+  const panel = $('emoji-picker-panel');
+  $('sticker-picker-panel').classList.add('hidden');
+  $('gif-picker-panel').classList.add('hidden');
+  $('composer-action-menu').classList.add('hidden');
+  panel.classList.add('ep-anchored');
   const r = btn.getBoundingClientRect();
-  const popW = 252, popH = Math.min(220, pop.scrollHeight || 220);
+  const popW = 340, popH = 320;
   let left = Math.min(r.left, window.innerWidth - popW - 8);
   left = Math.max(8, left);
   let top = r.bottom + 6;
   if (top + popH > window.innerHeight - 8) top = Math.max(8, r.top - popH - 6);
-  pop.style.left = `${left}px`;
-  pop.style.top = `${top}px`;
-  pop.querySelectorAll('button').forEach(b => {
-    b.onclick = (e) => {
-      e.stopPropagation();
-      if (b.dataset.clear) { delete row.dataset.emoji; btn.innerHTML = icon('smiley'); }
-      else { row.dataset.emoji = b.textContent; btn.textContent = b.textContent; }
-      closePollEmojiPicker();
-    };
-  });
-  setTimeout(() => document.addEventListener('click', pollEmojiPopoverOutsideClick), 0);
+  panel.style.left = `${left}px`;
+  panel.style.top = `${top}px`;
+  panel.classList.remove('hidden');
+  $('emoji-search').value = '';
+  renderEmojiPickerGrids();
 }
-function pollEmojiPopoverOutsideClick(e) {
-  const pop = $('poll-emoji-popover');
-  if (pop && !pop.contains(e.target)) closePollEmojiPicker();
-}
-function closePollEmojiPicker() {
-  const pop = $('poll-emoji-popover');
-  if (pop) pop.remove();
-  document.removeEventListener('click', pollEmojiPopoverOutsideClick);
-}
+function closePollEmojiPicker() { closeEmojiPickerPanel(); }
 
 function resetPollModal() {
   $('poll-question').value = '';
@@ -3182,15 +3214,10 @@ async function submitPoll() {
   finally { btn.disabled = false; }
 }
 $('poll-submit').onclick = submitPoll;
-
-// Typing "/poll" on its own in the composer opens the poll composer right
-// away, same as Discord's slash command — no need to press Enter first.
-$('composer-input').addEventListener('input', (e) => {
-  if (e.target.value.trim().toLowerCase() === '/poll') {
-    e.target.value = '';
-    autoResize(e.target);
-    openPollModal();
-  }
+// Closing the poll modal (X or Cancel) while its emoji picker is open
+// shouldn't leave that panel floating over the chat behind it.
+document.querySelectorAll('#poll-modal [data-close="poll-modal"]').forEach(el => {
+  el.addEventListener('click', closeEmojiPickerPanel);
 });
 
 async function sendToCurrentConversation(payload) {
@@ -3224,6 +3251,17 @@ async function sendMessage() {
   const input = $('composer-input');
   const raw = input.value.trim();
   const pendingAttachments = draftAttachments.slice();
+  // Typing "/poll" alone and hitting Enter opens the poll composer instead
+  // of sending it as a message — same trigger word, but it now behaves
+  // like every other slash command (acts on send, not on keystroke), and
+  // the "/poll" text is cleared the same way any other sent text would be.
+  if (!pendingAttachments.length && raw.toLowerCase() === '/poll') {
+    input.value = '';
+    autoResize(input);
+    closeMentionPopup();
+    openPollModal();
+    return;
+  }
   if (!raw && !pendingAttachments.length) return;
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
   input.value = '';
@@ -3511,11 +3549,69 @@ const CK_DICTIONARY = new Set([
 // avatarColor. myProfile is kept current by the users/{myUid} snapshot
 // listener in initAppForUser().
 function isAutocorrectEnabled() { return !!(myProfile && myProfile.autocorrect); }
+// Same account-synced pattern for the other two keyboard preferences.
+// Both default ON (undefined counts as true) since that's the existing
+// behavior for anyone who hasn't touched these settings yet.
+function useCustomKeyboard() { return !myProfile || myProfile.customKeyboard !== false; }
+function showQuickButtons() { return !myProfile || myProfile.keyboardQuickButtons !== false; }
 let ckLastAutocorrect = null; // { start, end, original } — lets one immediate backspace undo the last correction
 $('autocorrect-toggle').addEventListener('change', async (e) => {
   const on = e.target.checked;
   try { await db.collection('users').doc(myUid).update({ autocorrect: on }); }
   catch (err) { e.target.checked = !on; toast('Could not save that setting.', 'error'); }
+});
+$('custom-keyboard-toggle').addEventListener('change', async (e) => {
+  const on = e.target.checked;
+  try { await db.collection('users').doc(myUid).update({ customKeyboard: on }); }
+  catch (err) { e.target.checked = !on; toast('Could not save that setting.', 'error'); return; }
+  applyCustomKeyboardSetting();
+});
+$('quick-buttons-toggle').addEventListener('change', async (e) => {
+  const on = e.target.checked;
+  try { await db.collection('users').doc(myUid).update({ keyboardQuickButtons: on }); }
+  catch (err) { e.target.checked = !on; toast('Could not save that setting.', 'error'); return; }
+  if (ckField && !$('custom-keyboard').classList.contains('hidden')) renderCustomKeyboard();
+});
+function renderQuickTextList() {
+  const wrap = $('quicktext-list');
+  const items = getQuickTexts();
+  wrap.innerHTML = items.map((t, i) => `
+    <div class="quicktext-row" data-i="${i}">
+      <input type="text" class="quicktext-input" maxlength="300" value="${esc(t)}">
+      <button type="button" class="quicktext-remove" title="Remove">${icon('trash')}</button>
+    </div>`).join('') || `<p class="desc" style="margin:0;font-size:12px;">No quick text yet.</p>`;
+  wrap.querySelectorAll('.quicktext-row').forEach(row => {
+    const i = parseInt(row.dataset.i, 10);
+    const input = row.querySelector('.quicktext-input');
+    const commit = async () => {
+      const list = getQuickTexts().slice();
+      const val = input.value.trim();
+      if (!val) { list.splice(i, 1); }
+      else list[i] = val;
+      try { await db.collection('users').doc(myUid).update({ quickTexts: list }); }
+      catch (err) { toast('Could not save quick text.', 'error'); return; }
+      renderQuickTextList();
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
+    row.querySelector('.quicktext-remove').onclick = async () => {
+      const list = getQuickTexts().slice();
+      list.splice(i, 1);
+      try { await db.collection('users').doc(myUid).update({ quickTexts: list }); }
+      catch (err) { toast('Could not remove that.', 'error'); return; }
+      renderQuickTextList();
+    };
+  });
+}
+$('quicktext-add-btn').addEventListener('click', async () => {
+  const list = getQuickTexts().slice();
+  if (list.length >= 20) { toast('You can have up to 20 quick text entries.'); return; }
+  list.push('');
+  try { await db.collection('users').doc(myUid).update({ quickTexts: list }); }
+  catch (err) { toast('Could not add that.', 'error'); return; }
+  renderQuickTextList();
+  const rows = $('quicktext-list').querySelectorAll('.quicktext-input');
+  if (rows.length) rows[rows.length - 1].focus();
 });
 function levenshtein(a, b) {
   if (Math.abs(a.length - b.length) > 2) return 99;
@@ -3589,7 +3685,9 @@ function insertAtCursor(el, text) {
   el.value = el.value.slice(0, start) + text + el.value.slice(end);
   const pos = start + text.length;
   el.selectionStart = el.selectionEnd = pos;
-  autoResize(el);
+  // autoResize runs as part of the dispatched 'input' event below (every
+  // wired field's own input listener already calls it) — calling it here
+  // too just repeated the same forced-layout work twice per keystroke.
   ckFireInput(el);
   if (ckField && ckField.el === el) positionCkCursor();
 }
@@ -3607,7 +3705,6 @@ function deleteAtCursor(el) {
       el.value = el.value.slice(0, start) + original + el.value.slice(sel);
       el.selectionStart = el.selectionEnd = start + original.length;
       ckLastAutocorrect = null;
-      autoResize(el);
       ckFireInput(el);
       if (ckField && ckField.el === el) positionCkCursor();
       return;
@@ -3624,27 +3721,43 @@ function deleteAtCursor(el) {
     el.value = el.value.slice(0, start) + el.value.slice(end);
     el.selectionStart = el.selectionEnd = start;
   }
-  autoResize(el);
   ckFireInput(el);
   if (ckField && ckField.el === el) positionCkCursor();
 }
 
 // ---- blinking cursor overlay (readOnly fields don't reliably show a native caret) ----
+// The field's own font/padding/etc. never change between keystrokes, so the
+// (forced-reflow) getComputedStyle call and property copy only need to run
+// again when the mirror is being pointed at a *different* field than last
+// time — not on every single character.
+let ckMirrorConfiguredFor = null;
+let ckMirrorLineHeight = 18;
 function measureCaretOffset(field) {
   let mirror = document.getElementById('ck-mirror');
-  if (!mirror) { mirror = document.createElement('div'); mirror.id = 'ck-mirror'; document.body.appendChild(mirror); }
-  const cs = window.getComputedStyle(field);
-  ['boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
-    'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'lineHeight',
-    'textTransform', 'textIndent'].forEach(p => { mirror.style[p] = cs[p]; });
-  mirror.style.position = 'fixed';
-  mirror.style.top = '-9999px';
-  mirror.style.left = '0';
-  mirror.style.visibility = 'hidden';
-  mirror.style.whiteSpace = field.tagName === 'TEXTAREA' ? 'pre-wrap' : 'pre';
-  mirror.style.wordWrap = 'break-word';
-  mirror.style.overflowWrap = 'break-word';
+  if (!mirror) {
+    mirror = document.createElement('div');
+    mirror.id = 'ck-mirror';
+    document.body.appendChild(mirror);
+    // Fixed at a known, constant position so we never need to measure the
+    // mirror's own rect just to subtract it back out below — position:fixed
+    // means it can't move regardless of its content, so (0, -9999) is exact.
+    mirror.style.position = 'fixed';
+    mirror.style.top = '-9999px';
+    mirror.style.left = '0';
+    mirror.style.visibility = 'hidden';
+  }
+  if (ckMirrorConfiguredFor !== field) {
+    const cs = window.getComputedStyle(field);
+    ['boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+      'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+      'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'lineHeight',
+      'textTransform', 'textIndent'].forEach(p => { mirror.style[p] = cs[p]; });
+    mirror.style.whiteSpace = field.tagName === 'TEXTAREA' ? 'pre-wrap' : 'pre';
+    mirror.style.wordWrap = 'break-word';
+    mirror.style.overflowWrap = 'break-word';
+    ckMirrorLineHeight = parseFloat(cs.lineHeight) || 18;
+    ckMirrorConfiguredFor = field;
+  }
 
   const pos = field.selectionEnd != null ? field.selectionEnd : field.value.length;
   mirror.textContent = '';
@@ -3654,12 +3767,11 @@ function measureCaretOffset(field) {
   mirror.appendChild(marker);
   mirror.appendChild(document.createTextNode(field.value.slice(pos) || '.'));
 
-  const mRect = mirror.getBoundingClientRect();
   const markerRect = marker.getBoundingClientRect();
   return {
-    x: markerRect.left - mRect.left,
-    y: markerRect.top - mRect.top,
-    h: markerRect.height || parseFloat(cs.lineHeight) || 18,
+    x: markerRect.left,
+    y: markerRect.top + 9999,
+    h: markerRect.height || ckMirrorLineHeight,
   };
 }
 function positionCkCursor() {
@@ -3691,8 +3803,29 @@ function ckAdjustFloatingPanels(open) {
   });
 }
 
+// Shift toggling and the very common "one capital letter, then back to
+// lowercase" case used to call the full renderCustomKeyboard() rebuild —
+// destroying and recreating every key (and every one of their listeners)
+// just to re-case some letters. Since the only things that actually change
+// are each letter's displayed case, the shift key's highlight, and (on a
+// multiline field) the enter key's icon, updating those directly in place
+// is both correct and far cheaper — this runs after nearly every real
+// keystroke (any capitalized letter), so it's the single biggest lever on
+// how snappy typing feels.
+function ckUpdateKeyCasing() {
+  if (ckPage !== 'letters') return;
+  const kb = $('custom-keyboard');
+  const upper = ckShiftOn || ckCapsLock;
+  kb.querySelectorAll('.ck-key[data-ch]').forEach(btn => {
+    btn.textContent = upper ? btn.dataset.ch.toUpperCase() : btn.dataset.ch;
+  });
+  const shiftBtn = kb.querySelector('.ck-shift');
+  if (shiftBtn) { shiftBtn.classList.toggle('on', upper); shiftBtn.classList.toggle('caps', ckCapsLock); }
+  const enterBtn = kb.querySelector('.ck-enter');
+  if (enterBtn) enterBtn.innerHTML = (ckField && ckField.multiline && ckShiftOn) ? '⏎' : icon('send');
+}
 function ckConsumeOneShotShift() {
-  if (ckShiftOn && !ckCapsLock) { ckShiftOn = false; renderCustomKeyboard(); }
+  if (ckShiftOn && !ckCapsLock) { ckShiftOn = false; ckUpdateKeyCasing(); }
 }
 function ckTapLetter(ch) {
   if (!ckField) return;
@@ -3705,13 +3838,13 @@ function ckTapShift() {
   if (now - ckLastShiftTap < 350) { ckCapsLock = !ckCapsLock; ckShiftOn = false; }
   else { ckShiftOn = !ckShiftOn; ckCapsLock = false; }
   ckLastShiftTap = now;
-  renderCustomKeyboard();
+  ckUpdateKeyCasing();
 }
 function ckTapEnter() {
   if (!ckField) return;
   if (mentionState && mentionState.el === ckField.el) { completeMention(mentionCandidates[mentionSelectedIndex]); return; }
   ckWordBoundaryCheck(ckField.el);
-  if (ckField.multiline && ckShiftOn) { insertAtCursor(ckField.el, '\n'); ckShiftOn = false; renderCustomKeyboard(); }
+  if (ckField.multiline && ckShiftOn) { insertAtCursor(ckField.el, '\n'); ckShiftOn = false; ckUpdateKeyCasing(); }
   else ckField.onEnter(ckField.el);
 }
 function ckTapEmojiToggle() {
@@ -3740,15 +3873,158 @@ async function ckTapPaste() {
     if (text) insertAtCursor(ckField.el, text);
   } catch (e) { toast('Could not paste — allow clipboard access and try again.', 'error'); }
 }
-function ckTapSelectAll() {
-  if (!ckField) return;
-  const el = ckField.el;
-  el.selectionStart = 0;
-  el.selectionEnd = el.value.length;
-  el.classList.add('ck-all-selected');
-  positionCkCursor();
-}
 function ckClearSelectionHighlight() { if (ckField) ckField.el.classList.remove('ck-all-selected'); }
+
+// ---- quick text: a user-editable list of canned messages (Settings →
+// Keyboard) that send instantly when tapped, replacing whatever was in
+// the field — no separate "are you sure" step, matching a one-tap canned
+// reply rather than a snippet you'd still need to review and send. ----
+function getQuickTexts() { return (myProfile && Array.isArray(myProfile.quickTexts)) ? myProfile.quickTexts : []; }
+function ckQuickTextOutsideClick(e) {
+  const pop = $('ck-quicktext-popover');
+  if (pop && !pop.contains(e.target) && !e.target.closest('[data-act="quick-text"]')) closeCkQuickTextPopover();
+}
+function closeCkQuickTextPopover() {
+  const pop = $('ck-quicktext-popover');
+  if (pop) pop.remove();
+  document.removeEventListener('click', ckQuickTextOutsideClick);
+}
+function ckTapQuickText(btn) {
+  if (!ckField) return;
+  closeCkQuickTextPopover();
+  const items = getQuickTexts();
+  const pop = document.createElement('div');
+  pop.className = 'ck-quicktext-popover';
+  pop.id = 'ck-quicktext-popover';
+  pop.innerHTML = items.length
+    ? items.map((t, i) => `<button type="button" class="ck-qt-item" data-i="${i}">${esc(t)}</button>`).join('')
+    : `<div class="ck-qt-empty">No quick text yet — add some in Settings → Keyboard.</div>`;
+  document.body.appendChild(pop);
+  const kbRect = $('custom-keyboard').getBoundingClientRect();
+  pop.style.left = '8px';
+  pop.style.right = '8px';
+  pop.style.bottom = `${window.innerHeight - kbRect.top + 6}px`;
+  pop.querySelectorAll('.ck-qt-item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const text = items[parseInt(el.dataset.i, 10)];
+      closeCkQuickTextPopover();
+      if (!ckField) return;
+      const field = ckField.el;
+      field.value = text;
+      field.selectionStart = field.selectionEnd = text.length;
+      ckFireInput(field);
+      ckField.onEnter(field);
+    });
+  });
+  setTimeout(() => document.addEventListener('click', ckQuickTextOutsideClick), 0);
+}
+
+// ---- press feedback + long-press for accented/alternate characters ----
+// Mirrors the standard mobile-keyboard interaction: tapping a key briefly
+// shows it enlarged above the key; holding one that has alternates (e.g.
+// "e" → "é è ê ë") morphs that into a row you can slide across and release
+// on. Scoped to data-ch keys generally (letters, symbols, and the emoji
+// grid all share that attribute) — CK_ALT_CHARS simply has no entries for
+// most of them, so they just get the plain tap-feedback bubble.
+const CK_ALT_CHARS = {
+  a: ['á', 'à', 'â', 'ä', 'æ', 'ã', 'å'],
+  e: ['é', 'è', 'ê', 'ë'],
+  i: ['í', 'ì', 'î', 'ï'],
+  o: ['ó', 'ò', 'ô', 'ö', 'õ', 'ø'],
+  u: ['ú', 'ù', 'û', 'ü'],
+  n: ['ñ'],
+  c: ['ç'],
+  y: ['ý', 'ÿ'],
+  s: ['ß', 'ś'],
+  '-': ['–', '—'],
+  "'": ['\u2019', '\u2018'],
+  '"': ['\u201d', '\u201c'],
+};
+let ckPressTimer = null;
+let ckPressBubble = null;
+let ckAltActiveIndex = -1; // -1 = no alt-picker active yet; 0 = base char; 1+ = an alternate
+function ckRemoveBubble() {
+  if (ckPressBubble) { ckPressBubble.remove(); ckPressBubble = null; }
+  if (ckPressTimer) { clearTimeout(ckPressTimer); ckPressTimer = null; }
+  ckAltActiveIndex = -1;
+}
+function ckShowBubble(btn, chars, activeIndex) {
+  if (!ckPressBubble) {
+    ckPressBubble = document.createElement('div');
+    ckPressBubble.className = 'ck-press-bubble';
+    document.body.appendChild(ckPressBubble);
+  }
+  ckPressBubble.innerHTML = chars.map((c, i) => `<span class="ck-press-char${i === activeIndex ? ' active' : ''}">${esc(c)}</span>`).join('');
+  const r = btn.getBoundingClientRect();
+  const bw = ckPressBubble.offsetWidth;
+  const bh = ckPressBubble.offsetHeight;
+  ckPressBubble.style.left = `${Math.max(4, Math.min(window.innerWidth - bw - 4, r.left + r.width / 2 - bw / 2))}px`;
+  ckPressBubble.style.top = `${Math.max(4, r.top - bh - 6)}px`;
+}
+function ckWireCharKey(btn) {
+  const ch = btn.dataset.ch;
+  let startX = 0, startY = 0, cancelled = false, inserted = false;
+  const onDown = (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    ckClearSelectionHighlight();
+    cancelled = false; inserted = false; ckAltActiveIndex = -1;
+    startX = e.clientX; startY = e.clientY;
+    const upper = ckPage === 'letters' && (ckShiftOn || ckCapsLock);
+    const baseDisplay = ckPage !== 'letters' ? ch : (upper ? ch.toUpperCase() : ch);
+    ckShowBubble(btn, [baseDisplay], -1);
+    const alts = CK_ALT_CHARS[ch.toLowerCase()];
+    if (alts && alts.length) {
+      ckPressTimer = setTimeout(() => {
+        if (cancelled) return;
+        const shown = upper ? alts.map(a => a.toUpperCase()) : alts;
+        ckShowBubble(btn, [baseDisplay, ...shown], 0);
+        ckAltActiveIndex = 0;
+      }, 400);
+    }
+  };
+  const onMove = (e) => {
+    if (cancelled || !ckPressBubble) return;
+    if (ckAltActiveIndex < 0) {
+      // Long-press hasn't kicked in yet — real finger movement this early
+      // means a scroll (the emoji grid) or a change of mind, not a pick.
+      const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
+      if (dist > 12) { cancelled = true; ckRemoveBubble(); }
+      return;
+    }
+    const chars = [...ckPressBubble.querySelectorAll('.ck-press-char')];
+    let closest = 0, closestDist = Infinity;
+    chars.forEach((el, i) => {
+      const r = el.getBoundingClientRect();
+      const d = Math.abs(r.left + r.width / 2 - e.clientX);
+      if (d < closestDist) { closestDist = d; closest = i; }
+    });
+    if (closest !== ckAltActiveIndex) {
+      ckAltActiveIndex = closest;
+      chars.forEach((el, i) => el.classList.toggle('active', i === closest));
+    }
+  };
+  const onUp = () => {
+    if (inserted) return;
+    inserted = true;
+    if (!cancelled && ckField) {
+      if (ckPressBubble && ckAltActiveIndex > 0) {
+        const chars = [...ckPressBubble.querySelectorAll('.ck-press-char')];
+        insertAtCursor(ckField.el, chars[ckAltActiveIndex].textContent);
+        ckConsumeOneShotShift();
+      } else {
+        ckTapLetter(ch);
+      }
+    }
+    ckRemoveBubble();
+  };
+  const onCancel = () => { cancelled = true; inserted = true; ckRemoveBubble(); };
+  btn.addEventListener('pointerdown', onDown);
+  btn.addEventListener('pointermove', onMove);
+  btn.addEventListener('pointerup', onUp);
+  btn.addEventListener('pointercancel', onCancel);
+}
 
 function renderCustomKeyboard() {
   const kb = $('custom-keyboard');
@@ -3762,12 +4038,12 @@ function renderCustomKeyboard() {
     const wideCls = item.act === 'shift' ? `ck-shift${upper ? ' on' : ''}${ckCapsLock ? ' caps' : ''}` : '';
     return `<button type="button" class="ck-key ck-wide ${wideCls}" data-act="${item.act}">${esc(item.label)}</button>`;
   };
-  const toolRow = `
+  const toolRow = showQuickButtons() ? `
     <div class="ck-row ck-tool-row">
-      <button type="button" class="ck-key ck-tool" data-act="select-all">Select All</button>
+      <button type="button" class="ck-key ck-tool" data-act="quick-text">Quick Text</button>
       <button type="button" class="ck-key ck-tool" data-act="copy">Copy</button>
       <button type="button" class="ck-key ck-tool" data-act="paste">Paste</button>
-    </div>`;
+    </div>` : '';
   const bottomRow = `
     <div class="ck-row ck-bottom-row">
       <button type="button" class="ck-key ck-tag" data-act="toggle-symbols">${ckPage === 'letters' ? '123' : 'ABC'}</button>
@@ -3780,16 +4056,12 @@ function renderCustomKeyboard() {
   const bodyHTML = ckPage === 'emoji' ? ckEmojiRowsHTML() : rows.map(row => `<div class="ck-row">${row.map(keyHTML).join('')}</div>`).join('');
   kb.innerHTML = toolRow + bodyHTML + bottomRow;
 
-  // Every key handler below stops propagation. Without it, a key like
-  // shift/123/emoji that calls renderCustomKeyboard() (rebuilding this
-  // whole element mid-click) detaches the very button that was clicked
-  // before the click finishes bubbling up to the document-level
-  // "click outside closes the keyboard" listener — which then sees a
-  // target with no live parent chain, fails to recognize it as part of
-  // #custom-keyboard, and closes the keyboard right out from under the tap.
-  kb.querySelectorAll('.ck-key[data-ch]').forEach(btn => {
-    btn.addEventListener('click', (e) => { e.stopPropagation(); ckClearSelectionHighlight(); ckTapLetter(btn.dataset.ch); });
-  });
+  // Letter/symbol/emoji keys use pointer events (see ckWireCharKey) rather
+  // than click, both for the press-feedback bubble/long-press-for-alternates
+  // feature and so nothing here needs the same stopPropagation workaround
+  // the data-act keys below still do (preventDefault on a touch pointerdown
+  // already suppresses the synthetic click that would otherwise follow).
+  kb.querySelectorAll('.ck-key[data-ch]').forEach(ckWireCharKey);
   kb.querySelectorAll('.ck-key[data-custom-emoji]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -3803,7 +4075,7 @@ function renderCustomKeyboard() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const act = btn.dataset.act;
-      if (act !== 'select-all' && act !== 'copy') ckClearSelectionHighlight();
+      if (act !== 'copy') ckClearSelectionHighlight();
       if (act === 'shift') ckTapShift();
       else if (act === 'backspace') { if (ckField) deleteAtCursor(ckField.el); }
       else if (act === 'space') { if (ckField) { insertAtCursor(ckField.el, ' '); ckConsumeOneShotShift(); ckWordBoundaryCheck(ckField.el); } }
@@ -3812,7 +4084,7 @@ function renderCustomKeyboard() {
       else if (act === 'page1') { ckPage = 'symbols1'; renderCustomKeyboard(); }
       else if (act === 'page2') { ckPage = 'symbols2'; renderCustomKeyboard(); }
       else if (act === 'emoji') ckTapEmojiToggle();
-      else if (act === 'select-all') ckTapSelectAll();
+      else if (act === 'quick-text') ckTapQuickText(btn);
       else if (act === 'copy') ckTapCopy();
       else if (act === 'paste') ckTapPaste();
     });
@@ -3862,8 +4134,22 @@ function hideCustomKeyboard() {
   ckField = null;
   closeMentionPopup();
 }
+// Fields the custom keyboard can drive, so the "custom keyboard" setting
+// can flip all of them the moment it changes (rather than waiting for the
+// next tap) — see applyCustomKeyboardSetting(). Always defined (even on
+// desktop, where it just stays empty) so that function is always safe to call.
+const CK_WIRED_FIELDS = [];
+function applyCustomKeyboardSetting() {
+  const on = useCustomKeyboard();
+  CK_WIRED_FIELDS.forEach(el => { el.readOnly = on; });
+  if (!on) hideCustomKeyboard();
+}
 if (isMobile()) {
-  const wireField = (el, opts) => { el.readOnly = true; el.addEventListener('click', () => showCustomKeyboardFor(el, opts)); };
+  const wireField = (el, opts) => {
+    CK_WIRED_FIELDS.push(el);
+    el.readOnly = useCustomKeyboard();
+    el.addEventListener('click', () => { if (useCustomKeyboard()) showCustomKeyboardFor(el, opts); });
+  };
   wireField($('composer-input'), { onEnter: () => sendMessage(), multiline: true });
   wireField($('emoji-search'), { onEnter: () => hideCustomKeyboard(), multiline: false });
   wireField($('gif-search'), { onEnter: () => hideCustomKeyboard(), multiline: false });
@@ -3874,18 +4160,55 @@ if (isMobile()) {
       e.target.closest('.msg-edit-box')) return;
     hideCustomKeyboard();
   });
-  window.addEventListener('resize', () => { if (ckField && !$('custom-keyboard').classList.contains('hidden')) positionCkCursor(); });
+  window.addEventListener('resize', () => {
+    ckMirrorConfiguredFor = null; // field width may have changed — re-measure its style next time
+    if (ckField && !$('custom-keyboard').classList.contains('hidden')) positionCkCursor();
+  });
 }
 
-// ---- emoji picker (composer) ----
+// ---- emoji picker (composer, and reused for poll-answer emojis) ----
+// emojiPickerTarget is null when the panel is feeding the composer (its
+// normal job); it's set to {type:'poll', row, btn} while it's anchored
+// next to a poll answer row instead — see openPollEmojiPicker.
+let emojiPickerTarget = null;
+function applyEmojiPick(pick) {
+  if (emojiPickerTarget && emojiPickerTarget.type === 'poll') {
+    const { row, btn } = emojiPickerTarget;
+    if (pick.custom) { row.dataset.emoji = `:${pick.custom}:`; btn.innerHTML = `<img class="custom-emoji" src="${esc(customEmojis[pick.custom].dataUrl)}" alt="">`; }
+    else { row.dataset.emoji = pick.native; btn.textContent = pick.native; }
+    closeEmojiPickerPanel();
+    return;
+  }
+  const el = (ckField && ckField.el) || $('composer-input');
+  if (pick.custom) insertAtCursor(el, `:${pick.custom}:`);
+  else insertAtCursor(el, pick.native);
+}
+function closeEmojiPickerPanel() {
+  const panel = $('emoji-picker-panel');
+  panel.classList.add('hidden');
+  panel.classList.remove('ep-anchored');
+  panel.style.left = '';
+  panel.style.top = '';
+  emojiPickerTarget = null;
+  document.removeEventListener('click', emojiPickerOutsideClick);
+}
+function emojiPickerOutsideClick(e) {
+  const panel = $('emoji-picker-panel');
+  if (!panel.classList.contains('hidden') && !panel.contains(e.target) && !e.target.closest('#emoji-picker-btn') && !e.target.closest('.poll-answer-emoji-btn')) {
+    closeEmojiPickerPanel();
+  }
+}
 function renderEmojiPickerGrids() {
   const q = ($('emoji-search').value || '').toLowerCase();
+  const clearSlot = $('ep-poll-clear');
+  clearSlot.classList.toggle('hidden', !(emojiPickerTarget && emojiPickerTarget.type === 'poll' && emojiPickerTarget.row.dataset.emoji));
+
   const customWrap = $('ep-custom-grid');
   const customNames = Object.keys(customEmojis).filter(n => !q || n.includes(q)).sort();
   customWrap.innerHTML = customNames.length
     ? customNames.map(n => `<button type="button" title=":${esc(n)}:"><img src="${customEmojis[n].dataUrl}" alt=":${esc(n)}:"></button>`).join('')
     : '<div class="ep-empty">No custom emoji yet</div>';
-  customWrap.querySelectorAll('button').forEach((btn, i) => { btn.onclick = () => insertAtCursor((ckField && ckField.el) || $('composer-input'), `:${customNames[i]}:`); });
+  customWrap.querySelectorAll('button').forEach((btn, i) => { btn.onclick = () => applyEmojiPick({ custom: customNames[i] }); });
 
   const sectionsWrap = $('ep-standard-sections');
   sectionsWrap.innerHTML = EMOJI_CATEGORIES.map(cat => {
@@ -3895,7 +4218,7 @@ function renderEmojiPickerGrids() {
       <div class="ep-grid">${names.map(n => `<button type="button" title=":${esc(n)}:">${cat.items[n]}</button>`).join('')}</div>`;
   }).join('') || '<div class="ep-empty">No emoji match "' + esc(q) + '"</div>';
   sectionsWrap.querySelectorAll('button').forEach(btn => {
-    btn.onclick = () => insertAtCursor((ckField && ckField.el) || $('composer-input'), btn.textContent);
+    btn.onclick = () => applyEmojiPick({ native: btn.textContent });
   });
 
   $('ep-cats').innerHTML = EMOJI_CATEGORIES.map(cat => `<button type="button" class="ep-cat-btn" data-cat="${cat.key}" title="${esc(cat.label)}">${cat.icon}</button>`).join('');
@@ -3906,24 +4229,30 @@ function renderEmojiPickerGrids() {
     };
   });
 }
+$('ep-poll-clear-btn').onclick = () => {
+  if (!emojiPickerTarget || emojiPickerTarget.type !== 'poll') return;
+  const { row, btn } = emojiPickerTarget;
+  delete row.dataset.emoji;
+  btn.innerHTML = icon('smiley');
+  renderEmojiPickerGrids();
+};
 $('emoji-picker-btn').onclick = (e) => {
   e.stopPropagation();
   $('sticker-picker-panel').classList.add('hidden');
   $('gif-picker-panel').classList.add('hidden');
   $('composer-action-menu').classList.add('hidden');
   const panel = $('emoji-picker-panel');
+  emojiPickerTarget = null;
+  panel.classList.remove('ep-anchored');
+  panel.style.left = '';
+  panel.style.top = '';
   const willOpen = panel.classList.contains('hidden');
   panel.classList.toggle('hidden');
-  if (isMobile()) $('custom-keyboard').classList.toggle('hidden', willOpen);
-  if (willOpen) { $('emoji-search').value = ''; renderEmojiPickerGrids(); if (!isMobile()) $('emoji-search').focus(); }
+  if (isMobile() && useCustomKeyboard()) $('custom-keyboard').classList.toggle('hidden', willOpen);
+  if (willOpen) { $('emoji-search').value = ''; renderEmojiPickerGrids(); if (!isMobile() || !useCustomKeyboard()) $('emoji-search').focus(); }
 };
 $('emoji-search').addEventListener('input', renderEmojiPickerGrids);
-document.addEventListener('click', (e) => {
-  const panel = $('emoji-picker-panel');
-  if (!panel.classList.contains('hidden') && !panel.contains(e.target) && !e.target.closest('#emoji-picker-btn')) {
-    panel.classList.add('hidden');
-  }
-});
+document.addEventListener('click', emojiPickerOutsideClick);
 
 // ============================================================
 // SETTINGS MODAL
@@ -3948,6 +4277,9 @@ function populateSettings() {
   if (!myProfile) return;
   $('set-username').value = myProfile.username;
   $('autocorrect-toggle').checked = isAutocorrectEnabled();
+  $('custom-keyboard-toggle').checked = useCustomKeyboard();
+  $('quick-buttons-toggle').checked = showQuickButtons();
+  renderQuickTextList();
 
   const swatchWrap = $('avatar-color-swatches');
   swatchWrap.innerHTML = '';

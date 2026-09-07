@@ -277,6 +277,7 @@
         </div>
         <div id="emoji-picker-panel" class="hidden">
           <div class="ep-search"><input type="text" id="emoji-search" placeholder="Search emoji"></div>
+          <div id="ep-poll-clear" class="ep-poll-clear hidden"><button type="button" id="ep-poll-clear-btn">Remove emoji from this answer</button></div>
           <div class="ep-cats" id="ep-cats"></div>
           <div class="ep-scroll" id="ep-scroll">
             <div class="ep-section-label">Custom</div>
@@ -524,6 +525,7 @@
     <div id="settings-nav">
       <div class="nav-label">User Settings</div>
       <div class="nav-item active" data-pane="pane-account">My Account</div>
+      <div class="nav-item" data-pane="pane-keyboard">Keyboard</div>
       <div class="nav-item" data-pane="pane-premium">Frixion Premium</div>
       <div class="nav-item" data-pane="pane-quests">Quests</div>
       <div class="nav-item" data-pane="pane-themes">Themes</div>
@@ -543,18 +545,43 @@
           <label>Avatar Color</label>
           <div class="color-swatches" id="avatar-color-swatches"></div>
         </div>
-        <div class="field">
-          <label>Keyboard</label>
-          <div class="setting-row">
-            <div class="setting-row-text">
-              <div class="setting-row-title">Autocorrect</div>
-              <div class="setting-row-desc">Fixes common typos as you type, on desktop and the on-screen keyboard on mobile.</div>
-            </div>
-            <label class="toggle-switch"><input type="checkbox" id="autocorrect-toggle"><span class="toggle-slider"></span></label>
-          </div>
-          <p class="desc" style="margin:8px 0 0;font-size:12px;">Off by default. Checks common English words only — it won't touch usernames, mentions, or custom emoji shortcodes. Synced to your account.</p>
-        </div>
         <button class="btn-accent-inline" id="save-account-btn">Save Changes</button>
+      </div>
+
+      <div class="settings-pane hidden" id="pane-keyboard">
+        <h2>Keyboard</h2>
+        <div class="setting-row">
+          <div class="setting-row-text">
+            <div class="setting-row-title">Autocorrect</div>
+            <div class="setting-row-desc">Fixes common typos as you type, on desktop and the on-screen keyboard on mobile.</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="autocorrect-toggle"><span class="toggle-slider"></span></label>
+        </div>
+        <p class="desc" style="margin:6px 0 0;font-size:12px;">Checks common English words only — it won't touch usernames, mentions, or custom emoji shortcodes.</p>
+
+        <div class="setting-row" style="margin-top:20px;">
+          <div class="setting-row-text">
+            <div class="setting-row-title">Custom Keyboard</div>
+            <div class="setting-row-desc">Use Frixion's own on-screen keyboard on mobile instead of your device's keyboard.</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="custom-keyboard-toggle"><span class="toggle-slider"></span></label>
+        </div>
+
+        <div class="setting-row" style="margin-top:20px;">
+          <div class="setting-row-text">
+            <div class="setting-row-title">Quick Buttons</div>
+            <div class="setting-row-desc">Show the Quick Text / Copy / Paste row above the custom keyboard.</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="quick-buttons-toggle"><span class="toggle-slider"></span></label>
+        </div>
+        <p class="desc" style="margin:6px 0 0;font-size:12px;">All keyboard settings are synced to your account.</p>
+
+        <div class="field" style="margin-top:24px;">
+          <label>Quick Text</label>
+          <p class="desc" style="margin:0 0 10px;font-size:12px;">Tapping one of these on the keyboard's Quick Text button sends it immediately — no need to type or press send.</p>
+          <div id="quicktext-list"></div>
+          <button class="btn-secondary slim" id="quicktext-add-btn" style="margin-top:8px;">+ Add quick text</button>
+        </div>
       </div>
 
       <div class="settings-pane hidden" id="pane-premium">
@@ -733,7 +760,10 @@
 <!-- ============ MODAL: create a poll ============ -->
 <div class="modal-overlay hidden" id="poll-modal">
   <div class="modal-box poll-modal-box">
-    <div class="modal-header-row"><h2>Create a Poll</h2><span class="x" data-close="poll-modal">✕</span></div>
+    <div class="modal-header-row">
+      <div class="poll-modal-title"><svg class="poll-modal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10"/><path d="M12 20V4"/><path d="M20 20v-7"/></svg><h2>Create a Poll</h2></div>
+      <span class="x" data-close="poll-modal">✕</span>
+    </div>
     <div class="field">
       <label>Question</label>
       <input type="text" id="poll-question" maxlength="300" placeholder="What do you want to ask?">
@@ -753,7 +783,13 @@
         <option value="604800000">7 days</option>
       </select>
     </div>
-    <label class="poll-multiple"><input type="checkbox" id="poll-multiple"> Allow multiple answers</label>
+    <div class="setting-row poll-multiple-row">
+      <div class="setting-row-text">
+        <div class="setting-row-title">Allow multiple answers</div>
+        <div class="setting-row-desc">Voters can pick more than one option.</div>
+      </div>
+      <label class="toggle-switch"><input type="checkbox" id="poll-multiple"><span class="toggle-slider"></span></label>
+    </div>
     <div class="modal-actions"><button class="btn-secondary" data-close="poll-modal">Cancel</button><button class="btn-accent-inline" id="poll-submit">Post poll</button></div>
   </div>
 </div>
