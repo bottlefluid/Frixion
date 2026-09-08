@@ -379,13 +379,35 @@ a { color: var(--text-link); text-decoration: none; }
 .msg-text { font-size: 15px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
 .edited-tag { font-size: 10px; color: var(--text-faint); margin-left: 4px; }
 .msg-reply-ref {
-  display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--text-muted);
-  margin-bottom: 3px; cursor: pointer; width: 100%; min-width: 0;
+  display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted);
+  margin: 8px 0 3px; cursor: pointer; width: 100%; min-width: 0;
 }
 .msg-reply-ref:hover { color: var(--text-normal); }
-.msg-reply-ref .i svg { width: 13px; height: 13px; }
+.msg-reply-ref .avatar { width: 16px; height: 16px; flex-shrink: 0; }
 .msg-reply-ref .mrr-user { font-weight: 600; color: var(--text-normal); flex-shrink: 0; }
 .msg-reply-ref .mrr-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Decorative "hook" suggesting a connection to something above — a fixed
+   size regardless of how far away the actual replied-to message is,
+   same as Discord's own reply connector. Positioned relative to
+   .msg-group (the nearest positioned ancestor), which is why this can
+   sit nested inside .msg-reply-ref and still measure from the group's
+   own top-left rather than the reply row's. */
+.msg-reply-line {
+  position: absolute; left: 20px; top: 6px; width: 36px; height: 30px;
+  border-left: 2px solid var(--text-faint); border-top: 2px solid var(--text-faint);
+  border-top-left-radius: 8px; pointer-events: none;
+}
+.purge-confirm-embed {
+  display: flex; align-items: center; gap: 10px; background: var(--bg-secondary);
+  border-left: 4px solid #3ba55d; border-radius: 4px; padding: 8px 12px; margin: 2px 0; max-width: 420px;
+}
+.purge-confirm-embed .pce-check {
+  width: 22px; height: 22px; border-radius: 50%; background: rgba(59,165,93,.18); color: #3ba55d;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.purge-confirm-embed .pce-check svg { width: 13px; height: 13px; }
+.purge-confirm-embed .pce-text { font-size: 14px; color: var(--text-normal); }
+.purge-confirm-embed .pce-text b { font-weight: 700; }
 .msg-edit-box { width: 100%; }
 .msg-edit-input {
   display: block; width: 100%; background: var(--bg-input); border: 1px solid var(--accent);
@@ -547,6 +569,17 @@ body.action-sheet-open { overflow: hidden; }
 .composer-icon-btn:hover { color: var(--text-normal); background: var(--bg-modifier-hover); }
 .composer-icon-btn svg { display: block; }
 #gift-btn.hidden { display: none; }
+
+/* Chat message character counter — hidden while the composer is empty,
+   shown as soon as there's text so you always know where you stand
+   without it being permanently in the way. */
+#composer-charcount {
+  text-align: right; font-size: 11px; font-weight: 600; color: var(--text-faint);
+  padding: 4px 6px 0; user-select: none;
+}
+#composer-charcount.hidden { display: none; }
+#composer-charcount.warn { color: #f0b232; }
+#composer-charcount.over { color: var(--danger); }
 
 /* ---- custom on-screen keyboard (mobile composer, edit box, and any wired search field) ---- */
 #custom-keyboard {
@@ -991,6 +1024,12 @@ body.action-sheet-open { overflow: hidden; }
 }
 .op-tag { background: var(--accent-soft); color: var(--accent); }
 .ban-tag { background: rgba(218,55,60,.18); color: var(--danger); }
+.app-tag {
+  display: inline-flex; align-items: center; gap: 2px; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  padding: 1px 6px 1px 4px; border-radius: 3px; margin-left: 5px; vertical-align: middle; letter-spacing: .3px;
+  background: rgba(88,101,242,.18); color: #7c8cf8;
+}
+.app-tag .i svg { width: 10px; height: 10px; }
 
 /* ============ ADMIN PANEL ============ */
 .admin-box { width: 820px; }
@@ -1098,10 +1137,16 @@ body.action-sheet-open { overflow: hidden; }
 }
 
 /* ============ PROFILE MODAL ============ */
-.profile-box { width: 460px; padding: 0; overflow: hidden; position: relative; }
+.profile-box { width: 460px; padding: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; }
 .profile-close { position: absolute; top: 12px; right: 12px; color: #fff; background: rgba(0,0,0,.35); border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; z-index: 2; }
-.profile-banner { height: 90px; }
-.profile-main { padding: 0 20px 20px; margin-top: -40px; }
+.profile-banner { height: 90px; flex-shrink: 0; border-radius: 8px 8px 0 0; }
+/* .profile-main used to inherit overflow:hidden from .profile-box, which
+   clipped the bottom of the card instead of scrolling it — on mobile,
+   with the edit fields (bio, banner colors, gradient banners) open, the
+   card is taller than 86vh and there was no way to reach the rest of it.
+   Making this region its own scroll container (flex:1 + min-height:0)
+   fixes that while keeping the banner's rounded top corners clipped. */
+.profile-main { padding: 0 20px 20px; margin-top: -40px; overflow-y: auto; flex: 1; min-height: 0; border-radius: 0 0 8px 8px; }
 .profile-avatar-wrap { margin-bottom: 10px; position: relative; width: 80px; }
 .profile-avatar { border: 6px solid var(--bg-floating); }
 .avatar-edit-btn {
@@ -1212,6 +1257,17 @@ body.action-sheet-open { overflow: hidden; }
 .mention-row.selected .mention-row-name, .mention-row.selected .mention-row-you { color: #fff; }
 .mention-hint { font-size: 11px; color: var(--text-faint); padding: 6px 8px 2px; border-top: 1px solid var(--divider); margin-top: 4px; }
 
+/* ============ SLASH COMMAND AUTOCOMPLETE ============ */
+#slash-popup {
+  position: fixed; width: 280px; max-width: calc(100% - 32px);
+  background: var(--bg-floating); border-radius: 8px; padding: 6px; box-shadow: 0 8px 30px var(--shadow-color); z-index: 60;
+}
+.slash-row { display: flex; align-items: baseline; gap: 8px; padding: 8px; border-radius: 4px; cursor: pointer; }
+.slash-row-cmd { font-size: 14px; font-weight: 600; color: var(--text-normal); flex-shrink: 0; }
+.slash-row-desc { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slash-row.selected { background: var(--accent); }
+.slash-row.selected .slash-row-cmd, .slash-row.selected .slash-row-desc { color: #fff; }
+
 /* ============ IMAGE PREVIEW MODAL (staged attachment eye icon) ============ */
 .image-preview-box { position: relative; max-width: 92vw; max-height: 90vh; }
 .image-preview-box img { display: block; max-width: 92vw; max-height: 90vh; border-radius: 8px; }
@@ -1311,6 +1367,10 @@ body.action-sheet-open { overflow: hidden; }
   #messages { padding-top: 8px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
   .msg-group { gap: 10px; padding: 2px 12px; }
   .msg-group .avatar { width: 36px; height: 36px; }
+  /* Smaller avatar + tighter gap on mobile shifts where the reply hook
+     needs to land (see the desktop values in the main .msg-reply-line
+     rule — avatar center, then across to the message body's left edge). */
+  .msg-reply-line { left: 18px; width: 28px; }
   .msg-text { font-size: 15px; }
 
   /* A one-line preview keeps DM navigation readable without turning the

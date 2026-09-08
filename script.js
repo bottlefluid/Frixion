@@ -126,6 +126,22 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const FieldValue = firebase.firestore.FieldValue;
+// Persist Firestore's cache to IndexedDB instead of memory-only. Without
+// this, every full page load (and, on some mobile browsers, every tab
+// switch) starts from zero and has to re-fetch everything over the
+// network before anything can render — this is most of why Frixion feels
+// slow to open, especially on mobile connections. With it, a reload shows
+// whatever was last synced instantly, then quietly updates once fresh data
+// arrives. Doesn't affect anything else about how data is fetched.
+db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+  if (err.code === 'failed-precondition') {
+    // Another tab already has an older SDK's exclusive lock — harmless,
+    // just means this tab runs without the offline cache.
+    console.warn('Firestore offline cache unavailable in this tab (another tab has it).');
+  } else if (err.code === 'unimplemented') {
+    console.warn('Firestore offline cache unavailable — this browser doesn\'t support it.');
+  }
+});
 let rtdb = null;
 try { rtdb = firebase.database(); } catch (e) { console.warn('Realtime Database not available — presence will stay manual-only.', e); }
 let storage = null;
@@ -142,6 +158,41 @@ const DEFAULT_AVATAR_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAA
 // ---------- constants ----------
 const SESSION_KEY = 'frixion_user';
 const ADMIN_HASH = 'f7c323a01e4a88630c1301300a5212a6d21c874c5dee36d26de35cb9b75ca8d4'; // sha256("theflyisflying")
+
+// ============================================================
+// SAPPHIRE — Frixion's own bot account. Not a real Firestore user (no
+// users/sapphire doc), just a reserved uid that getProfile() short-circuits
+// to this fixed profile, so every place that already renders a message
+// author (avatar, name, badges) handles it for free. It's added to every
+// group DM's participants on creation so it's genuinely part of the
+// conversation, but filtered out of member lists / pickers / display
+// names wherever those are built — see humanParticipants().
+// ============================================================
+const SAPPHIRE_UID = 'sapphire';
+const SAPPHIRE_AVATAR_URL = 'data:image/svg+xml,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+  '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">' +
+  '<stop offset="0" stop-color="#6bb3ff"/><stop offset="1" stop-color="#3f7ce0"/>' +
+  '</linearGradient></defs>' +
+  '<rect x="6" y="6" width="88" height="88" rx="24" fill="url(#g)"/>' +
+  '<ellipse cx="36" cy="46" rx="7" ry="9" fill="#fff"/>' +
+  '<ellipse cx="64" cy="46" rx="7" ry="9" fill="#fff"/>' +
+  '<ellipse cx="36" cy="49" rx="3.2" ry="4" fill="#1b2b4d"/>' +
+  '<ellipse cx="64" cy="49" rx="3.2" ry="4" fill="#1b2b4d"/>' +
+  '<path d="M32 63 Q50 76 68 63" stroke="#1b2b4d" stroke-width="5" fill="none" stroke-linecap="round"/>' +
+  '</svg>'
+);
+const SAPPHIRE_PROFILE = {
+  username: 'Sapphire', avatarColor: '#3f7ce0', avatarUrl: SAPPHIRE_AVATAR_URL,
+  status: 'online', premiumUntil: null, bot: true,
+};
+// Strips Sapphire out of a participants list for anything user-facing
+// (member panels, add-friend pickers, auto-generated group names, mention
+// suggestions) — it stays in the real array for Firestore/query purposes.
+function humanParticipants(list) { return (list || []).filter(p => p !== SAPPHIRE_UID); }
+// Usernames nobody can register — checked case-insensitively at signup.
+// Extend this if more bot accounts get added later.
+const RESERVED_USERNAMES = [SAPPHIRE_UID];
 
 const AVATAR_COLORS = ['#5865f2','#eb459e','#ed4245','#f0b232','#23a55a','#00a8fc','#9b59b6','#e67e22','#1abc9c'];
 const BANNER_GRADIENTS = [
@@ -176,6 +227,10 @@ const STARTING_ORBS = 50;
 const PREMIUM_COST_ORBS = 1400;
 const PREMIUM_DURATION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 function isPremium(p) { return !!(p && p.premiumUntil && p.premiumUntil > Date.now()); }
+// Chat message length cap. Frixion Premium doubles it — mirrors how the
+// rest of the premium perks (extra themes, gradient banners) are gated
+// through isPremium(myProfile) elsewhere.
+function composerCharLimit() { return isPremium(myProfile) ? 1000 : 500; }
 function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 
 // ---------- Quests (reset daily) ----------
@@ -574,6 +629,52 @@ let memberListManualOverride = null;
 
 let unsub = { servers: null, channels: null, categories: null, messages: null, dms: null, groupDms: null, self: null };
 
+// ============================================================
+// CONVERSATION MESSAGE CACHE
+// Closing a DM/channel used to tear down its message listener entirely,
+// so reopening it — even seconds later — meant a brand new subscription
+// and a "reload" flash. Instead, every conversation's listener keeps
+// running in the background for as long as the app stays open: switching
+// back to one just shows whatever's already been received, with nothing
+// to wait on. Uncapped by request — nothing here evicts, so a long
+// session that opens a lot of conversations holds all of their message
+// history in memory at once for the rest of that session (cleared on
+// logout, or when the tab/app closes).
+// ============================================================
+let msgConvCache = new Map(); // convKey -> { unsub, msgs }
+let currentConvKey = null;
+function convCacheTouch(key) {
+  const entry = msgConvCache.get(key);
+  if (entry) { msgConvCache.delete(key); msgConvCache.set(key, entry); } // keep most-recently-used ordering, even though nothing currently evicts on it
+  return entry;
+}
+// Makes `key` (backed by Firestore collection ref `ref`) the active
+// conversation. If we were here recently, its listener never actually
+// stopped — this just renders what it already has, instantly. Otherwise
+// it subscribes fresh, same as before.
+function openConversationMessages(key, ref) {
+  currentConvKey = key;
+  const existing = convCacheTouch(key);
+  if (existing) {
+    cancelMsgLoading();
+    onMessagesUpdate(existing.msgs);
+    return;
+  }
+  const entry = { unsub: null, msgs: [] };
+  msgConvCache.set(key, entry);
+  entry.unsub = ref.orderBy('createdAt', 'asc').onSnapshot({ includeMetadataChanges: true }, snap => {
+    const msgs = [];
+    snap.forEach(d => msgs.push({ id: d.id, ...d.data(), pendingWrite: d.metadata.hasPendingWrites }));
+    entry.msgs = msgs;
+    if (currentConvKey === key) onMessagesUpdate(msgs);
+  }, err => console.error(err));
+}
+function closeAllConversationListeners() {
+  msgConvCache.forEach(entry => { if (entry.unsub) entry.unsub(); });
+  msgConvCache.clear();
+  currentConvKey = null;
+}
+
 // ---------- helpers ----------
 function $(id) { return document.getElementById(id); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
@@ -625,6 +726,7 @@ function avatarHTML(size, color, letter, status, avatarUrl) {
 }
 function premiumStar(profile) { return isPremium(profile) ? icon('star', 'premium-star') : ''; }
 function opTag(profile) { return profile && profile.op ? '<span class="op-tag">Admin</span>' : ''; }
+function appTag(profile) { return profile && profile.bot ? `<span class="app-tag">${icon('check')}APP</span>` : ''; }
 function ownerCrown(uid, ownerId) { return uid === ownerId ? `<span class="i owner-crown" title="Owner">${ICONS.crown}</span>` : ''; }
 function timeStr(ts) {
   if (!ts) return '';
@@ -642,6 +744,7 @@ async function sha256(str) {
 }
 
 async function getProfile(uid) {
+  if (uid === SAPPHIRE_UID) { profileCache[uid] = SAPPHIRE_PROFILE; return SAPPHIRE_PROFILE; }
   if (profileCache[uid]) return profileCache[uid];
   try {
     const snap = await db.collection('users').doc(uid).get();
@@ -932,6 +1035,20 @@ $('register-btn').onclick = async () => {
   if (username.length < 3) { $('register-error').textContent = 'Username must be at least 3 characters.'; return; }
   if (!/^[A-Za-z0-9_]+$/.test(username)) { $('register-error').textContent = 'Letters, numbers, and underscores only.'; return; }
   if (pass.length < 4) { $('register-error').textContent = 'Password must be at least 4 characters.'; return; }
+  // A real account's uid is its exact username (see below — myUid =
+  // username), and Sapphire's messages/profile are hardcoded to the uid
+  // 'sapphire' (see SAPPHIRE_UID / getProfile). Nothing stops "sapphire"
+  // from otherwise passing every check above and colliding with that,
+  // silently taking over the bot's identity everywhere in the app — so
+  // it's blocked here the same way a reserved system name would be on
+  // any platform. Checked case-insensitively since "Sapphire" or
+  // "SAPPHIRE" wouldn't collide technically (Firestore doc ids are
+  // case-sensitive) but would still be a confusing impersonation of the
+  // bot's actual display name.
+  if (RESERVED_USERNAMES.includes(username.toLowerCase())) {
+    $('register-error').textContent = 'That name is reserved.';
+    return;
+  }
   $('register-btn').disabled = true; $('register-btn').textContent = 'Creating...';
   try {
     const existing = await db.collection('users').doc(username).get();
@@ -985,6 +1102,7 @@ function cleanupAllListeners() {
   if (unsub.groupDms) unsub.groupDms();
   if (unsub.self) unsub.self();
   unsub = { servers: null, channels: null, categories: null, messages: null, dms: null, groupDms: null, self: null };
+  closeAllConversationListeners();
 }
 
 // ============================================================
@@ -999,6 +1117,7 @@ function initAppForUser() {
     isAdmin = !!myProfile.op;
     applyTheme(myProfile.theme || 'default');
     applyCustomKeyboardSetting();
+    applyComposerCharLimit();
     renderSelfPanel();
     updateFriendReqBadge();
     if (!$('settings-modal').classList.contains('hidden')) populateSettings();
@@ -1318,7 +1437,12 @@ function showHomeView() {
   currentView = 'none'; currentDMId = null; currentDMOtherUid = null; currentGroupDMId = null;
   if (unsub.channels) { unsub.channels(); unsub.channels = null; }
   if (unsub.categories) { unsub.categories(); unsub.categories = null; }
-  if (unsub.messages) { unsub.messages(); unsub.messages = null; }
+  // Deliberately NOT tearing down the message listener here — that's what
+  // used to make reopening a DM feel like a fresh load every time you'd
+  // stepped away from it. It keeps running in the cache (see
+  // openConversationMessages); this just stops it from rendering into a
+  // view that isn't showing a conversation anymore.
+  currentConvKey = null;
   $('rail-home').classList.add('active');
   document.querySelectorAll('#server-rail-list .rail-item').forEach(e => e.classList.remove('active'));
   $('side-header-title').textContent = 'Direct Messages';
@@ -1345,7 +1469,7 @@ document.querySelectorAll('.home-nav-item').forEach(item => {
 function openHomeMainView(which) {
   currentServerId = null; currentServerData = null; currentChannelId = null;
   currentDMId = null; currentDMOtherUid = null; currentGroupDMId = null;
-  if (unsub.messages) { unsub.messages(); unsub.messages = null; }
+  currentConvKey = null; // see the comment in showHomeView — listener stays alive, just stops rendering here
   $('welcome-view').classList.add('hidden');
   $('chat-view').classList.add('hidden');
   hideHeaderActions();
@@ -1381,7 +1505,7 @@ function subscribeDMList() {
 
 function groupDMDisplayName(g) {
   if (g.name) return g.name;
-  const others = g.participants.filter(p => p !== myUid);
+  const others = humanParticipants(g.participants).filter(p => p !== myUid);
   return others.map(u => (profileCache[u] || { username: u }).username).join(', ') || 'Group';
 }
 
@@ -1398,6 +1522,7 @@ function previewForMessage(message, includeAuthor = false) {
   if (!text && message.gifUrl) text = 'Sent a GIF';
   if (!text && message.sticker) text = `Sent a sticker${message.sticker.name ? `: ${message.sticker.name}` : ''}`;
   if (!text && message.poll) text = `📊 Poll: ${message.poll.question}`;
+  if (!text && message.type === 'purge-confirm') text = `Deleted ${message.purgeCount} message${message.purgeCount === 1 ? '' : 's'}`;
   if (!text) text = 'New message';
   return includeAuthor && message.username ? `${message.username}: ${text}` : text;
 }
@@ -1500,13 +1625,7 @@ async function selectDM(id, otherUid) {
   scheduleMsgLoading();
   const dmDoc = (window.__myDMs || []).find(d => d.id === id);
   if (!dmDoc || dmDoc.autoDelete !== false) sweepOldMessages(db.collection('dms').doc(id).collection('messages'));
-  if (unsub.messages) unsub.messages();
-  unsub.messages = db.collection('dms').doc(id).collection('messages').orderBy('createdAt', 'asc')
-    .onSnapshot({ includeMetadataChanges: true }, snap => {
-      const msgs = [];
-      snap.forEach(d => msgs.push({ id: d.id, ...d.data(), pendingWrite: d.metadata.hasPendingWrites }));
-      onMessagesUpdate(msgs);
-    });
+  openConversationMessages(`dm:${id}`, db.collection('dms').doc(id).collection('messages'));
 }
 
 async function selectGroupDM(id) {
@@ -1527,19 +1646,13 @@ async function selectGroupDM(id) {
   applyDefaultMemberListState();
   showHeaderActions();
   $('pins-toggle').classList.remove('hidden');
-  renderMemberPanel(g ? g.participants : [], g ? g.ownerId : null);
+  renderMemberPanel(g ? humanParticipants(g.participants) : [], g ? g.ownerId : null);
   renderDMRows();
   showChat();
   setMobilePane('chat');
   scheduleMsgLoading();
   if (!g || g.autoDelete !== false) sweepOldMessages(db.collection('groupDMs').doc(id).collection('messages'));
-  if (unsub.messages) unsub.messages();
-  unsub.messages = db.collection('groupDMs').doc(id).collection('messages').orderBy('createdAt', 'asc')
-    .onSnapshot({ includeMetadataChanges: true }, snap => {
-      const msgs = [];
-      snap.forEach(d => msgs.push({ id: d.id, ...d.data(), pendingWrite: d.metadata.hasPendingWrites }));
-      onMessagesUpdate(msgs);
-    });
+  openConversationMessages(`groupdm:${id}`, db.collection('groupDMs').doc(id).collection('messages'));
 }
 
 let groupDmPickerSelection = [];
@@ -1563,7 +1676,7 @@ $('new-group-dm-btn').onclick = () => {
 $('add-member-toggle').onclick = () => {
   if (!currentGroupDMId) return;
   const g = (window.__myGroupDMs || []).find(x => x.id === currentGroupDMId);
-  renderFriendPicker('add-to-group-friend-picker', g ? g.participants : [myUid]);
+  renderFriendPicker('add-to-group-friend-picker', g ? humanParticipants(g.participants) : [myUid]);
   openModal('add-to-group-modal');
 };
 
@@ -1572,7 +1685,7 @@ $('confirm-new-group-dm').onclick = async () => {
   if (checks.length < 2) { toast('Pick at least 2 friends for a group.'); return; }
   const name = $('new-group-dm-name').value.trim();
   try {
-    const participants = [myUid, ...checks];
+    const participants = [myUid, ...checks, SAPPHIRE_UID];
     const ref = await db.collection('groupDMs').add({
       name: name || null, participants, ownerId: myUid, autoDelete: true, createdAt: FieldValue.serverTimestamp(),
     });
@@ -2283,14 +2396,8 @@ function selectChannel(channel) {
   setMobilePane('chat');
   scheduleMsgLoading();
   if (channel.autoDelete !== false) sweepOldMessages(db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id).collection('messages'));
-  if (unsub.messages) unsub.messages();
-  unsub.messages = db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id)
-    .collection('messages').orderBy('createdAt', 'asc')
-    .onSnapshot({ includeMetadataChanges: true }, snap => {
-      const msgs = [];
-      snap.forEach(d => msgs.push({ id: d.id, ...d.data(), pendingWrite: d.metadata.hasPendingWrites }));
-      onMessagesUpdate(msgs);
-    });
+  openConversationMessages(`channel:${currentServerId}:${channel.id}`,
+    db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id).collection('messages'));
 }
 
 // ============================================================
@@ -2667,7 +2774,7 @@ function renderCurrentView() {
     renderMemberPanel(currentServerData.members || [], currentServerData.ownerId);
   } else if (currentView === 'groupdm') {
     const g = (window.__myGroupDMs || []).find(x => x.id === currentGroupDMId);
-    if (g) renderMemberPanel(g.participants || [], g.ownerId);
+    if (g) renderMemberPanel(humanParticipants(g.participants), g.ownerId);
   }
   renderDMRows();
 }
@@ -2819,9 +2926,30 @@ function togglePollVote(msgId, idx) {
     });
 }
 
+// Reply preview row: a small avatar of who's being replied to, plus a
+// short "hook" line above it suggesting it's connected to something
+// above — decorative rather than literally tracing to wherever that
+// message happens to be, same as Discord's own reply connector.
+function replyRefHTML(replyTo) {
+  const rp = profileCache[replyTo.uid] || { username: replyTo.username, avatarColor: '#5865f2', avatarUrl: null };
+  return `<div class="msg-reply-ref" data-jump="${esc(replyTo.id)}">
+    <span class="msg-reply-line"></span>
+    ${avatarHTML(16, rp.avatarColor, initials(rp.username), null, rp.avatarUrl)}
+    <span class="mrr-user">${esc(replyTo.username)}</span>
+    <span class="mrr-text">${esc(replyTo.text || '')}</span>
+  </div>`;
+}
+function purgeConfirmHTML(m) {
+  const n = m.purgeCount || 0;
+  return `<div class="purge-confirm-embed">
+    <span class="pce-check">${icon('check')}</span>
+    <span class="pce-text">Deleted <b>${n}</b> message${n === 1 ? '' : 's'}</span>
+  </div>`;
+}
 function buildMessageLineEl(m, canDelete) {
   if (m.localOnly) canDelete = false; // no real doc yet — nothing to act on
-  const pinnable = canPin() && !m.localOnly;
+  if (m.type === 'purge-confirm') canDelete = false; // system-style bot message — nothing to act on
+  const pinnable = canPin() && !m.localOnly && m.type !== 'purge-confirm';
   const canEditThis = m.uid === myUid && !m.sticker && !m.poll && !m.localOnly;
   const line = document.createElement('div');
   // Blue = sent from here but not yet confirmed by the server for
@@ -2832,18 +2960,18 @@ function buildMessageLineEl(m, canDelete) {
   const rowWrap = document.createElement('div');
   rowWrap.className = 'msg-row-wrap' + (m.sticker ? ' is-sticker' : '');
 
-  const replyHTML = m.replyTo
-    ? `<div class="msg-reply-ref" data-jump="${esc(m.replyTo.id)}">${icon('reply')}<span class="mrr-user">${esc(m.replyTo.username)}</span><span class="mrr-text">${esc(m.replyTo.text || '')}</span></div>`
-    : '';
+  const replyHTML = m.replyTo ? replyRefHTML(m.replyTo) : '';
 
   const bodyHTML = replyHTML + (m.sticker
     ? `<img class="msg-sticker" src="${esc(m.sticker.dataUrl)}" alt="${esc(m.sticker.name)}" title="${esc(m.sticker.name)}">`
     : m.poll
     ? pollHTML(m)
+    : m.type === 'purge-confirm'
+    ? purgeConfirmHTML(m)
     : (m.text ? `<span class="msg-text">${renderMessageText(m.text)}</span>${m.edited ? `<span class="edited-tag">(edited)</span>` : ''}` : '') +
       attachmentHTML(m, canDelete));
 
-  rowWrap.innerHTML = bodyHTML + (m.localOnly ? '' :
+  rowWrap.innerHTML = bodyHTML + ((m.localOnly || m.type === 'purge-confirm') ? '' :
     `<span class="msg-hover-actions">` +
     `<span class="hover-icon-btn react-btn" title="Add Reaction">${icon('smiley')}</span>` +
     `<span class="hover-icon-btn reply-msg" title="Reply">${icon('reply')}</span>` +
@@ -2851,7 +2979,7 @@ function buildMessageLineEl(m, canDelete) {
     (pinnable ? `<span class="hover-icon-btn pin-msg${m.pinned ? ' on' : ''}" title="${m.pinned ? 'Unpin' : 'Pin Message'}">${icon('pin')}</span>` : '') +
     (canDelete ? `<span class="hover-icon-btn del-msg" title="Delete">${icon('trash')}</span>` : '') +
     `</span>`);
-  if (!m.localOnly) {
+  if (!m.localOnly && m.type !== 'purge-confirm') {
     rowWrap.querySelector('.react-btn').onclick = (e) => { e.stopPropagation(); toggleReactPopover(e.currentTarget, m.id); };
     rowWrap.querySelector('.reply-msg').onclick = () => setReplyTarget(m.id);
     if (canEditThis) rowWrap.querySelector('.edit-msg').onclick = () => startEditMessage(m.id);
@@ -2895,7 +3023,7 @@ async function renderMessages(rawMsgs) {
   const msgs = q ? rawMsgs.filter(m => `${m.text || ''} ${m.poll ? m.poll.question : ''}`.toLowerCase().includes(q)) : rawMsgs;
   if (searching) $('search-count').textContent = q ? `${msgs.length} result${msgs.length === 1 ? '' : 's'}` : '';
 
-  const uids = [...new Set(msgs.map(m => m.uid))];
+  const uids = [...new Set(msgs.flatMap(m => m.replyTo ? [m.uid, m.replyTo.uid] : [m.uid]))];
   await Promise.all(uids.map(u => getProfile(u)));
   const wrap = $('messages');
   const wasAtBottom = wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 80;
@@ -2936,7 +3064,11 @@ async function renderMessages(rawMsgs) {
       lastDay = day; lastUid = null;
     }
     const p = profileCache[m.uid] || { username: m.username || 'Unknown User', avatarColor: '#5865f2' };
-    const sameGroup = !searching && m.uid === lastUid && (millis - lastMillis) < 5 * 60 * 1000;
+    // A reply always starts its own group (with its own avatar/username
+    // row) even if the same author just posted — same as the screenshot:
+    // grouping it invisibly into the message above would hide who's
+    // actually doing the replying.
+    const sameGroup = !searching && !m.replyTo && m.uid === lastUid && (millis - lastMillis) < 5 * 60 * 1000;
     const canDelete = m.uid === myUid;
 
     if (sameGroup && groupEl) {
@@ -2949,7 +3081,7 @@ async function renderMessages(rawMsgs) {
       body.className = 'msg-body';
       const meta = document.createElement('div');
       meta.className = 'msg-meta';
-      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}">${esc(p.username)}${premiumStar(p)}${opTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
+      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}">${esc(p.username)}${premiumStar(p)}${opTag(p)}${appTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
       body.appendChild(meta);
       body.appendChild(buildMessageLineEl(m, canDelete));
       groupEl.innerHTML = avatarHTML(40, p.avatarColor, initials(p.username), null, p.avatarUrl);
@@ -3268,9 +3400,18 @@ function resetPollModal() {
   closePollEmojiPicker();
 }
 
-function openPollModal() {
+function openPollModal(prefillText) {
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
   resetPollModal();
+  // Remembered so submitPoll() can send this alongside the poll and link
+  // the two together — cleared on cancel (see the data-close handler
+  // below) so it can't leak into some unrelated poll made later via the
+  // "+" menu.
+  pollLinkedText = prefillText || null;
+  if (prefillText) {
+    $('poll-question').value = prefillText.slice(0, 300);
+    $('poll-question-count').textContent = `${$('poll-question').value.length}/300`;
+  }
   openModal('poll-modal');
   setTimeout(() => $('poll-question').focus(), 50);
 }
@@ -3280,6 +3421,7 @@ $('poll-question').addEventListener('input', () => {
   $('poll-question-count').textContent = `${$('poll-question').value.length}/300`;
 });
 
+let pollLinkedText = null;
 async function submitPoll() {
   const question = $('poll-question').value.trim();
   if (!question) { toast('Please enter a poll question.', 'error'); return; }
@@ -3290,7 +3432,7 @@ async function submitPoll() {
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
   const durationMs = parseInt($('poll-duration').value, 10) || 86400000;
   const allowMultiple = $('poll-multiple').checked;
-  const payload = {
+  const pollPayload = {
     uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
     type: 'poll',
     poll: {
@@ -3299,69 +3441,114 @@ async function submitPoll() {
       votes: {},
     },
   };
-  // Close right away and clear the "/poll" that's been sitting in the
-  // composer this whole time — the write itself (and Firestore's local
-  // echo of it) happens in the background; no reason to hold the modal
-  // open waiting on the round trip.
+  const linkedText = pollLinkedText;
+  pollLinkedText = null;
+  // Close right away — the write itself (and Firestore's local echo of
+  // it) happens in the background; no reason to hold the modal open
+  // waiting on the round trip.
   closeModal('poll-modal');
-  if ($('composer-input').value.trim().toLowerCase() === '/poll') {
+  if ($('composer-input').value.trim().toLowerCase().startsWith('/poll')) {
     $('composer-input').value = '';
     autoResize($('composer-input'));
+    updateComposerCharCount();
   }
   toast('Poll posted.');
-  sendToCurrentConversation(payload).catch(e => toast(e.message || 'Could not post the poll.', 'error'));
+  (async () => {
+    try {
+      // Whatever text came after "/poll" gets sent as its own real
+      // message first — instead of being silently discarded — and the
+      // poll links back to it exactly the way a reply links to what it's
+      // answering, so the two show up visually connected.
+      if (linkedText) {
+        const textRef = await sendToCurrentConversation({
+          text: applyMessageFilter(linkedText), uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
+        });
+        pollPayload.replyTo = { id: textRef.id, uid: myUid, username: myProfile.username, text: linkedText };
+      }
+      await sendToCurrentConversation(pollPayload);
+    } catch (e) {
+      toast(e.message || 'Could not post the poll.', 'error');
+    }
+  })();
 }
 $('poll-submit').onclick = submitPoll;
 // Closing the poll modal (X or Cancel) while its emoji picker is open
-// shouldn't leave that panel floating over the chat behind it.
+// shouldn't leave that panel floating over the chat behind it. Also drops
+// any linked "/poll <text>" so it can't attach itself to a later poll.
 document.querySelectorAll('#poll-modal [data-close="poll-modal"]').forEach(el => {
-  el.addEventListener('click', closeEmojiPickerPanel);
+  el.addEventListener('click', () => { closeEmojiPickerPanel(); pollLinkedText = null; });
 });
 
 async function sendToCurrentConversation(payload) {
+  // Returns the new message's doc ref (needed to link a poll or a purge
+  // confirmation back to the message they belong to). Stats/preview text
+  // are attributed to payload.uid/username rather than hardcoded to
+  // myUid — this used to always credit the logged-in user even when
+  // Sapphire was the one actually posting, which would have inflated the
+  // admin's own message stats every time the bot spoke.
+  let ref;
   if (currentView === 'channel') {
-    await db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').add(payload);
-    db.collection('users').doc(myUid).update({ 'dailyStats.channelsMessaged': FieldValue.increment(1) }).catch(() => {});
+    ref = await db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').add(payload);
+    if (payload.uid === myUid) db.collection('users').doc(myUid).update({ 'dailyStats.channelsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else if (currentView === 'dm') {
-    await db.collection('dms').doc(currentDMId).collection('messages').add(payload);
+    ref = await db.collection('dms').doc(currentDMId).collection('messages').add(payload);
     await db.collection('dms').doc(currentDMId).update({
       updatedAt: FieldValue.serverTimestamp(),
-      lastMessage: { text: previewForMessage(payload), username: myProfile.username },
+      lastMessage: { text: previewForMessage(payload), username: payload.username },
     });
-    db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
+    if (payload.uid === myUid) db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else if (currentView === 'groupdm') {
-    await db.collection('groupDMs').doc(currentGroupDMId).collection('messages').add(payload);
+    ref = await db.collection('groupDMs').doc(currentGroupDMId).collection('messages').add(payload);
     await db.collection('groupDMs').doc(currentGroupDMId).update({
       updatedAt: FieldValue.serverTimestamp(),
-      lastMessage: { text: previewForMessage(payload), username: myProfile.username },
+      lastMessage: { text: previewForMessage(payload), username: payload.username },
     });
-    db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
+    if (payload.uid === myUid) db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else {
     throw new Error('No conversation selected.');
   }
-  db.collection('users').doc(myUid).update({
-    'stats.messagesSent': FieldValue.increment(1),
-    'dailyStats.messagesSent': FieldValue.increment(1),
-  }).catch(() => {});
+  if (payload.uid === myUid) {
+    db.collection('users').doc(myUid).update({
+      'stats.messagesSent': FieldValue.increment(1),
+      'dailyStats.messagesSent': FieldValue.increment(1),
+    }).catch(() => {});
+  }
+  return ref;
 }
 
 async function sendMessage() {
   const input = $('composer-input');
-  const raw = input.value.trim();
+  const raw = input.value.trim().slice(0, composerCharLimit()); // defense-in-depth; typing is already capped as you go
   const pendingAttachments = draftAttachments.slice();
-  // Typing "/poll" alone and hitting Enter opens the poll composer instead
-  // of sending it as a message. The text stays in the composer (same as
-  // any slash command you haven't actually sent yet) — it only clears
-  // once the poll is actually posted, in submitPoll().
-  if (!pendingAttachments.length && raw.toLowerCase() === '/poll') {
-    openPollModal();
+  // "/poll" alone opens the poll composer empty, same as always. "/poll
+  // <question>" opens it pre-filled with that question (autofill) — the
+  // text isn't discarded either way; if a poll actually gets posted,
+  // submitPoll() sends it as its own message linked to the poll.
+  const pollMatch = !pendingAttachments.length ? /^\/poll(?:\s+([\s\S]+))?$/i.exec(raw) : null;
+  if (pollMatch) {
+    if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
+    closeSlashPopup();
+    openPollModal((pollMatch[1] || '').trim());
+    return;
+  }
+  if (!pendingAttachments.length && /^\/purge$/i.test(raw)) {
+    if (!isAdmin) { toast('Only admins can use /purge.', 'error'); return; }
+    if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
+    input.value = '';
+    autoResize(input);
+    updateComposerCharCount();
+    closeMentionPopup();
+    closeSlashPopup();
+    runPurgeCommand();
     return;
   }
   if (!raw && !pendingAttachments.length) return;
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
   input.value = '';
   autoResize(input);
+  updateComposerCharCount();
   closeMentionPopup();
+  closeSlashPopup();
   draftAttachments = [];
   renderAttachmentDraft();
   const text = raw ? applyMessageFilter(raw) : '';
@@ -3398,8 +3585,55 @@ async function sendMessage() {
     toast(e.message || 'Failed to send message.', 'error');
   }
 }
+
+// ---- /purge (admin-only) ----
+function currentMessagesRef() {
+  if (currentView === 'channel') return db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages');
+  if (currentView === 'dm') return db.collection('dms').doc(currentDMId).collection('messages');
+  if (currentView === 'groupdm') return db.collection('groupDMs').doc(currentGroupDMId).collection('messages');
+  return null;
+}
+async function runPurgeCommand() {
+  const ref = currentMessagesRef();
+  if (!ref) return;
+  // "Everything before the /purge message" is exactly what's already on
+  // screen right now, before that message exists — snapshotting these ids
+  // first sidesteps any question of comparing against a createdAt that's
+  // still an unresolved server timestamp.
+  const idsToDelete = lastRawMessages.filter(m => !m.localOnly).map(m => m.id);
+  let purgeRef;
+  try {
+    purgeRef = await sendToCurrentConversation({
+      text: '/purge', uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
+    });
+  } catch (e) { toast(e.message || 'Could not run /purge.', 'error'); return; }
+  try {
+    // Firestore caps a single batch at 500 writes — chunk generously
+    // under that so a very long, un-autodeleted history doesn't fail
+    // partway through.
+    for (let i = 0; i < idsToDelete.length; i += 450) {
+      const batch = db.batch();
+      idsToDelete.slice(i, i + 450).forEach(id => batch.delete(ref.doc(id)));
+      await batch.commit();
+    }
+  } catch (e) {
+    toast(e.message || 'Some messages could not be deleted.', 'error');
+  }
+  sendToCurrentConversation({
+    uid: SAPPHIRE_UID, username: SAPPHIRE_PROFILE.username, createdAt: FieldValue.serverTimestamp(),
+    type: 'purge-confirm', purgeCount: idsToDelete.length,
+    replyTo: { id: purgeRef.id, uid: myUid, username: myProfile.username, text: '/purge' },
+  }).catch(e => toast(e.message || 'Sapphire could not confirm the purge.', 'error'));
+}
+
 // No explicit Send button — matches Discord's real composer (Enter to send).
 $('composer-input').addEventListener('keydown', (e) => {
+  if (slashState) {
+    if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); completeSlash(slashCandidates[slashSelectedIndex]); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); slashSelectedIndex = (slashSelectedIndex + 1) % slashCandidates.length; renderSlashPopup(); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); slashSelectedIndex = (slashSelectedIndex - 1 + slashCandidates.length) % slashCandidates.length; renderSlashPopup(); return; }
+    if (e.key === 'Escape') { closeSlashPopup(); return; }
+  }
   if (mentionState) {
     if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); completeMention(mentionCandidates[mentionSelectedIndex]); return; }
     if (e.key === 'ArrowDown') { e.preventDefault(); mentionSelectedIndex = (mentionSelectedIndex + 1) % mentionCandidates.length; renderMentionPopup(); return; }
@@ -3416,7 +3650,41 @@ $('composer-input').addEventListener('keyup', (e) => {
   if (e.key === ' ' && !(ckField && ckField.el === e.target)) ckWordBoundaryCheck(e.target);
 });
 function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 200) + 'px'; }
-$('composer-input').addEventListener('input', (e) => { autoResize(e.target); updateMentionState(e.target); });
+// ---- chat message character limit (500, or 1000 with Frixion Premium) ----
+// The native maxlength attribute (set below) already stops normal typing
+// and pasting at the limit, but the custom mobile keyboard writes into
+// this field with plain .value assignments, which maxlength has no say
+// over — so this is the real backstop, and it runs through the same
+// 'input' event both paths already fire.
+function applyComposerCharLimit() {
+  $('composer-input').maxLength = composerCharLimit();
+  updateComposerCharCount();
+}
+function enforceComposerCharLimit(el) {
+  const limit = composerCharLimit();
+  if (el.value.length <= limit) return;
+  const pos = el.selectionEnd;
+  el.value = el.value.slice(0, limit);
+  if (pos != null) el.selectionStart = el.selectionEnd = Math.min(pos, limit);
+}
+function updateComposerCharCount() {
+  const el = $('composer-input');
+  const counter = $('composer-charcount');
+  const limit = composerCharLimit();
+  const len = el.value.length;
+  if (!len) { counter.classList.add('hidden'); return; }
+  counter.classList.remove('hidden');
+  counter.textContent = `${len}/${limit}`;
+  counter.classList.toggle('warn', len >= limit * 0.9);
+  counter.classList.toggle('over', len >= limit);
+}
+$('composer-input').addEventListener('input', (e) => {
+  enforceComposerCharLimit(e.target);
+  autoResize(e.target);
+  updateMentionState(e.target);
+  updateSlashState(e.target);
+  updateComposerCharCount();
+});
 
 // ============================================================
 // MENTIONS (@ autocomplete + rendering)
@@ -3432,7 +3700,7 @@ function currentContextUsernames() {
   if (currentView === 'dm') return [myUid, currentDMOtherUid].filter(Boolean);
   if (currentView === 'groupdm') {
     const g = (window.__myGroupDMs || []).find(x => x.id === currentGroupDMId);
-    return g ? (g.participants || []) : [];
+    return g ? humanParticipants(g.participants) : [];
   }
   return [];
 }
@@ -3504,6 +3772,74 @@ document.addEventListener('click', (e) => {
   if (!mentionState) return;
   if (e.target.closest('#mention-popup') || e.target.closest('#composer-input')) return;
   closeMentionPopup();
+});
+
+// ============================================================
+// SLASH COMMANDS (autocomplete + descriptions)
+// Typing "/" at the very start of the composer, with nothing after it but
+// letters, pops up matching commands with a description each — same
+// interaction as the @ mention popup above, just triggered by "/" and
+// only while the command word itself is still being typed (a space after
+// it means you've moved on to typing the command's own text).
+// ============================================================
+const SLASH_COMMANDS = [
+  { cmd: 'poll', desc: 'Create a poll for people to vote on', adminOnly: false },
+  { cmd: 'purge', desc: 'Admin — delete every message before this one here', adminOnly: true },
+];
+let slashState = null; // { el }
+let slashCandidates = [];
+let slashSelectedIndex = 0;
+function updateSlashState(el) {
+  const pos = el.selectionStart;
+  if (pos == null || pos !== el.value.length) { closeSlashPopup(); return; }
+  const m = /^\/([a-z]*)$/i.exec(el.value);
+  if (!m) { closeSlashPopup(); return; }
+  const query = m[1].toLowerCase();
+  const candidates = SLASH_COMMANDS.filter(c => (!c.adminOnly || isAdmin) && c.cmd.startsWith(query));
+  if (!candidates.length) { closeSlashPopup(); return; }
+  slashState = { el };
+  slashCandidates = candidates;
+  slashSelectedIndex = 0;
+  renderSlashPopup();
+}
+function closeSlashPopup() {
+  slashState = null; slashCandidates = []; slashSelectedIndex = 0;
+  $('slash-popup').classList.add('hidden');
+}
+function positionSlashPopup(el) {
+  const popup = $('slash-popup');
+  const fRect = el.getBoundingClientRect();
+  popup.style.left = Math.max(8, fRect.left) + 'px';
+  popup.style.bottom = (window.innerHeight - fRect.top + 8) + 'px';
+}
+function renderSlashPopup() {
+  const popup = $('slash-popup');
+  popup.innerHTML = slashCandidates.map((c, i) => `
+    <div class="slash-row${i === slashSelectedIndex ? ' selected' : ''}" data-idx="${i}">
+      <span class="slash-row-cmd">/${esc(c.cmd)}</span>
+      <span class="slash-row-desc">${esc(c.desc)}</span>
+    </div>`).join('');
+  popup.classList.remove('hidden');
+  popup.querySelectorAll('.slash-row').forEach(row => {
+    row.onclick = () => completeSlash(slashCandidates[+row.dataset.idx]);
+  });
+  positionSlashPopup(slashState.el);
+}
+function completeSlash(command) {
+  if (!slashState || !command) return;
+  const el = slashState.el;
+  const insertion = '/' + command.cmd + ' ';
+  el.value = insertion;
+  el.selectionStart = el.selectionEnd = insertion.length;
+  closeSlashPopup();
+  autoResize(el);
+  ckFireInput(el);
+  if (ckField && ckField.el === el) positionCkCursor();
+}
+document.addEventListener('click', (e) => {
+  if (!slashState) return;
+  if (e.target.closest('#slash-popup') || e.target.closest('#composer-input')) return;
+  closeSlashPopup();
 });
 
 // ---------- emoji picker (composer) ----------
@@ -3947,6 +4283,7 @@ function ckTapShift() {
 }
 function ckTapEnter() {
   if (!ckField) return;
+  if (slashState && slashState.el === ckField.el) { completeSlash(slashCandidates[slashSelectedIndex]); return; }
   if (mentionState && mentionState.el === ckField.el) { completeMention(mentionCandidates[mentionSelectedIndex]); return; }
   ckWordBoundaryCheck(ckField.el);
   if (ckField.multiline && ckShiftOn) { insertAtCursor(ckField.el, '\n'); ckShiftOn = false; ckUpdateKeyCasing(); }
@@ -4069,16 +4406,35 @@ function ckShowBubble(btn, chars, activeIndex) {
 }
 function ckWireCharKey(btn) {
   const ch = btn.dataset.ch;
-  let startX = 0, startY = 0, cancelled = false, inserted = false;
+  let startX = 0, startY = 0, cancelled = false, released = false;
+  // Range of the character this press already typed on the way down, so
+  // onUp can swap it for a chosen long-press alternate instead of
+  // inserting a second character.
+  let insertedRange = null;
   const onDown = (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     ckClearSelectionHighlight();
-    cancelled = false; inserted = false; ckAltActiveIndex = -1;
+    cancelled = false; released = false; ckAltActiveIndex = -1; insertedRange = null;
     startX = e.clientX; startY = e.clientY;
     const upper = ckPage === 'letters' && (ckShiftOn || ckCapsLock);
     const baseDisplay = ckPage !== 'letters' ? ch : (upper ? ch.toUpperCase() : ch);
     ckShowBubble(btn, [baseDisplay], -1);
+    // Type on finger-down, not finger-up. Waiting for release before
+    // committing anything — so it could first check whether this was
+    // turning into a long-press — is what made typing feel like it had a
+    // built-in delay on every single key. A real keyboard doesn't wait
+    // either. If this does turn into a long-press pick, onUp swaps the
+    // character already sitting in the field for the chosen alternate
+    // instead of inserting a fresh one. The emoji grid is exempt: a touch
+    // there might turn into a scroll, and we don't want a swipe-to-scroll
+    // to leave a trail of emoji behind.
+    if (ckPage !== 'emoji' && ckField) {
+      const el = ckField.el;
+      const start = el.selectionStart != null ? el.selectionStart : el.value.length;
+      ckTapLetter(ch);
+      insertedRange = { start, end: start + baseDisplay.length };
+    }
     const alts = CK_ALT_CHARS[ch.toLowerCase()];
     if (alts && alts.length) {
       ckPressTimer = setTimeout(() => {
@@ -4095,7 +4451,23 @@ function ckWireCharKey(btn) {
       // Long-press hasn't kicked in yet — real finger movement this early
       // means a scroll (the emoji grid) or a change of mind, not a pick.
       const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
-      if (dist > 12) { cancelled = true; ckRemoveBubble(); }
+      if (dist > 12) {
+        cancelled = true;
+        // We may have already typed this key's base character on the way
+        // down — undo it, but only if the cursor is still sitting exactly
+        // where that insert left it (nothing else has touched the field
+        // since, so this is safe to remove cleanly).
+        if (insertedRange && ckField) {
+          const el = ckField.el;
+          if (el.selectionStart === insertedRange.end && el.selectionEnd === insertedRange.end) {
+            el.value = el.value.slice(0, insertedRange.start) + el.value.slice(insertedRange.end);
+            el.selectionStart = el.selectionEnd = insertedRange.start;
+            ckFireInput(el);
+            if (ckField.el === el) positionCkCursor();
+          }
+        }
+        ckRemoveBubble();
+      }
       return;
     }
     const chars = [...ckPressBubble.querySelectorAll('.ck-press-char')];
@@ -4111,24 +4483,62 @@ function ckWireCharKey(btn) {
     }
   };
   const onUp = () => {
-    if (inserted) return;
-    inserted = true;
+    if (released) return;
+    released = true;
     if (!cancelled && ckField) {
       if (ckPressBubble && ckAltActiveIndex > 0) {
         const chars = [...ckPressBubble.querySelectorAll('.ck-press-char')];
-        insertAtCursor(ckField.el, chars[ckAltActiveIndex].textContent);
+        const alt = chars[ckAltActiveIndex].textContent;
+        if (insertedRange) {
+          const el = ckField.el;
+          el.value = el.value.slice(0, insertedRange.start) + alt + el.value.slice(insertedRange.end);
+          el.selectionStart = el.selectionEnd = insertedRange.start + alt.length;
+          ckFireInput(el);
+          if (ckField.el === el) positionCkCursor();
+        } else {
+          insertAtCursor(ckField.el, alt);
+        }
         ckConsumeOneShotShift();
-      } else {
+      } else if (!insertedRange) {
+        // Nothing typed on the way down (emoji grid) — commit here instead, same as before.
         ckTapLetter(ch);
       }
     }
     ckRemoveBubble();
   };
-  const onCancel = () => { cancelled = true; inserted = true; ckRemoveBubble(); };
+  const onCancel = () => { cancelled = true; released = true; ckRemoveBubble(); };
   btn.addEventListener('pointerdown', onDown);
   btn.addEventListener('pointermove', onMove);
   btn.addEventListener('pointerup', onUp);
   btn.addEventListener('pointercancel', onCancel);
+}
+
+// ---- hold-to-repeat delete ----
+// Backspace used to be tap-only (one character per click), so clearing
+// anything longer than a word meant mashing it repeatedly. This makes
+// holding it behave like a real keyboard's delete key: one immediate
+// delete on press, then a repeating delete for as long as it's held.
+let ckBackspaceTimer = null, ckBackspaceInterval = null;
+function ckStopBackspaceRepeat() {
+  clearTimeout(ckBackspaceTimer); ckBackspaceTimer = null;
+  clearInterval(ckBackspaceInterval); ckBackspaceInterval = null;
+}
+function ckWireBackspaceKey(btn) {
+  const onDown = (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    ckClearSelectionHighlight();
+    ckStopBackspaceRepeat();
+    if (ckField) deleteAtCursor(ckField.el); // first delete happens right away, same as a single tap always did
+    ckBackspaceTimer = setTimeout(() => {
+      ckBackspaceInterval = setInterval(() => { if (ckField) deleteAtCursor(ckField.el); }, 45);
+    }, 350);
+  };
+  const onUp = () => ckStopBackspaceRepeat();
+  btn.addEventListener('pointerdown', onDown);
+  btn.addEventListener('pointerup', onUp);
+  btn.addEventListener('pointercancel', onUp);
+  btn.addEventListener('pointerleave', onUp);
 }
 
 function renderCustomKeyboard() {
@@ -4177,12 +4587,14 @@ function renderCustomKeyboard() {
     });
   });
   kb.querySelectorAll('.ck-key[data-act]').forEach(btn => {
+    // Backspace is wired separately (pointerdown/up) so holding it repeats —
+    // see ckWireBackspaceKey. It never reaches this click handler.
+    if (btn.dataset.act === 'backspace') { ckWireBackspaceKey(btn); return; }
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const act = btn.dataset.act;
       if (act !== 'copy') ckClearSelectionHighlight();
       if (act === 'shift') ckTapShift();
-      else if (act === 'backspace') { if (ckField) deleteAtCursor(ckField.el); }
       else if (act === 'space') { if (ckField) { insertAtCursor(ckField.el, ' '); ckConsumeOneShotShift(); ckWordBoundaryCheck(ckField.el); } }
       else if (act === 'enter') ckTapEnter();
       else if (act === 'toggle-symbols') { ckPage = ckPage === 'letters' ? 'symbols1' : 'letters'; renderCustomKeyboard(); }
