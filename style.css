@@ -1236,6 +1236,7 @@ body.action-sheet-open { overflow: hidden; }
 
 /* ============ MENTIONS ============ */
 .mention-pill { color: var(--text-link); background: var(--accent-soft); border-radius: 3px; padding: 0 2px; font-weight: 500; }
+.msg-link:hover { text-decoration: underline; }
 .mention-pill.mention-glow { color: #fff; background: rgba(88,101,242,.4); }
 .mention-pill.mention-glow.mention-self { font-weight: 700; }
 

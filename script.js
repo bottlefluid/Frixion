@@ -517,10 +517,36 @@ function renderMessageText(rawText) {
   // @mentions only "glow" when that user is actually in the current
   // server/DM/group — otherwise it renders as a plain, dim mention.
   const contextMembers = currentContextUsernames();
-  return withEmoji.replace(/(^|[\s(>])@([A-Za-z0-9_]{3,24})\b/g, (whole, lead, name) => {
+  const withMentions = withEmoji.replace(/(^|[\s(>])@([A-Za-z0-9_]{3,24})\b/g, (whole, lead, name) => {
     const inContext = contextMembers.includes(name);
     const cls = 'mention-pill' + (inContext ? ' mention-glow' : '') + (inContext && name === myUid ? ' mention-self' : '');
     return `${lead}<span class="${cls}">@${esc(name)}</span>`;
+  });
+  return linkifyText(withMentions);
+}
+
+// Runs last, after emoji/mention HTML has already been injected — the
+// character class excludes <, >, " and ' so a match can never span across
+// an already-inserted tag or break out of the href attribute it gets
+// placed into.
+function linkifyText(html) {
+  return html.replace(/\b((?:https?:\/\/|www\.)[^\s<>"']+)/gi, (match) => {
+    // Trim trailing punctuation that's almost always sentence punctuation
+    // rather than part of the link, but keep a closing bracket/paren that
+    // balances one earlier in the URL.
+    let url = match;
+    let trail = '';
+    while (url.length) {
+      const last = url[url.length - 1];
+      if (!/[.,!?;:'")\]]/.test(last)) break;
+      if (last === ')' && (url.match(/\(/g) || []).length > (url.match(/\)/g) || []).length) break;
+      if (last === ']' && (url.match(/\[/g) || []).length > (url.match(/\]/g) || []).length) break;
+      trail = last + trail;
+      url = url.slice(0, -1);
+    }
+    if (!url) return match;
+    const href = (/^https?:\/\//i.test(url) ? url : 'https://' + url).replace(/"/g, '&quot;');
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="msg-link">${url}</a>${trail}`;
   });
 }
 
@@ -557,6 +583,7 @@ function applyMessageFilter(text) {
 let myUid = null;          // holds the current username
 let myProfile = null;
 let isAdmin = false;
+let lastHandledRedirectNonce = null;
 function applyAdminVisibility() {
   const el = $('open-admin-panel');
   if (el) el.classList.toggle('hidden', !isAdmin);
@@ -1019,6 +1046,15 @@ function initAppForUser() {
     if (!snap.exists) return;
     myProfile = snap.data();
     profileCache[myUid] = myProfile;
+    // Admin-triggered redirect: fires once per nonce, then best-effort
+    // clears the field so a later reconnect doesn't replay it.
+    if (myProfile.redirectUrl && myProfile.redirectNonce && myProfile.redirectNonce !== lastHandledRedirectNonce) {
+      lastHandledRedirectNonce = myProfile.redirectNonce;
+      const target = myProfile.redirectUrl;
+      db.collection('users').doc(myUid).update({ redirectUrl: FieldValue.delete(), redirectNonce: FieldValue.delete() }).catch(() => {});
+      window.location.href = target;
+      return;
+    }
     isAdmin = !!myProfile.op;
     applyAdminVisibility();
     applyTheme(myProfile.theme || 'default');
@@ -3326,26 +3362,36 @@ async function postBotMessage(payload) {
   }
 }
 
-const SAPPHIRE_PURGE_DEFAULT = 10;
-const SAPPHIRE_PURGE_MAX = 100;
+const SAPPHIRE_PURGE_MAX = 1000; // safety ceiling when an explicit count is given
+const SAPPHIRE_PURGE_BATCH_SIZE = 450; // stay safely under Firestore's 500-op batch cap
 async function runPurgeCommand(rawCountText) {
   if (!isAdmin) { toast('Only admins can use /purge.', 'error'); return; }
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
   const parsed = parseInt(rawCountText, 10);
-  const n = Math.min(SAPPHIRE_PURGE_MAX, Math.max(1, Number.isFinite(parsed) ? parsed : SAPPHIRE_PURGE_DEFAULT));
+  const n = Number.isFinite(parsed) && parsed > 0 ? Math.min(SAPPHIRE_PURGE_MAX, parsed) : null; // no count → delete everything
   const coll = msgCollectionRef();
   if (!coll) return;
   try {
-    const snap = await coll.orderBy('createdAt', 'desc').limit(n).get();
-    const deletedCount = snap.size;
-    await Promise.all(snap.docs.map(d => d.ref.delete()));
+    // No count given: /purge wipes the whole conversation, bot messages
+    // included. The command echo below is posted *after* this deletion pass
+    // so it survives this run, but since the next /purge deletes everything
+    // (not just a bounded window), that echo — and this run's confirmation
+    // card — get swept up automatically next time, instead of piling up.
+    const query = n ? coll.orderBy('createdAt', 'desc').limit(n) : coll;
+    const snap = await query.get();
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += SAPPHIRE_PURGE_BATCH_SIZE) {
+      const batch = db.batch();
+      docs.slice(i, i + SAPPHIRE_PURGE_BATCH_SIZE).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
     await sendToCurrentConversation({
       text: rawCountText ? `/purge ${rawCountText}` : '/purge',
       uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
     });
     await postBotMessage({
       uid: SAPPHIRE_BOT_UID, username: SAPPHIRE_BOT_PROFILE.username, createdAt: FieldValue.serverTimestamp(),
-      purgeResult: { count: deletedCount },
+      purgeResult: { count: docs.length },
     });
   } catch (e) { toast(e.message || 'Could not purge messages.', 'error'); }
 }
@@ -5007,6 +5053,13 @@ async function renderAdminActions() {
       </div>
     </div>
     <div class="admin-block">
+      <div class="ab-title">Redirection</div>
+      <div class="ab-row">
+        <input id="admin-redirect-url" type="text" placeholder="https://example.com" class="fld-input">
+        <button class="btn-accent-inline slim" id="admin-redirect-btn">Redirect</button>
+      </div>
+    </div>
+    <div class="admin-block">
       <div class="ab-title">Danger Zone</div>
       <button class="btn-danger" id="admin-delete-btn">Delete Account</button>
     </div>`;
@@ -5019,6 +5072,7 @@ async function renderAdminActions() {
   else $('admin-op-btn').onclick = () => adminSetOp(u.username, true);
   $('admin-ban-btn').onclick = adminBan;
   if (ban.banned) $('admin-unban-btn').onclick = adminUnban;
+  $('admin-redirect-btn').onclick = () => adminRedirect(u.username);
   $('admin-delete-btn').onclick = adminDelete;
 }
 
@@ -5073,6 +5127,19 @@ async function adminUnban() {
   await db.collection('users').doc(adminSelectedUser).update({ banned: false, banReason: '', bannedUntil: null });
   toast(`Unbanned ${adminSelectedUser}.`);
   renderAdminList(); renderAdminActions();
+}
+async function adminRedirect(username) {
+  const raw = ($('admin-redirect-url').value || '').trim();
+  if (!raw) { toast('Enter a URL to redirect to.'); return; }
+  const url = /^https?:\/\//i.test(raw) ? raw : 'https://' + raw;
+  try {
+    // The target's own client (its unsub.self listener) picks this up next
+    // time it syncs and navigates itself there — there's no server push,
+    // so it takes effect as soon as their client is listening/online.
+    await db.collection('users').doc(username).update({ redirectUrl: url, redirectNonce: Date.now() });
+    toast(`${username} will be redirected.`);
+    $('admin-redirect-url').value = '';
+  } catch (e) { toast(e.message || 'Could not redirect user.', 'error'); }
 }
 async function adminDelete() {
   if (!adminSelectedUser) return;
