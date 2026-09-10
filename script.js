@@ -583,10 +583,14 @@ function applyMessageFilter(text) {
 let myUid = null;          // holds the current username
 let myProfile = null;
 let isAdmin = false;
+let isOwner = false; // set ONLY via a manually-added `owner: true` field on a user doc in Firebase — no in-app UI ever grants it
 let lastHandledRedirectNonce = null;
 function applyAdminVisibility() {
-  const el = $('open-admin-panel');
-  if (el) el.classList.toggle('hidden', !isAdmin);
+  const adminEl = $('open-admin-panel');
+  const ownerEl = $('open-owner-panel');
+  // The owner sees only "Owner Panel" (it's a strict superset), never both.
+  if (adminEl) adminEl.classList.toggle('hidden', !isAdmin || isOwner);
+  if (ownerEl) ownerEl.classList.toggle('hidden', !isOwner);
 }
 let profileCache = {};
 let currentServerId = null;
@@ -670,7 +674,13 @@ function avatarHTML(size, color, letter, status, avatarUrl) {
 }
 function premiumStar(profile) { return isPremium(profile) ? icon('star', 'premium-star') : ''; }
 function opTag(profile) { return profile && profile.op ? '<span class="op-tag">Admin</span>' : ''; }
+function ownerTag(profile) { return profile && profile.owner ? '<span class="owner-tag">Owner</span>' : ''; }
+// Owner supersedes admin in the badge — a profile with both shows only Owner.
+function roleTag(profile) { return profile && profile.owner ? ownerTag(profile) : opTag(profile); }
 function botTag(profile) { return profile && profile.bot ? `<span class="bot-tag" title="Verified App">${icon('check')}<span>APP</span></span>` : ''; }
+// The username itself is permanent (it's the Firestore doc ID), but anyone
+// can set a separate Display Name that's shown instead almost everywhere.
+function displayNameOf(profile) { return (profile && profile.displayName) ? profile.displayName : ((profile && profile.username) || ''); }
 function ownerCrown(uid, ownerId) { return uid === ownerId ? `<span class="i owner-crown" title="Owner">${ICONS.crown}</span>` : ''; }
 function timeStr(ts) {
   if (!ts) return '';
@@ -931,6 +941,7 @@ function enterApp() {
   $('auth-screen').classList.add('hidden');
   $('app').classList.remove('hidden');
   isAdmin = !!(myProfile && myProfile.op);
+  isOwner = !!(myProfile && myProfile.owner);
   applyAdminVisibility();
   initAppForUser();
 }
@@ -1015,7 +1026,7 @@ $('logout-btn').onclick = async () => {
   try { if (myUid) await db.collection('users').doc(myUid).update({ status: 'offline' }); } catch (e) {}
   cleanupAllListeners();
   setSession(null);
-  myUid = null; myProfile = null; profileCache = {}; isAdmin = false; seedBotProfiles();
+  myUid = null; myProfile = null; profileCache = {}; isAdmin = false; isOwner = false; seedBotProfiles();
   applyAdminVisibility();
   clearMyTypingDoc();
   currentServerId = null; currentServerData = null; currentChannelId = null;
@@ -1056,6 +1067,7 @@ function initAppForUser() {
       return;
     }
     isAdmin = !!myProfile.op;
+    isOwner = !!myProfile.owner;
     applyAdminVisibility();
     applyTheme(myProfile.theme || 'default');
     applyCustomKeyboardSetting();
@@ -1109,7 +1121,7 @@ function renderSelfPanel() {
   if (!myProfile) return;
   const inner = avatarHTML(32, myProfile.avatarColor, initials(myProfile.username), computeDisplayStatus(myUid), myProfile.avatarUrl);
   $('self-avatar').outerHTML = inner.replace('class="avatar', 'id="self-avatar" class="avatar');
-  $('self-username').innerHTML = esc(myProfile.username) + premiumStar(myProfile) + opTag(myProfile);
+  $('self-username').innerHTML = esc(displayNameOf(myProfile)) + premiumStar(myProfile) + roleTag(myProfile);
   const st = STATUSES.find(s => s.key === computeDisplayStatus(myUid));
   $('self-status-label').textContent = st ? st.label : 'Online';
 }
@@ -1503,7 +1515,7 @@ function renderDMRows() {
     const row = document.createElement('div');
     row.className = 'dm-row' + (currentDMId === dm.id ? ' active' : '');
     row.innerHTML = avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(otherUid), p.avatarUrl) +
-      `<div class="dm-copy"><span class="dm-name">${esc(p.username)}${premiumStar(p)}${opTag(p)}${botTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div>`;
+      `<div class="dm-copy"><span class="dm-name">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div>`;
     row.onclick = () => selectDM(dm.id, otherUid);
     wrap.appendChild(row);
   });
@@ -1732,7 +1744,10 @@ async function openProfileModal(username) {
   $('profile-avatar').style.background = 'transparent';
   $('profile-avatar').classList.add('has-image');
   $('profile-avatar').innerHTML = `<img src="${esc(p.avatarUrl || DEFAULT_AVATAR_URL)}" alt="">`;
-  $('profile-username').innerHTML = esc(p.username) + premiumStar(p) + opTag(p) + botTag(p);
+  $('profile-username').innerHTML = esc(displayNameOf(p)) + premiumStar(p) + roleTag(p) + botTag(p);
+  const showHandle = p.displayName && p.displayName !== p.username;
+  $('profile-handle').textContent = showHandle ? '@' + p.username : '';
+  $('profile-handle').classList.toggle('hidden', !showHandle);
   $('profile-pronouns').textContent = p.pronouns || '';
   $('profile-pronouns').classList.toggle('hidden', !p.pronouns);
   $('profile-bio-view').textContent = p.bio || (isSelf ? 'Add a bio below with Edit Profile.' : 'No bio yet.');
@@ -1743,6 +1758,7 @@ async function openProfileModal(username) {
   $('profile-mutual').textContent = '';
 
   if (isSelf) {
+    $('edit-display-name').value = p.displayName || '';
     $('edit-pronouns').value = p.pronouns || '';
     $('edit-bio').value = p.bio || '';
     renderBannerSwatches(p.bannerColor || p.avatarColor);
@@ -1793,11 +1809,18 @@ $('profile-note-input').addEventListener('blur', async (e) => {
   try { await db.collection('users').doc(target).collection('privateNotes').doc(myUid).set({ text: e.target.value, updatedAt: FieldValue.serverTimestamp() }); } catch (err) {}
 });
 $('save-profile-btn').onclick = async () => {
+  const displayName = $('edit-display-name').value.trim();
   const pronouns = $('edit-pronouns').value.trim();
   const bio = $('edit-bio').value.trim();
   const bannerColor = $('banner-color-swatches').dataset.chosen || myProfile.bannerColor;
   try {
-    await db.collection('users').doc(myUid).update({ pronouns, bio, bannerColor });
+    // An empty Display Name just means "use my username" — store it as a
+    // deletion rather than an empty string so displayNameOf() falls back
+    // cleanly and other people don't see a blank name anywhere.
+    await db.collection('users').doc(myUid).update({
+      displayName: displayName || FieldValue.delete(),
+      pronouns, bio, bannerColor,
+    });
     toast('Profile updated.');
   } catch (e) { toast('Could not save profile.', 'error'); }
 };
@@ -2117,7 +2140,7 @@ function friendRowHTML(username, kind) {
   }
   return `<div class="friend-row">
     ${avatarHTML(36, p.avatarColor, initials(p.username), computeDisplayStatus(username), p.avatarUrl)}
-    <span class="friend-row-name" data-openprofile="${esc(username)}">${esc(p.username)}${premiumStar(p)}${opTag(p)}${botTag(p)}</span>
+    <span class="friend-row-name" data-openprofile="${esc(username)}">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span>
     <span class="friend-row-actions">${actions}</span>
   </div>`;
 }
@@ -2614,7 +2637,7 @@ async function renderMemberPanel(members, ownerId) {
   const renderRows = (arr) => arr.map(({ uid, p, disp }) => `
     <div class="member-row" data-u="${esc(uid)}">
       ${avatarHTML(32, p.avatarColor, initials(p.username), disp, p.avatarUrl)}
-      <span class="mname${disp !== 'offline' ? ' online-name' : ''}">${esc(p.username)}${premiumStar(p)}${opTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}</span>
+      <span class="mname${disp !== 'offline' ? ' online-name' : ''}">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}</span>
     </div>`).join('');
   $('member-rows-online').innerHTML = renderRows(online);
   $('member-rows-offline').innerHTML = renderRows(offline);
@@ -2830,13 +2853,16 @@ function buildMessageLineEl(m, canDelete) {
   // resolved from the profile cache at render time (so it follows their
   // current avatar rather than freezing whatever it was when the reply was
   // sent) — renderMessages() makes sure that uid's profile is pre-fetched.
+  // The corner connector (CSS ::before on .msg-reply-ref) is the only "this
+  // is a reply" indicator, matching Discord's actual reply row — it stands
+  // in for a separate reply-arrow icon rather than sitting alongside one.
   const replyHTML = m.replyTo
     ? (() => {
         const rp = profileCache[m.replyTo.uid];
         const avatarUrl = (rp && rp.avatarUrl) || DEFAULT_AVATAR_URL;
         return `<div class="msg-reply-ref" data-jump="${esc(m.replyTo.id)}">` +
           `<img class="reply-avatar" src="${esc(avatarUrl)}" alt="">` +
-          `${icon('reply')}<span class="mrr-user">${esc(m.replyTo.username)}</span>` +
+          `<span class="mrr-user">${esc(m.replyTo.username)}</span>` +
           `<span class="mrr-text">${esc(m.replyTo.text || '')}</span></div>`;
       })()
     : '';
@@ -2941,7 +2967,12 @@ async function renderMessages(rawMsgs) {
       lastDay = day; lastUid = null;
     }
     const p = profileCache[m.uid] || { username: m.username || 'Unknown User', avatarColor: '#5865f2' };
-    const sameGroup = !searching && m.uid === lastUid && (millis - lastMillis) < 5 * 60 * 1000;
+    // A reply always starts a fresh group (own avatar + username), even when
+    // the same author sent the message directly above it — otherwise the
+    // reply got silently appended into the previous block with no avatar of
+    // its own, which not only looks like a mid-group continuation but makes
+    // the reply-to relationship far less clear at a glance.
+    const sameGroup = !searching && !m.replyTo && m.uid === lastUid && (millis - lastMillis) < 5 * 60 * 1000;
     const canDelete = m.uid === myUid;
 
     if (sameGroup && groupEl) {
@@ -2954,7 +2985,7 @@ async function renderMessages(rawMsgs) {
       body.className = 'msg-body';
       const meta = document.createElement('div');
       meta.className = 'msg-meta';
-      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}">${esc(p.username)}${premiumStar(p)}${opTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
+      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
       body.appendChild(meta);
       body.appendChild(buildMessageLineEl(m, canDelete));
       groupEl.innerHTML = avatarHTML(40, p.avatarColor, initials(p.username), null, p.avatarUrl);
@@ -3171,7 +3202,7 @@ function setReplyTarget(msgId) {
   const m = lastRawMessages.find(x => x.id === msgId);
   if (!m) return;
   closeActionSheet();
-  const uname = (profileCache[m.uid] && profileCache[m.uid].username) || m.username || 'Unknown User';
+  const uname = (profileCache[m.uid] && displayNameOf(profileCache[m.uid])) || m.username || 'Unknown User';
   const atts = m.attachments || (m.attachment ? [m.attachment] : []);
   const preview = m.sticker ? `Sent a sticker: ${m.sticker.name}` : m.gifUrl ? 'Sent a GIF' :
     m.poll ? `📊 Poll: ${m.poll.question}` :
@@ -3321,18 +3352,19 @@ document.querySelectorAll('#poll-modal [data-close="poll-modal"]').forEach(el =>
 });
 
 async function sendToCurrentConversation(payload) {
+  let ref;
   if (currentView === 'channel') {
-    await db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').add(payload);
+    ref = await db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').add(payload);
     db.collection('users').doc(myUid).update({ 'dailyStats.channelsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else if (currentView === 'dm') {
-    await db.collection('dms').doc(currentDMId).collection('messages').add(payload);
+    ref = await db.collection('dms').doc(currentDMId).collection('messages').add(payload);
     await db.collection('dms').doc(currentDMId).update({
       updatedAt: FieldValue.serverTimestamp(),
       lastMessage: { text: previewForMessage(payload), username: myProfile.username },
     });
     db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else if (currentView === 'groupdm') {
-    await db.collection('groupDMs').doc(currentGroupDMId).collection('messages').add(payload);
+    ref = await db.collection('groupDMs').doc(currentGroupDMId).collection('messages').add(payload);
     await db.collection('groupDMs').doc(currentGroupDMId).update({
       updatedAt: FieldValue.serverTimestamp(),
       lastMessage: { text: previewForMessage(payload), username: myProfile.username },
@@ -3345,6 +3377,7 @@ async function sendToCurrentConversation(payload) {
     'stats.messagesSent': FieldValue.increment(1),
     'dailyStats.messagesSent': FieldValue.increment(1),
   }).catch(() => {});
+  return ref;
 }
 
 // Posts a message on behalf of a bot (e.g. Sapphire). Deliberately doesn't
@@ -3385,13 +3418,15 @@ async function runPurgeCommand(rawCountText) {
       docs.slice(i, i + SAPPHIRE_PURGE_BATCH_SIZE).forEach(d => batch.delete(d.ref));
       await batch.commit();
     }
-    await sendToCurrentConversation({
-      text: rawCountText ? `/purge ${rawCountText}` : '/purge',
+    const purgeText = rawCountText ? `/purge ${rawCountText}` : '/purge';
+    const echoRef = await sendToCurrentConversation({
+      text: purgeText,
       uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
     });
     await postBotMessage({
       uid: SAPPHIRE_BOT_UID, username: SAPPHIRE_BOT_PROFILE.username, createdAt: FieldValue.serverTimestamp(),
       purgeResult: { count: docs.length },
+      replyTo: echoRef ? { id: echoRef.id, uid: myUid, username: myProfile.username, text: purgeText } : null,
     });
   } catch (e) { toast(e.message || 'Could not purge messages.', 'error'); }
 }
@@ -4527,6 +4562,7 @@ document.querySelectorAll('#settings-nav .nav-item[data-pane]').forEach(item => 
 });
 
 $('open-admin-panel').onclick = () => { closeModal('settings-modal'); openAdminEntry(); };
+$('open-owner-panel').onclick = () => { closeModal('settings-modal'); openAdminPanel(); };
 
 function populateSettings() {
   if (!myProfile) return;
@@ -4778,11 +4814,22 @@ async function submitAdminLogin() {
 
 let adminSelectedUser = null;
 function openAdminPanel() {
+  $('admin-panel-title').textContent = isOwner ? 'Owner Panel' : 'Admin Panel';
+  $('admin-tab-systemhub').classList.toggle('hidden', !isOwner);
+  // If System Hub was left selected from a previous (owner) session and
+  // this opener no longer qualifies, fall back to the Players tab.
+  if (!isOwner && $('admin-tab-systemhub').classList.contains('on')) {
+    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('on'));
+    document.querySelector('.admin-tab[data-admin-tab="players"]').classList.add('on');
+    document.querySelectorAll('.admin-pane').forEach(p => p.classList.add('hidden'));
+    $('admin-pane-players').classList.remove('hidden');
+  }
   openModal('admin-panel-modal');
   adminSelectedUser = null;
   renderAdminList();
 }
 $('admin-search').addEventListener('input', renderAdminList);
+if ($('system-hub-search')) $('system-hub-search').addEventListener('input', renderSystemHubList);
 
 document.querySelectorAll('.admin-tab').forEach(tab => {
   tab.onclick = () => {
@@ -4795,6 +4842,7 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
     if (tab.dataset.adminTab === 'filter') renderAdminFilterList();
     if (tab.dataset.adminTab === 'codes') renderAdminCodesList();
     if (tab.dataset.adminTab === 'conversations') renderAdminConversationsList();
+    if (tab.dataset.adminTab === 'systemhub') { systemHubSelectedUser = null; renderSystemHubList(); }
   };
 });
 
@@ -4993,7 +5041,7 @@ async function renderAdminList() {
     return `<div class="admin-row ${adminSelectedUser === u.username ? 'on' : ''}" data-u="${esc(u.username)}">
       ${avatarHTML(30, u.avatarColor, initials(u.username), null, u.avatarUrl)}
       <span class="ar-name">${esc(u.username)}</span>
-      ${u.op ? '<span class="op-tag">Admin</span>' : ''}${ban.banned ? '<span class="ban-tag">Banned</span>' : ''}
+      ${roleTag(u)}${ban.banned ? '<span class="ban-tag">Banned</span>' : ''}
     </div>`;
   }).join('') || '<div class="empty">No users found.</div>';
   list.querySelectorAll('.admin-row').forEach(row => {
@@ -5010,7 +5058,7 @@ async function renderAdminActions() {
   const u = snap.data();
   const ban = banStatus(u);
   wrap.innerHTML = `
-    <div class="admin-sel-head">${avatarHTML(44, u.avatarColor, initials(u.username), null, u.avatarUrl)}<div><div class="as-name">${esc(u.username)}${u.op ? '<span class="op-tag">Admin</span>' : ''}</div><div class="as-sub">${ban.banned ? ('Banned — ' + esc(ban.reason)) : 'Not banned'}</div></div></div>
+    <div class="admin-sel-head">${avatarHTML(44, u.avatarColor, initials(u.username), null, u.avatarUrl)}<div><div class="as-name">${esc(u.username)}${roleTag(u)}</div><div class="as-sub">${ban.banned ? ('Banned — ' + esc(ban.reason)) : 'Not banned'}</div></div></div>
     <div class="admin-block">
       <div class="ab-title">Orbs — Balance: ${u.orbs || 0}</div>
       <div class="ab-row">
@@ -5028,15 +5076,6 @@ async function renderAdminActions() {
       </div>
     </div>
     <div class="admin-block">
-      <div class="ab-title">Operator</div>
-      <div class="ab-row">
-        <span class="ab-note">${u.op ? 'This user has full admin access with no password.' : 'Not an operator.'}</span>
-        ${u.op
-          ? `<button class="btn-secondary slim" id="admin-deop-btn">Remove Admin</button>`
-          : `<button class="btn-accent-inline slim" id="admin-op-btn">Make Admin</button>`}
-      </div>
-    </div>
-    <div class="admin-block">
       <div class="ab-title">Temporary Ban</div>
       <div class="ab-row">
         <input id="admin-ban-dur" type="number" min="1" placeholder="Duration" class="fld-input">
@@ -5051,6 +5090,58 @@ async function renderAdminActions() {
         <button class="btn-danger slim" id="admin-ban-btn">Ban</button>
         ${ban.banned ? '<button class="btn-secondary slim" id="admin-unban-btn">Unban</button>' : ''}
       </div>
+    </div>`;
+
+  $('admin-orbs-grant').onclick = () => adminAdjustOrbs(u.username, 1);
+  $('admin-orbs-remove').onclick = () => adminAdjustOrbs(u.username, -1);
+  $('admin-premium-grant').onclick = () => adminAdjustPremium(u.username, 1);
+  $('admin-premium-remove').onclick = () => adminAdjustPremium(u.username, -1);
+  $('admin-ban-btn').onclick = adminBan;
+  if (ban.banned) $('admin-unban-btn').onclick = adminUnban;
+}
+
+// ---------- System Hub (owner-only: op grants, redirect, delete account) ----------
+let systemHubSelectedUser = null;
+async function renderSystemHubList() {
+  const list = $('system-hub-user-list');
+  if (!list) return;
+  const q = ($('system-hub-search').value || '').toLowerCase();
+  list.innerHTML = '<div class="empty">Loading...</div>';
+  let users = [];
+  try {
+    const snap = await db.collection('users').get();
+    snap.forEach(d => users.push(d.data()));
+  } catch (e) { list.innerHTML = '<div class="empty">Could not load users.</div>'; return; }
+  users = users.filter(u => !q || u.username.toLowerCase().includes(q)).sort((a, b) => a.username.localeCompare(b.username));
+  list.innerHTML = users.map(u => `<div class="admin-row ${systemHubSelectedUser === u.username ? 'on' : ''}" data-u="${esc(u.username)}">
+      ${avatarHTML(30, u.avatarColor, initials(u.username), null, u.avatarUrl)}
+      <span class="ar-name">${esc(u.username)}</span>
+      ${roleTag(u)}
+    </div>`).join('') || '<div class="empty">No users found.</div>';
+  list.querySelectorAll('.admin-row').forEach(row => {
+    row.onclick = () => { systemHubSelectedUser = row.dataset.u; renderSystemHubList(); renderSystemHubActions(); };
+  });
+  renderSystemHubActions();
+}
+
+async function renderSystemHubActions() {
+  const wrap = $('system-hub-actions');
+  if (!wrap) return;
+  if (!isOwner) { wrap.innerHTML = '<div class="empty">Owner access required.</div>'; return; }
+  if (!systemHubSelectedUser) { wrap.innerHTML = '<div class="empty">Select a user to manage.</div>'; return; }
+  const snap = await db.collection('users').doc(systemHubSelectedUser).get();
+  if (!snap.exists) { wrap.innerHTML = '<div class="empty">User not found.</div>'; systemHubSelectedUser = null; return; }
+  const u = snap.data();
+  wrap.innerHTML = `
+    <div class="admin-sel-head">${avatarHTML(44, u.avatarColor, initials(u.username), null, u.avatarUrl)}<div><div class="as-name">${esc(u.username)}${roleTag(u)}</div></div></div>
+    <div class="admin-block">
+      <div class="ab-title">Operator</div>
+      <div class="ab-row">
+        <span class="ab-note">${u.op ? 'This user has full admin access with no password.' : 'Not an operator.'}</span>
+        ${u.op
+          ? `<button class="btn-secondary slim" id="admin-deop-btn">Remove Admin</button>`
+          : `<button class="btn-accent-inline slim" id="admin-op-btn">Make Admin</button>`}
+      </div>
     </div>
     <div class="admin-block">
       <div class="ab-title">Redirection</div>
@@ -5064,14 +5155,8 @@ async function renderAdminActions() {
       <button class="btn-danger" id="admin-delete-btn">Delete Account</button>
     </div>`;
 
-  $('admin-orbs-grant').onclick = () => adminAdjustOrbs(u.username, 1);
-  $('admin-orbs-remove').onclick = () => adminAdjustOrbs(u.username, -1);
-  $('admin-premium-grant').onclick = () => adminAdjustPremium(u.username, 1);
-  $('admin-premium-remove').onclick = () => adminAdjustPremium(u.username, -1);
   if (u.op) $('admin-deop-btn').onclick = () => adminSetOp(u.username, false);
   else $('admin-op-btn').onclick = () => adminSetOp(u.username, true);
-  $('admin-ban-btn').onclick = adminBan;
-  if (ban.banned) $('admin-unban-btn').onclick = adminUnban;
   $('admin-redirect-btn').onclick = () => adminRedirect(u.username);
   $('admin-delete-btn').onclick = adminDelete;
 }
@@ -5106,10 +5191,11 @@ async function adminAdjustOrbs(username, sign) {
 }
 
 async function adminSetOp(username, val) {
+  if (!isOwner) { toast('Only the owner can grant or remove admin.', 'error'); return; }
   await db.collection('users').doc(username).update({ op: val });
   if (username === myUid) { isAdmin = val; applyAdminVisibility(); }
   toast(val ? `Made ${username} an admin.` : `Removed admin from ${username}.`);
-  renderAdminList();
+  renderSystemHubList();
 }
 
 async function adminBan() {
@@ -5129,6 +5215,7 @@ async function adminUnban() {
   renderAdminList(); renderAdminActions();
 }
 async function adminRedirect(username) {
+  if (!isOwner) { toast('Only the owner can redirect users.', 'error'); return; }
   const raw = ($('admin-redirect-url').value || '').trim();
   if (!raw) { toast('Enter a URL to redirect to.'); return; }
   const url = /^https?:\/\//i.test(raw) ? raw : 'https://' + raw;
@@ -5142,12 +5229,13 @@ async function adminRedirect(username) {
   } catch (e) { toast(e.message || 'Could not redirect user.', 'error'); }
 }
 async function adminDelete() {
-  if (!adminSelectedUser) return;
-  if (!confirm(`Permanently delete ${adminSelectedUser}'s account?`)) return;
-  await db.collection('users').doc(adminSelectedUser).delete();
-  toast(`Deleted ${adminSelectedUser}.`);
-  adminSelectedUser = null;
-  renderAdminList();
+  if (!isOwner) { toast('Only the owner can delete accounts.', 'error'); return; }
+  if (!systemHubSelectedUser) return;
+  if (!confirm(`Permanently delete ${systemHubSelectedUser}'s account?`)) return;
+  await db.collection('users').doc(systemHubSelectedUser).delete();
+  toast(`Deleted ${systemHubSelectedUser}.`);
+  systemHubSelectedUser = null;
+  renderSystemHubList();
 }
 
 // ============================================================

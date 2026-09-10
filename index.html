@@ -488,6 +488,7 @@
           <span class="profile-username" id="profile-username"></span>
           <span id="profile-tags"></span>
         </div>
+        <div class="profile-handle hidden" id="profile-handle"></div>
         <div class="profile-pronouns" id="profile-pronouns"></div>
         <div class="profile-section" id="profile-bio-view"></div>
         <div class="profile-section-label">Member Since</div>
@@ -496,6 +497,7 @@
 
         <div id="profile-edit-fields" class="hidden">
           <span class="remove-avatar-link hidden" id="remove-avatar-link">Remove custom avatar</span>
+          <div class="field"><label>Display Name</label><input type="text" id="edit-display-name" maxlength="32" placeholder="How your name appears to others"></div>
           <div class="field"><label>Pronouns</label><input type="text" id="edit-pronouns" maxlength="20" placeholder="e.g. they/them"></div>
           <div class="field"><label>Bio</label><textarea id="edit-bio" maxlength="190" rows="3" placeholder="Tell people about yourself"></textarea></div>
           <div class="field">
@@ -535,6 +537,7 @@
       <div class="nav-item" data-pane="pane-updates">Update Log</div>
       <div class="nav-label">&nbsp;</div>
       <div class="nav-item hidden" id="open-admin-panel">Admin Panel</div>
+      <div class="nav-item hidden" id="open-owner-panel">Owner Panel</div>
       <div class="nav-item" id="logout-btn" style="color:#f87171;">Log Out</div>
     </div>
     <div id="settings-content">
@@ -542,7 +545,7 @@
 
       <div class="settings-pane" id="pane-account">
         <h2>My Account</h2>
-        <div class="field"><label>Username</label><input type="text" id="set-username" maxlength="24"></div>
+        <div class="field"><label>Username</label><input type="text" id="set-username" maxlength="24" disabled title="Usernames can't be changed — set a Display Name from your profile instead."></div>
         <div class="field">
           <label>Avatar Color</label>
           <div class="color-swatches" id="avatar-color-swatches"></div>
@@ -661,7 +664,7 @@
 <!-- ============ MODAL: admin panel ============ -->
 <div class="modal-overlay hidden" id="admin-panel-modal">
   <div class="modal-box wide admin-box">
-    <div class="modal-header-row"><h2>Admin Panel</h2><span class="x" data-close="admin-panel-modal">✕</span></div>
+    <div class="modal-header-row"><h2 id="admin-panel-title">Admin Panel</h2><span class="x" data-close="admin-panel-modal">✕</span></div>
     <div class="admin-tabs">
       <button class="admin-tab on" data-admin-tab="players">Players</button>
       <button class="admin-tab" data-admin-tab="emojis">Emojis</button>
@@ -669,6 +672,7 @@
       <button class="admin-tab" data-admin-tab="filter">Filter</button>
       <button class="admin-tab" data-admin-tab="codes">Codes</button>
       <button class="admin-tab" data-admin-tab="conversations">Conversations</button>
+      <button class="admin-tab hidden" data-admin-tab="systemhub" id="admin-tab-systemhub">System Hub</button>
     </div>
 
     <div class="admin-pane" id="admin-pane-players">
@@ -755,6 +759,16 @@
         <small class="hint">Runs client-side the next time someone opens that conversation — there's no server schedule behind this.</small>
       </div>
       <div id="admin-conversations-list" class="admin-user-list" style="max-height:420px;"></div>
+    </div>
+
+    <div class="admin-pane hidden" id="admin-pane-systemhub">
+      <div class="admin-layout">
+        <div class="admin-left">
+          <input class="fld-input" id="system-hub-search" placeholder="Search users" autocomplete="off">
+          <div class="admin-user-list" id="system-hub-user-list"></div>
+        </div>
+        <div class="admin-right" id="system-hub-actions"><div class="empty">Select a user to manage.</div></div>
+      </div>
     </div>
   </div>
 </div>
