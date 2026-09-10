@@ -36,23 +36,24 @@
    gets cleaned up the next time someone opens it, not on a fixed
    schedule.
 
-   UPLOADS: images are uploaded to ImgBB (free, no backend needed —
-   see IMGBB_API_KEY below). Not Imgur — Imgur quietly stopped
-   issuing new API applications in late 2025, so that path no longer
-   works for new keys. Not Firebase Storage either, because as of
-   Feb 2026 Google requires every Firebase project to be on the paid
-   Blaze plan just to use Cloud Storage at all, even within the free
-   quota — a real paywall for a hobby project on the Spark plan,
-   which is almost certainly why uploads were failing originally.
-   Non-image files still go through Firebase Storage as a fallback,
-   so they'll only work once this project is on Blaze; images and
-   GIFs work either way. One honest tradeoff: unlike Imgur's
-   Client-ID, an ImgBB key is tied to your personal account and
-   isn't really meant to be public — it's embedded in script.js
-   here anyway, consistent with how the rest of this app already
-   exposes its Firebase config client-side, but worth knowing if you
-   ever want to lock this down harder. If you do want general file
-   uploads, the Storage rules they'd need are:
+   UPLOADS: images are uploaded to Cloudinary (free, no backend
+   needed — see CLOUDINARY_CLOUD_NAME / CLOUDINARY_UPLOAD_PRESET
+   below). Not Imgur — Imgur quietly stopped issuing new API
+   applications in late 2025, so that path no longer works for new
+   keys. Not ImgBB either — swapped out for being too slow. Not
+   Firebase Storage, because as of Feb 2026 Google requires every
+   Firebase project to be on the paid Blaze plan just to use Cloud
+   Storage at all, even within the free quota — a real paywall for
+   a hobby project on the Spark plan. Non-image files still go
+   through Firebase Storage as a fallback, so they'll only work
+   once this project is on Blaze; images and GIFs work either way.
+   To set up Cloudinary: make a free account at cloudinary.com,
+   grab your "Cloud name" from the dashboard home page, then go to
+   Settings > Upload > Upload presets > Add upload preset and set
+   its Signing Mode to "Unsigned" (this is what lets the browser
+   upload directly with no secret key/backend involved) — put its
+   name in CLOUDINARY_UPLOAD_PRESET below. If you do want general
+   file uploads, the Storage rules they'd need are:
 
    rules_version = '2';
    service firebase.storage {
@@ -133,8 +134,11 @@ try { storage = firebase.storage(); } catch (e) { console.warn('Storage not avai
 
 // Get a free key at https://klipy.com/developers (their API is free, no billing needed) and paste it here to enable GIF search.
 const GIF_API_KEY = 'TAGiarX1tDFDJvipS3zo71rD97RUMgnAm0iKBjLVVfJdds2DaeGxJEkcCu6GQU2Z';
-// Get a free key at https://api.imgbb.com/ (click "Get API key", sign in free, no billing needed) — this is what makes image uploads/paste work.
-const IMGBB_API_KEY = '5e07186440c75758ee7f6bd003b1fcd6';
+// Get these free at https://cloudinary.com — "Cloud name" is on your dashboard home page. For the preset,
+// go to Settings > Upload > Upload presets > Add upload preset, and set Signing Mode to "Unsigned" (required —
+// that's what lets the browser upload directly without a backend or secret key). This is what makes image uploads/paste work.
+const CLOUDINARY_CLOUD_NAME = 'a97nqv9w';
+const CLOUDINARY_UPLOAD_PRESET = 'frixion';
 
 // Shown in place of the color-and-initial avatar for anyone who hasn't uploaded a custom profile picture.
 const DEFAULT_AVATAR_URL = 'data:image/png;base64,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';
@@ -200,6 +204,10 @@ async function ensureQuestsFresh(profile) {
 // UPDATE LOG — newest first. Add a new entry after every update.
 // ============================================================
 const UPDATES = [
+  { v: '2.9', date: '2026-09-10', title: 'Switched image uploads to Cloudinary',
+    notes: [
+      'Image uploads and pasting now go through Cloudinary instead of ImgBB — ImgBB was too slow. Needs a free Cloudinary account: set CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET near the top of script.js (the preset must be created with Signing Mode set to "Unsigned").',
+    ] },
   { v: '2.8', date: '2026-09-05', title: 'Polls, server discovery, and a cleaner status dot',
     notes: [
       'Polls: hit the "+" button next to the message box (or type /poll and hit Enter) to build one — question, up to 10 answers, optional per-answer emoji, a duration, and an optional "allow multiple answers" toggle. Posted polls show live vote bars right in the chat and lock to "Final results" once they expire. They auto-delete after 7 days along with the rest of a conversation\'s messages, same as everything else, unless that conversation has auto-delete turned off.',
@@ -1834,7 +1842,7 @@ $('avatar-file-input').addEventListener('change', async (e) => {
   if (file.size > 8 * 1024 * 1024) { toast('That image is too big (8MB max).', 'error'); return; }
   toast('Uploading avatar…');
   try {
-    const url = await uploadImageToImgbb(file);
+    const url = await uploadImageToCloudinary(file);
     await db.collection('users').doc(myUid).update({ avatarUrl: url });
     toast('Avatar updated.');
     openProfileModal(myUid);
@@ -1851,7 +1859,7 @@ $('remove-avatar-link').onclick = async () => {
 $('gift-btn').onclick = () => { if (currentDMOtherUid) openGiftModal(currentDMOtherUid); };
 
 // ============================================================
-// UPLOADS (images via ImgBB, other files via Firebase Storage
+// UPLOADS (images via Cloudinary, other files via Firebase Storage
 // as a fallback — see the note at the top of this file about
 // why Storage alone isn't enough anymore)
 // ============================================================
@@ -1862,20 +1870,23 @@ function humanFileSize(bytes) {
   do { bytes /= 1024; i++; } while (bytes >= 1024 && i < units.length - 1);
   return bytes.toFixed(1) + ' ' + units[i];
 }
-async function uploadImageToImgbb(file) {
-  if (!IMGBB_API_KEY) throw new Error('Image uploads need a free ImgBB API key added in script.js (IMGBB_API_KEY).');
+async function uploadImageToCloudinary(file) {
+  if (!CLOUDINARY_CLOUD_NAME || CLOUDINARY_CLOUD_NAME === 'YOUR_CLOUD_NAME' || !CLOUDINARY_UPLOAD_PRESET || CLOUDINARY_UPLOAD_PRESET === 'YOUR_UPLOAD_PRESET') {
+    throw new Error('Image uploads need a Cloudinary cloud name and unsigned upload preset added in script.js.');
+  }
   const formData = new FormData();
-  formData.append('image', file);
-  const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+  formData.append('file', file);
+  formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
     method: 'POST',
     body: formData,
   });
   const data = await res.json();
-  if (!data.success) throw new Error((data.error && data.error.message) || 'ImgBB upload failed.');
-  return data.data.url;
+  if (!data.secure_url) throw new Error((data.error && data.error.message) || 'Cloudinary upload failed.');
+  return data.secure_url;
 }
 async function uploadFileGeneric(file, isImage) {
-  if (isImage) return uploadImageToImgbb(file);
+  if (isImage) return uploadImageToCloudinary(file);
   if (!storage) throw new Error("General file uploads need Firebase Storage on the project's Blaze plan. Images and GIFs work without it.");
   const path = `uploads/${myUid}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
   const ref = storage.ref().child(path);
@@ -2846,28 +2857,34 @@ function buildMessageLineEl(m, canDelete) {
   const line = document.createElement('div');
   line.className = 'msg-line' + (m.pinned ? ' is-pinned' : '');
   line.dataset.mid = m.id;
+
+  // The reply reference is built as its own sibling block, appended before
+  // .msg-row-wrap. Earlier attempts positioned the corner connector with a
+  // *negative* left offset to reach back into the avatar column — but
+  // #messages scrolls vertically (overflow-y: auto) with no overflow-x set,
+  // and per the CSS spec that silently forces overflow-x to "auto" too,
+  // which was clipping anything positioned left of the row's own edge
+  // clean off-screen. That's why it never showed up right. Fixed by
+  // keeping the whole reply row — icon included — inside its own normal
+  // bounds instead of reaching outside them.
+  if (m.replyTo) {
+    const rp = profileCache[m.replyTo.uid];
+    const avatarUrl = (rp && rp.avatarUrl) || DEFAULT_AVATAR_URL;
+    const replyEl = document.createElement('div');
+    replyEl.className = 'msg-reply-ref';
+    replyEl.innerHTML =
+      `<span class="reply-corner-icon"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M5 3 V8 a3 3 0 0 0 3 3 H13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>` +
+      `<img class="reply-avatar" src="${esc(avatarUrl)}" alt="">` +
+      `<span class="mrr-user">${esc(m.replyTo.username)}</span>` +
+      `<span class="mrr-text">${esc(m.replyTo.text || '')}</span>`;
+    replyEl.onclick = () => jumpToMessage(m.replyTo.id);
+    line.appendChild(replyEl);
+  }
+
   const rowWrap = document.createElement('div');
   rowWrap.className = 'msg-row-wrap' + (m.sticker ? ' is-sticker' : '');
 
-  // The reply reference shows a small avatar of who's being replied to,
-  // resolved from the profile cache at render time (so it follows their
-  // current avatar rather than freezing whatever it was when the reply was
-  // sent) — renderMessages() makes sure that uid's profile is pre-fetched.
-  // The corner connector (CSS ::before on .msg-reply-ref) is the only "this
-  // is a reply" indicator, matching Discord's actual reply row — it stands
-  // in for a separate reply-arrow icon rather than sitting alongside one.
-  const replyHTML = m.replyTo
-    ? (() => {
-        const rp = profileCache[m.replyTo.uid];
-        const avatarUrl = (rp && rp.avatarUrl) || DEFAULT_AVATAR_URL;
-        return `<div class="msg-reply-ref" data-jump="${esc(m.replyTo.id)}">` +
-          `<img class="reply-avatar" src="${esc(avatarUrl)}" alt="">` +
-          `<span class="mrr-user">${esc(m.replyTo.username)}</span>` +
-          `<span class="mrr-text">${esc(m.replyTo.text || '')}</span></div>`;
-      })()
-    : '';
-
-  const bodyHTML = replyHTML + (m.sticker
+  const bodyHTML = (m.sticker
     ? `<img class="msg-sticker" src="${esc(m.sticker.dataUrl)}" alt="${esc(m.sticker.name)}" title="${esc(m.sticker.name)}">`
     : m.poll
     ? pollHTML(m)
@@ -2892,8 +2909,6 @@ function buildMessageLineEl(m, canDelete) {
   rowWrap.querySelectorAll('.msg-att-del').forEach(btn => {
     btn.onclick = (e) => { e.stopPropagation(); deleteMessageAttachment(m.id, parseInt(btn.dataset.attidx, 10)); };
   });
-  const replyRefEl = rowWrap.querySelector('.msg-reply-ref');
-  if (replyRefEl) replyRefEl.onclick = () => jumpToMessage(replyRefEl.dataset.jump);
   if (m.poll) {
     rowWrap.querySelectorAll('.poll-option').forEach(btn => {
       btn.onclick = () => togglePollVote(m.id, parseInt(btn.dataset.idx, 10));
@@ -4815,21 +4830,22 @@ async function submitAdminLogin() {
 let adminSelectedUser = null;
 function openAdminPanel() {
   $('admin-panel-title').textContent = isOwner ? 'Owner Panel' : 'Admin Panel';
+  // Players and System Hub are two faces of the same panel — the owner sees
+  // System Hub in Players' place (it does everything Players did, plus the
+  // owner-only actions), never both at once.
+  $('admin-tab-players').classList.toggle('hidden', isOwner);
   $('admin-tab-systemhub').classList.toggle('hidden', !isOwner);
-  // If System Hub was left selected from a previous (owner) session and
-  // this opener no longer qualifies, fall back to the Players tab.
-  if (!isOwner && $('admin-tab-systemhub').classList.contains('on')) {
-    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('on'));
-    document.querySelector('.admin-tab[data-admin-tab="players"]').classList.add('on');
-    document.querySelectorAll('.admin-pane').forEach(p => p.classList.add('hidden'));
-    $('admin-pane-players').classList.remove('hidden');
-  }
+  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('on'));
+  document.querySelectorAll('.admin-pane').forEach(p => p.classList.add('hidden'));
+  const defaultTab = isOwner ? 'systemhub' : 'players';
+  document.querySelector(`.admin-tab[data-admin-tab="${defaultTab}"]`).classList.add('on');
+  $('admin-pane-' + defaultTab).classList.remove('hidden');
   openModal('admin-panel-modal');
   adminSelectedUser = null;
   renderAdminList();
 }
 $('admin-search').addEventListener('input', renderAdminList);
-if ($('system-hub-search')) $('system-hub-search').addEventListener('input', renderSystemHubList);
+if ($('system-hub-search')) $('system-hub-search').addEventListener('input', renderAdminList);
 
 document.querySelectorAll('.admin-tab').forEach(tab => {
   tab.onclick = () => {
@@ -4842,7 +4858,7 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
     if (tab.dataset.adminTab === 'filter') renderAdminFilterList();
     if (tab.dataset.adminTab === 'codes') renderAdminCodesList();
     if (tab.dataset.adminTab === 'conversations') renderAdminConversationsList();
-    if (tab.dataset.adminTab === 'systemhub') { systemHubSelectedUser = null; renderSystemHubList(); }
+    if (tab.dataset.adminTab === 'systemhub') { adminSelectedUser = null; renderAdminList(); }
   };
 });
 
@@ -5026,9 +5042,17 @@ function renderAdminFilterList() {
   });
 }
 
+// The owner's "System Hub" tab and a regular admin's "Players" tab are
+// mutually exclusive (only one is ever visible to a given person), so they
+// share the same selected-user state and just target different containers.
+function activeAdminListEl() { return isOwner ? 'system-hub-user-list' : 'admin-user-list'; }
+function activeAdminSearchEl() { return isOwner ? 'system-hub-search' : 'admin-search'; }
+function activeAdminActionsEl() { return isOwner ? 'system-hub-actions' : 'admin-actions'; }
+
 async function renderAdminList() {
-  const list = $('admin-user-list');
-  const q = ($('admin-search').value || '').toLowerCase();
+  const list = $(activeAdminListEl());
+  if (!list) return;
+  const q = ($(activeAdminSearchEl()).value || '').toLowerCase();
   list.innerHTML = '<div class="empty">Loading...</div>';
   let users = [];
   try {
@@ -5051,7 +5075,8 @@ async function renderAdminList() {
 }
 
 async function renderAdminActions() {
-  const wrap = $('admin-actions');
+  const wrap = $(activeAdminActionsEl());
+  if (!wrap) return;
   if (!adminSelectedUser) { wrap.innerHTML = '<div class="empty">Select a user to manage.</div>'; return; }
   const snap = await db.collection('users').doc(adminSelectedUser).get();
   if (!snap.exists) { wrap.innerHTML = '<div class="empty">User not found.</div>'; adminSelectedUser = null; return; }
@@ -5090,50 +5115,8 @@ async function renderAdminActions() {
         <button class="btn-danger slim" id="admin-ban-btn">Ban</button>
         ${ban.banned ? '<button class="btn-secondary slim" id="admin-unban-btn">Unban</button>' : ''}
       </div>
-    </div>`;
-
-  $('admin-orbs-grant').onclick = () => adminAdjustOrbs(u.username, 1);
-  $('admin-orbs-remove').onclick = () => adminAdjustOrbs(u.username, -1);
-  $('admin-premium-grant').onclick = () => adminAdjustPremium(u.username, 1);
-  $('admin-premium-remove').onclick = () => adminAdjustPremium(u.username, -1);
-  $('admin-ban-btn').onclick = adminBan;
-  if (ban.banned) $('admin-unban-btn').onclick = adminUnban;
-}
-
-// ---------- System Hub (owner-only: op grants, redirect, delete account) ----------
-let systemHubSelectedUser = null;
-async function renderSystemHubList() {
-  const list = $('system-hub-user-list');
-  if (!list) return;
-  const q = ($('system-hub-search').value || '').toLowerCase();
-  list.innerHTML = '<div class="empty">Loading...</div>';
-  let users = [];
-  try {
-    const snap = await db.collection('users').get();
-    snap.forEach(d => users.push(d.data()));
-  } catch (e) { list.innerHTML = '<div class="empty">Could not load users.</div>'; return; }
-  users = users.filter(u => !q || u.username.toLowerCase().includes(q)).sort((a, b) => a.username.localeCompare(b.username));
-  list.innerHTML = users.map(u => `<div class="admin-row ${systemHubSelectedUser === u.username ? 'on' : ''}" data-u="${esc(u.username)}">
-      ${avatarHTML(30, u.avatarColor, initials(u.username), null, u.avatarUrl)}
-      <span class="ar-name">${esc(u.username)}</span>
-      ${roleTag(u)}
-    </div>`).join('') || '<div class="empty">No users found.</div>';
-  list.querySelectorAll('.admin-row').forEach(row => {
-    row.onclick = () => { systemHubSelectedUser = row.dataset.u; renderSystemHubList(); renderSystemHubActions(); };
-  });
-  renderSystemHubActions();
-}
-
-async function renderSystemHubActions() {
-  const wrap = $('system-hub-actions');
-  if (!wrap) return;
-  if (!isOwner) { wrap.innerHTML = '<div class="empty">Owner access required.</div>'; return; }
-  if (!systemHubSelectedUser) { wrap.innerHTML = '<div class="empty">Select a user to manage.</div>'; return; }
-  const snap = await db.collection('users').doc(systemHubSelectedUser).get();
-  if (!snap.exists) { wrap.innerHTML = '<div class="empty">User not found.</div>'; systemHubSelectedUser = null; return; }
-  const u = snap.data();
-  wrap.innerHTML = `
-    <div class="admin-sel-head">${avatarHTML(44, u.avatarColor, initials(u.username), null, u.avatarUrl)}<div><div class="as-name">${esc(u.username)}${roleTag(u)}</div></div></div>
+    </div>
+    ${isOwner ? `
     <div class="admin-block">
       <div class="ab-title">Operator</div>
       <div class="ab-row">
@@ -5153,12 +5136,20 @@ async function renderSystemHubActions() {
     <div class="admin-block">
       <div class="ab-title">Danger Zone</div>
       <button class="btn-danger" id="admin-delete-btn">Delete Account</button>
-    </div>`;
+    </div>` : ''}`;
 
-  if (u.op) $('admin-deop-btn').onclick = () => adminSetOp(u.username, false);
-  else $('admin-op-btn').onclick = () => adminSetOp(u.username, true);
-  $('admin-redirect-btn').onclick = () => adminRedirect(u.username);
-  $('admin-delete-btn').onclick = adminDelete;
+  $('admin-orbs-grant').onclick = () => adminAdjustOrbs(u.username, 1);
+  $('admin-orbs-remove').onclick = () => adminAdjustOrbs(u.username, -1);
+  $('admin-premium-grant').onclick = () => adminAdjustPremium(u.username, 1);
+  $('admin-premium-remove').onclick = () => adminAdjustPremium(u.username, -1);
+  $('admin-ban-btn').onclick = adminBan;
+  if (ban.banned) $('admin-unban-btn').onclick = adminUnban;
+  if (isOwner) {
+    if (u.op) $('admin-deop-btn').onclick = () => adminSetOp(u.username, false);
+    else $('admin-op-btn').onclick = () => adminSetOp(u.username, true);
+    $('admin-redirect-btn').onclick = () => adminRedirect(u.username);
+    $('admin-delete-btn').onclick = adminDelete;
+  }
 }
 
 async function adminAdjustPremium(username, sign) {
@@ -5195,7 +5186,7 @@ async function adminSetOp(username, val) {
   await db.collection('users').doc(username).update({ op: val });
   if (username === myUid) { isAdmin = val; applyAdminVisibility(); }
   toast(val ? `Made ${username} an admin.` : `Removed admin from ${username}.`);
-  renderSystemHubList();
+  renderAdminList();
 }
 
 async function adminBan() {
@@ -5230,12 +5221,12 @@ async function adminRedirect(username) {
 }
 async function adminDelete() {
   if (!isOwner) { toast('Only the owner can delete accounts.', 'error'); return; }
-  if (!systemHubSelectedUser) return;
-  if (!confirm(`Permanently delete ${systemHubSelectedUser}'s account?`)) return;
-  await db.collection('users').doc(systemHubSelectedUser).delete();
-  toast(`Deleted ${systemHubSelectedUser}.`);
-  systemHubSelectedUser = null;
-  renderSystemHubList();
+  if (!adminSelectedUser) return;
+  if (!confirm(`Permanently delete ${adminSelectedUser}'s account?`)) return;
+  await db.collection('users').doc(adminSelectedUser).delete();
+  toast(`Deleted ${adminSelectedUser}.`);
+  adminSelectedUser = null;
+  renderAdminList();
 }
 
 // ============================================================
