@@ -89,6 +89,9 @@
        match /customEmojis/{id} { allow read, write: if true; }
        match /shopDecorations/{id} { allow read, write: if true; }
        match /shopThemes/{id} { allow read, write: if true; }
+       match /shopNameplates/{id} { allow read, write: if true; }
+       match /shopProfileEffects/{id} { allow read, write: if true; }
+       match /shopProfileFrames/{id} { allow read, write: if true; }
        match /stickers/{id} { allow read, write: if true; }
        match /redeemCodes/{code} { allow read, write: if true; }
        match /servers/{sid} {
@@ -210,13 +213,15 @@ function decorationById(id) { return AVATAR_DECORATIONS.find(d => d.id === id) |
 // animated) rather than image assets, same self-contained-file reasoning
 // as the avatar decorations above. See the matching classes in style.css.
 const NAMEPLATES = [];
-function nameplateById(id) { return NAMEPLATES.find(d => d.id === id) || null; }
+let customNameplates = [];
+function nameplateById(id) { return NAMEPLATES.find(d => d.id === id) || customNameplates.find(d => d.id === id) || null; }
 
 // Profile Effects — an animated overlay across the whole profile card
 // (falling particles, ambient sparkles, etc.), independent of both the
 // avatar decoration and the nameplate.
 const PROFILE_EFFECTS = [];
-function profileEffectById(id) { return PROFILE_EFFECTS.find(d => d.id === id) || null; }
+let customProfileEffects = [];
+function profileEffectById(id) { return PROFILE_EFFECTS.find(d => d.id === id) || customProfileEffects.find(d => d.id === id) || null; }
 // Shared particle markup for all profile effects — which effect it actually
 // looks like is entirely down to the CSS class on the parent overlay
 // (.effect-snowfall .particle, .effect-petals .particle, etc.), so the same
@@ -228,7 +233,8 @@ const PROFILE_EFFECT_PARTICLES_HTML = Array.from({ length: 18 }, (_, i) =>
 // Profile Frames — a decorative border treatment around the whole profile
 // card itself, separate from the avatar's own decoration.
 const PROFILE_FRAMES = [];
-function profileFrameById(id) { return PROFILE_FRAMES.find(d => d.id === id) || null; }
+let customProfileFrames = [];
+function profileFrameById(id) { return PROFILE_FRAMES.find(d => d.id === id) || customProfileFrames.find(d => d.id === id) || null; }
 
 // ---------- Shop Themes (ported from Toblox, same ids/names/colors/prices) ----------
 // Applying one dynamically overrides Frixion's own CSS custom properties
@@ -279,7 +285,7 @@ const SHOP_THEMES = [
   { id: 'solar', name: 'Solar', desc: 'Brilliant solar gold.', price: 225, bg: ['#0d0900', '#1a1200', '#352706'], accent: '#ffcc00', accent2: '#ffdd33' },
   { id: 'terminal', name: 'Terminal', desc: 'Old school CRT green.', price: 175, bg: ['#000800', '#000d00', '#063306'], accent: '#00bb00', accent2: '#00dd00' },
   { id: 'purplerain', name: 'Purple Rain', desc: 'Deep purple rainstorm.', price: 225, bg: ['#050010', '#0a0020', '#1e063a'], accent: '#7700cc', accent2: '#9922ee' },
-  { id: 'holographic', name: 'Holographic', desc: 'Shifting rainbow holo.', price: 400, bg: ['#050508', '#08080d', '#16161e'], accent: '#ff66ff', accent2: '#66ffff', anim: 'holo', featured: true },
+  { id: 'holographic', name: 'Holographic', desc: 'Shifting rainbow holo. ✨', price: 400, bg: ['#050508', '#08080d', '#16161e'], accent: '#ff66ff', accent2: '#66ffff', anim: 'holo', featured: true },
   { id: 'obsidian', name: 'Obsidian', desc: 'Black volcanic glass.', price: 200, bg: ['#000000', '#050508', '#16161e'], accent: '#6644ff', accent2: '#8866ff' },
   { id: 'aurora', name: 'Aurora', desc: 'Northern lights green glow.', price: 300, bg: ['#000d0a', '#001810', '#063530'], accent: '#00ffaa', accent2: '#33ffbb', anim: 'aurora', featured: true },
   { id: 'candy', name: 'Candy', desc: 'Sweet neon candy pink.', price: 200, bg: ['#0d0010', '#150018', '#310539'], accent: '#ff44cc', accent2: '#ff66dd' },
@@ -316,12 +322,24 @@ function applyShopTheme(themeId) {
   body.classList.add('shop-theme-active');
   const [c1, c2, c3] = t.bg;
   root.style.setProperty('--shop-theme-bg', `linear-gradient(135deg, ${c1} 0%, ${c2} 55%, ${c3} 100%)`);
-  root.style.setProperty('--bg-deepest', c1);
-  root.style.setProperty('--bg-secondary', c1);
-  root.style.setProperty('--bg-tertiary', c1);
-  root.style.setProperty('--bg-floating', c1);
-  root.style.setProperty('--bg-primary', c2);
-  root.style.setProperty('--bg-input', lightenHex(c3, 12));
+  // Panels normally paint a fully opaque color edge-to-edge with no gaps,
+  // which sits in front of the ::before gradient layer above in paint
+  // order and hid it completely — every shop theme, including the three
+  // animated ones (hue-rotating Disco, Holographic, Aurora), was
+  // rendering as a flat, static, unmoving color with zero visible
+  // gradient or animation. Tested empirically: fully opaque panels showed
+  // literally none of the gradient's third color stop, confirming it was
+  // rendering but never visible. Making the panels translucent instead of
+  // opaque lets it show through as a real, moving background wash — the
+  // flat color still dominates (so text contrast barely changes) but the
+  // gradient and its animation are now genuinely visible, which is the
+  // entire point of paying for one of these.
+  root.style.setProperty('--bg-deepest', hexToRgbaStr(c1, 0.62));
+  root.style.setProperty('--bg-secondary', hexToRgbaStr(c1, 0.62));
+  root.style.setProperty('--bg-tertiary', hexToRgbaStr(c1, 0.62));
+  root.style.setProperty('--bg-floating', hexToRgbaStr(c1, 0.75));
+  root.style.setProperty('--bg-primary', hexToRgbaStr(c2, 0.62));
+  root.style.setProperty('--bg-input', hexToRgbaStr(lightenHex(c3, 12), 0.8));
   root.style.setProperty('--accent', t.accent);
   root.style.setProperty('--accent-hover', darkenHex(t.accent, 24));
   root.style.setProperty('--accent-soft', hexToRgbaStr(t.accent, 0.15));
@@ -337,9 +355,9 @@ function applyShopTheme(themeId) {
 // stay generic instead of four near-identical copies of the same logic.
 const SHOP_CATEGORY_DEFS = {
   decorations: { label: 'Avatar Decorations', get catalog() { return [...AVATAR_DECORATIONS, ...customDecorations]; }, ownedField: 'ownedDecorations', equipField: 'equippedDecoration' },
-  nameplates: { label: 'Nameplates', catalog: NAMEPLATES, ownedField: 'ownedNameplates', equipField: 'equippedNameplate' },
-  profile_effects: { label: 'Profile Effects', catalog: PROFILE_EFFECTS, ownedField: 'ownedProfileEffects', equipField: 'equippedProfileEffect' },
-  profile_frames: { label: 'Profile Frames', catalog: PROFILE_FRAMES, ownedField: 'ownedProfileFrames', equipField: 'equippedProfileFrame' },
+  nameplates: { label: 'Nameplates', get catalog() { return [...NAMEPLATES, ...customNameplates]; }, ownedField: 'ownedNameplates', equipField: 'equippedNameplate' },
+  profile_effects: { label: 'Profile Effects', get catalog() { return [...PROFILE_EFFECTS, ...customProfileEffects]; }, ownedField: 'ownedProfileEffects', equipField: 'equippedProfileEffect' },
+  profile_frames: { label: 'Profile Frames', get catalog() { return [...PROFILE_FRAMES, ...customProfileFrames]; }, ownedField: 'ownedProfileFrames', equipField: 'equippedProfileFrame' },
   themes: { label: 'Themes', get catalog() { return [...SHOP_THEMES, ...customThemes].map(t => ({ ...t, animated: !!t.anim })); }, ownedField: 'ownedThemes', equipField: 'equippedTheme' },
 };
 const PREMIUM_DURATION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
@@ -365,156 +383,186 @@ async function ensureQuestsFresh(profile) {
 }
 
 // ============================================================
-// UPDATE LOG — newest first. Add a new entry after every update.
+// UPDATE LOG — newest first.
+//
+// READ THIS BEFORE TOUCHING THIS FILE (yes, this means you, any AI
+// coding on this project):
+//   1. Every entry below is USER-FACING. Write it the way a real app
+//      writes its patch notes — to the people who use Frixion, not to
+//      whoever is coding it. No file names, function names, env vars,
+//      "fixed a bug where the code did X" post-mortems, or anything else
+//      that only makes sense to a developer. Setup steps (an API key, an
+//      env var) go in a code comment near the relevant code, never here.
+//   2. Sound like a real product changelog — short, confident, a little
+//      excited, plain language. Lead with what's new and why it's good
+//      for the person reading it. Not a dry technical report, not an
+//      apology, not a confession.
+//   3. Add a new entry every single time you ship a change here, however
+//      small, even if the person didn't ask for one — bump the version,
+//      use today's date. Don't let this log fall behind reality.
 // ============================================================
 const UPDATES = [
-  { v: '2.9', date: '2026-09-10', title: 'Switched image uploads to Cloudinary',
+  { v: '3.0', date: '2026-09-18', title: 'Server Roles have arrived',
     notes: [
-      'Image uploads and pasting now go through Cloudinary instead of ImgBB — ImgBB was too slow. Needs a free Cloudinary account: set CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET near the top of script.js (the preset must be created with Signing Mode set to "Unsigned").',
+      'Server owners can now create custom roles — give them a name, a color, and a set of permissions (Manage Server, Manage Roles, Manage Channels, Manage Messages, Kick, Ban), then hand them out to members.',
+      'Members with a colored role now show that color on their name in chat and in the member list.',
+      'Kick and Ban are here — remove someone from a server, or remove them and block them from ever rejoining with an invite.',
+      'Fixed server settings being reachable by people who shouldn\'t have had access — only the owner or someone with Manage Server can edit a server now, and only the owner can delete one.',
+      'Members with Manage Messages can now clean up messages that aren\'t their own in a server they help run.',
+    ] },
+  { v: '2.13', date: '2026-09-15', title: 'Shop themes actually look like themes now',
+    notes: [
+      'Equipping a theme from the Shop now shows its real gradient — themes were quietly applying but the color wash behind them wasn\'t showing up, so the flashier ones (Disco, Holographic, Aurora) barely looked different from a flat color. Fixed.',
+      'Themes, avatar decorations, nameplates, profile effects, and profile frames all show a short description on their Shop card now instead of just a name and a price.',
+      'Added descriptions to every existing theme.',
+    ] },
+  { v: '2.12', date: '2026-09-13', title: 'Meet Sapphire',
+    notes: [
+      'Say hi to Sapphire, Frixion\'s own bot. You\'ll see it pop up for moderation actions like /purge.',
+      'Added /purge for admins — deletes every message before it in the current conversation, and Sapphire will confirm exactly how many messages got cleaned up.',
+      'Slash commands now autocomplete as you type, with a description for each one.',
+      '/poll now takes your question right in the command — type it, hit enter, and the poll opens pre-filled instead of you retyping it. Whatever you typed also gets sent as its own message, linked to the poll.',
+      'Replies now show a small connector and avatar linking them to the message they\'re replying to.',
+      'Added a message length limit — 500 characters, or 1,000 with Frixion Premium — with a live counter so you always know where you stand.',
+    ] },
+  { v: '2.11', date: '2026-09-12', title: 'A snappier keyboard',
+    notes: [
+      'The on-screen keyboard on mobile is noticeably faster now — letters appear the instant you touch them instead of waiting for you to lift your finger.',
+      'You can now hold down the backspace key to keep deleting instead of tapping it over and over.',
+    ] },
+  { v: '2.10', date: '2026-09-11', title: 'Faster loading, no more re-opening the same DM twice',
+    notes: [
+      'Frixion loads noticeably faster, especially on mobile.',
+      'Reopening a DM or channel you were just in no longer reloads it from scratch — it\'s instant now.',
+    ] },
+  { v: '2.9', date: '2026-09-10', title: 'Faster image uploads',
+    notes: [
+      'Image uploads and pasting got a speed boost after we moved them to a faster host behind the scenes.',
     ] },
   { v: '2.8', date: '2026-09-05', title: 'Polls, server discovery, and a cleaner status dot',
     notes: [
-      'Polls: hit the "+" button next to the message box (or type /poll and hit Enter) to build one — question, up to 10 answers, optional per-answer emoji, a duration, and an optional "allow multiple answers" toggle. Posted polls show live vote bars right in the chat and lock to "Final results" once they expire. They auto-delete after 7 days along with the rest of a conversation\'s messages, same as everything else, unless that conversation has auto-delete turned off.',
-      'Explore Servers actually works now — it lists every server that exists, with member counts, and lets you join one straight from there instead of needing an invite.',
-      'The online/idle/dnd status dot on avatars is a real cutout now instead of a colored border guessing at the background behind it, so it no longer looks slightly off depending on where an avatar shows up.',
-      'Removed the Nitro-style ad button from the server rail.',
+      'Added polls — hit the "+" next to the message box (or type /poll and hit enter) to build one: a question, up to 10 answers, optional emoji per answer, a duration, and an optional "allow multiple answers" toggle. Posted polls show live vote bars and lock to final results once they expire.',
+      'Explore Servers actually works now — browse every public server with member counts and join straight from there, no invite needed.',
+      'Cleaned up the online/idle/DND status dot on avatars so it always looks right no matter where it shows up.',
+      'Removed the ad button from the server rail.',
     ] },
-  { v: '2.7', date: '2026-09-02', title: 'Keyboard docking on more browsers',
+  { v: '2.7', date: '2026-09-02', title: 'Better keyboard support on Android',
     notes: [
-      'Told Android browsers (Chrome, Edge, Samsung Internet) to resize the page for the keyboard themselves, which is the more reliable way to handle it there.',
-      'Added a fallback re-check right when a text field is focused or unfocused, for any browser that\'s slow to report the keyboard opening.',
-      'iOS Safari, Chrome, Firefox, and Edge on iPhone/iPad were already covered, since Apple requires them all to use the same engine under the hood.',
+      'The message box now docks above the on-screen keyboard more reliably across Android browsers.',
     ] },
-  { v: '2.6', date: '2026-09-02', title: 'Toolbar overlap and keyboard docking, actually fixed',
+  { v: '2.6', date: '2026-09-02', title: 'Toolbar and keyboard fixes',
     notes: [
-      'The message toolbar redesign in 2.5 fixed images but still overlapped the username or the message above it for short text — that\'s fixed now too, it only ever sits on top of its own message.',
-      'Fixed the on-screen keyboard leaving a gap above itself instead of the composer actually docking against it.',
-      'iPads now get that same keyboard docking — they still get the roomier desktop-style layout otherwise, this was just about the keyboard.',
+      'Fixed the message hover toolbar overlapping usernames and short messages.',
+      'The message box now docks flush against the on-screen keyboard instead of leaving a gap.',
+      'iPad now gets proper keyboard docking too.',
     ] },
-  { v: '2.5', date: '2026-09-02', title: 'Hover toolbar now hugs the message, gone on mobile',
+  { v: '2.5', date: '2026-09-02', title: 'A toolbar that hugs your messages',
     notes: [
-      'The react/reply/edit/pin/delete toolbar now sits right next to the message or image it belongs to, instead of floating off on the far right of the screen for short messages.',
-      'That toolbar no longer shows up on phones at all — it was quietly overriding the long-press action sheet added in 2.3. Long-press is the only way to get message actions on mobile now, like it\'s supposed to be.',
+      'The react/reply/edit/pin/delete toolbar now sits right next to the message it belongs to instead of floating off to the side.',
+      'That toolbar is gone on phones — long-press a message for the same actions instead.',
     ] },
   { v: '2.4', date: '2026-09-02', title: 'Picker panels, gift modal, and pin highlights',
     notes: [
-      'Emoji, GIF, and sticker pickers now open on the right, right above the buttons that open them, instead of popping up over on the left.',
-      'Gift Frixion Premium now opens on the right instead of dead-center.',
-      'Pinned messages got a cleaner look — pinned text turns gold, and pinned images/GIFs/stickers get a gold border that hugs the image itself instead of a box that could crowd the username above it.',
+      'Emoji, GIF, and sticker pickers now open right above the button that opens them instead of off on the left.',
+      'The Gift Frixion Premium window now opens in a more natural spot instead of dead-center.',
+      'Pinned messages got a cleaner look — gold text for pinned messages, a gold border hugging pinned images.',
     ] },
-  { v: '2.3', date: '2026-09-02', title: 'Message editing, replies, full-emoji reactions, and a mobile action sheet',
+  { v: '2.3', date: '2026-09-02', title: 'Editing, replies, full emoji reactions, and mobile actions',
     notes: [
-      'You can now edit your own messages — an edit button appears on hover, and the message is marked "(edited)" afterward. You still can\'t edit or delete anyone else\'s message.',
-      'Added replies. Hit reply on any message and your next message carries a quoted reference to it; tapping that reference jumps to and briefly highlights the original.',
-      'Emoji reactions are no longer limited to a small fixed set — the reaction picker is now the full searchable emoji picker, including your server\'s custom emoji.',
-      'Fixed the sticker and emoji pickers being able to stay open at the same time.',
-      'On phones, holding down a message now brings up a Discord-mobile-style action sheet (quick reactions plus Edit, Reply, Copy Text, Pin, Delete) instead of relying on hover icons that don\'t really work with touch.',
+      'You can now edit your own messages — hover to find the edit button, and edited messages get a small "(edited)" tag.',
+      'Added replies — reply to any message and your next message quotes it; tap the quote to jump straight to the original.',
+      'Reactions now use the full emoji picker, including your server\'s custom emoji, instead of a small fixed set.',
+      'On phones, holding down a message brings up a proper action sheet — quick reactions, Edit, Reply, Copy Text, Pin, Delete.',
     ] },
-  { v: '2.2', date: '2026-09-01', title: 'Mobile polish, conversation previews, and cleaner themes',
+  { v: '2.2', date: '2026-09-01', title: 'Mobile polish and conversation previews',
     notes: [
-      'Phone conversations now use the full screen. The compact server rail stays with the list, instead of squeezing the chat and composer into the remaining space.',
-      'The composer now follows the visible browser viewport when the on-screen keyboard opens or closes, so it stays docked above the keyboard instead of being covered or jumping around.',
-      'Direct messages now show a short recent-message preview on phones. Existing conversations pick up their latest message too, and images, files, GIFs, and stickers get a useful label instead of a blank line.',
-      'Dark, Light, Ash, and Onyx now carry through the settings navigation, account controls, hover surfaces, and popovers as well as the main chat.',
+      'Conversations on phones now use the full screen instead of squeezing everything next to the server rail.',
+      'The message box now follows the keyboard properly when it opens and closes, instead of jumping around.',
+      'DMs now show a short preview of the latest message right in the list — including a proper label for images, files, GIFs, and stickers.',
+      'Dark, Light, Ash, and Onyx themes now apply consistently everywhere, not just the main chat view.',
     ] },
-  { v: '2.1', date: '2026-09-01', title: 'Switched to ImgBB, fixed GIF search',
+  { v: '2.1', date: '2026-09-01', title: 'Faster uploads, fixed GIF search',
     notes: [
-      'Image uploads and pasting now go through ImgBB instead of Imgur — should be faster and more reliable.',
-      'GIF search got fixed under the hood, so results actually show up now.',
-      'Online/offline status now reflects your real connection, not just whatever you last set it to.',
+      'Image uploads and pasting are faster and more reliable.',
+      'GIF search is working again.',
+      'Your online/offline status now reflects your real connection instead of whatever you last set it to.',
     ] },
-  { v: '2.0', date: '2026-08-31', title: 'Custom avatars, mobile swipe, and a bunch of bug fixes',
+  { v: '2.0', date: '2026-08-31', title: 'Custom avatars, mobile swipe gestures, and a bunch of fixes',
     notes: [
-      'You can now upload a custom profile picture instead of the color-and-initial avatar — open your profile and tap the pencil icon (uploads through Imgur, same as image uploads in chat).',
-      'Mobile now animates between the list and chat like Discord\'s app instead of just cutting between them.',
-      'Added swipe gestures for Direct Messages on mobile only: swipe right to close a DM back to the list, swipe left to reopen it. Servers still use taps, not swipes.',
-      'Fixed a real bug: channel rows only responded to clicks on the text itself, not the row around it — this was very likely why switching channels sometimes felt "frozen," you just had to click the exact word. The whole row is clickable now.',
-      'Fixed the flash when opening a server or switching conversations — loading only shows a spinner if it genuinely takes a moment, so fast loads (the common case) show the real content directly instead of flashing through a blank or loading screen first.',
-      'Direct messages now have noticeably more breathing room between them, on both mobile and desktop.',
-      'Turned off text selection across the UI (buttons, names, labels) so dragging around the app doesn\'t highlight text — message content, bios, notes, and anything you type into are still fully selectable.',
+      'Upload your own profile picture — open your profile and tap the pencil icon.',
+      'Mobile now animates between screens like a real app instead of cutting between them instantly.',
+      'Swipe gestures on mobile DMs — swipe right to close, swipe left to reopen.',
+      'Fixed channel rows only responding to clicks on the text itself — the whole row is clickable now.',
+      'Loading screens only show up when something genuinely takes a moment, so fast loads feel instant.',
+      'More breathing room between DMs in the list.',
+      'Turned off accidental text selection on buttons and labels — message content and anything you type is still fully selectable.',
     ] },
-  { v: '1.9', date: '2026-08-30', title: 'Fixed uploads, switched off Tenor',
+  { v: '1.9', date: '2026-08-30', title: 'Fixed uploads, switched GIF providers',
     notes: [
-      'GIF search is back — switched providers after the old one stopped working.',
-      'Fixed image uploads and pasting — sorry about the outage, that should be smooth again now.',
-      'Regular (non-image) file uploads might still be a little flaky here and there — still working on that one.',
+      'GIF search is back after switching providers.',
+      'Fixed image uploads and pasting.',
     ] },
   { v: '1.8', date: '2026-08-26', title: 'Real presence, uploads, GIFs, stickers, and message expiry',
     notes: [
-      'Added real online/offline presence — it now knows when your connection actually drops (closed tab, crash, lost network), not just what status you last picked.',
-      'Messages older than 7 days are now cleaned up automatically per-conversation. This runs the next time someone opens that conversation, not on a fixed schedule, since there\'s no backend cron here.',
-      'Admins can turn auto-delete on or off for any DM, group, or channel from a new Conversations tab in the Admin Panel.',
-      'You can now paste an image straight into the message box, or upload any file with the new attach button.',
-      'Added GIF search powered by Tenor.',
-      'Added stickers — admins publish them from the Admin Panel, everyone can send them from the new sticker picker.',
-      'Admins can now set a custom code instead of a random one when generating an Orb/Premium code.',
-      'The emoji shortcode list grew a lot — every common emoji you\'d expect, including :fire:, now has a :shortcode:.',
+      'Your status now reflects real presence — closing the tab or losing connection shows you as offline, not whatever you last set.',
+      'Messages older than 7 days now clean themselves up automatically per conversation, unless auto-delete is turned off for it.',
+      'You can now paste an image straight into the message box, or attach any file.',
+      'Added GIF search and stickers.',
+      'The emoji shortcode list grew a lot — nearly every emoji you\'d expect now has a :shortcode:.',
     ] },
-  { v: '1.7', date: '2026-08-25', title: 'Mobile support, gradient banners, and load-time fixes',
+  { v: '1.7', date: '2026-08-25', title: 'Mobile support and gradient banners',
     notes: [
-      'Added a phone-friendly layout: the server rail stays put and the channel/DM list slides over for the chat area, with a back button. (Tablets like iPad keep the regular desktop-style layout.)',
-      'Fixed the flash on refresh — Frixion now shows a loading splash instead of briefly flashing the login screen before signing you in.',
-      'Fixed a flash when opening a server — shows a loading spinner instead of an empty "no conversation" flicker while channels load.',
-      'Fixed a bug where switching from a channel in one server to another server could fail to select a channel at all.',
-      'Fixed a server with zero channels getting stuck instead of showing an empty state.',
+      'Added a proper phone layout with a back button between the list and chat.',
+      'Fixed a flash of the login screen on refresh before you\'re signed back in.',
       'Frixion Premium members can now set a gradient banner on their profile, not just a solid color.',
-      'Fixed the bio field on profiles rendering as an unstyled white box.',
-      'Status (Online/Idle/Do Not Disturb/Invisible) is a setting you control yourself, not automatic presence — closing the tab without logging out can leave you shown as online until you sign back in.',
+      'Fixed the bio field rendering as an unstyled box.',
     ] },
   { v: '1.6', date: '2026-08-24', title: 'Friends, profiles, group DMs, gifting, and a lot more',
     notes: [
-      'Frixion Premium now costs 1400 Orbs and lasts 3 days, and Quests reset every day instead of being one-time.',
-      'Added a real Friends system: send/accept/decline requests, and a Friends tab above your DMs.',
-      'Added Group DMs — pick friends to start a group, add more people later, and it lives right in your DM list.',
-      'Added user profiles: banner color, pronouns, bio, and a private note on other people\'s profiles that only you can see. Click any name or avatar to open one.',
-      'Added a Codes tab: buying or gifting Premium now gives you a redeemable code instead of applying instantly.',
-      'You can gift Frixion Premium to someone you\'re DMing if you have enough Orbs.',
-      'Admins can now grant or remove Frixion Premium directly, and generate Orb/Premium codes from the Admin Panel.',
-      'Servers can now have channel categories, just like Discord — collapsible groups that channels live under.',
-      'Rebuilt the message box to match Discord\'s exact layout: attach, emoji, gift, GIF and sticker icons, no more explicit Send button.',
-      'The emoji picker now has a full categorized set (Smileys, People, Animals, Food, Activities, Travel, Objects, Symbols) with jump-to-category icons.',
-      'Fixed empty channels and DMs showing a generic "no conversation selected" message — they now show a proper "Welcome to #channel" start-of-conversation state.',
+      'Added a real Friends system — send, accept, and decline requests from a new Friends tab.',
+      'Added Group DMs — start one with a few friends and add more people later.',
+      'Added user profiles — banner color, pronouns, bio, and a private note only you can see on someone else\'s profile.',
+      'Buying or gifting Premium now gives you a redeemable code instead of applying instantly — see the new Codes tab.',
+      'You can gift Frixion Premium to anyone you\'re DMing.',
+      'Servers can now have channel categories, just like Discord.',
+      'Rebuilt the message box to match Discord\'s layout — attach, emoji, gift, GIF, and sticker icons.',
+      'The emoji picker now has full categories with jump-to icons.',
     ] },
-  { v: '1.5', date: '2026-08-23', title: 'Orbs, Quests, a real subscription, and a message filter',
+  { v: '1.5', date: '2026-08-23', title: 'Orbs, Quests, and a real subscription',
     notes: [
-      'Frixion Premium is no longer free — it now costs 150 Orbs and runs as a 30-day subscription that you can renew.',
-      'Added Orbs, a currency you earn by completing Quests (send messages, react, make friends, join servers) — see the new Quests tab in Settings.',
-      'Admins can grant or remove Orbs from any player in the Admin Panel.',
-      'Renamed the appearance themes to match Discord\'s actual theme names: Dark, Light, Sync with Computer, Ash and Onyx. Ash and Onyx are the two Premium-exclusive ones.',
-      'Added a Message Filter: admins can add words in the Admin Panel, and Frixion will catch leetspeak, repeated letters, and spaced-out bypasses — but only as whole words, so normal words that happen to contain a filtered word are left alone. Caught words are replaced with [CENSORED].',
+      'Frixion Premium is now a proper 30-day subscription you can renew, instead of a one-time free unlock.',
+      'Added Orbs — earn currency by completing daily Quests (send messages, react, make friends, join servers).',
+      'Renamed the appearance themes to Dark, Light, Sync with Computer, Ash, and Onyx — Ash and Onyx are Premium-exclusive.',
+      'Added a message filter that catches leetspeak and spaced-out bypasses of blocked words, without flagging normal words that happen to contain one.',
     ] },
   { v: '1.4', date: '2026-08-22', title: 'A proper title bar, pins, and search',
     notes: [
-      'Added a desktop-app-style title bar up top, with Inbox and Help buttons and window controls.',
-      'You can now pin important messages — hover a message and pin it, then browse pins from the new pin icon in the channel header.',
-      'Added in-conversation message search.',
-      'Added a mute toggle per channel and DM.',
-      'The reaction and pin toolbar on messages now floats above the message like the real thing, instead of sitting inline.',
-      'Added an "Explore Servers" button to the server rail (discovery itself is coming soon).',
+      'Added a desktop-app-style title bar with Inbox and Help buttons.',
+      'You can now pin important messages and browse them from the channel header.',
+      'Added in-conversation search and a mute toggle per channel and DM.',
+      'Added an Explore Servers button to the server rail.',
     ] },
-  { v: '1.3', date: '2026-08-22', title: 'Visual overhaul and an Update Log',
+  { v: '1.3', date: '2026-08-22', title: 'A visual overhaul, and this Update Log',
     notes: [
-      'Added this Update Log so you can see what changed and when.',
-      'Fixed a rendering glitch where the logo on the login screen could appear clipped on first paint.',
-      'Switched the app to the Inter typeface and tightened up spacing, colors and hover states across the whole interface to feel closer to the real Discord client.',
-      'Server icons in the left rail now show a growing indicator pill on hover, not just when active.',
-      'The message box now shows "Message #channel-name" or "Message @username" depending on where you are, instead of a generic placeholder.',
+      'You\'re looking at it — added this Update Log so you can always see what\'s new.',
+      'Switched to a cleaner typeface and tightened up spacing and colors across the whole app.',
+      'The message box now shows "Message #channel-name" or "Message @username" depending on where you are.',
     ] },
   { v: '1.2', date: '2026-08-22', title: 'Reactions and custom emoji',
     notes: [
-      'You can now react to any message with an emoji — hover a message and tap the smiley.',
-      'Added an emoji picker to the message box with searchable shortcodes like :fire: and :heart:.',
-      'Admins can publish custom emoji from the Admin Panel for everyone to use with a :shortcode:.',
+      'You can now react to any message — hover it and tap the smiley.',
+      'Added a searchable emoji picker with shortcodes like :fire: and :heart:.',
+      'Admins can publish custom server emoji for everyone to use.',
     ] },
   { v: '1.1', date: '2026-08-22', title: 'Simpler sign-ups and an Admin Panel',
     notes: [
       'Accounts now just need a username and password — no email required.',
-      'Added a password-protected Admin Panel. Operators can promote or demote other admins, issue temporary bans, and delete accounts, all without re-entering the password.',
-      'Replaced every emoji used as an interface icon with clean line icons.',
+      'Added a password-protected Admin Panel for promoting admins, issuing bans, and managing accounts.',
+      'Replaced every emoji icon in the interface with clean line icons.',
     ] },
   { v: '1.0', date: '2026-08-22', title: 'Frixion launches',
     notes: [
-      'Servers, text channels, real-time chat, direct messages and a member list.',
+      'Servers, text channels, real-time chat, direct messages, and a member list.',
       'Frixion Premium: unlock 5 exclusive color themes and a badge next to your name.',
     ] },
 ];
@@ -694,6 +742,33 @@ function subscribeCustomThemes() {
     customThemes = items;
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminThemeList();
+  });
+}
+function subscribeCustomNameplates() {
+  db.collection('shopNameplates').onSnapshot(snap => {
+    const items = [];
+    snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+    customNameplates = items;
+    refreshOpenShopPanes();
+    if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminNameplateList();
+  });
+}
+function subscribeCustomProfileEffects() {
+  db.collection('shopProfileEffects').onSnapshot(snap => {
+    const items = [];
+    snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+    customProfileEffects = items;
+    refreshOpenShopPanes();
+    if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminProfileEffectList();
+  });
+}
+function subscribeCustomProfileFrames() {
+  db.collection('shopProfileFrames').onSnapshot(snap => {
+    const items = [];
+    snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+    customProfileFrames = items;
+    refreshOpenShopPanes();
+    if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminProfileFrameList();
   });
 }
 function renderMessageText(rawText) {
@@ -908,6 +983,76 @@ function ownerTag(profile) { return profile && profile.owner ? '<span class="own
 // Owner supersedes admin in the badge — a profile with both shows only Owner.
 function roleTag(profile) { return profile && profile.owner ? ownerTag(profile) : opTag(profile); }
 function botTag(profile) { return profile && profile.bot ? `<span class="bot-tag" title="Verified App">${icon('check')}<span>APP</span></span>` : ''; }
+
+// ============================================================
+// SERVER ROLES & PERMISSIONS (per-server, Discord-style)
+// A server document carries its own `roles` array and a `memberRoles`
+// map (uid -> role id list), independent of the app-wide isAdmin/isOwner
+// flags above (those are platform-level; these are scoped to one
+// server). The server's own ownerId always has every permission and
+// can't be limited by roles, matching Discord — ownership is
+// transferred, never granted through a role.
+// ============================================================
+const SERVER_PERMISSIONS = [
+  { key: 'manageServer', label: 'Manage Server', desc: 'Rename the server and change its settings.' },
+  { key: 'manageRoles', label: 'Manage Roles', desc: 'Create, edit, delete, and assign roles ranked below their own.' },
+  { key: 'manageChannels', label: 'Manage Channels', desc: 'Create, rename, and delete channels and categories.' },
+  { key: 'manageMessages', label: 'Manage Messages', desc: "Delete other members' messages in this server." },
+  { key: 'kickMembers', label: 'Kick Members', desc: 'Remove members — they can rejoin with an invite.' },
+  { key: 'banMembers', label: 'Ban Members', desc: 'Remove members and block them from rejoining.' },
+];
+// Every server has an implicit base role representing its baseline
+// permissions for anyone without a specific role — same idea as
+// Discord's @everyone. Stored as a real entry in `roles` (id: 'everyone')
+// so it can be edited and shows up in the role list, but it can't be
+// renamed, recolored away, reordered, or deleted.
+function everyoneRole(server) {
+  return (server && (server.roles || []).find(r => r.id === 'everyone'))
+    || { id: 'everyone', name: '@everyone', color: null, permissions: [], position: 0 };
+}
+function serverRoles(server) { return (server && server.roles) || []; }
+function memberRolesOf(server, uid) {
+  const ids = (server && server.memberRoles && server.memberRoles[uid]) || [];
+  return serverRoles(server).filter(r => ids.includes(r.id));
+}
+// Union of permissions from every role a member holds, plus @everyone's.
+// The owner (and platform admins/owner) bypass this entirely.
+function serverPermissionsFor(server, uid) {
+  const all = new Set(SERVER_PERMISSIONS.map(p => p.key));
+  if (!server) return new Set();
+  if (server.ownerId === uid || isAdmin || isOwner) return all;
+  const perms = new Set();
+  [everyoneRole(server), ...memberRolesOf(server, uid)].forEach(r => (r.permissions || []).forEach(p => perms.add(p)));
+  return perms;
+}
+function hasServerPerm(server, uid, perm) { return serverPermissionsFor(server, uid).has(perm); }
+// A member's highest-ranked role, used both for the color that wins on
+// their name and for what roles they're allowed to touch in the editor
+// (never their own rank or higher, unless they're the actual owner).
+function topRoleOf(server, uid) {
+  if (server && server.ownerId === uid) return { id: '__owner__', position: Infinity };
+  const roles = memberRolesOf(server, uid);
+  return roles.length ? roles.reduce((a, b) => (b.position > a.position ? b : a)) : everyoneRole(server);
+}
+function roleColorFor(server, uid) {
+  if (!server) return null;
+  const colored = memberRolesOf(server, uid).filter(r => r.color).sort((a, b) => b.position - a.position);
+  return colored.length ? colored[0].color : null;
+}
+function roleChipHTML(role) {
+  return `<span class="role-chip" style="${role.color ? `--role-color:${role.color}` : ''}">${role.color ? '<span class="role-dot"></span>' : ''}${esc(role.name)}</span>`;
+}
+// Per-channel visibility override — scoped down from Discord's full
+// allow/deny permission matrix to the one thing people actually reach
+// for most often: "only these roles can see this channel". A channel
+// with no visibleToRoles set (the default) is visible to everyone, same
+// as before this existed.
+function canViewChannel(channel, server, uid) {
+  if (!channel || !channel.visibleToRoles || !channel.visibleToRoles.length) return true;
+  if (server && (server.ownerId === uid || isAdmin || isOwner)) return true;
+  const myRoleIds = memberRolesOf(server, uid).map(r => r.id);
+  return channel.visibleToRoles.some(rid => myRoleIds.includes(rid));
+}
 // The username itself is permanent (it's the Firestore doc ID), but anyone
 // can set a separate Display Name that's shown instead almost everywhere.
 function displayNameOf(profile) { return (profile && profile.displayName) ? profile.displayName : ((profile && profile.username) || ''); }
@@ -1321,7 +1466,17 @@ function initAppForUser() {
     renderServerRail(servers);
     if (currentServerId) {
       const cur = servers.find(s => s.id === currentServerId);
-      if (cur) currentServerData = cur;
+      if (cur) {
+        currentServerData = cur;
+        // Role/permission changes (or a rename) should take effect live
+        // for anyone currently looking at this server, not just after
+        // they navigate away and back — both of these read straight from
+        // currentServerData on every render.
+        if (currentView === 'channel') {
+          renderMemberPanel(cur.members || [], cur.ownerId, cur);
+          renderChannelRows(lastChannelsList);
+        }
+      }
     }
   }, err => console.error(err));
 
@@ -1329,6 +1484,9 @@ function initAppForUser() {
   subscribeCustomEmojis();
   subscribeCustomDecorations();
   subscribeCustomThemes();
+  subscribeCustomNameplates();
+  subscribeCustomProfileEffects();
+  subscribeCustomProfileFrames();
   subscribeMessageFilter();
   subscribeStickers();
   showHomeView();
@@ -1395,6 +1553,8 @@ $('confirm-create-server').onclick = async () => {
   try {
     const ref = await db.collection('servers').add({
       name, ownerId: myUid, members: [myUid], inviteCode: genCode(), createdAt: FieldValue.serverTimestamp(),
+      roles: [{ id: 'everyone', name: '@everyone', color: null, permissions: [], position: 0 }],
+      memberRoles: {}, bannedUsers: [],
     });
     await ref.collection('channels').add({ name: 'general', categoryId: null, autoDelete: true, createdAt: FieldValue.serverTimestamp() });
     $('new-server-name').value = '';
@@ -1412,7 +1572,9 @@ $('confirm-join-server').onclick = async () => {
     const q = await db.collection('servers').where('inviteCode', '==', code).limit(1).get();
     if (q.empty) { $('join-server-error').textContent = 'Invalid invite code.'; return; }
     const doc = q.docs[0];
-    if (!(doc.data().members || []).includes(myUid)) {
+    const data = doc.data();
+    if ((data.bannedUsers || []).includes(myUid)) { $('join-server-error').textContent = 'You are banned from this server.'; return; }
+    if (!(data.members || []).includes(myUid)) {
       await doc.ref.update({ members: FieldValue.arrayUnion(myUid) });
       db.collection('users').doc(myUid).update({ 'stats.serversCount': FieldValue.increment(1) }).catch(() => {});
     }
@@ -1779,7 +1941,7 @@ function renderDMRows() {
     const row = document.createElement('div');
     const nameplate = nameplateById(p.equippedNameplate);
     row.className = 'dm-row' + (currentDMId === dm.id ? ' active' : '') + (nameplate ? ' has-nameplate' : '');
-    row.innerHTML = (nameplate ? `<div class="dm-row-nameplate-bg ${nameplate.cssClass}"></div>` : '') +
+    row.innerHTML = (nameplate ? `<div class="dm-row-nameplate-bg${nameplate.cssClass ? ' ' + nameplate.cssClass : ''}${nameplate.animated ? ' nameplate-shimmer' : ''}" style="${nameplate.colors ? `background:linear-gradient(135deg, ${esc(nameplate.colors[0])}, ${esc(nameplate.colors[1])});` : ''}"></div>` : '') +
       avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(otherUid), p.avatarUrl, p.equippedDecoration) +
       `<div class="dm-copy"><span class="dm-name">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div>`;
     row.onclick = () => selectDM(dm.id, otherUid);
@@ -2011,15 +2173,24 @@ async function openProfileModal(username) {
   $('profile-avatar').classList.add('has-image');
   $('profile-avatar').innerHTML = `<img src="${esc(p.avatarUrl || DEFAULT_AVATAR_URL)}" alt="">` + decorationOverlayHTML(p.equippedDecoration, 80);
   // Nameplate, profile effect, and profile frame are three independent
-  // cosmetic slots — each just toggles a CSS class on/off, since all three
-  // are pure CSS (gradients, particles, borders) rather than image assets.
+  // cosmetic slots. Built-in ones (none currently — the whole shop catalog
+  // is user-generated now) use a cssClass; admin-created ones carry their
+  // own colors directly, applied as inline styles since a fresh CSS class
+  // can't be generated at runtime for whatever color an admin picks.
   const nameplate = nameplateById(p.equippedNameplate);
-  $('profile-nameplate-bg').className = 'profile-nameplate-bg' + (nameplate ? ' ' + nameplate.cssClass : '');
+  const nameplateBg = $('profile-nameplate-bg');
+  nameplateBg.className = 'profile-nameplate-bg' + (nameplate && nameplate.cssClass ? ' ' + nameplate.cssClass : '') + (nameplate && nameplate.animated ? ' nameplate-shimmer' : '');
+  nameplateBg.style.background = (nameplate && nameplate.colors) ? `linear-gradient(135deg, ${nameplate.colors[0]}, ${nameplate.colors[1]})` : '';
   const effect = profileEffectById(p.equippedProfileEffect);
-  $('profile-effect-overlay').className = 'profile-effect-overlay' + (effect ? ' ' + effect.cssClass : '');
-  $('profile-effect-overlay').innerHTML = effect ? PROFILE_EFFECT_PARTICLES_HTML : '';
+  const effectOverlay = $('profile-effect-overlay');
+  effectOverlay.className = 'profile-effect-overlay' + (effect && effect.cssClass ? ' ' + effect.cssClass : '') + (effect && effect.style ? ' effect-style-' + effect.style : '');
+  effectOverlay.style.setProperty('--custom-particle-color', (effect && effect.color) || '');
+  effectOverlay.innerHTML = effect ? PROFILE_EFFECT_PARTICLES_HTML : '';
   const frame = profileFrameById(p.equippedProfileFrame);
-  $('profile-modal-box').className = 'modal-box profile-box' + (frame ? ' ' + frame.cssClass : '');
+  const modalBox = $('profile-modal-box');
+  modalBox.className = 'modal-box profile-box' + (frame && frame.cssClass ? ' ' + frame.cssClass : '') + (frame && frame.glow ? ' frame-custom-glow' : '');
+  modalBox.style.border = (frame && frame.color) ? `3px solid ${frame.color}` : '';
+  modalBox.style.setProperty('--custom-frame-color', (frame && frame.color) || '');
   $('profile-username').innerHTML = esc(displayNameOf(p)) + premiumStar(p) + roleTag(p) + botTag(p);
   const showHandle = p.displayName && p.displayName !== p.username;
   $('profile-handle').textContent = showHandle ? '@' + p.username : '';
@@ -2517,28 +2688,34 @@ async function selectServer(server) {
   scheduleLoadingView();
   setMobilePane('list');
   subscribeChannels(server.id);
-  renderMemberPanel(server.members || [], server.ownerId);
+  renderMemberPanel(server.members || [], server.ownerId, server);
 }
 
 $('side-header').onclick = () => {
   if (!currentServerId || !currentServerData) return;
-  if (currentServerData.ownerId !== myUid && !isAdmin) { toast('Only the server owner can edit this server.'); return; }
+  if (!hasServerPerm(currentServerData, myUid, 'manageServer')) { toast('You need Manage Server permission to do that.'); return; }
   $('server-settings-title').textContent = currentServerData.name + ' Settings';
   $('edit-server-name').value = currentServerData.name;
   $('server-invite-display').value = currentServerData.inviteCode;
+  openServerSettingsTab('overview');
   openModal('server-settings-modal');
 };
 
 $('save-server-btn').onclick = async () => {
   const name = $('edit-server-name').value.trim();
-  if (!name || !currentServerId) return;
+  if (!name || !currentServerId || !currentServerData) return;
+  if (!hasServerPerm(currentServerData, myUid, 'manageServer')) { toast('You need Manage Server permission to do that.', 'error'); return; }
   await db.collection('servers').doc(currentServerId).update({ name });
   closeModal('server-settings-modal');
   toast('Server updated.');
 };
 
 $('delete-server-btn').onclick = async () => {
-  if (!currentServerId) return;
+  if (!currentServerId || !currentServerData) return;
+  // Deleting (as opposed to editing) is reserved for the actual owner,
+  // same as Discord — Manage Server lets you run the place day-to-day,
+  // but it doesn't let you erase it out from under its owner.
+  if (currentServerData.ownerId !== myUid && !isAdmin && !isOwner) { toast('Only the server owner can delete this server.', 'error'); return; }
   if (!confirm('Delete this server permanently? This cannot be undone.')) return;
   const sid = currentServerId;
   try {
@@ -2554,6 +2731,250 @@ $('delete-server-btn').onclick = async () => {
     toast('Server deleted.');
   } catch (e) { toast('Failed to delete server: ' + e.message, 'error'); }
 };
+
+// ============================================================
+// SERVER SETTINGS: ROLES TAB
+// ============================================================
+document.querySelectorAll('.ss-tab').forEach(btn => {
+  btn.onclick = () => openServerSettingsTab(btn.dataset.ssTab);
+});
+function openServerSettingsTab(tab) {
+  document.querySelectorAll('.ss-tab').forEach(t => t.classList.toggle('on', t.dataset.ssTab === tab));
+  $('ss-pane-overview').classList.toggle('hidden', tab !== 'overview');
+  $('ss-pane-roles').classList.toggle('hidden', tab !== 'roles');
+  if (tab === 'roles') { selectedRoleId = null; renderServerRoleList(); renderRoleEditor(null); }
+}
+
+let selectedRoleId = null;
+function renderServerRoleList() {
+  if (!currentServerData) return;
+  const canManageRoles = hasServerPerm(currentServerData, myUid, 'manageRoles');
+  const roles = serverRoles(currentServerData).slice().sort((a, b) => b.position - a.position);
+  const wrap = $('server-role-list');
+  wrap.innerHTML = roles.map((r, i) => `
+    <div class="role-list-row${r.id === selectedRoleId ? ' on' : ''}" data-id="${esc(r.id)}" ${canManageRoles && r.id !== 'everyone' ? 'draggable="true"' : ''}>
+      ${roleChipHTML(r)}
+      ${canManageRoles && r.id !== 'everyone' ? `<span class="role-reorder-btns">
+        <span class="role-move-btn" data-dir="up"${i === 0 ? ' style="visibility:hidden"' : ''}>▲</span>
+        <span class="role-move-btn" data-dir="down"${(i === roles.length - 1 || roles[i + 1].id === 'everyone') ? ' style="visibility:hidden"' : ''}>▼</span>
+      </span>` : ''}
+    </div>`).join('');
+  wrap.querySelectorAll('.role-list-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.role-move-btn')) return;
+      selectedRoleId = row.dataset.id;
+      renderServerRoleList();
+      renderRoleEditor(selectedRoleId);
+    });
+  });
+  wrap.querySelectorAll('.role-move-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); moveRole(btn.closest('.role-list-row').dataset.id, btn.dataset.dir); };
+  });
+  // Drag-and-drop reordering, on top of the up/down buttons above (which
+  // stay as the reliable fallback — touch devices and anyone who'd
+  // rather not drag can still use those).
+  if (canManageRoles) {
+    let dragRoleId = null;
+    wrap.querySelectorAll('.role-list-row[draggable]').forEach(row => {
+      row.addEventListener('dragstart', () => { dragRoleId = row.dataset.id; row.classList.add('dragging'); });
+      row.addEventListener('dragend', () => row.classList.remove('dragging'));
+      row.addEventListener('dragover', (e) => { e.preventDefault(); row.classList.add('drag-over'); });
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        if (dragRoleId && dragRoleId !== row.dataset.id) reorderRolesByDrag(dragRoleId, row.dataset.id);
+      });
+    });
+  }
+  if (selectedRoleId && !roles.find(r => r.id === selectedRoleId)) { selectedRoleId = null; renderRoleEditor(null); }
+}
+
+async function moveRole(roleId, dir) {
+  if (!currentServerData) return;
+  const roles = serverRoles(currentServerData).slice().sort((a, b) => b.position - a.position);
+  const idx = roles.findIndex(r => r.id === roleId);
+  const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+  if (idx < 0 || swapIdx < 0 || swapIdx >= roles.length || roles[swapIdx].id === 'everyone') return;
+  const a = roles[idx], b = roles[swapIdx];
+  const newRoles = serverRoles(currentServerData).map(r => {
+    if (r.id === a.id) return { ...r, position: b.position };
+    if (r.id === b.id) return { ...r, position: a.position };
+    return r;
+  });
+  try { await db.collection('servers').doc(currentServerId).update({ roles: newRoles }); }
+  catch (e) { toast(e.message || 'Could not reorder roles.', 'error'); }
+}
+
+// Dropped `draggedId` onto `targetId`'s row — reinserts it at that spot
+// and renumbers every non-@everyone role's position sequentially so the
+// new visual order is unambiguous, rather than trying to average/insert
+// between two position numbers.
+async function reorderRolesByDrag(draggedId, targetId) {
+  if (!currentServerData) return;
+  const ordered = serverRoles(currentServerData).slice().sort((a, b) => b.position - a.position);
+  const rest = ordered.filter(r => r.id !== 'everyone');
+  const fromIdx = rest.findIndex(r => r.id === draggedId);
+  const toIdx = rest.findIndex(r => r.id === targetId);
+  if (fromIdx < 0 || toIdx < 0) return;
+  const [moved] = rest.splice(fromIdx, 1);
+  rest.splice(toIdx, 0, moved);
+  const newRoles = serverRoles(currentServerData).map(r => {
+    if (r.id === 'everyone') return r;
+    const idx = rest.findIndex(x => x.id === r.id);
+    return { ...r, position: rest.length - idx };
+  });
+  try { await db.collection('servers').doc(currentServerId).update({ roles: newRoles }); }
+  catch (e) { toast(e.message || 'Could not reorder roles.', 'error'); }
+}
+
+function renderRoleEditor(roleId) {
+  const col = $('role-editor-col');
+  const role = roleId && currentServerData ? serverRoles(currentServerData).find(r => r.id === roleId) : null;
+  if (!role) { col.innerHTML = '<div class="empty">Select a role to edit, or create a new one.</div>'; return; }
+  const isEveryone = role.id === 'everyone';
+  const myTop = topRoleOf(currentServerData, myUid);
+  // Manage Roles only lets you touch roles ranked strictly below your own
+  // highest role — the actual owner (or a platform admin) has no such
+  // ceiling, matching Discord's "can't edit a role at or above your own".
+  const canEditThis = currentServerData.ownerId === myUid || isAdmin || isOwner ||
+    (hasServerPerm(currentServerData, myUid, 'manageRoles') && myTop.position > role.position);
+  col.innerHTML = `
+    ${!canEditThis ? '<div class="role-editor-locked">You can only manage roles ranked below your own.</div>' : ''}
+    <div class="field"><label>Role Name</label><input type="text" id="role-name-input" maxlength="30" value="${esc(role.name)}" ${isEveryone ? 'disabled' : ''}></div>
+    <label class="np-check"><input type="checkbox" id="role-has-color-input" ${role.color ? 'checked' : ''}> Custom color</label>
+    <div class="field"><label>Role Color</label><input type="color" id="role-color-input" value="${esc(role.color || '#99aab5')}" ${role.color ? '' : 'disabled'}></div>
+    ${!isEveryone ? `<label class="np-check"><input type="checkbox" id="role-hoist-input" ${role.hoist ? 'checked' : ''}> Display separately in the member list</label>` : ''}
+    <div class="field"><label>Permissions</label>
+      <div class="role-perm-list">
+        ${SERVER_PERMISSIONS.map(p => `
+          <label class="role-perm-row">
+            <input type="checkbox" data-perm="${p.key}" ${(role.permissions || []).includes(p.key) ? 'checked' : ''}>
+            <span><b>${esc(p.label)}</b><small>${esc(p.desc)}</small></span>
+          </label>`).join('')}
+      </div>
+    </div>
+    <div class="modal-actions">
+      ${!isEveryone ? '<button class="btn-danger" id="delete-role-btn">Delete Role</button>' : ''}
+      <button class="btn-accent-inline" id="save-role-btn">Save Role</button>
+    </div>`;
+  $('role-has-color-input').onchange = (e) => { $('role-color-input').disabled = !e.target.checked; };
+  if (!canEditThis) { col.querySelectorAll('input, button').forEach(el => el.disabled = true); return; }
+  $('save-role-btn').onclick = async () => {
+    const name = isEveryone ? '@everyone' : ($('role-name-input').value || '').trim();
+    if (!name) { toast('Enter a role name.'); return; }
+    const color = $('role-has-color-input').checked ? $('role-color-input').value : null;
+    const hoist = isEveryone ? false : $('role-hoist-input').checked;
+    const permissions = [...col.querySelectorAll('[data-perm]:checked')].map(el => el.dataset.perm);
+    const roles = serverRoles(currentServerData).map(r => r.id === roleId ? { ...r, name, color, hoist, permissions } : r);
+    try { await db.collection('servers').doc(currentServerId).update({ roles }); toast('Role saved.'); }
+    catch (e) { toast(e.message || 'Could not save role.', 'error'); }
+  };
+  if (!isEveryone) {
+    $('delete-role-btn').onclick = async () => {
+      if (!confirm(`Delete the "${role.name}" role? Members holding it will lose its permissions and color.`)) return;
+      const roles = serverRoles(currentServerData).filter(r => r.id !== roleId);
+      const memberRoles = { ...(currentServerData.memberRoles || {}) };
+      Object.keys(memberRoles).forEach(uid => { memberRoles[uid] = (memberRoles[uid] || []).filter(id => id !== roleId); });
+      try {
+        await db.collection('servers').doc(currentServerId).update({ roles, memberRoles });
+        selectedRoleId = null;
+        toast('Role deleted.');
+      } catch (e) { toast(e.message || 'Could not delete role.', 'error'); }
+    };
+  }
+}
+
+$('create-role-btn').onclick = async () => {
+  if (!currentServerData) return;
+  if (!hasServerPerm(currentServerData, myUid, 'manageRoles')) { toast('You need Manage Roles permission to do that.'); return; }
+  const roles = serverRoles(currentServerData);
+  const maxPos = roles.reduce((m, r) => Math.max(m, r.position), 0);
+  const newRole = {
+    id: 'role_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    name: 'New Role', color: '#99aab5', permissions: [], position: maxPos + 1,
+  };
+  try {
+    await db.collection('servers').doc(currentServerId).update({ roles: [...roles, newRole] });
+    selectedRoleId = newRole.id;
+    renderServerRoleList();
+    renderRoleEditor(newRole.id);
+  } catch (e) { toast(e.message || 'Could not create role.', 'error'); }
+};
+
+// ============================================================
+// MANAGE MEMBER MODAL (assign roles, kick, ban)
+// ============================================================
+function openManageMemberModal(uid, server) {
+  const p = profileCache[uid] || { username: uid };
+  $('manage-member-title').textContent = 'Manage ' + displayNameOf(p);
+  const myTop = topRoleOf(server, myUid);
+  const canManageRoles = hasServerPerm(server, myUid, 'manageRoles');
+  const canKick = hasServerPerm(server, myUid, 'kickMembers');
+  const canBan = hasServerPerm(server, myUid, 'banMembers');
+  const assignedIds = (server.memberRoles && server.memberRoles[uid]) || [];
+  const assignableRoles = serverRoles(server).filter(r => r.id !== 'everyone').sort((a, b) => b.position - a.position);
+  const body = $('manage-member-body');
+  body.innerHTML = `
+    ${canManageRoles ? `
+      <div class="field"><label>Roles</label>
+        <div class="role-assign-list">
+          ${assignableRoles.map(r => {
+            // Can't grant or revoke a role ranked at or above your own —
+            // shown but locked, rather than hidden, so it's clear why.
+            const locked = r.position >= myTop.position;
+            return `<label class="role-perm-row${locked ? ' locked' : ''}">
+              <input type="checkbox" data-role-id="${esc(r.id)}" ${assignedIds.includes(r.id) ? 'checked' : ''} ${locked ? 'disabled' : ''}>
+              ${roleChipHTML(r)}
+            </label>`;
+          }).join('') || '<div class="empty">No roles yet — create one in Server Settings → Roles.</div>'}
+        </div>
+      </div>` : ''}
+    <div class="modal-actions">
+      ${canKick ? '<button class="btn-secondary" id="mm-kick-btn">Kick</button>' : ''}
+      ${canBan ? '<button class="btn-danger" id="mm-ban-btn">Ban</button>' : ''}
+      ${canManageRoles ? '<button class="btn-accent-inline" id="mm-save-roles-btn">Save Roles</button>' : ''}
+    </div>`;
+  if (canManageRoles) {
+    $('mm-save-roles-btn').onclick = async () => {
+      const checked = [...body.querySelectorAll('[data-role-id]:checked')].map(el => el.dataset.roleId);
+      // Roles at/above your own rank that they already held stay put —
+      // this dialog can't touch those either way, so it shouldn't be able
+      // to silently strip them.
+      const untouchable = assignedIds.filter(id => {
+        const r = serverRoles(server).find(x => x.id === id);
+        return r && r.position >= myTop.position;
+      });
+      const finalRoles = [...new Set([...checked, ...untouchable])];
+      try {
+        await db.collection('servers').doc(server.id).update({ memberRoles: { ...(server.memberRoles || {}), [uid]: finalRoles } });
+        toast('Roles updated.');
+        closeModal('manage-member-modal');
+      } catch (e) { toast(e.message || 'Could not update roles.', 'error'); }
+    };
+  }
+  if (canKick) {
+    $('mm-kick-btn').onclick = async () => {
+      if (!confirm(`Kick ${displayNameOf(p)} from the server?`)) return;
+      try {
+        await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayRemove(uid) });
+        toast('Member kicked.');
+        closeModal('manage-member-modal');
+      } catch (e) { toast(e.message || 'Could not kick member.', 'error'); }
+    };
+  }
+  if (canBan) {
+    $('mm-ban-btn').onclick = async () => {
+      if (!confirm(`Ban ${displayNameOf(p)} from the server? They won't be able to rejoin with an invite.`)) return;
+      try {
+        await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayRemove(uid), bannedUsers: FieldValue.arrayUnion(uid) });
+        toast('Member banned.');
+        closeModal('manage-member-modal');
+      } catch (e) { toast(e.message || 'Could not ban member.', 'error'); }
+    };
+  }
+  openModal('manage-member-modal');
+}
 
 let lastCategoriesList = [];
 let collapsedCategories = {};
@@ -2587,29 +3008,40 @@ function populateCategorySelect() {
 function renderChannelRows(channels) {
   const wrap = $('channel-rows');
   wrap.innerHTML = '';
-  const canManage = currentServerData && (currentServerData.ownerId === myUid || isAdmin);
+  const canManage = currentServerData && hasServerPerm(currentServerData, myUid, 'manageChannels');
+  // Non-managers never even see a restricted channel in the list — for
+  // anyone who can manage channels, restricted ones still show (with a
+  // lock) so they can actually administer them.
+  const visible = canManage ? channels : channels.filter(c => canViewChannel(c, currentServerData, myUid));
 
   const buildChannelRow = (c) => {
+    const restricted = c.visibleToRoles && c.visibleToRoles.length;
     const row = document.createElement('div');
     row.className = 'channel-row' + (currentChannelId === c.id ? ' active' : '');
-    row.innerHTML = `<span class="hash">#</span><span class="cname">${esc(c.name)}</span>` + (canManage ? `<span class="del-channel" title="Delete channel">${icon('trash')}</span>` : '');
+    row.innerHTML = `<span class="hash">#</span><span class="cname">${esc(c.name)}</span>` +
+      (restricted ? `<span class="i channel-lock-icon" title="Restricted to certain roles">${icon('shield')}</span>` : '') +
+      (canManage ? `<span class="channel-perms-btn" title="Channel Permissions">${icon('gear')}</span><span class="del-channel" title="Delete channel">${icon('trash')}</span>` : '');
     row.onclick = () => selectChannel(c);
-    if (canManage) row.querySelector('.del-channel').onclick = async (e) => {
-      e.stopPropagation();
-      if (!confirm(`Delete #${c.name}?`)) return;
-      const msgSnap = await db.collection('servers').doc(currentServerId).collection('channels').doc(c.id).collection('messages').get();
-      await Promise.all(msgSnap.docs.map(m => m.ref.delete()));
-      await db.collection('servers').doc(currentServerId).collection('channels').doc(c.id).delete();
-      if (currentChannelId === c.id) { currentChannelId = null; showWelcome(); }
-    };
+    if (canManage) {
+      row.querySelector('.channel-perms-btn').onclick = (e) => { e.stopPropagation(); openChannelPermsModal(c); };
+      row.querySelector('.del-channel').onclick = async (e) => {
+        e.stopPropagation();
+        if (!confirm(`Delete #${c.name}?`)) return;
+        const msgSnap = await db.collection('servers').doc(currentServerId).collection('channels').doc(c.id).collection('messages').get();
+        await Promise.all(msgSnap.docs.map(m => m.ref.delete()));
+        await db.collection('servers').doc(currentServerId).collection('channels').doc(c.id).delete();
+        if (currentChannelId === c.id) { currentChannelId = null; showWelcome(); }
+      };
+    }
     return row;
   };
 
-  const uncategorized = channels.filter(c => !c.categoryId);
+  const uncategorized = visible.filter(c => !c.categoryId);
   uncategorized.forEach(c => wrap.appendChild(buildChannelRow(c)));
 
   lastCategoriesList.forEach(cat => {
-    const inCat = channels.filter(c => c.categoryId === cat.id);
+    const inCat = visible.filter(c => c.categoryId === cat.id);
+    if (!inCat.length) return;
     const header = document.createElement('div');
     const collapsed = !!collapsedCategories[cat.id];
     header.className = 'category-header';
@@ -2620,9 +3052,35 @@ function renderChannelRows(channels) {
   });
 }
 
+// ---- channel permissions (visibility by role) ----
+function openChannelPermsModal(channel) {
+  if (!currentServerData) return;
+  const roles = serverRoles(currentServerData).filter(r => r.id !== 'everyone').sort((a, b) => b.position - a.position);
+  const restrictedTo = channel.visibleToRoles || [];
+  $('channel-perms-title').textContent = 'Permissions — #' + channel.name;
+  $('channel-perms-body').innerHTML = `
+    <p class="desc">Leave everything unchecked for a channel everyone can see. Check one or more roles to hide #${esc(channel.name)} from everyone except those roles (and the server owner).</p>
+    <div class="role-assign-list">
+      ${roles.map(r => `<label class="role-perm-row">
+        <input type="checkbox" data-role-id="${esc(r.id)}" ${restrictedTo.includes(r.id) ? 'checked' : ''}>
+        ${roleChipHTML(r)}
+      </label>`).join('') || '<div class="empty">No roles yet — create one in Server Settings → Roles.</div>'}
+    </div>
+    <div class="modal-actions"><button class="btn-accent-inline" id="save-channel-perms-btn">Save</button></div>`;
+  $('save-channel-perms-btn').onclick = async () => {
+    const checked = [...$('channel-perms-body').querySelectorAll('[data-role-id]:checked')].map(el => el.dataset.roleId);
+    try {
+      await db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id).update({ visibleToRoles: checked });
+      toast('Channel permissions saved.');
+      closeModal('channel-perms-modal');
+    } catch (e) { toast(e.message || 'Could not save channel permissions.', 'error'); }
+  };
+  openModal('channel-perms-modal');
+}
+
 $('channel-add-btn').onclick = () => {
   if (!currentServerId) return;
-  if (currentServerData.ownerId !== myUid && !isAdmin) { toast('Only the server owner can create channels.'); return; }
+  if (!hasServerPerm(currentServerData, myUid, 'manageChannels')) { toast('You need Manage Channels permission to do that.'); return; }
   $('new-channel-name').value = '';
   populateCategorySelect();
   openModal('create-channel-modal');
@@ -2638,7 +3096,7 @@ $('confirm-create-channel').onclick = async () => {
 
 $('category-add-btn').onclick = () => {
   if (!currentServerId) return;
-  if (currentServerData.ownerId !== myUid && !isAdmin) { toast('Only the server owner can create categories.'); return; }
+  if (!hasServerPerm(currentServerData, myUid, 'manageChannels')) { toast('You need Manage Channels permission to do that.'); return; }
   $('new-category-name').value = '';
   openModal('create-category-modal');
 };
@@ -2650,6 +3108,7 @@ $('confirm-create-category').onclick = async () => {
 };
 
 function selectChannel(channel) {
+  if (!canViewChannel(channel, currentServerData, myUid)) { toast("You don't have access to that channel."); return; }
   clearReplyTarget();
   clearMyTypingDoc();
   currentChannelId = channel.id;
@@ -2915,27 +3374,58 @@ $('members-toggle').onclick = () => {
   $('app').classList.toggle('member-list-open', memberListManualOverride);
 };
 
-async function renderMemberPanel(members, ownerId) {
+async function renderMemberPanel(members, ownerId, server) {
   members = members || [];
   await Promise.all(members.map(uid => getProfile(uid)));
+  const canManageMembers = server && (hasServerPerm(server, myUid, 'manageRoles') || hasServerPerm(server, myUid, 'kickMembers') || hasServerPerm(server, myUid, 'banMembers'));
   const online = [], offline = [];
   members.forEach(uid => {
     const p = profileCache[uid] || { username: uid, avatarColor: '#5865f2' };
     const disp = computeDisplayStatus(uid);
     (disp !== 'offline' ? online : offline).push({ uid, p, disp });
   });
-  $('online-count').textContent = online.length;
-  $('offline-count').textContent = offline.length;
-  const renderRows = (arr) => arr.map(({ uid, p, disp }) => `
+  const renderRow = ({ uid, p, disp }) => {
+    const roleColor = server ? roleColorFor(server, uid) : null;
+    const topRole = server ? memberRolesOf(server, uid).sort((a, b) => b.position - a.position)[0] : null;
+    // Anyone with any member-management permission gets a gear on every
+    // row except their own and the owner's — you can't kick/ban/re-role
+    // someone who outranks or equals you, so it's hidden rather than
+    // shown-then-refused.
+    const showGear = canManageMembers && uid !== myUid && uid !== ownerId;
+    return `
     <div class="member-row" data-u="${esc(uid)}">
       ${avatarHTML(32, p.avatarColor, initials(p.username), disp, p.avatarUrl, p.equippedDecoration)}
-      <span class="mname${disp !== 'offline' ? ' online-name' : ''}">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}</span>
-    </div>`).join('');
-  $('member-rows-online').innerHTML = renderRows(online);
-  $('member-rows-offline').innerHTML = renderRows(offline);
-  $('member-panel').querySelectorAll('.member-row[data-u]').forEach(row => {
-    row.onclick = () => openProfileModal(row.dataset.u);
+      <span class="mname${disp !== 'offline' ? ' online-name' : ''}"${roleColor ? ` style="color:${esc(roleColor)}"` : ''}>${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}</span>
+      ${topRole && topRole.color ? roleChipHTML(topRole) : ''}
+      ${showGear ? `<span class="member-manage-btn" title="Manage Member" data-manage-uid="${esc(uid)}">${icon('gear')}</span>` : ''}
+    </div>`;
+  };
+  // Roles flagged "Display separately" (hoisted, same idea as Discord)
+  // get their own section pulled out of the plain Online list, ranked
+  // highest first. Everyone else online falls into a plain "Online"
+  // bucket, same as before.
+  const hoisted = server ? serverRoles(server).filter(r => r.hoist && r.id !== 'everyone').sort((a, b) => b.position - a.position) : [];
+  const claimed = new Set();
+  const sections = [];
+  hoisted.forEach(role => {
+    const rows = online.filter(m => !claimed.has(m.uid) && memberRolesOf(server, m.uid).some(r => r.id === role.id));
+    rows.forEach(m => claimed.add(m.uid));
+    if (rows.length) sections.push({ label: role.name, count: rows.length, rows });
   });
+  const remainingOnline = online.filter(m => !claimed.has(m.uid));
+  sections.push({ label: 'Online', count: remainingOnline.length, rows: remainingOnline });
+  sections.push({ label: 'Offline', count: offline.length, rows: offline });
+  $('member-panel-body').innerHTML = sections.map(s => s.rows.length ? `
+    <div class="side-section-label">${esc(s.label)} — ${s.count}</div>
+    <div>${s.rows.map(renderRow).join('')}</div>` : '').join('');
+  $('member-panel').querySelectorAll('.member-row[data-u]').forEach(row => {
+    row.onclick = (e) => { if (e.target.closest('.member-manage-btn')) return; openProfileModal(row.dataset.u); };
+  });
+  if (server) {
+    $('member-panel').querySelectorAll('.member-manage-btn').forEach(btn => {
+      btn.onclick = (e) => { e.stopPropagation(); openManageMemberModal(btn.dataset.manageUid, server); };
+    });
+  }
 }
 
 // ============================================================
@@ -2993,7 +3483,7 @@ function showLoadingView() {
 function renderCurrentView() {
   if (currentView === 'channel' || currentView === 'dm' || currentView === 'groupdm') renderMessages(lastRawMessages);
   if (currentView === 'channel' && currentServerData) {
-    renderMemberPanel(currentServerData.members || [], currentServerData.ownerId);
+    renderMemberPanel(currentServerData.members || [], currentServerData.ownerId, currentServerData);
   } else if (currentView === 'groupdm') {
     const g = (window.__myGroupDMs || []).find(x => x.id === currentGroupDMId);
     if (g) renderMemberPanel(g.participants || [], g.ownerId);
@@ -3269,7 +3759,11 @@ async function renderMessages(rawMsgs) {
     // its own, which not only looks like a mid-group continuation but makes
     // the reply-to relationship far less clear at a glance.
     const sameGroup = !searching && !m.replyTo && m.uid === lastUid && (millis - lastMillis) < 5 * 60 * 1000;
-    const canDelete = m.uid === myUid;
+    // In a server channel, Manage Messages (and the owner) can delete
+    // anyone's message, not just their own — everywhere else (DMs, group
+    // DMs) it stays author-only, since there's no role system there.
+    const canDelete = m.uid === myUid ||
+      (currentView === 'channel' && currentServerData && hasServerPerm(currentServerData, myUid, 'manageMessages'));
 
     if (sameGroup && groupEl) {
       groupEl.querySelector('.msg-body').appendChild(buildMessageLineEl(m, canDelete));
@@ -3281,7 +3775,8 @@ async function renderMessages(rawMsgs) {
       body.className = 'msg-body';
       const meta = document.createElement('div');
       meta.className = 'msg-meta';
-      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
+      const roleColor = (currentView === 'channel' && currentServerData) ? roleColorFor(currentServerData, m.uid) : null;
+      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}"${roleColor ? ` style="color:${esc(roleColor)}"` : ''}>${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
       body.appendChild(meta);
       body.appendChild(buildMessageLineEl(m, canDelete));
       groupEl.innerHTML = avatarHTML(40, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration);
@@ -3694,7 +4189,7 @@ async function postBotMessage(payload) {
 const SAPPHIRE_PURGE_MAX = 1000; // safety ceiling when an explicit count is given
 const SAPPHIRE_PURGE_BATCH_SIZE = 450; // stay safely under Firestore's 500-op batch cap
 async function runPurgeCommand(rawCountText) {
-  if (!isAdmin) { toast('Only admins can use /purge.', 'error'); return; }
+  if (!isAdmin && !isOwner) { toast('Only admins can use /purge.', 'error'); return; }
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
   const parsed = parseInt(rawCountText, 10);
   const n = Number.isFinite(parsed) && parsed > 0 ? Math.min(SAPPHIRE_PURGE_MAX, parsed) : null; // no count → delete everything
@@ -5004,10 +5499,31 @@ function orbIconSVG(size) { return `<svg viewBox="0 0 24 24" width="${size}" hei
 
 function shopItemPreviewHTML(key, item) {
   if (key === 'decorations') return avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, item.id);
-  if (key === 'nameplates') return `<div class="sic-nameplate-preview ${item.cssClass}"><span>${esc(displayNameOf(myProfile))}</span></div>`;
-  if (key === 'profile_effects') return `<div class="sic-effect-preview ${item.cssClass}">${PROFILE_EFFECT_PARTICLES_HTML}</div>`;
-  if (key === 'profile_frames') return `<div class="sic-frame-preview ${item.cssClass}">${avatarHTML(56, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl)}</div>`;
-  if (key === 'themes') return `<div class="sic-theme-preview" style="background:linear-gradient(135deg, ${item.bg[0]} 0%, ${item.bg[1]} 55%, ${item.bg[2]} 100%);"><span style="background:${item.accent}"></span></div>`;
+  if (key === 'nameplates') {
+    const cls = 'sic-nameplate-preview' + (item.cssClass ? ' ' + item.cssClass : '') + (item.animated ? ' nameplate-shimmer' : '');
+    const style = item.colors ? `background:linear-gradient(135deg, ${esc(item.colors[0])}, ${esc(item.colors[1])});` : '';
+    return `<div class="${cls}" style="${style}"><span>${esc(displayNameOf(myProfile))}</span></div>`;
+  }
+  if (key === 'profile_effects') {
+    const cls = 'sic-effect-preview' + (item.cssClass ? ' ' + item.cssClass : '') + (item.style ? ' effect-style-' + item.style : '');
+    const style = item.color ? `--custom-particle-color:${esc(item.color)};` : '';
+    return `<div class="${cls}" style="${style}">${PROFILE_EFFECT_PARTICLES_HTML}</div>`;
+  }
+  if (key === 'profile_frames') {
+    const cls = 'sic-frame-preview' + (item.cssClass ? ' ' + item.cssClass : '') + (item.glow ? ' frame-custom-glow' : '');
+    const style = item.color ? `border:3px solid ${esc(item.color)};--custom-frame-color:${esc(item.color)};` : '';
+    return `<div class="${cls}" style="${style}">${avatarHTML(56, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl)}</div>`;
+  }
+  // Big LiquidType-style swatch: the gradient fills the whole preview and
+  // the name sits on top of it (with a dark scrim behind the text for
+  // legibility) instead of living in a separate line below — this is
+  // also why themes skip the usual .sic-name block in shopItemCardHTML.
+  if (key === 'themes') return `<div class="sic-theme-preview" style="background:linear-gradient(135deg, ${item.bg[0]} 0%, ${item.bg[1]} 55%, ${item.bg[2]} 100%);">
+    <div class="sic-theme-overlay">
+      <span class="sic-theme-name">${esc(item.name)}</span>
+      ${item.animated ? '<span class="sic-animated-tag">Animated</span>' : ''}
+    </div>
+  </div>`;
   return '';
 }
 
@@ -5017,9 +5533,10 @@ function shopItemCardHTML(key, item) {
   const equipped = myProfile[def.equipField] === item.id;
   const action = equipped ? 'unequip' : owned ? 'equip' : 'buy';
   const label = equipped ? 'Equipped' : owned ? 'Equip' : `${orbIconSVG(13)}<span>${item.price}</span>`;
-  return `<div class="shop-item-card" data-item="${esc(item.id)}" data-cat="${key}">
+  return `<div class="shop-item-card${key === 'themes' ? ' is-theme-card' : ''}" data-item="${esc(item.id)}" data-cat="${key}">
     <div class="sic-preview">${shopItemPreviewHTML(key, item)}</div>
-    <div class="sic-name">${esc(item.name)}${item.animated ? '<span class="sic-animated-tag">Animated</span>' : ''}</div>
+    ${key === 'themes' ? '' : `<div class="sic-name">${esc(item.name)}${item.animated ? '<span class="sic-animated-tag">Animated</span>' : ''}</div>`}
+    ${item.desc ? `<div class="sic-desc">${esc(item.desc)}</div>` : ''}
     <button class="sic-btn${equipped ? ' is-equipped' : owned ? ' is-owned' : ''}" data-action="${action}">${label}</button>
   </div>`;
 }
@@ -5055,11 +5572,12 @@ function renderShopCategoryPane(key) {
   const matches = (item) => !q || item.name.toLowerCase().includes(q);
   const animated = def.catalog.filter(i => i.animated && matches(i));
   const staticOnes = def.catalog.filter(i => !i.animated && matches(i));
+  const gridCls = 'shop-grid' + (key === 'themes' ? ' theme-shop-grid' : '');
   wrap.innerHTML =
     `<div class="shop-section-label">Animated</div>` +
-    `<div class="shop-grid">${animated.map(i => shopItemCardHTML(key, i)).join('') || '<div class="empty">No animated items found.</div>'}</div>` +
+    `<div class="${gridCls}">${animated.map(i => shopItemCardHTML(key, i)).join('') || '<div class="empty">No animated items found.</div>'}</div>` +
     `<div class="shop-section-label">Not Animated</div>` +
-    `<div class="shop-grid">${staticOnes.map(i => shopItemCardHTML(key, i)).join('') || '<div class="empty">No items found.</div>'}</div>`;
+    `<div class="${gridCls}">${staticOnes.map(i => shopItemCardHTML(key, i)).join('') || '<div class="empty">No items found.</div>'}</div>`;
   wireShopCardButtons(wrap);
 }
 
@@ -5275,7 +5793,13 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
     if (tab.dataset.adminTab === 'filter') renderAdminFilterList();
     if (tab.dataset.adminTab === 'codes') renderAdminCodesList();
     if (tab.dataset.adminTab === 'conversations') renderAdminConversationsList();
-    if (tab.dataset.adminTab === 'shopmanage') { renderAdminDecorationList(); initDecorationEditor(); renderAdminThemeList(); initThemeEditor(); }
+    if (tab.dataset.adminTab === 'shopmanage') {
+      renderAdminDecorationList(); initDecorationEditor();
+      renderAdminThemeList(); initThemeEditor();
+      renderAdminNameplateList(); initNameplateEditor();
+      renderAdminProfileEffectList(); initEffectEditor();
+      renderAdminProfileFrameList(); initFrameEditor();
+    }
     if (tab.dataset.adminTab === 'systemhub') { adminSelectedUser = null; renderAdminList(); }
   };
 });
@@ -5532,18 +6056,21 @@ function initDecorationEditor() {
 }
 
 $('deco-publish-btn').onclick = async () => {
-  if (!isAdmin) { toast('Admins only.', 'error'); return; }
+  if (!isAdmin && !isOwner) { toast('Admins only.', 'error'); return; }
   const canvas = $('deco-draw-canvas');
   const name = ($('deco-name-input').value || '').trim();
+  const desc = ($('deco-desc-input').value || '').trim();
   const price = parseInt($('deco-price-input').value, 10);
   if (decorationEditorCanvasIsBlank(canvas)) { toast('Draw something first.'); return; }
   if (!name) { toast('Enter a name.'); return; }
+  if (!desc) { toast('Enter a description.'); return; }
   if (!Number.isFinite(price) || price < 0) { toast('Enter a valid price.'); return; }
   try {
     const imageUrl = canvas.toDataURL('image/png');
-    await db.collection('shopDecorations').add({ name, price, imageUrl, createdBy: myUid, createdAt: FieldValue.serverTimestamp() });
+    await db.collection('shopDecorations').add({ name, desc, price, imageUrl, createdBy: myUid, createdAt: FieldValue.serverTimestamp() });
     canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
     $('deco-name-input').value = '';
+    $('deco-desc-input').value = '';
     $('deco-price-input').value = '';
     updateDecorationPreview();
     toast(`Published "${name}" to the shop!`);
@@ -5579,20 +6106,23 @@ function initThemeEditor() {
   updateThemePreviewSwatch();
 }
 $('theme-publish-btn').onclick = async () => {
-  if (!isAdmin) { toast('Admins only.', 'error'); return; }
+  if (!isAdmin && !isOwner) { toast('Admins only.', 'error'); return; }
   const name = ($('theme-name-input').value || '').trim();
+  const desc = ($('theme-desc-input').value || '').trim();
   const price = parseInt($('theme-price-input').value, 10);
   if (!name) { toast('Enter a name.'); return; }
+  if (!desc) { toast('Enter a description.'); return; }
   if (!Number.isFinite(price) || price < 0) { toast('Enter a valid price.'); return; }
   try {
     await db.collection('shopThemes').add({
-      name, price,
+      name, desc, price,
       bg: [$('theme-color1-input').value, $('theme-color2-input').value, $('theme-color3-input').value],
       accent: $('theme-accent-input').value,
       accent2: $('theme-accent2-input').value,
       createdBy: myUid, createdAt: FieldValue.serverTimestamp(),
     });
     $('theme-name-input').value = '';
+    $('theme-desc-input').value = '';
     $('theme-price-input').value = '';
     toast(`Published "${name}" to the shop!`);
   } catch (e) { toast(e.message || 'Failed to publish.', 'error'); }
@@ -5605,6 +6135,153 @@ function renderAdminThemeList() {
     : '<div class="empty">No custom themes yet.</div>';
   wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
     btn.onclick = async () => { await db.collection('shopThemes').doc(btn.closest('.admin-emoji-chip').dataset.id).delete(); };
+  });
+}
+
+// ---------- Nameplate creator (admin/owner only) ----------
+let nameplateEditorInitialized = false;
+function updateNameplatePreview() {
+  const c1 = $('nameplate-color1-input').value, c2 = $('nameplate-color2-input').value;
+  const swatch = $('nameplate-preview-swatch');
+  swatch.style.background = `linear-gradient(135deg, ${c1}, ${c2})`;
+  swatch.classList.toggle('nameplate-shimmer', $('nameplate-animated-input').checked);
+}
+function initNameplateEditor() {
+  if (nameplateEditorInitialized) { updateNameplatePreview(); return; }
+  nameplateEditorInitialized = true;
+  ['nameplate-color1-input', 'nameplate-color2-input'].forEach(id => $(id).addEventListener('input', updateNameplatePreview));
+  $('nameplate-animated-input').addEventListener('change', updateNameplatePreview);
+  updateNameplatePreview();
+}
+$('nameplate-publish-btn').onclick = async () => {
+  if (!isAdmin && !isOwner) { toast('Admins only.', 'error'); return; }
+  const name = ($('nameplate-name-input').value || '').trim();
+  const desc = ($('nameplate-desc-input').value || '').trim();
+  const price = parseInt($('nameplate-price-input').value, 10);
+  if (!name) { toast('Enter a name.'); return; }
+  if (!desc) { toast('Enter a description.'); return; }
+  if (!Number.isFinite(price) || price < 0) { toast('Enter a valid price.'); return; }
+  try {
+    await db.collection('shopNameplates').add({
+      name, desc, price,
+      colors: [$('nameplate-color1-input').value, $('nameplate-color2-input').value],
+      animated: $('nameplate-animated-input').checked,
+      createdBy: myUid, createdAt: FieldValue.serverTimestamp(),
+    });
+    $('nameplate-name-input').value = '';
+    $('nameplate-desc-input').value = '';
+    $('nameplate-price-input').value = '';
+    toast(`Published "${name}" to the shop!`);
+  } catch (e) { toast(e.message || 'Failed to publish.', 'error'); }
+};
+function renderAdminNameplateList() {
+  const wrap = $('admin-nameplate-list');
+  if (!wrap) return;
+  wrap.innerHTML = customNameplates.length
+    ? customNameplates.map(n => `<div class="admin-emoji-chip" data-id="${esc(n.id)}"><span class="admin-theme-chip-swatch" style="background:linear-gradient(135deg, ${n.colors[0]}, ${n.colors[1]});"></span><span>${esc(n.name)}</span><span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
+    : '<div class="empty">No custom nameplates yet.</div>';
+  wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
+    btn.onclick = async () => { await db.collection('shopNameplates').doc(btn.closest('.admin-emoji-chip').dataset.id).delete(); };
+  });
+}
+
+// ---------- Profile Effect creator (admin/owner only) ----------
+let effectEditorInitialized = false;
+let effectEditorStyle = 'falling';
+function updateEffectPreview() {
+  const swatch = $('effect-preview-swatch');
+  swatch.className = 'sic-effect-preview effect-style-' + effectEditorStyle;
+  swatch.style.setProperty('--custom-particle-color', $('effect-color-input').value);
+  swatch.innerHTML = PROFILE_EFFECT_PARTICLES_HTML;
+}
+function initEffectEditor() {
+  if (effectEditorInitialized) { updateEffectPreview(); return; }
+  effectEditorInitialized = true;
+  $('effect-color-input').addEventListener('input', updateEffectPreview);
+  document.querySelectorAll('.effect-style-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.effect-style-btn').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      effectEditorStyle = btn.dataset.style;
+      updateEffectPreview();
+    };
+  });
+  updateEffectPreview();
+}
+$('effect-publish-btn').onclick = async () => {
+  if (!isAdmin && !isOwner) { toast('Admins only.', 'error'); return; }
+  const name = ($('effect-name-input').value || '').trim();
+  const desc = ($('effect-desc-input').value || '').trim();
+  const price = parseInt($('effect-price-input').value, 10);
+  if (!name) { toast('Enter a name.'); return; }
+  if (!desc) { toast('Enter a description.'); return; }
+  if (!Number.isFinite(price) || price < 0) { toast('Enter a valid price.'); return; }
+  try {
+    await db.collection('shopProfileEffects').add({
+      name, desc, price, color: $('effect-color-input').value, style: effectEditorStyle, animated: true,
+      createdBy: myUid, createdAt: FieldValue.serverTimestamp(),
+    });
+    $('effect-name-input').value = '';
+    $('effect-desc-input').value = '';
+    $('effect-price-input').value = '';
+    toast(`Published "${name}" to the shop!`);
+  } catch (e) { toast(e.message || 'Failed to publish.', 'error'); }
+};
+function renderAdminProfileEffectList() {
+  const wrap = $('admin-effect-list');
+  if (!wrap) return;
+  wrap.innerHTML = customProfileEffects.length
+    ? customProfileEffects.map(e => `<div class="admin-emoji-chip" data-id="${esc(e.id)}"><span class="admin-theme-chip-swatch" style="background:${e.color};"></span><span>${esc(e.name)}</span><span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
+    : '<div class="empty">No custom profile effects yet.</div>';
+  wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
+    btn.onclick = async () => { await db.collection('shopProfileEffects').doc(btn.closest('.admin-emoji-chip').dataset.id).delete(); };
+  });
+}
+
+// ---------- Profile Frame creator (admin/owner only) ----------
+let frameEditorInitialized = false;
+function updateFramePreview() {
+  const swatch = $('frame-preview-swatch');
+  const color = $('frame-color-input').value;
+  swatch.className = 'sic-frame-preview' + ($('frame-glow-input').checked ? ' frame-custom-glow' : '');
+  swatch.style.border = `3px solid ${color}`;
+  swatch.style.setProperty('--custom-frame-color', color);
+  swatch.innerHTML = myProfile ? avatarHTML(56, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl) : '';
+}
+function initFrameEditor() {
+  if (frameEditorInitialized) { updateFramePreview(); return; }
+  frameEditorInitialized = true;
+  $('frame-color-input').addEventListener('input', updateFramePreview);
+  $('frame-glow-input').addEventListener('change', updateFramePreview);
+  updateFramePreview();
+}
+$('frame-publish-btn').onclick = async () => {
+  if (!isAdmin && !isOwner) { toast('Admins only.', 'error'); return; }
+  const name = ($('frame-name-input').value || '').trim();
+  const desc = ($('frame-desc-input').value || '').trim();
+  const price = parseInt($('frame-price-input').value, 10);
+  if (!name) { toast('Enter a name.'); return; }
+  if (!desc) { toast('Enter a description.'); return; }
+  if (!Number.isFinite(price) || price < 0) { toast('Enter a valid price.'); return; }
+  try {
+    await db.collection('shopProfileFrames').add({
+      name, desc, price, color: $('frame-color-input').value, glow: $('frame-glow-input').checked, animated: $('frame-glow-input').checked,
+      createdBy: myUid, createdAt: FieldValue.serverTimestamp(),
+    });
+    $('frame-name-input').value = '';
+    $('frame-desc-input').value = '';
+    $('frame-price-input').value = '';
+    toast(`Published "${name}" to the shop!`);
+  } catch (e) { toast(e.message || 'Failed to publish.', 'error'); }
+};
+function renderAdminProfileFrameList() {
+  const wrap = $('admin-frame-list');
+  if (!wrap) return;
+  wrap.innerHTML = customProfileFrames.length
+    ? customProfileFrames.map(f => `<div class="admin-emoji-chip" data-id="${esc(f.id)}"><span class="admin-theme-chip-swatch" style="background:${f.color};"></span><span>${esc(f.name)}</span><span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
+    : '<div class="empty">No custom profile frames yet.</div>';
+  wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
+    btn.onclick = async () => { await db.collection('shopProfileFrames').doc(btn.closest('.admin-emoji-chip').dataset.id).delete(); };
   });
 }
 

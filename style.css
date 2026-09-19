@@ -54,7 +54,14 @@ input, textarea,
    naturally wins over any body.theme-X class rule below since inline
    style always beats a class selector. The animated gradient itself lives
    on a fixed ::before layer (not <body> directly) so hue-rotating it never
-   turns fixed sidebars/topbars into scrolling elements. */
+   turns fixed sidebars/topbars into scrolling elements.
+   That gradient layer only shows up at all because applyShopTheme sets
+   the panel bg variables to translucent rgba() rather than flat opaque
+   hex — #server-rail/#side-panel/#main-col tile the full viewport with
+   no gaps, so with fully opaque panels (as this used to be) the gradient
+   was rendered but permanently hidden behind them regardless of z-index;
+   confirmed by literally sampling rendered pixels, which showed zero
+   trace of the gradient's third color stop. */
 body.shop-theme-active::before {
   content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background: var(--shop-theme-bg);
@@ -300,9 +307,18 @@ a { color: var(--text-link); text-decoration: none; }
 .channel-row:hover, .dm-row:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
 .channel-row.active, .dm-row.active { background: var(--bg-modifier-selected); color: var(--text-normal); }
 .channel-row .hash { opacity: .7; font-size: 18px; font-weight: 400; }
-.channel-row .del-channel { margin-left: auto; opacity: 0; font-size: 12px; color: var(--text-faint); }
+.channel-row .channel-lock-icon { color: var(--text-faint); flex-shrink: 0; display: flex; }
+.channel-row .channel-lock-icon svg { width: 12px; height: 12px; }
+.channel-row .channel-perms-btn { margin-left: auto; opacity: 0; font-size: 12px; color: var(--text-faint); flex-shrink: 0; }
+.channel-row:hover .channel-perms-btn { opacity: 1; }
+.channel-row .channel-perms-btn:hover { color: var(--text-normal); }
+.channel-row .del-channel { opacity: 0; font-size: 12px; color: var(--text-faint); flex-shrink: 0; }
 .channel-row:hover .del-channel { opacity: 1; }
 .channel-row .del-channel:hover { color: var(--danger); }
+
+/* ---- role list drag-and-drop ---- */
+.role-list-row.dragging { opacity: .4; }
+.role-list-row.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; }
 
 .dm-row { padding: 9px 8px; margin-bottom: 6px; gap: 10px; }
 .dm-row.has-nameplate { overflow: hidden; }
@@ -746,6 +762,51 @@ body.action-sheet-open { overflow: hidden; }
 .member-row .mname { font-size: 15px; color: var(--text-muted); font-weight: 500; }
 .member-row .mname.online-name { color: var(--text-normal); }
 .member-row .premium-badge { font-size: 12px; }
+.member-manage-btn {
+  margin-left: auto; opacity: 0; width: 22px; height: 22px; border-radius: 4px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; color: var(--text-muted);
+}
+.member-manage-btn svg { width: 14px; height: 14px; }
+.member-row:hover .member-manage-btn { opacity: 1; }
+.member-manage-btn:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
+
+/* ---- role chips (member panel, message author line via inline color, role lists) ---- */
+.role-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); }
+.role-chip .role-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--role-color, #99aab5); flex-shrink: 0; }
+
+/* ---- Server Settings: tabs ---- */
+.ss-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--divider); margin: 4px 0 18px; }
+.ss-tab {
+  padding: 8px 4px; font-size: 14px; font-weight: 600; color: var(--text-muted);
+  border-bottom: 2px solid transparent; margin-right: 16px; cursor: pointer;
+}
+.ss-tab.on { color: var(--text-normal); border-bottom-color: var(--accent); }
+.ss-pane.hidden { display: none; }
+
+/* ---- Server Settings: roles tab ---- */
+.roles-layout { display: grid; grid-template-columns: 200px 1fr; gap: 20px; min-height: 340px; }
+.role-list { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
+.role-list-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 7px 8px; border-radius: 4px; cursor: pointer;
+}
+.role-list-row:hover { background: var(--bg-modifier-hover); }
+.role-list-row.on { background: var(--bg-modifier-selected); }
+.role-reorder-btns { display: flex; flex-direction: column; gap: 0; flex-shrink: 0; }
+.role-move-btn { font-size: 9px; line-height: 9px; color: var(--text-faint); cursor: pointer; padding: 1px 3px; }
+.role-move-btn:hover { color: var(--text-normal); }
+.role-editor-col { border-left: 1px solid var(--divider); padding-left: 20px; }
+.role-editor-locked {
+  background: var(--accent-soft, rgba(88,101,242,.12)); color: var(--text-normal);
+  font-size: 13px; padding: 10px 12px; border-radius: 4px; margin-bottom: 14px;
+}
+.role-perm-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.role-perm-row { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.role-perm-row input { margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
+.role-perm-row b { display: block; font-size: 13.5px; color: var(--text-normal); }
+.role-perm-row small { display: block; font-size: 12px; color: var(--text-muted); }
+.role-perm-row.locked { opacity: .5; cursor: default; }
+.role-assign-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; max-height: 280px; overflow-y: auto; }
 
 /* ============ MODALS ============ */
 .modal-overlay {
@@ -926,6 +987,7 @@ body.action-sheet-open { overflow: hidden; }
   display: flex; align-items: center; gap: 18px; padding: 14px 20px;
   background: linear-gradient(180deg, #2b1418, #1a0d10);
   border-bottom: 1px solid rgba(255,255,255,.06); flex-shrink: 0; flex-wrap: wrap;
+  box-shadow: 0 4px 16px rgba(0,0,0,.35); position: relative; z-index: 2;
 }
 .shop-home-icon { color: #fff; opacity: .9; flex-shrink: 0; display: inline-flex; }
 .shop-tabs { display: flex; align-items: center; gap: 4px; flex-shrink: 0; position: relative; }
@@ -934,7 +996,7 @@ body.action-sheet-open { overflow: hidden; }
   padding: 8px 12px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
 }
 .shop-tab:hover { color: #fff; background: rgba(255,255,255,.06); }
-.shop-tab.on { color: #fff; background: rgba(255,255,255,.1); }
+.shop-tab.on { color: #fff; background: rgba(255,255,255,.1); box-shadow: inset 0 -2px 0 var(--accent); }
 .shop-tab .caret { font-size: 11px; }
 .shop-browse-wrap { position: relative; }
 .shop-browse-menu {
@@ -963,20 +1025,29 @@ body.action-sheet-open { overflow: hidden; }
 }
 .shop-section-label:first-child { margin-top: 0; }
 .shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; }
+.theme-shop-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
 .shop-item-card {
-  background: var(--bg-secondary); border-radius: 10px; padding: 16px 12px 12px;
+  background: linear-gradient(160deg, var(--bg-secondary), var(--bg-tertiary));
+  border: 1px solid rgba(255,255,255,.05); border-radius: 10px; padding: 16px 12px 12px;
   display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px;
+  height: 100%; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
 }
-.sic-preview { pointer-events: none; }
+.shop-item-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.35); border-color: rgba(255,255,255,.12); }
+/* Grid rows stretch every card in a row to the tallest one by default —
+   pushing the button down with margin-top:auto instead of a fixed gap
+   means it always lands on the same line across a row regardless of how
+   many lines a given description wraps to. */
+.sic-preview { pointer-events: none; width: 100%; }
 .sic-name { font-size: 13.5px; font-weight: 600; color: var(--text-normal); display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.sic-desc { font-size: 11.5px; color: var(--text-muted); text-align: center; line-height: 1.3; margin: 2px 0 4px; }
 .sic-animated-tag {
   font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
   background: var(--accent-soft); color: var(--accent); padding: 1px 6px; border-radius: 3px;
 }
 .sic-btn {
-  width: 100%; margin-top: 2px; border: none; border-radius: 6px; padding: 7px 0; cursor: pointer;
+  width: 100%; margin-top: auto; border: none; border-radius: 6px; padding: 7px 0; cursor: pointer;
   font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-  background: var(--accent); color: #fff;
+  background: var(--accent); color: #fff; flex-shrink: 0;
 }
 .sic-btn:hover { background: var(--accent-hover); }
 .sic-btn.is-owned { background: var(--bg-modifier-hover); color: var(--text-normal); }
@@ -1272,10 +1343,17 @@ body.action-sheet-open { overflow: hidden; }
 }
 
 /* ============ PROFILE MODAL ============ */
-.profile-box { width: 460px; padding: 0; overflow: hidden; position: relative; }
+.profile-box { width: 460px; padding: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; }
 .profile-close { position: absolute; top: 12px; right: 12px; color: #fff; background: rgba(0,0,0,.35); border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; z-index: 2; }
-.profile-banner { height: 90px; }
-.profile-main { padding: 0 20px 20px; margin-top: -40px; }
+.profile-banner { height: 90px; flex-shrink: 0; }
+/* .profile-main used to inherit overflow:hidden from .profile-box, which
+   clipped the bottom of the card instead of scrolling it — with the edit
+   fields open (display name, pronouns, bio, banner colors, gradient
+   banners) the card runs taller than the 86vh cap from .modal-box, and
+   there was no way to reach the rest of it. Making this its own scroll
+   region (flex:1 + min-height:0) fixes that while .profile-box still
+   clips the banner's rounded top corners. */
+.profile-main { padding: 0 20px 20px; margin-top: -40px; overflow-y: auto; flex: 1; min-height: 0; }
 .profile-avatar-wrap { margin-bottom: 10px; position: relative; width: 80px; }
 .profile-avatar { border: 6px solid var(--bg-floating); }
 .avatar-edit-btn {
@@ -1360,6 +1438,7 @@ body.action-sheet-open { overflow: hidden; }
 .sic-nameplate-preview {
   position: relative; width: 100%; height: 56px; border-radius: 8px; overflow: hidden;
   display: flex; align-items: center; justify-content: center; background: var(--bg-tertiary);
+  border: 1px solid rgba(255,255,255,.08);
 }
 .sic-nameplate-preview span { position: relative; z-index: 1; color: #fff; font-weight: 700; font-size: 13px; }
 
@@ -1391,9 +1470,42 @@ body.action-sheet-open { overflow: hidden; }
 @keyframes effectConfettiFall { from { transform: translateY(-10%) rotate(0deg); } to { transform: translateY(1000%) rotate(360deg); } }
 .sic-effect-preview {
   position: relative; width: 100%; height: 56px; border-radius: 8px; overflow: hidden;
-  background: var(--bg-tertiary);
+  background: var(--bg-tertiary); border: 1px solid rgba(255,255,255,.08);
 }
 .sic-effect-preview .particle { position: absolute; top: -10%; }
+
+/* ============ USER-CREATED (admin/owner) NAMEPLATES, EFFECTS, FRAMES ============
+   Generic, color-parameterized versions of the same visual patterns above —
+   an admin's own color choice comes in via a CSS custom property or inline
+   style rather than a hand-authored class per item. */
+.nameplate-shimmer::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,.25) 50%, transparent 70%);
+  background-size: 200% 200%;
+  animation: nameplateShimmerSweep 2.5s linear infinite;
+}
+@keyframes nameplateShimmerSweep { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+.effect-style-falling .particle { width: 6px; height: 6px; background: var(--custom-particle-color, #fff); border-radius: 50%; animation: effectRainFall 3s linear infinite; }
+.effect-style-floating .particle {
+  width: 5px; height: 5px; background: var(--custom-particle-color, #fff); border-radius: 50%;
+  box-shadow: 0 0 6px 2px var(--custom-particle-color, #fff); top: 50%; animation: effectFireflyDrift 4s ease-in-out infinite;
+}
+.effect-style-floating .particle:nth-child(3n) { top: 25%; }
+.effect-style-floating .particle:nth-child(3n+1) { top: 55%; }
+.effect-style-floating .particle:nth-child(3n+2) { top: 80%; }
+.effect-style-twinkling .particle { width: 4px; height: 4px; background: var(--custom-particle-color, #fff); border-radius: 50%; top: 50%; animation: effectSparkleTwinkle 2.2s ease-in-out infinite; }
+.effect-style-twinkling .particle:nth-child(3n) { top: 20%; }
+.effect-style-twinkling .particle:nth-child(3n+1) { top: 50%; }
+.effect-style-twinkling .particle:nth-child(3n+2) { top: 78%; }
+
+.frame-custom-glow { animation: frameCustomPulse 1.6s ease-in-out infinite alternate; }
+@keyframes frameCustomPulse {
+  from { box-shadow: 0 0 8px var(--custom-frame-color, #fff), inset 0 0 10px var(--custom-frame-color, #fff); }
+  to { box-shadow: 0 0 18px var(--custom-frame-color, #fff), inset 0 0 20px var(--custom-frame-color, #fff); }
+}
+.np-check { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-muted); margin: 10px 0; cursor: pointer; }
+.np-check input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
 
 /* ============ PROFILE FRAMES ============ */
 .frame-golden { border: 3px solid #f0b232; box-shadow: 0 0 0 1px rgba(240,178,50,.4), inset 0 0 20px rgba(240,178,50,.15); }
@@ -1425,14 +1537,19 @@ body.action-sheet-open { overflow: hidden; }
 }
 .sic-frame-preview {
   width: 100%; height: 56px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
-  background: var(--bg-tertiary);
+  background: var(--bg-tertiary); border: 1px solid rgba(255,255,255,.08);
 }
 .sic-frame-preview .avatar { border-radius: 50%; }
 .sic-frame-preview.frame-golden, .sic-frame-preview.frame-neon, .sic-frame-preview.frame-thorns,
 .sic-frame-preview.frame-ice, .sic-frame-preview.frame-rainbow, .sic-frame-preview.frame-rosevine { border-radius: 8px; }
 
-.sic-theme-preview { position: relative; width: 100%; height: 56px; border-radius: 8px; }
-.sic-theme-preview span { position: absolute; bottom: 6px; left: 6px; width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 5px rgba(0,0,0,.4); }
+.sic-theme-preview { position: relative; width: 100%; height: 110px; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); box-shadow: inset 0 0 16px rgba(255,255,255,.08); overflow: hidden; display: flex; align-items: flex-end; }
+.sic-theme-overlay {
+  width: 100%; padding: 8px 10px 7px; display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  background: linear-gradient(0deg, rgba(0,0,0,.68) 0%, rgba(0,0,0,0) 100%);
+}
+.sic-theme-name { font-size: 14px; font-weight: 700; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.5); text-align: left; }
+.is-theme-card .sic-animated-tag { background: rgba(255,255,255,.18); color: #fff; flex-shrink: 0; }
 
 .profile-section { font-size: 14px; color: var(--text-normal); line-height: 1.4; }
 .profile-action-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
