@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=32">
+<link rel="stylesheet" href="style.css?v=35">
 </head>
 <body>
 
@@ -125,8 +125,9 @@
 
   <!-- second column -->
   <div id="side-panel">
-    <div id="side-header">
+    <div id="side-header" aria-haspopup="menu" aria-expanded="false">
       <span id="side-header-title">Direct Messages</span>
+      <svg id="side-header-chevron" class="hidden" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
     </div>
 
     <!-- DM list (home view) -->
@@ -161,6 +162,7 @@
     </div>
 
     <!-- channel list (server view) -->
+    <div id="server-menu" class="server-menu hidden" role="menu" aria-label="Server options"></div>
     <div id="channel-list" class="hidden">
       <div class="side-section-label">
         <span>Channels</span>
@@ -188,6 +190,7 @@
       <span class="mobile-back-btn" id="back-to-list-btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></span>
       <span class="hash" id="chat-header-hash">#</span>
       <span class="title" id="chat-header-title">Select a conversation</span>
+      <span class="chat-topic hidden" id="chat-header-topic"></span>
       <div class="chat-header-actions">
         <span class="hdr-icon-btn hidden" id="mute-toggle" title="Mute Channel">
           <svg class="i-unmuted" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 9a4.5 4.5 0 0 1 0 6"/><path d="M18 6.5a8 8 0 0 1 0 11"/></svg>
@@ -304,6 +307,7 @@
     <div id="chat-view" class="hidden" style="display:contents;">
       <div id="messages"></div>
       <div id="typing-indicator" class="typing-indicator"></div>
+      <div id="slowmode-indicator" class="slowmode-indicator hidden" role="status" aria-live="polite"></div>
       <div id="composer-wrap">
         <div id="reply-bar" class="hidden">
           <div class="rb-text">Replying to <b id="reply-bar-username"></b></div>
@@ -395,7 +399,7 @@
     <div class="modal-header-row"><h2>Join a Server</h2><span class="x" data-close="join-server-modal">✕</span></div>
     <p class="desc">Enter an invite code below to join an existing server.</p>
     <div class="auth-error" id="join-server-error"></div>
-    <div class="field"><label>Invite Code</label><input type="text" id="join-server-code" placeholder="e.g. 8f3ka1"></div>
+    <div class="field"><label>Invite Code</label><input type="text" id="join-server-code" placeholder="e.g. 8f3ka1 or an invite link"></div>
     <div class="modal-actions">
       <button class="btn-secondary" data-close="join-server-modal">Cancel</button>
       <button class="btn-accent-inline" id="confirm-join-server">Join Server</button>
@@ -423,6 +427,9 @@
         <div class="ds-nav-label" id="server-settings-title">Server</div>
         <button type="button" class="ss-tab ds-nav-item on" data-ss-tab="overview">Overview</button>
         <button type="button" class="ss-tab ds-nav-item" data-ss-tab="roles">Roles</button>
+        <div class="ds-nav-label ss-nav-mod">User Management</div>
+        <button type="button" class="ss-tab ds-nav-item" data-ss-tab="invites">Invites</button>
+        <button type="button" class="ss-tab ds-nav-item" data-ss-tab="bans">Bans</button>
         <div class="ds-nav-sep"></div>
         <button type="button" class="ds-nav-item ds-nav-danger" id="delete-server-btn">
           <span>Delete Server</span>
@@ -443,17 +450,36 @@
           </div>
           <div class="ss-divider"></div>
           <div class="field">
-            <label for="server-invite-display">Invite Code</label>
-            <div class="ss-invite-row">
-              <input type="text" id="server-invite-display" readonly>
-              <button type="button" class="ds-btn ds-btn-brand" id="copy-invite-btn">Copy</button>
-            </div>
-            <p class="ss-hint">Share this code so friends can join your server.</p>
+            <label for="edit-server-desc">Server Description</label>
+            <textarea id="edit-server-desc" class="ss-textarea" maxlength="300" rows="3" placeholder="Tell people what your server is about. Shown on invites."></textarea>
           </div>
           <div class="ss-divider"></div>
           <div class="ss-footer-actions">
             <button type="button" class="ds-btn ds-btn-green" id="save-server-btn">Save Changes</button>
           </div>
+        </section>
+        <section class="ss-pane hidden" id="ss-pane-invites">
+          <h2 class="ss-h2">Invites</h2>
+          <div class="field">
+            <label for="server-invite-display">Invite Link</label>
+            <div class="ss-invite-row">
+              <input type="text" id="server-invite-display" readonly>
+              <button type="button" class="ds-btn ds-btn-brand" id="copy-invite-btn">Copy</button>
+            </div>
+            <p class="ss-hint">Anyone with this link can join. Invite code: <strong id="server-invite-code"></strong></p>
+          </div>
+          <div class="ss-divider"></div>
+          <div class="field">
+            <label>Reset Invite Link</label>
+            <p class="ss-hint">Makes a new link and code. The old one stops working right away.</p>
+            <button type="button" class="ds-btn ds-btn-danger-outline" id="reset-invite-btn">Reset Invite Link</button>
+          </div>
+        </section>
+        <section class="ss-pane hidden" id="ss-pane-bans">
+          <h2 class="ss-h2">Server Ban List</h2>
+          <p class="ss-hint">Banned members can&apos;t rejoin, even with an invite link.</p>
+          <input type="search" id="bans-search" class="ss-search" placeholder="Search bans by username" aria-label="Search bans">
+          <div id="bans-list" class="bans-list"></div>
         </section>
         <section class="ss-pane hidden" id="ss-pane-roles">
           <div id="roles-pane-root"></div>
@@ -474,6 +500,87 @@
   <div class="modal-box">
     <div class="modal-header-row"><h2 id="manage-member-title">Manage Member</h2><span class="x" data-close="manage-member-modal">✕</span></div>
     <div id="manage-member-body"></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: channel settings (Discord-style) ============ -->
+<div class="modal-overlay hidden ds-settings-layer" id="channel-settings-modal" role="dialog" aria-modal="true" aria-labelledby="cs-title">
+  <div class="ds-settings">
+    <nav class="ds-sidebar" aria-label="Channel settings">
+      <div class="ds-sidebar-inner">
+        <div class="ds-nav-label" id="cs-title"># channel</div>
+        <button type="button" class="cs-tab ds-nav-item on" data-cs-tab="overview">Overview</button>
+        <button type="button" class="cs-tab ds-nav-item" data-cs-tab="permissions">Permissions</button>
+        <div class="ds-nav-sep"></div>
+        <button type="button" class="ds-nav-item ds-nav-danger" id="cs-delete-btn"><span>Delete Channel</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button>
+      </div>
+    </nav>
+    <main class="ds-content">
+      <div class="ds-content-inner">
+        <section class="cs-pane" id="cs-pane-overview">
+          <h2 class="ss-h2">Overview</h2>
+          <div class="field">
+            <label for="cs-name">Channel Name</label>
+            <input type="text" id="cs-name" maxlength="30">
+          </div>
+          <div class="field">
+            <label for="cs-topic">Channel Topic</label>
+            <textarea id="cs-topic" class="ss-textarea" maxlength="1024" rows="3" placeholder="Let everyone know how to use this channel!"></textarea>
+          </div>
+          <div class="ss-divider"></div>
+          <div class="field">
+            <label for="cs-slowmode">Slowmode <span class="cs-slow-val" id="cs-slowmode-val">Off</span></label>
+            <input type="range" id="cs-slowmode" class="cs-range" min="0" max="13" step="1" value="0">
+            <p class="ss-hint">Members will be restricted to sending one message per this interval, unless they have Bypass Slowmode, Manage Channels, or Manage Messages.</p>
+          </div>
+          <div class="ss-divider"></div>
+          <div class="ss-footer-actions"><button type="button" class="ds-btn ds-btn-green" id="cs-save-overview">Save Changes</button></div>
+        </section>
+        <section class="cs-pane hidden" id="cs-pane-permissions">
+          <h2 class="ss-h2">Channel Permissions</h2>
+          <div class="cs-private-row">
+            <div>
+              <div class="cs-private-title">Private Channel</div>
+              <p class="ss-hint">Only selected members and roles will be able to view this channel.</p>
+            </div>
+            <label class="toggle-switch"><input type="checkbox" id="cs-private-toggle"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="ss-divider"></div>
+          <p class="ss-hint">Advanced permissions: pick a role, then set each permission to Deny (red), Inherit from server (grey), or Allow (green).</p>
+          <div class="cs-perm-layout">
+            <div class="cs-target-col">
+              <div class="cs-col-head">Roles</div>
+              <div id="cs-target-list" class="cs-target-list" role="listbox" aria-label="Roles with overrides"></div>
+              <select id="cs-add-target" class="fld-input cs-add-target" aria-label="Add a role override"></select>
+            </div>
+            <div class="cs-perm-col" id="cs-perm-list"></div>
+          </div>
+          <div class="ss-footer-actions"><button type="button" class="ds-btn ds-btn-green" id="cs-save-perms">Save Changes</button></div>
+        </section>
+      </div>
+      <div class="ds-close-wrap">
+        <button type="button" class="ds-close" data-close="channel-settings-modal" aria-label="Close channel settings">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+        <span class="ds-close-kbd">ESC</span>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ============ MODAL: invite preview ============ -->
+<div class="modal-overlay hidden" id="invite-preview-modal" role="dialog" aria-modal="true" aria-labelledby="invite-name">
+  <div class="modal-box invite-preview">
+    <div class="invite-icon" id="invite-icon" aria-hidden="true"></div>
+    <p class="invite-sub">You&apos;ve been invited to join</p>
+    <h2 id="invite-name" class="invite-name"></h2>
+    <p id="invite-desc" class="invite-desc"></p>
+    <p id="invite-meta" class="invite-meta"></p>
+    <div class="auth-error" id="invite-error"></div>
+    <div class="modal-actions invite-actions">
+      <button class="btn-secondary" data-close="invite-preview-modal">No Thanks</button>
+      <button class="btn-accent-inline" id="invite-accept-btn">Accept Invite</button>
+    </div>
   </div>
 </div>
 
@@ -781,7 +888,6 @@
       <button class="admin-tab" data-admin-tab="codes">Codes</button>
       <button class="admin-tab" data-admin-tab="conversations">Conversations</button>
       <button class="admin-tab" data-admin-tab="shopmanage">Shop</button>
-      <button class="admin-tab" data-admin-tab="banners">Banners</button>
       <button class="admin-tab hidden" data-admin-tab="systemhub" id="admin-tab-systemhub">System Hub</button>
     </div>
 
@@ -812,7 +918,16 @@
     </div>
 
     <div class="admin-pane hidden" id="admin-pane-shopmanage">
-      <div class="admin-block">
+      <div class="shop-mgr-tabs">
+        <button type="button" class="shop-mgr-tab on" data-shop-section="decorations">Decorations</button>
+        <button type="button" class="shop-mgr-tab" data-shop-section="themes">Themes</button>
+        <button type="button" class="shop-mgr-tab" data-shop-section="banners">Banners</button>
+        <button type="button" class="shop-mgr-tab" data-shop-section="nameplates">Nameplates</button>
+        <button type="button" class="shop-mgr-tab" data-shop-section="effects">Profile Effects</button>
+        <button type="button" class="shop-mgr-tab" data-shop-section="frames">Profile Frames</button>
+      </div>
+      <small class="hint shop-mgr-hint">Click any item below (published or built-in) to edit it.</small>
+      <div class="admin-block shop-mgr-section" data-shop-section="decorations">
         <div class="ab-title">Create an Avatar Decoration</div>
         <div class="ab-row" style="margin-bottom:14px;">
           <button type="button" class="btn-secondary slim deco-mode-btn on" data-deco-mode="draw">✏️ Draw</button>
@@ -859,11 +974,11 @@
         <div class="field"><label class="fld-label">Price (Orbs)</label><input type="number" id="deco-price-input" min="0" placeholder="800" class="fld-input"></div>
         <button class="btn-accent-inline" id="deco-publish-btn">Publish to Shop</button>
       </div>
-      <div class="admin-block">
+      <div class="admin-block shop-mgr-section" data-shop-section="decorations">
         <div class="ab-title">Published Decorations</div>
         <div class="admin-emoji-list" id="admin-decoration-list"></div>
       </div>
-      <div class="admin-block">
+      <div class="admin-block shop-mgr-section hidden" data-shop-section="themes">
         <div class="ab-title">Create a Theme (Gradient)</div>
         <div class="theme-editor">
           <div class="theme-preview-swatch" id="theme-preview-swatch"></div>
@@ -885,12 +1000,12 @@
           </div>
         </div>
       </div>
-      <div class="admin-block">
+      <div class="admin-block shop-mgr-section hidden" data-shop-section="themes">
         <div class="ab-title">Published Themes</div>
         <div class="admin-emoji-list" id="admin-theme-list"></div>
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block shop-mgr-section hidden" data-shop-section="nameplates">
         <div class="ab-title">Create a Nameplate</div>
         <div class="theme-editor">
           <div class="deco-preview-block">
@@ -910,12 +1025,12 @@
           </div>
         </div>
       </div>
-      <div class="admin-block">
+      <div class="admin-block shop-mgr-section hidden" data-shop-section="nameplates">
         <div class="ab-title">Published Nameplates</div>
         <div class="admin-emoji-list" id="admin-nameplate-list"></div>
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block shop-mgr-section hidden" data-shop-section="effects">
         <div class="ab-title">Create a Profile Effect</div>
         <div class="theme-editor">
           <div class="deco-preview-block">
@@ -930,6 +1045,7 @@
                 <button type="button" class="btn-secondary slim effect-style-btn on" data-style="falling">Falling</button>
                 <button type="button" class="btn-secondary slim effect-style-btn" data-style="floating">Floating</button>
                 <button type="button" class="btn-secondary slim effect-style-btn" data-style="twinkling">Twinkling</button>
+                <button type="button" class="btn-secondary slim effect-style-btn" data-style="rising">Rising</button>
               </div>
             </div>
             <div class="field"><label class="fld-label">Name</label><input type="text" id="effect-name-input" maxlength="24" placeholder="e.g. Golden Dust" class="fld-input"></div>
@@ -939,12 +1055,12 @@
           </div>
         </div>
       </div>
-      <div class="admin-block">
+      <div class="admin-block shop-mgr-section hidden" data-shop-section="effects">
         <div class="ab-title">Published Profile Effects</div>
         <div class="admin-emoji-list" id="admin-effect-list"></div>
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block shop-mgr-section hidden" data-shop-section="frames">
         <div class="ab-title">Create a Profile Frame</div>
         <div class="theme-editor">
           <div class="deco-preview-block">
@@ -961,14 +1077,11 @@
           </div>
         </div>
       </div>
-      <div class="admin-block">
+      <div class="admin-block shop-mgr-section hidden" data-shop-section="frames">
         <div class="ab-title">Published Profile Frames</div>
         <div class="admin-emoji-list" id="admin-frame-list"></div>
       </div>
-    </div>
-
-    <div class="admin-pane hidden" id="admin-pane-banners">
-      <div class="admin-block">
+      <div class="admin-block shop-mgr-section hidden" data-shop-section="banners">
         <div class="ab-title">Create a Gradient Banner</div>
         <div class="banner-editor">
           <div class="banner-editor-preview">
@@ -998,7 +1111,7 @@
           </div>
         </div>
       </div>
-      <div class="admin-block">
+      <div class="admin-block shop-mgr-section hidden" data-shop-section="banners">
         <div class="ab-title">Published Banners</div>
         <div class="admin-emoji-list" id="admin-banner-list"></div>
       </div>
@@ -1150,10 +1263,30 @@
 <div id="toast-stack"></div>
 
 <!-- Firebase compat SDK (Firestore, Realtime Database for presence, Storage for uploads — no Firebase Auth, username/password lives in Firestore) -->
+<!-- ============ MODAL: edit a shop item (admin/owner) ============ -->
+<div class="modal-overlay hidden" id="shop-edit-modal">
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="shop-edit-title">
+    <div class="modal-header-row"><h2 id="shop-edit-title">Edit Item</h2><span class="x" data-close="shop-edit-modal" aria-label="Close">✕</span></div>
+    <div class="shop-edit-kind" id="shop-edit-kind"></div>
+    <div class="field"><label for="shop-edit-name">Name</label><input type="text" id="shop-edit-name" maxlength="24"></div>
+    <div class="field"><label for="shop-edit-desc">Description</label><input type="text" id="shop-edit-desc" maxlength="80"></div>
+    <div class="field"><label for="shop-edit-price">Price (Orbs)</label><input type="number" id="shop-edit-price" min="0"></div>
+    <label class="shop-edit-check"><input type="checkbox" id="shop-edit-featured"> Show in Featured</label>
+    <div class="shop-edit-extra" id="shop-edit-extra"></div>
+    <div class="modal-actions">
+      <button class="btn-danger hidden" id="shop-edit-delete-btn">Delete</button>
+      <button class="btn-secondary hidden" id="shop-edit-reset-btn">Reset to Default</button>
+      <span class="spacer"></span>
+      <button class="btn-secondary" data-close="shop-edit-modal">Cancel</button>
+      <button class="btn-accent-inline" id="shop-edit-save-btn">Save Changes</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
-<script src="script.js?v=32"></script>
+<script src="script.js?v=35"></script>
 </body>
 </html>

@@ -1349,8 +1349,8 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 }
 .home-nav-item:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
 .home-nav-item.active { background: var(--bg-modifier-selected); color: var(--text-normal); }
-.home-nav-item[data-home-view="shop"]:hover { background: rgba(237,66,69,.12); color: #ff6f70; }
-.home-nav-item[data-home-view="shop"]:hover .hn-icon { color: #ff6f70; }
+.home-nav-item[data-home-view="shop"]:hover { background: var(--accent-soft); color: color-mix(in srgb, var(--accent) 70%, #fff); }
+.home-nav-item[data-home-view="shop"]:hover .hn-icon { color: var(--accent); }
 .hn-icon { display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex-shrink: 0; }
 .hn-badge {
   margin-left: auto; background: var(--danger); color: #fff; font-size: 11px; font-weight: 700;
@@ -1538,37 +1538,81 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 }
 .sic-nameplate-preview span { position: relative; z-index: 1; color: #fff; font-weight: 700; font-size: 13px; }
 
-/* ============ PROFILE EFFECTS ============ */
+/* ============ PROFILE EFFECTS ============
+   Falling/rising particles animate `top` (a % of the card) rather than
+   translateY — translateY percentages are relative to the particle's OWN
+   few-pixel height, which is why effects used to only move ~60px and never
+   actually cross the profile card. Each particle gets --s (size scale) and
+   --drift (sideways sway) inline from PROFILE_EFFECT_PARTICLES_HTML. */
 .profile-effect-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 5; }
-.profile-effect-overlay .particle { position: absolute; top: -10%; }
-.effect-snowfall .particle { width: 6px; height: 6px; border-radius: 50%; background: #fff; opacity: .85; animation: effectSnowFall 6s linear infinite; }
-@keyframes effectSnowFall { from { transform: translateY(-10%) translateX(0); } to { transform: translateY(1000%) translateX(15px); } }
-.effect-petals .particle { width: 10px; height: 7px; border-radius: 60% 10% 60% 10%; background: #f7a8c4; animation: effectPetalFall 7s linear infinite; }
-@keyframes effectPetalFall { from { transform: translateY(-10%) rotate(0deg) translateX(0); } to { transform: translateY(1000%) rotate(340deg) translateX(-20px); } }
-.effect-sparkles .particle { width: 4px; height: 4px; border-radius: 50%; background: #ffe066; top: 50%; animation: effectSparkleTwinkle 2.2s ease-in-out infinite; }
-.effect-sparkles .particle:nth-child(3n) { top: 20%; }
-.effect-sparkles .particle:nth-child(3n+1) { top: 50%; }
-.effect-sparkles .particle:nth-child(3n+2) { top: 78%; }
-@keyframes effectSparkleTwinkle { 0%, 100% { opacity: 0; transform: scale(.4); } 50% { opacity: 1; transform: scale(1.3); } }
-.effect-rain .particle { width: 2px; height: 16px; background: linear-gradient(180deg, transparent, rgba(150,200,255,.7)); border-radius: 2px; animation: effectRainFall 1s linear infinite; }
-@keyframes effectRainFall { from { transform: translateY(-10%); } to { transform: translateY(1000%); } }
-.effect-fireflies .particle { width: 5px; height: 5px; border-radius: 50%; background: #ffe066; box-shadow: 0 0 6px 2px rgba(255,224,102,.8); top: 50%; animation: effectFireflyDrift 4s ease-in-out infinite; }
-.effect-fireflies .particle:nth-child(3n) { top: 25%; }
-.effect-fireflies .particle:nth-child(3n+1) { top: 55%; }
-.effect-fireflies .particle:nth-child(3n+2) { top: 80%; }
-@keyframes effectFireflyDrift { 0%, 100% { opacity: .2; transform: translateY(0) translateX(0); } 50% { opacity: 1; transform: translateY(-12px) translateX(6px); } }
-.effect-confetti .particle { width: 6px; height: 10px; animation: effectConfettiFall 3.5s linear infinite; }
+.profile-effect-overlay .particle, .sic-effect-preview .particle { position: absolute; top: -12%; will-change: top, transform, opacity; }
+@keyframes fxFall {
+  0% { top: -12%; transform: translateX(0) rotate(0deg) scale(var(--s, 1)); }
+  100% { top: 112%; transform: translateX(var(--drift, 0px)) rotate(var(--rot, 0deg)) scale(var(--s, 1)); }
+}
+@keyframes fxRise {
+  0% { top: 112%; opacity: 0; transform: translateX(0) scale(var(--s, 1)); }
+  12% { opacity: 1; }
+  85% { opacity: .9; }
+  100% { top: -12%; opacity: 0; transform: translateX(var(--drift, 0px)) scale(calc(var(--s, 1) * .6)); }
+}
+@keyframes fxTwinkle { 0%, 100% { opacity: 0; transform: scale(calc(var(--s, 1) * .4)); } 50% { opacity: 1; transform: scale(calc(var(--s, 1) * 1.3)); } }
+@keyframes fxDrift {
+  0%, 100% { opacity: .25; transform: translate(0, 0) scale(var(--s, 1)); }
+  50% { opacity: 1; transform: translate(var(--drift, 6px), -14px) scale(var(--s, 1)); }
+}
+@keyframes fxShoot {
+  0% { top: -10%; left: var(--start, 20%); opacity: 0; transform: rotate(35deg) scaleX(.3); }
+  8% { opacity: 1; }
+  40% { opacity: 1; transform: rotate(35deg) scaleX(1); }
+  60%, 100% { top: 70%; opacity: 0; transform: translateX(-120px) rotate(35deg) scaleX(.3); }
+}
+
+.effect-snowfall .particle { width: 6px; height: 6px; border-radius: 50%; background: #fff; opacity: .85; box-shadow: 0 0 4px rgba(255,255,255,.6); animation: fxFall 6s linear infinite; }
+.effect-petals .particle { --rot: 340deg; width: 10px; height: 7px; border-radius: 60% 10% 60% 10%; background: #f7a8c4; animation: fxFall 7s linear infinite; }
+.effect-sparkles .particle, .effect-fireflies .particle, .effect-glitter .particle,
+.effect-style-twinkling .particle, .effect-style-floating .particle { top: 48%; }
+.effect-sparkles .particle:nth-child(3n), .effect-fireflies .particle:nth-child(3n), .effect-glitter .particle:nth-child(3n),
+.effect-style-twinkling .particle:nth-child(3n), .effect-style-floating .particle:nth-child(3n) { top: 18%; }
+.effect-sparkles .particle:nth-child(3n+2), .effect-fireflies .particle:nth-child(3n+2), .effect-glitter .particle:nth-child(3n+2),
+.effect-style-twinkling .particle:nth-child(3n+2), .effect-style-floating .particle:nth-child(3n+2) { top: 78%; }
+.effect-sparkles .particle { width: 5px; height: 5px; background: #ffe066; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); animation: fxTwinkle 2.2s ease-in-out infinite; }
+.effect-rain .particle { width: 2px; height: 16px; background: linear-gradient(180deg, transparent, rgba(150,200,255,.75)); border-radius: 2px; --drift: -6px; animation: fxFall 1.1s linear infinite; }
+.effect-fireflies .particle { width: 5px; height: 5px; border-radius: 50%; background: #ffe066; box-shadow: 0 0 6px 2px rgba(255,224,102,.8); animation: fxDrift 4s ease-in-out infinite; }
+.effect-confetti .particle { --rot: 540deg; width: 6px; height: 10px; animation: fxFall 3.5s linear infinite; }
 .effect-confetti .particle:nth-child(5n) { background: #f87171; }
 .effect-confetti .particle:nth-child(5n+1) { background: #60a5fa; }
 .effect-confetti .particle:nth-child(5n+2) { background: #34d399; }
 .effect-confetti .particle:nth-child(5n+3) { background: #fbbf24; }
 .effect-confetti .particle:nth-child(5n+4) { background: #a78bfa; }
-@keyframes effectConfettiFall { from { transform: translateY(-10%) rotate(0deg); } to { transform: translateY(1000%) rotate(360deg); } }
+/* New built-in effects */
+.effect-embers .particle { width: 4px; height: 4px; border-radius: 50%; background: #ff8a3d; box-shadow: 0 0 6px 2px rgba(255,110,40,.75); animation: fxRise 3.2s ease-out infinite; }
+.effect-embers .particle:nth-child(2n) { background: #ffd05a; }
+.effect-hearts .particle { width: 10px; height: 10px; background: #ff5c8a; clip-path: path('M5 9.2 L1.2 5.4 A2.3 2.3 0 0 1 5 2.2 A2.3 2.3 0 0 1 8.8 5.4 Z'); animation: fxRise 5s ease-in-out infinite; }
+.effect-hearts .particle:nth-child(3n) { background: #ff9ec0; }
+.effect-bubbles .particle { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid rgba(180,230,255,.85); background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.7) 0 15%, transparent 30%); animation: fxRise 6s ease-in infinite; }
+.effect-leaves .particle { --rot: 420deg; width: 11px; height: 7px; border-radius: 0 80% 0 80%; background: #e8833a; animation: fxFall 6.5s ease-in-out infinite; }
+.effect-leaves .particle:nth-child(3n) { background: #c9452b; }
+.effect-leaves .particle:nth-child(3n+1) { background: #e8b83a; }
+.effect-matrix .particle { width: 2px; height: 22px; background: linear-gradient(180deg, transparent, #22ff66); box-shadow: 0 0 6px rgba(34,255,102,.6); --drift: 0px; animation: fxFall 1.6s linear infinite; }
+.effect-shooting-stars .particle { width: 46px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, transparent, #fff); box-shadow: 0 0 6px rgba(255,255,255,.8); animation: fxShoot 4.5s ease-in infinite; }
+.effect-shooting-stars .particle:nth-child(n+7) { display: none; }
+.effect-shooting-stars .particle:nth-child(1) { --start: 30%; }
+.effect-shooting-stars .particle:nth-child(2) { --start: 70%; }
+.effect-shooting-stars .particle:nth-child(3) { --start: 50%; }
+.effect-shooting-stars .particle:nth-child(4) { --start: 90%; }
+.effect-shooting-stars .particle:nth-child(5) { --start: 15%; }
+.effect-shooting-stars .particle:nth-child(6) { --start: 60%; }
+.effect-glitter .particle { width: 4px; height: 4px; border-radius: 1px; animation: fxTwinkle 1.4s ease-in-out infinite; }
+.effect-glitter .particle:nth-child(4n) { background: #ff7ad9; }
+.effect-glitter .particle:nth-child(4n+1) { background: #7ad7ff; }
+.effect-glitter .particle:nth-child(4n+2) { background: #ffe27a; }
+.effect-glitter .particle:nth-child(4n+3) { background: #b58bff; }
+
 .sic-effect-preview {
   position: relative; width: 100%; height: 56px; border-radius: 8px; overflow: hidden;
   background: var(--bg-tertiary); border: 1px solid rgba(255,255,255,.08);
 }
-.sic-effect-preview .particle { position: absolute; top: -10%; }
 
 /* ============ USER-CREATED (admin/owner) NAMEPLATES, EFFECTS, FRAMES ============
    Generic, color-parameterized versions of the same visual patterns above —
@@ -1582,18 +1626,13 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 }
 @keyframes nameplateShimmerSweep { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-.effect-style-falling .particle { width: 6px; height: 6px; background: var(--custom-particle-color, #fff); border-radius: 50%; animation: effectRainFall 3s linear infinite; }
-.effect-style-floating .particle {
-  width: 5px; height: 5px; background: var(--custom-particle-color, #fff); border-radius: 50%;
-  box-shadow: 0 0 6px 2px var(--custom-particle-color, #fff); top: 50%; animation: effectFireflyDrift 4s ease-in-out infinite;
+.effect-style-falling .particle { width: 6px; height: 6px; background: var(--custom-particle-color, #fff); border-radius: 50%; animation: fxFall 4s linear infinite; }
+.effect-style-rising .particle { width: 5px; height: 5px; background: var(--custom-particle-color, #fff); border-radius: 50%; box-shadow: 0 0 6px 1px var(--custom-particle-color, #fff); animation: fxRise 4s ease-out infinite; }
+.effect-style-floating .particle { width: 5px; height: 5px; background: var(--custom-particle-color, #fff); border-radius: 50%; box-shadow: 0 0 6px 2px var(--custom-particle-color, #fff); animation: fxDrift 4s ease-in-out infinite; }
+.effect-style-twinkling .particle { width: 4px; height: 4px; background: var(--custom-particle-color, #fff); border-radius: 50%; animation: fxTwinkle 2.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .profile-effect-overlay .particle, .sic-effect-preview .particle { animation-duration: 0s !important; animation-iteration-count: 1 !important; }
 }
-.effect-style-floating .particle:nth-child(3n) { top: 25%; }
-.effect-style-floating .particle:nth-child(3n+1) { top: 55%; }
-.effect-style-floating .particle:nth-child(3n+2) { top: 80%; }
-.effect-style-twinkling .particle { width: 4px; height: 4px; background: var(--custom-particle-color, #fff); border-radius: 50%; top: 50%; animation: effectSparkleTwinkle 2.2s ease-in-out infinite; }
-.effect-style-twinkling .particle:nth-child(3n) { top: 20%; }
-.effect-style-twinkling .particle:nth-child(3n+1) { top: 50%; }
-.effect-style-twinkling .particle:nth-child(3n+2) { top: 78%; }
 
 .frame-custom-glow { animation: frameCustomPulse 1.6s ease-in-out infinite alternate; }
 @keyframes frameCustomPulse {
@@ -1728,7 +1767,7 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 /* ============ MENTIONS ============ */
 .mention-pill { color: var(--text-link); background: var(--accent-soft); border-radius: 3px; padding: 0 2px; font-weight: 500; }
 .msg-link:hover { text-decoration: underline; }
-.mention-pill.mention-glow { color: #fff; background: rgba(88,101,242,.4); }
+.mention-pill.mention-glow { color: #fff; background: color-mix(in srgb, var(--accent) 40%, transparent); }
 .mention-pill.mention-glow.mention-self { font-weight: 700; }
 
 #mention-popup {
@@ -2075,7 +2114,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .ds-link-btn:hover { text-decoration: underline; }
 
 /* ---- Small global touches ---- */
-.channel-row, .dm-row, .home-nav-item, .friends-tab, .shop-tab, .admin-tab, .explore-server-row { transition: background .12s ease, color .12s ease; }
+.channel-row, .dm-row, .home-nav-item, .friends-tab, .shop-tab, .admin-tab, .shop-mgr-tab, .explore-server-row { transition: background .12s ease, color .12s ease, box-shadow .15s ease; }
 .explore-server-row:hover { background: var(--bg-tertiary); }
 .toast { border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.35); animation: frxSlideUp .2s ease; }
 .admin-tabs { overflow-x: auto; scrollbar-width: none; }
@@ -2330,3 +2369,173 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   .banner-anim, .modal-overlay, .modal-box, .ds-unsaved, .toast { animation: none !important; }
 }
+
+
+/* ============ THEME-DRIVEN BUTTON GLOW ============
+   Every hover glow derives from --accent, which the active Settings theme or
+   Shop theme sets on <body>, so the glow always matches the current theme.
+   color-mix() is used inline per rule (not via a :root variable) because a
+   variable computed on :root would freeze the default accent and ignore a
+   theme's override on <body>. */
+.home-nav-item:hover, .channel-row:hover, .dm-row:hover, .friends-tab:hover,
+.shop-tab:hover, .admin-tab:hover, .shop-mgr-tab:hover, .nav-item:hover {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), 0 0 12px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.btn-primary, .btn-accent-inline, .btn-secondary, .rail-item, .icon-btn, .hdr-icon-btn, .tb-icon-btn, .shop-icon-btn, .members-toggle {
+  transition: background .12s ease, color .12s ease, box-shadow .15s ease, border-radius .15s ease;
+}
+.btn-primary:hover:not(:disabled), .btn-accent-inline:hover:not(:disabled) {
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.btn-secondary:hover:not(:disabled) {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent), 0 0 12px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.rail-item:hover, .rail-item.active { box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 50%, transparent); }
+.icon-btn:hover, .hdr-icon-btn:hover, .tb-icon-btn:hover, .shop-icon-btn:hover, .members-toggle:hover {
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.shop-item-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: 0 8px 20px rgba(0,0,0,.35), 0 0 16px color-mix(in srgb, var(--accent) 30%, transparent); }
+.tb-win-btn.tb-close:hover { box-shadow: none; }
+
+/* ============ ADMIN: SHOP MANAGER SUB-TABS + EDITING ============ */
+.shop-mgr-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.shop-mgr-tab {
+  padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  color: var(--text-muted); background: var(--bg-input);
+}
+.shop-mgr-tab:hover { color: var(--text-normal); }
+.shop-mgr-tab.on { color: #fff; background: var(--accent); }
+.shop-mgr-hint { display: block; margin-bottom: 12px; }
+.admin-emoji-chip.editable { cursor: pointer; transition: box-shadow .15s ease, background .12s ease; }
+.admin-emoji-chip.editable:hover { background: var(--bg-modifier-selected); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 0 10px color-mix(in srgb, var(--accent) 25%, transparent); }
+.admin-chip-emoji { font-size: 18px; line-height: 1; }
+.admin-chip-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--text-faint); }
+.admin-chip-deco { width: 22px; height: 22px; display: inline-flex; }
+.admin-chip-deco svg { width: 22px; height: 22px; }
+.admin-builtin-label { flex-basis: 100%; font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-top: 8px; }
+
+#shop-edit-modal { z-index: 300; }
+#shop-edit-modal .modal-box { width: 460px; max-width: 94vw; max-height: 88vh; overflow-y: auto; }
+.shop-edit-kind { font-size: 12px; color: var(--text-muted); margin: -6px 0 14px; }
+.shop-edit-extra { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0 12px; }
+.shop-edit-extra .field.full { grid-column: 1 / -1; }
+.shop-edit-extra input[type="color"] { height: 38px; padding: 2px; cursor: pointer; }
+.shop-edit-check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-normal); margin: 4px 0 16px; cursor: pointer; }
+.shop-edit-check input { width: 16px; height: 16px; accent-color: var(--accent); }
+#shop-edit-modal .modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+#shop-edit-modal .modal-actions .spacer { flex: 1; }
+
+/* ============ NEW BUILT-IN NAMEPLATES ============ */
+.nameplate-sunset { background: linear-gradient(180deg, #ff7e5f 0%, #b2456e 55%, #3a1c4a 100%); }
+.nameplate-sunset::before {
+  content: ''; position: absolute; left: 50%; bottom: -30%; width: 60%; aspect-ratio: 1; transform: translateX(-50%);
+  border-radius: 50%; background: radial-gradient(circle, rgba(255,214,120,.55), transparent 65%);
+}
+.nameplate-galaxy { background: linear-gradient(120deg, #1a0633, #0b1b4d, #3b0a45, #1a0633); background-size: 300% 300%; animation: nameplateAuroraShift 8s ease-in-out infinite; }
+.nameplate-galaxy::before {
+  content: ''; position: absolute; inset: 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 40%, #fff, transparent), radial-gradient(2px 2px at 30% 70%, #cbb8ff, transparent),
+    radial-gradient(1.5px 1.5px at 52% 30%, #fff, transparent), radial-gradient(2px 2px at 70% 62%, #9fd8ff, transparent),
+    radial-gradient(1.5px 1.5px at 88% 28%, #fff, transparent);
+  animation: nameplateTwinkle 2.2s ease-in-out infinite alternate;
+}
+.nameplate-lava { background: linear-gradient(90deg, #2a0500, #6b1300, #c43a00, #6b1300, #2a0500); background-size: 250% 100%; animation: nameplateLavaFlow 5s linear infinite; }
+@keyframes nameplateLavaFlow { from { background-position: 0% 50%; } to { background-position: 250% 50%; } }
+
+/* ============ NEW BUILT-IN PROFILE FRAMES ============ */
+.frame-emerald { border: 3px solid #10b981; box-shadow: 0 0 0 1px rgba(16,185,129,.4), inset 0 0 20px rgba(16,185,129,.18); }
+.frame-plasma { border: 3px solid #a855f7; animation: framePlasmaPulse 1.8s ease-in-out infinite alternate; }
+@keyframes framePlasmaPulse {
+  from { border-color: #a855f7; box-shadow: 0 0 8px rgba(168,85,247,.5), inset 0 0 10px rgba(168,85,247,.15); }
+  to { border-color: #22d3ee; box-shadow: 0 0 18px rgba(34,211,238,.8), inset 0 0 22px rgba(34,211,238,.25); }
+}
+.sic-frame-preview.frame-emerald, .sic-frame-preview.frame-plasma { border-radius: 8px; }
+
+
+/* ============ OPAQUE OVERLAYS UNDER SHOP THEMES ============
+   Shop themes make every panel color ~62% transparent so the gradient can
+   show through the app. Anything layered ON TOP of the app (full-screen
+   settings, modals, menus) then let the chat underneath bleed through.
+   Painting the opaque theme gradient behind them fixes it on all screens. */
+body.shop-theme-active .ds-settings-layer { background: var(--shop-theme-bg); }
+body.shop-theme-active .modal-box,
+body.shop-theme-active .server-menu {
+  background: linear-gradient(var(--bg-floating), var(--bg-floating)), var(--shop-theme-bg);
+  background-attachment: local, fixed;
+}
+
+/* ============ SERVER DROPDOWN MENU (Discord-style) ============ */
+#side-panel { position: relative; }
+#side-header-chevron { flex-shrink: 0; transition: transform .15s ease; }
+#side-header[aria-expanded="true"] #side-header-chevron { transform: rotate(180deg); }
+#side-header[aria-expanded="true"] { background: var(--bg-modifier-hover); }
+.server-menu {
+  position: absolute; top: 54px; left: 8px; right: 8px; max-width: 232px; margin-inline: auto; z-index: 60;
+  padding: 6px 8px; border-radius: 8px; background: var(--bg-floating);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 8px 24px rgba(0,0,0,.45);
+  animation: frxPop .14s cubic-bezier(.2,.9,.3,1.15); transform-origin: top center;
+}
+.server-menu-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%;
+  min-height: 34px; padding: 6px 8px; border-radius: 4px; font-size: 14px; font-weight: 500;
+  color: var(--text-normal); text-align: left;
+}
+.server-menu-item svg { flex-shrink: 0; opacity: .85; }
+.server-menu-item:hover, .server-menu-item:focus-visible { background: var(--accent); color: #fff; outline: none; box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 45%, transparent); }
+.server-menu-item.danger { color: #f23f42; }
+.server-menu-item.danger:hover, .server-menu-item.danger:focus-visible { background: #da373c; color: #fff; box-shadow: none; }
+.server-menu-sep { height: 1px; margin: 4px 6px; background: var(--divider); }
+@media (max-width: 768px) { .server-menu { max-width: none; } .server-menu-item { min-height: 42px; font-size: 15px; } }
+
+
+/* ============ CHANNEL SETTINGS / SLOWMODE / INVITES ============ */
+.chat-topic { min-width: 0; margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--divider); color: var(--text-muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 768px) { .chat-topic { display: none; } }
+.slowmode-indicator { display: flex; justify-content: flex-end; align-items: center; gap: 6px; padding: 0 16px 4px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.slowmode-indicator.active { color: var(--accent); }
+#composer-input:disabled { cursor: not-allowed; opacity: .6; }
+.ss-textarea { width: 100%; resize: vertical; min-height: 72px; font: inherit; }
+.ss-nav-mod { margin-top: 12px; }
+.cs-slow-val { margin-left: 8px; color: var(--accent); text-transform: none; }
+.cs-range { width: 100%; accent-color: var(--accent); margin-top: 8px; }
+.cs-private-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.cs-private-title { font-weight: 600; color: var(--text-normal); }
+.cs-perm-layout { display: grid; grid-template-columns: 200px 1fr; gap: 16px; margin-bottom: 16px; }
+@media (max-width: 768px) { .cs-perm-layout { grid-template-columns: 1fr; } }
+.cs-col-head { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+.cs-target-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.cs-target { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 6px 10px; border-radius: 4px; color: var(--text-muted); font-weight: 500; text-align: left; }
+.cs-target:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
+.cs-target.on { background: var(--bg-modifier-selected, var(--bg-modifier-hover)); color: var(--text-normal); }
+.cs-target .cs-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.cs-target .cs-tname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-target .cs-rm { opacity: .6; font-size: 12px; padding: 0 4px; }
+.cs-target .cs-rm:hover { opacity: 1; color: #f23f42; }
+.cs-group-label { margin: 16px 0 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); }
+.cs-group-label:first-child { margin-top: 0; }
+.cs-perm-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--divider); }
+.cs-perm-text { min-width: 0; }
+.cs-perm-name { font-weight: 600; color: var(--text-normal); font-size: 15px; }
+.cs-perm-desc { font-size: 13px; color: var(--text-muted); margin-top: 2px; line-height: 1.35; }
+.tri { display: inline-flex; flex-shrink: 0; border: 1px solid var(--divider); border-radius: 4px; overflow: hidden; }
+.tri button { width: 30px; height: 26px; display: grid; place-items: center; color: var(--text-muted); font-weight: 700; }
+.tri button + button { border-left: 1px solid var(--divider); }
+.tri button:hover { color: var(--text-normal); background: var(--bg-modifier-hover); }
+.tri button.on[data-v="deny"] { background: #da373c; color: #fff; }
+.tri button.on[data-v="inherit"] { background: #4e5058; color: #fff; }
+.tri button.on[data-v="allow"] { background: #23a55a; color: #fff; }
+.ss-search { width: 100%; margin-bottom: 12px; }
+.bans-list { display: flex; flex-direction: column; }
+.ban-row { display: flex; align-items: center; gap: 12px; padding: 10px 8px; border-bottom: 1px solid var(--divider); }
+.ban-row .ban-name { flex: 1; min-width: 0; font-weight: 600; color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; }
+.bans-empty { padding: 32px 8px; text-align: center; color: var(--text-muted); }
+.invite-preview { text-align: center; max-width: 440px; }
+.invite-icon { width: 72px; height: 72px; margin: 4px auto 16px; border-radius: 22px; display: grid; place-items: center; background: var(--accent); color: #fff; font-size: 26px; font-weight: 800; }
+.invite-sub { color: var(--text-muted); font-size: 14px; }
+.invite-name { margin: 4px 0 8px; font-size: 24px; }
+.invite-desc { color: var(--text-normal); font-size: 14px; line-height: 1.4; margin-bottom: 8px; }
+.invite-desc:empty { display: none; }
+.invite-meta { color: var(--text-muted); font-size: 13px; margin-bottom: 12px; }
+.invite-actions { justify-content: center; }
+body.shop-theme-active .ds-settings-layer#channel-settings-modal { background: var(--shop-theme-bg); }
