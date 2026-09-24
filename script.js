@@ -92,6 +92,7 @@
        match /shopNameplates/{id} { allow read, write: if true; }
        match /shopProfileEffects/{id} { allow read, write: if true; }
        match /shopProfileFrames/{id} { allow read, write: if true; }
+       match /shopBanners/{id} { allow read, write: if true; }
        match /stickers/{id} { allow read, write: if true; }
        match /redeemCodes/{code} { allow read, write: if true; }
        match /servers/{sid} {
@@ -200,7 +201,23 @@ const PREMIUM_COST_ORBS = 1400;
 // a halo, etc.) — not pixel copies of anyone's actual artwork. svg(size) is
 // a function so the markup can be regenerated at whatever pixel size a
 // given avatar happens to render at.
-const AVATAR_DECORATIONS = [];
+const AVATAR_DECORATIONS = [
+  { id: 'halo', name: 'Halo', desc: 'A golden ring floating above your avatar.', price: 500, featured: true,
+    svg: (s) => `<svg viewBox="0 0 100 100" width="${s}" height="${s}"><ellipse cx="50" cy="14" rx="20" ry="7" fill="none" stroke="#ffd76a" stroke-width="5"/><ellipse cx="50" cy="14" rx="20" ry="7" fill="none" stroke="#fff3c4" stroke-width="1.5" opacity=".8"/></svg>` },
+  { id: 'cat-ears', name: 'Cat Ears', desc: 'A pair of pink-lined cat ears.', price: 450,
+    svg: (s) => `<svg viewBox="0 0 100 100" width="${s}" height="${s}"><path d="M22 30 L14 8 L38 22 Z" fill="#3a2a20"/><path d="M25 26 L20 13 L34 22 Z" fill="#e8a3b0"/><path d="M78 30 L86 8 L62 22 Z" fill="#3a2a20"/><path d="M75 26 L80 13 L66 22 Z" fill="#e8a3b0"/></svg>` },
+  { id: 'devil-horns', name: 'Devil Horns', desc: 'A pair of small curved red horns.', price: 450,
+    svg: (s) => `<svg viewBox="0 0 100 100" width="${s}" height="${s}"><path d="M30 26 Q24 10 34 4 Q30 16 36 24 Z" fill="#c0392b"/><path d="M70 26 Q76 10 66 4 Q70 16 64 24 Z" fill="#c0392b"/></svg>` },
+  { id: 'crown', name: 'Crown', desc: 'A little jeweled crown resting on top.', price: 650, featured: true,
+    svg: (s) => `<svg viewBox="0 0 100 100" width="${s}" height="${s}"><path d="M28 24 L34 8 L44 18 L50 6 L56 18 L66 8 L72 24 Z" fill="#f0b232" stroke="#c98a1c" stroke-width="1.5" stroke-linejoin="round"/><circle cx="34" cy="8" r="3" fill="#ff5e5e"/><circle cx="50" cy="6" r="3" fill="#5ec7ff"/><circle cx="66" cy="8" r="3" fill="#7ee787"/></svg>` },
+  { id: 'bow', name: 'Bow', desc: 'A cute pink ribbon bow.', price: 400,
+    svg: (s) => `<svg viewBox="0 0 100 100" width="${s}" height="${s}"><path d="M50 14 L28 4 Q22 14 32 20 Z" fill="#ff6f9c"/><path d="M50 14 L72 4 Q78 14 68 20 Z" fill="#ff6f9c"/><circle cx="50" cy="14" r="5" fill="#e8497a"/></svg>` },
+  { id: 'sparkle-ring', name: 'Sparkle Ring', desc: 'A scatter of little stars around your avatar.', price: 500,
+    svg: (s) => {
+      const star = (cx, cy, sc) => `<path transform="translate(${cx},${cy}) scale(${sc})" d="M0 -6 L1.6 -1.6 L6 0 L1.6 1.6 L0 6 L-1.6 1.6 L-6 0 L-1.6 -1.6 Z" fill="#ffe066"/>`;
+      return `<svg viewBox="0 0 100 100" width="${s}" height="${s}">${star(16, 20, 1)}${star(84, 20, 0.8)}${star(12, 60, 0.7)}${star(88, 66, 1)}</svg>`;
+    } },
+];
 // Admin/owner-published decorations, drawn in-app rather than hand-coded —
 // loaded from Firestore (see shopDecorations collection) and merged
 // alongside the built-in catalog everywhere a decoration can be looked up
@@ -212,14 +229,38 @@ function decorationById(id) { return AVATAR_DECORATIONS.find(d => d.id === id) |
 // block in the profile popup. All CSS-driven (gradient + pattern, some
 // animated) rather than image assets, same self-contained-file reasoning
 // as the avatar decorations above. See the matching classes in style.css.
-const NAMEPLATES = [];
+const NAMEPLATES = [
+  { id: 'blazing', name: 'Blazing', desc: 'Embers glowing at the base of your name.', price: 500, cssClass: 'nameplate-blazing', animated: true },
+  { id: 'starfall', name: 'Starfall', desc: 'A twinkling night sky behind your name.', price: 500, cssClass: 'nameplate-starfall', animated: true },
+  { id: 'ocean', name: 'Ocean', desc: 'Calm waves along the bottom edge.', price: 400, cssClass: 'nameplate-ocean', animated: false },
+  { id: 'aurora', name: 'Aurora', desc: 'Slow-shifting teal and violet, like real aurora light.', price: 650, cssClass: 'nameplate-aurora', animated: true, featured: true },
+  { id: 'blossom', name: 'Blossom', desc: 'Soft pink petals drifting in the background.', price: 400, cssClass: 'nameplate-blossom', animated: false },
+  { id: 'cybergrid', name: 'Cybergrid', desc: 'A glowing green grid with a scanning line.', price: 550, cssClass: 'nameplate-cybergrid', animated: true },
+];
 let customNameplates = [];
+// Gradient Banners — admin/owner-published profile banners sold in the Shop.
+// When equipped, they replace the solid/gradient banner picked in Profile
+// settings. Stored in the shopBanners Firestore collection.
+let customBanners = [];
+function bannerById(id) { return id ? customBanners.find(b => b.id === id) || null : null; }
+function bannerGradientCSS(b) {
+  const colors = (b && b.colors && b.colors.length ? b.colors : ['#5865f2', '#eb459e']).map(c => String(c).replace(/[^#a-z0-9(),.% ]/gi, ''));
+  const angle = Number.isFinite(Number(b && b.angle)) ? Number(b.angle) : 135;
+  return `linear-gradient(${angle}deg, ${colors.join(', ')})`;
+}
 function nameplateById(id) { return NAMEPLATES.find(d => d.id === id) || customNameplates.find(d => d.id === id) || null; }
 
 // Profile Effects — an animated overlay across the whole profile card
 // (falling particles, ambient sparkles, etc.), independent of both the
 // avatar decoration and the nameplate.
-const PROFILE_EFFECTS = [];
+const PROFILE_EFFECTS = [
+  { id: 'snowfall', name: 'Snowfall', desc: 'Gentle snow falling across your profile.', price: 500, cssClass: 'effect-snowfall', animated: true },
+  { id: 'petals', name: 'Petals', desc: 'Pink petals drifting down like falling blossoms.', price: 500, cssClass: 'effect-petals', animated: true },
+  { id: 'sparkles', name: 'Sparkles', desc: 'Little gold sparkles twinkling in and out.', price: 450, cssClass: 'effect-sparkles', animated: true, featured: true },
+  { id: 'rain', name: 'Rain', desc: 'A steady drizzle of rain streaks.', price: 400, cssClass: 'effect-rain', animated: true },
+  { id: 'fireflies', name: 'Fireflies', desc: 'Warm fireflies drifting lazily around your profile.', price: 550, cssClass: 'effect-fireflies', animated: true },
+  { id: 'confetti', name: 'Confetti', desc: 'A constant shower of colorful confetti.', price: 600, cssClass: 'effect-confetti', animated: true },
+];
 let customProfileEffects = [];
 function profileEffectById(id) { return PROFILE_EFFECTS.find(d => d.id === id) || customProfileEffects.find(d => d.id === id) || null; }
 // Shared particle markup for all profile effects — which effect it actually
@@ -232,7 +273,14 @@ const PROFILE_EFFECT_PARTICLES_HTML = Array.from({ length: 18 }, (_, i) =>
 
 // Profile Frames — a decorative border treatment around the whole profile
 // card itself, separate from the avatar's own decoration.
-const PROFILE_FRAMES = [];
+const PROFILE_FRAMES = [
+  { id: 'golden', name: 'Golden', desc: 'A warm gold border with a soft inner glow.', price: 500, cssClass: 'frame-golden', animated: false },
+  { id: 'neon', name: 'Neon', desc: 'A hot pink border that pulses like a neon sign.', price: 600, cssClass: 'frame-neon', animated: true, featured: true },
+  { id: 'thorns', name: 'Thorns', desc: 'A dark, rugged wooden-thorn border.', price: 450, cssClass: 'frame-thorns', animated: false },
+  { id: 'ice', name: 'Ice', desc: 'A crisp icy-blue border with a cold glow.', price: 500, cssClass: 'frame-ice', animated: false },
+  { id: 'rainbow', name: 'Rainbow', desc: 'A border that cycles through every color.', price: 700, cssClass: 'frame-rainbow', animated: true },
+  { id: 'rosevine', name: 'Rosevine', desc: 'A deep green border wrapped like climbing vines.', price: 450, cssClass: 'frame-rosevine', animated: false },
+];
 let customProfileFrames = [];
 function profileFrameById(id) { return PROFILE_FRAMES.find(d => d.id === id) || customProfileFrames.find(d => d.id === id) || null; }
 
@@ -292,6 +340,7 @@ const SHOP_THEMES = [
   { id: 'infrared', name: 'Infrared', desc: 'Deep infrared heat red.', price: 225, bg: ['#080000', '#110000', '#330606'], accent: '#ff0055', accent2: '#ff2266' },
 ];
 let customThemes = [];
+let customThemesLoaded = false;
 function shopThemeById(id) { return SHOP_THEMES.find(t => t.id === id) || customThemes.find(t => t.id === id) || null; }
 
 function hexToRgbTuple(hex) {
@@ -308,20 +357,36 @@ function darkenHex(hex, amt) { const [r, g, b] = hexToRgbTuple(hex); const f = v
 // preference is active — Shop themes are a separate, independent layer,
 // so switching back to "no theme" here just falls back to that untouched.
 function applyShopTheme(themeId) {
-  const root = document.documentElement;
   const body = document.body;
-  body.classList.remove('shop-anim-hue', 'shop-anim-holo', 'shop-anim-aurora');
+  // These overrides live on <body> itself, not <html> — they used to be
+  // on <html>, which seemed right ("inline style beats a class
+  // selector") but was wrong for a different reason: --bg-deepest etc.
+  // are also set by body.theme-light/ash/onyx below, and for CSS custom
+  // properties, whichever element is CLOSEST to the elements actually
+  // reading the property wins the inheritance, regardless of inline vs.
+  // class — body is closer than html is. So with any Settings theme
+  // other than Dark active (Dark adds no class to body at all), body's
+  // own class-based value was silently shadowing the shop theme's
+  // override before it ever reached anything inside body — shop themes
+  // only ever worked while Dark was the active Settings theme. Setting
+  // these directly on body puts them on the same element as those class
+  // rules, so inline-beats-class actually applies like it's supposed to.
   const t = themeId ? shopThemeById(themeId) : null;
+  // An equipped theme whose catalog entry hasn't loaded yet (custom themes
+  // arrive from Firestore asynchronously) is left alone rather than reset —
+  // subscribeCustomThemes re-applies once it knows about it.
+  if (themeId && !t && !customThemesLoaded) return;
+  body.classList.remove('shop-anim-hue', 'shop-anim-holo', 'shop-anim-aurora');
   if (!t) {
     ['--shop-theme-bg', '--bg-deepest', '--bg-secondary', '--bg-primary', '--bg-tertiary', '--bg-floating',
      '--bg-input', '--accent', '--accent-hover', '--accent-soft', '--text-link']
-      .forEach(v => root.style.removeProperty(v));
+      .forEach(v => body.style.removeProperty(v));
     body.classList.remove('shop-theme-active');
     return;
   }
   body.classList.add('shop-theme-active');
   const [c1, c2, c3] = t.bg;
-  root.style.setProperty('--shop-theme-bg', `linear-gradient(135deg, ${c1} 0%, ${c2} 55%, ${c3} 100%)`);
+  body.style.setProperty('--shop-theme-bg', `linear-gradient(135deg, ${c1} 0%, ${c2} 55%, ${c3} 100%)`);
   // Panels normally paint a fully opaque color edge-to-edge with no gaps,
   // which sits in front of the ::before gradient layer above in paint
   // order and hid it completely — every shop theme, including the three
@@ -334,16 +399,16 @@ function applyShopTheme(themeId) {
   // flat color still dominates (so text contrast barely changes) but the
   // gradient and its animation are now genuinely visible, which is the
   // entire point of paying for one of these.
-  root.style.setProperty('--bg-deepest', hexToRgbaStr(c1, 0.62));
-  root.style.setProperty('--bg-secondary', hexToRgbaStr(c1, 0.62));
-  root.style.setProperty('--bg-tertiary', hexToRgbaStr(c1, 0.62));
-  root.style.setProperty('--bg-floating', hexToRgbaStr(c1, 0.75));
-  root.style.setProperty('--bg-primary', hexToRgbaStr(c2, 0.62));
-  root.style.setProperty('--bg-input', hexToRgbaStr(lightenHex(c3, 12), 0.8));
-  root.style.setProperty('--accent', t.accent);
-  root.style.setProperty('--accent-hover', darkenHex(t.accent, 24));
-  root.style.setProperty('--accent-soft', hexToRgbaStr(t.accent, 0.15));
-  root.style.setProperty('--text-link', t.accent2 || t.accent);
+  body.style.setProperty('--bg-deepest', hexToRgbaStr(c1, 0.62));
+  body.style.setProperty('--bg-secondary', hexToRgbaStr(c1, 0.62));
+  body.style.setProperty('--bg-tertiary', hexToRgbaStr(c1, 0.62));
+  body.style.setProperty('--bg-floating', hexToRgbaStr(c1, 0.75));
+  body.style.setProperty('--bg-primary', hexToRgbaStr(c2, 0.62));
+  body.style.setProperty('--bg-input', hexToRgbaStr(lightenHex(c3, 12), 0.8));
+  body.style.setProperty('--accent', t.accent);
+  body.style.setProperty('--accent-hover', darkenHex(t.accent, 24));
+  body.style.setProperty('--accent-soft', hexToRgbaStr(t.accent, 0.15));
+  body.style.setProperty('--text-link', t.accent2 || t.accent);
   if (t.anim === 'hue') body.classList.add('shop-anim-hue');
   if (t.anim === 'holo') body.classList.add('shop-anim-holo');
   if (t.anim === 'aurora') body.classList.add('shop-anim-aurora');
@@ -359,6 +424,7 @@ const SHOP_CATEGORY_DEFS = {
   profile_effects: { label: 'Profile Effects', get catalog() { return [...PROFILE_EFFECTS, ...customProfileEffects]; }, ownedField: 'ownedProfileEffects', equipField: 'equippedProfileEffect' },
   profile_frames: { label: 'Profile Frames', get catalog() { return [...PROFILE_FRAMES, ...customProfileFrames]; }, ownedField: 'ownedProfileFrames', equipField: 'equippedProfileFrame' },
   themes: { label: 'Themes', get catalog() { return [...SHOP_THEMES, ...customThemes].map(t => ({ ...t, animated: !!t.anim })); }, ownedField: 'ownedThemes', equipField: 'equippedTheme' },
+  banners: { label: 'Banners', get catalog() { return customBanners; }, ownedField: 'ownedBanners', equipField: 'equippedBanner' },
 };
 const PREMIUM_DURATION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 function isPremium(p) { return !!(p && p.premiumUntil && p.premiumUntil > Date.now()); }
@@ -740,6 +806,12 @@ function subscribeCustomThemes() {
     const items = [];
     snap.forEach(d => items.push({ id: d.id, ...d.data() }));
     customThemes = items;
+    customThemesLoaded = true;
+    // The profile snapshot usually lands before this catalog does, so an
+    // equipped admin-made theme couldn't be resolved yet on a fresh load
+    // and fell back to default until the next profile write. Re-apply now
+    // that the custom catalog is actually known.
+    if (myProfile && myProfile.equippedTheme) applyShopTheme(myProfile.equippedTheme);
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminThemeList();
   });
@@ -752,6 +824,15 @@ function subscribeCustomNameplates() {
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminNameplateList();
   });
+}
+function subscribeCustomBanners() {
+  db.collection('shopBanners').onSnapshot(snap => {
+    const items = [];
+    snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+    customBanners = items;
+    refreshOpenShopPanes();
+    if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminBannerList();
+  }, (err) => console.warn('shopBanners listener failed — add a Firestore rule for /shopBanners/{id}.', err));
 }
 function subscribeCustomProfileEffects() {
   db.collection('shopProfileEffects').onSnapshot(snap => {
@@ -945,19 +1026,43 @@ function toast(msg, type = '') {
 // .avatar deliberately has no overflow:hidden (see its CSS) specifically so
 // this isn't clipped. Skipped below a small size since a decoration on a
 // 20px avatar just reads as visual noise.
-function decorationOverlayHTML(decorationId, size) {
+function decorationOverlayHTML(decorationId, size, hole) {
   const deco = size >= 28 ? decorationById(decorationId) : null;
   if (!deco) return '';
   const decoSize = Math.round(size * 1.3);
   const decoOffset = Math.round((decoSize - size) / 2);
+  // When the avatar has a status indicator, punch the same hole out of the
+  // decoration layer — otherwise an oversized decoration paints straight
+  // over the cutout and the status dot looks like it's sitting on top of
+  // the decoration instead of in a clean notch.
+  let maskStyle = '';
+  if (hole) {
+    const cx = decoSize - hole.center - decoOffset;
+    const cy = decoSize - hole.center - decoOffset;
+    const grad = `radial-gradient(circle ${hole.r}px at ${cx}px ${cy}px, transparent ${hole.r - 1}px, #000 ${hole.r}px)`;
+    maskStyle = `-webkit-mask-image:${grad};mask-image:${grad};`;
+  }
   // Built-in decorations render their own SVG; admin-drawn ones store a
-  // plain image (a canvas export) instead, so they render as an <img>.
-  const inner = deco.imageUrl ? `<img src="${esc(deco.imageUrl)}" alt="" draggable="false">` : deco.svg(decoSize);
-  return `<span class="avatar-decoration" style="width:${decoSize}px;height:${decoSize}px;left:${-decoOffset}px;top:${-decoOffset}px;">${inner}</span>`;
+  // plain image (a canvas export) instead, so they render as an <img>;
+  // emoji-based ones (the easier alternative to drawing) render as text,
+  // sized and positioned to sit like a hat above the avatar, same spot
+  // the drawn/SVG ones occupy.
+  const inner = deco.emoji
+    ? `<span class="avatar-decoration-emoji" style="font-size:${Math.round(decoSize * 0.42)}px;">${esc(deco.emoji)}</span>`
+    : deco.imageUrl ? `<img src="${esc(deco.imageUrl)}" alt="" draggable="false">` : deco.svg(decoSize);
+  return `<span class="avatar-decoration" style="width:${decoSize}px;height:${decoSize}px;left:${-decoOffset}px;top:${-decoOffset}px;${maskStyle}">${inner}</span>`;
 }
-function avatarHTML(size, color, letter, status, avatarUrl, decorationId) {
+// Discord's mobile presence indicator: a little phone glyph in the status
+// color, shown in place of the round dot when that person is online from a
+// phone. Sized relative to the dot it replaces.
+function mobileStatusSVG(status, dotD) {
+  const w = Math.round(dotD * 0.78), h = Math.round(dotD * 1.15);
+  return `<svg class="status-phone" viewBox="0 0 12 18" width="${w}" height="${h}" aria-label="${status} on mobile"><rect x="0" y="0" width="12" height="18" rx="2.6" class="phone-body"/><rect x="1.6" y="2.6" width="8.8" height="11" rx="0.8" class="phone-screen"/><circle cx="6" cy="15.6" r="0.9" class="phone-screen"/></svg>`;
+}
+function avatarHTML(size, color, letter, status, avatarUrl, decorationId, uid) {
   let maskStyle = '';
   let dotHTML = '';
+  let hole = null;
   if (status) {
     // Discord-style status indicator: a real cutout via CSS mask instead of a
     // border colored to guess whatever's behind the avatar. That guess was
@@ -969,13 +1074,20 @@ function avatarHTML(size, color, letter, status, avatarUrl, decorationId) {
     const dotD = Math.max(9, Math.round(size * 0.315));
     const holeR = Math.round(dotD / 2 + Math.max(2, Math.round(size * 0.07)));
     const center = Math.round(dotD / 2 + Math.max(1, Math.round(size * 0.02)));
+    const onMobile = status !== 'offline' && uid && isOnMobile(uid);
     const dotOffset = center - dotD / 2;
-    const grad = `radial-gradient(circle ${holeR}px at calc(100% - ${center}px) calc(100% - ${center}px), transparent ${holeR - 1}px, #000 ${holeR}px)`;
+    // The phone glyph is taller than the dot, so give it a slightly larger notch.
+    const r = onMobile ? Math.round(holeR * 1.25) : holeR;
+    const c = onMobile ? Math.round(center * 1.05) : center;
+    hole = { r, center: c };
+    const grad = `radial-gradient(circle ${r}px at calc(100% - ${c}px) calc(100% - ${c}px), transparent ${r - 1}px, #000 ${r}px)`;
     maskStyle = `-webkit-mask-image:${grad};mask-image:${grad};`;
-    dotHTML = `<span class="status-dot ${status}" style="width:${dotD}px;height:${dotD}px;right:${dotOffset}px;bottom:${dotOffset}px;"></span>`;
+    dotHTML = onMobile
+      ? `<span class="status-dot ${status} mobile" title="${status === 'idle' ? 'Idle' : 'Online'} on mobile" style="right:${dotOffset - 1}px;bottom:${dotOffset - 2}px;">${mobileStatusSVG(status, dotD)}</span>`
+      : `<span class="status-dot ${status}" style="width:${dotD}px;height:${dotD}px;right:${dotOffset}px;bottom:${dotOffset}px;"></span>`;
   }
   const inner = `<img src="${esc(avatarUrl || DEFAULT_AVATAR_URL)}" alt="" loading="lazy" style="${maskStyle}">`;
-  return `<div class="avatar has-image" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.42)}px;background:transparent">${inner}${dotHTML}${decorationOverlayHTML(decorationId, size)}</div>`;
+  return `<div class="avatar has-image" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.42)}px;background:transparent">${inner}${dotHTML}${decorationOverlayHTML(decorationId, size, hole)}</div>`;
 }
 function premiumStar(profile) { return isPremium(profile) ? icon('star', 'premium-star') : ''; }
 function opTag(profile) { return profile && profile.op ? '<span class="op-tag">Admin</span>' : ''; }
@@ -993,14 +1105,28 @@ function botTag(profile) { return profile && profile.bot ? `<span class="bot-tag
 // can't be limited by roles, matching Discord — ownership is
 // transferred, never granted through a role.
 // ============================================================
-const SERVER_PERMISSIONS = [
-  { key: 'manageServer', label: 'Manage Server', desc: 'Rename the server and change its settings.' },
-  { key: 'manageRoles', label: 'Manage Roles', desc: 'Create, edit, delete, and assign roles ranked below their own.' },
-  { key: 'manageChannels', label: 'Manage Channels', desc: 'Create, rename, and delete channels and categories.' },
-  { key: 'manageMessages', label: 'Manage Messages', desc: "Delete other members' messages in this server." },
-  { key: 'kickMembers', label: 'Kick Members', desc: 'Remove members — they can rejoin with an invite.' },
-  { key: 'banMembers', label: 'Ban Members', desc: 'Remove members and block them from rejoining.' },
+const SERVER_PERMISSION_GROUPS = [
+  { key: 'general', label: 'General Server Permissions' },
+  { key: 'membership', label: 'Membership Permissions' },
+  { key: 'text', label: 'Text Channel Permissions' },
+  { key: 'advanced', label: 'Advanced Permissions' },
 ];
+const SERVER_PERMISSIONS = [
+  { key: 'manageChannels', group: 'general', label: 'Manage Channels', desc: 'Allows members to create, edit, or delete channels and categories.' },
+  { key: 'manageRoles', group: 'general', label: 'Manage Roles', desc: 'Allows members to create new roles and edit or delete roles lower than their highest role. Also allows members to change which roles can see individual channels.' },
+  { key: 'manageServer', group: 'general', label: 'Manage Server', desc: "Allows members to change this server's name and view its invite code." },
+  { key: 'kickMembers', group: 'membership', label: 'Kick Members', desc: 'Allows members to remove other members from this server. Kicked members will be able to rejoin if they have another invite.' },
+  { key: 'banMembers', group: 'membership', label: 'Ban Members', desc: 'Allows members to permanently ban other members from this server.' },
+  { key: 'manageMessages', group: 'text', label: 'Manage Messages', desc: 'Allows members to delete messages by other members or pin any message.' },
+  { key: 'administrator', group: 'advanced', label: 'Administrator', desc: 'Members with this permission will have every permission and will also bypass all channel specific restrictions (for example, these members would get access to all private channels). This is a dangerous permission to grant.' },
+];
+// Server-level "owner" authority: the server's actual owner, or the Frixion
+// platform owner. Frixion platform admins deliberately do NOT get this —
+// servers belong to their owners and admins.
+function isServerOwnerLevel(server, uid) {
+  if (!server) return false;
+  return server.ownerId === uid || (uid === myUid && isOwner);
+}
 // Every server has an implicit base role representing its baseline
 // permissions for anyone without a specific role — same idea as
 // Discord's @everyone. Stored as a real entry in `roles` (id: 'everyone')
@@ -1020,9 +1146,10 @@ function memberRolesOf(server, uid) {
 function serverPermissionsFor(server, uid) {
   const all = new Set(SERVER_PERMISSIONS.map(p => p.key));
   if (!server) return new Set();
-  if (server.ownerId === uid || isAdmin || isOwner) return all;
+  if (isServerOwnerLevel(server, uid)) return all;
   const perms = new Set();
   [everyoneRole(server), ...memberRolesOf(server, uid)].forEach(r => (r.permissions || []).forEach(p => perms.add(p)));
+  if (perms.has('administrator')) return all;
   return perms;
 }
 function hasServerPerm(server, uid, perm) { return serverPermissionsFor(server, uid).has(perm); }
@@ -1049,7 +1176,7 @@ function roleChipHTML(role) {
 // as before this existed.
 function canViewChannel(channel, server, uid) {
   if (!channel || !channel.visibleToRoles || !channel.visibleToRoles.length) return true;
-  if (server && (server.ownerId === uid || isAdmin || isOwner)) return true;
+  if (server && hasServerPerm(server, uid, 'administrator')) return true;
   const myRoleIds = memberRolesOf(server, uid).map(r => r.id);
   return channel.visibleToRoles.some(rid => myRoleIds.includes(rid));
 }
@@ -1095,14 +1222,26 @@ async function getProfile(uid) {
 let presenceCache = {};       // uid -> true (connected) | false (disconnected)
 let idleCache = {};           // uid -> true (tab hidden) | false (tab visible)
 let presenceListeners = {};   // uid -> RTDB ref+callback, so we only subscribe once per uid
+let mobileCache = {};         // uid -> true when that person's active session is a phone/tablet
+// Real device detection (not just "is the window narrow"): UA Client Hints
+// where available, a UA sniff as the fallback, plus a touch-capable check
+// so a small desktop window is never mistaken for a phone.
+function isMobileDevice() {
+  if (navigator.userAgentData && typeof navigator.userAgentData.mobile === 'boolean') return navigator.userAgentData.mobile;
+  const ua = navigator.userAgent || '';
+  const uaMobile = /Android|iPhone|iPad|iPod|Mobile|IEMobile|Opera Mini|webOS|BlackBerry/i.test(ua)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS reports itself as a Mac
+  return uaMobile && (navigator.maxTouchPoints > 0 || 'ontouchstart' in window);
+}
+function isOnMobile(uid) { return !!mobileCache[uid]; }
 function initPresence() {
   if (!rtdb || !myUid) return;
   try {
     const myRef = rtdb.ref('presence/' + myUid);
     rtdb.ref('.info/connected').on('value', (snap) => {
       if (snap.val() === true) {
-        myRef.onDisconnect().set({ online: false, idle: false, lastChanged: firebase.database.ServerValue.TIMESTAMP })
-          .then(() => myRef.set({ online: true, idle: document.hidden, lastChanged: firebase.database.ServerValue.TIMESTAMP }));
+        myRef.onDisconnect().set({ online: false, idle: false, mobile: false, lastChanged: firebase.database.ServerValue.TIMESTAMP })
+          .then(() => myRef.set({ online: true, idle: document.hidden, mobile: isMobileDevice(), lastChanged: firebase.database.ServerValue.TIMESTAMP }));
       }
     });
   } catch (e) { console.warn('Presence init failed', e); }
@@ -1111,7 +1250,7 @@ function initPresence() {
 // this is what makes idle show up for other people, not just you.
 document.addEventListener('visibilitychange', () => {
   if (!rtdb || !myUid) return;
-  try { rtdb.ref('presence/' + myUid).update({ idle: document.hidden, lastChanged: firebase.database.ServerValue.TIMESTAMP }); } catch (e) {}
+  try { rtdb.ref('presence/' + myUid).update({ idle: document.hidden, mobile: isMobileDevice(), lastChanged: firebase.database.ServerValue.TIMESTAMP }); } catch (e) {}
 });
 function teardownPresence() {
   if (!rtdb || !myUid) return;
@@ -1120,6 +1259,7 @@ function teardownPresence() {
   presenceListeners = {};
   presenceCache = {};
   idleCache = {};
+  mobileCache = {};
 }
 function subscribePresence(uid) {
   if (!rtdb || presenceListeners[uid]) return;
@@ -1129,6 +1269,7 @@ function subscribePresence(uid) {
       const val = snap.val();
       presenceCache[uid] = !!(val && val.online);
       idleCache[uid] = !!(val && val.idle);
+      mobileCache[uid] = !!(val && val.online && val.mobile);
       renderCurrentView();
       renderDMRows();
       renderSelfPanel();
@@ -1149,6 +1290,18 @@ function computeDisplayStatus(uid) {
 // ---------- modal wiring ----------
 function openModal(id) { $(id).classList.remove('hidden'); }
 function closeModal(id) { $(id).classList.add('hidden'); }
+// Discord-style confirmation dialog, replacing the browser's native
+// confirm() for anything destructive (delete server/channel/role, kick,
+// ban) — styled like the rest of the app instead of a jarring OS popup.
+function confirmAction({ title, body, confirmLabel, danger = true, onConfirm }) {
+  $('confirm-modal-title').textContent = title || 'Are you sure?';
+  $('confirm-modal-body').textContent = body || '';
+  const btn = $('confirm-modal-confirm-btn');
+  btn.textContent = confirmLabel || 'Confirm';
+  btn.className = danger ? 'btn-danger' : 'btn-accent-inline';
+  btn.onclick = async () => { closeModal('confirm-modal'); await onConfirm(); };
+  openModal('confirm-modal');
+}
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => closeModal(el.dataset.close)));
 document.querySelectorAll('[data-back]').forEach(el => {
   el.addEventListener('click', () => {
@@ -1485,6 +1638,7 @@ function initAppForUser() {
   subscribeCustomDecorations();
   subscribeCustomThemes();
   subscribeCustomNameplates();
+  subscribeCustomBanners();
   subscribeCustomProfileEffects();
   subscribeCustomProfileFrames();
   subscribeMessageFilter();
@@ -1515,11 +1669,11 @@ function applyTheme(themeKey) {
 
 function renderSelfPanel() {
   if (!myProfile) return;
-  const inner = avatarHTML(32, myProfile.avatarColor, initials(myProfile.username), computeDisplayStatus(myUid), myProfile.avatarUrl, myProfile.equippedDecoration);
+  const inner = avatarHTML(32, myProfile.avatarColor, initials(myProfile.username), computeDisplayStatus(myUid), myProfile.avatarUrl, myProfile.equippedDecoration, myUid);
   $('self-avatar').outerHTML = inner.replace('class="avatar', 'id="self-avatar" class="avatar');
   $('self-username').innerHTML = esc(displayNameOf(myProfile)) + premiumStar(myProfile) + roleTag(myProfile);
   const st = STATUSES.find(s => s.key === computeDisplayStatus(myUid));
-  $('self-status-label').textContent = st ? st.label : 'Online';
+  $('self-status-label').textContent = (st ? st.label : 'Online') + (isOnMobile(myUid) && st && st.key !== 'offline' ? ' · Mobile' : '');
 }
 
 // ============================================================
@@ -1595,11 +1749,19 @@ $('confirm-join-server').onclick = async () => {
 // side of the screen (whichever axis rotation makes narrow) under 600px,
 // scoped to touch devices so it doesn't also catch a small desktop window.
 function isMobile() {
-  return window.matchMedia(
-    '(hover: none) and (pointer: coarse) and (max-width: 600px), ' +
-    '(hover: none) and (pointer: coarse) and (max-height: 600px)'
-  ).matches;
+  const narrow = Math.min(window.innerWidth, window.innerHeight) <= 600;
+  const touchMedia = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+  return narrow && (touchMedia || isMobileDevice());
 }
+// Mirror the detection onto <body> so CSS can key off a real device check
+// (body.is-mobile / body.is-touch) instead of only viewport width.
+function syncDeviceClasses() {
+  document.body.classList.toggle('is-mobile', isMobile());
+  document.body.classList.toggle('is-touch', isTouchDevice() || isMobileDevice());
+}
+syncDeviceClasses();
+window.addEventListener('resize', syncDeviceClasses);
+window.addEventListener('orientationchange', syncDeviceClasses);
 // Touch device of ANY size — phone or tablet (iPad included). Used only
 // for the on-screen-keyboard docking fix below, which a tablet needs just
 // as much as a phone does. isMobile() above stays phone-only on purpose:
@@ -1941,8 +2103,8 @@ function renderDMRows() {
     const row = document.createElement('div');
     const nameplate = nameplateById(p.equippedNameplate);
     row.className = 'dm-row' + (currentDMId === dm.id ? ' active' : '') + (nameplate ? ' has-nameplate' : '');
-    row.innerHTML = (nameplate ? `<div class="dm-row-nameplate-bg${nameplate.cssClass ? ' ' + nameplate.cssClass : ''}${nameplate.animated ? ' nameplate-shimmer' : ''}" style="${nameplate.colors ? `background:linear-gradient(135deg, ${esc(nameplate.colors[0])}, ${esc(nameplate.colors[1])});` : ''}"></div>` : '') +
-      avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(otherUid), p.avatarUrl, p.equippedDecoration) +
+    row.innerHTML = (nameplate ? `<div class="dm-row-nameplate-bg${nameplate.cssClass ? ' ' + nameplate.cssClass : ''}${(nameplate.animated && !nameplate.cssClass) ? ' nameplate-shimmer' : ''}" style="${nameplate.colors ? `background:linear-gradient(135deg, ${esc(nameplate.colors[0])}, ${esc(nameplate.colors[1])});` : ''}"></div>` : '') +
+      avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(otherUid), p.avatarUrl, p.equippedDecoration, otherUid) +
       `<div class="dm-copy"><span class="dm-name">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div>`;
     row.onclick = () => selectDM(dm.id, otherUid);
     wrap.appendChild(row);
@@ -2168,7 +2330,9 @@ async function openProfileModal(username) {
     } catch (e) { toast('Could not load profile.', 'error'); return; }
   }
 
-  $('profile-banner').style.background = p.bannerColor || p.avatarColor || '#5865f2';
+  const shopBanner = bannerById(p.equippedBanner);
+  $('profile-banner').style.background = shopBanner ? bannerGradientCSS(shopBanner) : (p.bannerColor || p.avatarColor || '#5865f2');
+  $('profile-banner').classList.toggle('banner-anim', !!(shopBanner && shopBanner.animated));
   $('profile-avatar').style.background = 'transparent';
   $('profile-avatar').classList.add('has-image');
   $('profile-avatar').innerHTML = `<img src="${esc(p.avatarUrl || DEFAULT_AVATAR_URL)}" alt="">` + decorationOverlayHTML(p.equippedDecoration, 80);
@@ -2179,7 +2343,7 @@ async function openProfileModal(username) {
   // can't be generated at runtime for whatever color an admin picks.
   const nameplate = nameplateById(p.equippedNameplate);
   const nameplateBg = $('profile-nameplate-bg');
-  nameplateBg.className = 'profile-nameplate-bg' + (nameplate && nameplate.cssClass ? ' ' + nameplate.cssClass : '') + (nameplate && nameplate.animated ? ' nameplate-shimmer' : '');
+  nameplateBg.className = 'profile-nameplate-bg' + (nameplate && nameplate.cssClass ? ' ' + nameplate.cssClass : '') + (nameplate && (nameplate.animated && !nameplate.cssClass) ? ' nameplate-shimmer' : '');
   nameplateBg.style.background = (nameplate && nameplate.colors) ? `linear-gradient(135deg, ${nameplate.colors[0]}, ${nameplate.colors[1]})` : '';
   const effect = profileEffectById(p.equippedProfileEffect);
   const effectOverlay = $('profile-effect-overlay');
@@ -2589,7 +2753,7 @@ function friendRowHTML(username, kind) {
     actions = `<span class="quest-locked">Pending</span><button class="btn-secondary slim" data-cancel="${esc(username)}">Cancel</button>`;
   }
   return `<div class="friend-row">
-    ${avatarHTML(36, p.avatarColor, initials(p.username), computeDisplayStatus(username), p.avatarUrl, p.equippedDecoration)}
+    ${avatarHTML(36, p.avatarColor, initials(p.username), computeDisplayStatus(username), p.avatarUrl, p.equippedDecoration, username)}
     <span class="friend-row-name" data-openprofile="${esc(username)}">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span>
     <span class="friend-row-actions">${actions}</span>
   </div>`;
@@ -2664,11 +2828,15 @@ async function cancelFriendRequest(username) {
   } catch (e) {}
 }
 async function removeFriend(username) {
-  if (!confirm(`Remove ${username} as a friend?`)) return;
-  try {
-    await db.collection('users').doc(myUid).update({ friends: FieldValue.arrayRemove(username) });
-    await db.collection('users').doc(username).update({ friends: FieldValue.arrayRemove(myUid) });
-  } catch (e) {}
+  confirmAction({
+    title: 'Remove Friend', body: `Remove ${username} as a friend?`, confirmLabel: 'Remove Friend',
+    onConfirm: async () => {
+      try {
+        await db.collection('users').doc(myUid).update({ friends: FieldValue.arrayRemove(username) });
+        await db.collection('users').doc(username).update({ friends: FieldValue.arrayRemove(myUid) });
+      } catch (e) {}
+    },
+  });
 }
 
 // ============================================================
@@ -2693,13 +2861,37 @@ async function selectServer(server) {
 
 $('side-header').onclick = () => {
   if (!currentServerId || !currentServerData) return;
-  if (!hasServerPerm(currentServerData, myUid, 'manageServer')) { toast('You need Manage Server permission to do that.'); return; }
-  $('server-settings-title').textContent = currentServerData.name + ' Settings';
+  const canManage = hasServerPerm(currentServerData, myUid, 'manageServer') || hasServerPerm(currentServerData, myUid, 'manageRoles');
+  if (!canManage) { toast('Only the server owner and server admins can edit this server.'); return; }
+  $('server-settings-title').textContent = currentServerData.name;
   $('edit-server-name').value = currentServerData.name;
+  $('edit-server-name').disabled = !hasServerPerm(currentServerData, myUid, 'manageServer');
+  $('save-server-btn').classList.toggle('hidden', !hasServerPerm(currentServerData, myUid, 'manageServer'));
   $('server-invite-display').value = currentServerData.inviteCode;
-  openServerSettingsTab('overview');
+  $('ss-icon-preview').textContent = initials(currentServerData.name);
+  // Only the server's owner (or the Frixion owner) ever sees Delete Server —
+  // Manage Server / Administrator alone can't erase it out from under its owner.
+  $('delete-server-btn').classList.toggle('hidden', !isServerOwnerLevel(currentServerData, myUid));
+  openServerSettingsTab(hasServerPerm(currentServerData, myUid, 'manageServer') ? 'overview' : 'roles');
   openModal('server-settings-modal');
 };
+
+$('edit-server-name').addEventListener('input', () => {
+  $('ss-icon-preview').textContent = initials($('edit-server-name').value || '?');
+});
+$('copy-invite-btn').onclick = async () => {
+  const code = $('server-invite-display').value;
+  try { await navigator.clipboard.writeText(code); toast('Invite code copied.'); }
+  catch (e) { $('server-invite-display').select(); toast('Press Ctrl+C to copy.'); }
+};
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!$('confirm-modal').classList.contains('hidden')) { closeModal('confirm-modal'); return; }
+  if (!$('server-settings-modal').classList.contains('hidden')) {
+    if (roleFormIsDirty(roleEditorPending, roleEditorSnapshot)) { flashUnsavedBar(); return; }
+    closeModal('server-settings-modal');
+  }
+});
 
 $('save-server-btn').onclick = async () => {
   const name = $('edit-server-name').value.trim();
@@ -2715,192 +2907,514 @@ $('delete-server-btn').onclick = async () => {
   // Deleting (as opposed to editing) is reserved for the actual owner,
   // same as Discord — Manage Server lets you run the place day-to-day,
   // but it doesn't let you erase it out from under its owner.
-  if (currentServerData.ownerId !== myUid && !isAdmin && !isOwner) { toast('Only the server owner can delete this server.', 'error'); return; }
-  if (!confirm('Delete this server permanently? This cannot be undone.')) return;
+  if (!isServerOwnerLevel(currentServerData, myUid)) { toast('Only the server owner can delete this server.', 'error'); return; }
   const sid = currentServerId;
-  try {
-    const chSnap = await db.collection('servers').doc(sid).collection('channels').get();
-    for (const ch of chSnap.docs) {
-      const msgSnap = await ch.ref.collection('messages').get();
-      await Promise.all(msgSnap.docs.map(m => m.ref.delete()));
-      await ch.ref.delete();
-    }
-    await db.collection('servers').doc(sid).delete();
-    closeModal('server-settings-modal');
-    showHomeView();
-    toast('Server deleted.');
-  } catch (e) { toast('Failed to delete server: ' + e.message, 'error'); }
+  const name = currentServerData.name;
+  confirmAction({
+    title: 'Delete Server', body: `Delete "${name}" permanently? This cannot be undone.`, confirmLabel: 'Delete Server',
+    onConfirm: async () => {
+      try {
+        const chSnap = await db.collection('servers').doc(sid).collection('channels').get();
+        for (const ch of chSnap.docs) {
+          const msgSnap = await ch.ref.collection('messages').get();
+          await Promise.all(msgSnap.docs.map(m => m.ref.delete()));
+          await ch.ref.delete();
+        }
+        await db.collection('servers').doc(sid).delete();
+        closeModal('server-settings-modal');
+        showHomeView();
+        toast('Server deleted.');
+      } catch (e) { toast('Failed to delete server: ' + e.message, 'error'); }
+    },
+  });
 };
 
 // ============================================================
 // SERVER SETTINGS: ROLES TAB
 // ============================================================
 document.querySelectorAll('.ss-tab').forEach(btn => {
-  btn.onclick = () => openServerSettingsTab(btn.dataset.ssTab);
+  btn.onclick = () => {
+    if (roleFormIsDirty(roleEditorPending, roleEditorSnapshot)) { flashUnsavedBar(); return; }
+    openServerSettingsTab(btn.dataset.ssTab);
+  };
 });
 function openServerSettingsTab(tab) {
+  if (tab === 'overview' && currentServerData && !hasServerPerm(currentServerData, myUid, 'manageServer')) { toast('You need Manage Server permission to view this.'); return; }
   document.querySelectorAll('.ss-tab').forEach(t => t.classList.toggle('on', t.dataset.ssTab === tab));
   $('ss-pane-overview').classList.toggle('hidden', tab !== 'overview');
   $('ss-pane-roles').classList.toggle('hidden', tab !== 'roles');
-  if (tab === 'roles') { selectedRoleId = null; renderServerRoleList(); renderRoleEditor(null); }
-}
-
-let selectedRoleId = null;
-function renderServerRoleList() {
-  if (!currentServerData) return;
-  const canManageRoles = hasServerPerm(currentServerData, myUid, 'manageRoles');
-  const roles = serverRoles(currentServerData).slice().sort((a, b) => b.position - a.position);
-  const wrap = $('server-role-list');
-  wrap.innerHTML = roles.map((r, i) => `
-    <div class="role-list-row${r.id === selectedRoleId ? ' on' : ''}" data-id="${esc(r.id)}" ${canManageRoles && r.id !== 'everyone' ? 'draggable="true"' : ''}>
-      ${roleChipHTML(r)}
-      ${canManageRoles && r.id !== 'everyone' ? `<span class="role-reorder-btns">
-        <span class="role-move-btn" data-dir="up"${i === 0 ? ' style="visibility:hidden"' : ''}>▲</span>
-        <span class="role-move-btn" data-dir="down"${(i === roles.length - 1 || roles[i + 1].id === 'everyone') ? ' style="visibility:hidden"' : ''}>▼</span>
-      </span>` : ''}
-    </div>`).join('');
-  wrap.querySelectorAll('.role-list-row').forEach(row => {
-    row.addEventListener('click', (e) => {
-      if (e.target.closest('.role-move-btn')) return;
-      selectedRoleId = row.dataset.id;
-      renderServerRoleList();
-      renderRoleEditor(selectedRoleId);
-    });
-  });
-  wrap.querySelectorAll('.role-move-btn').forEach(btn => {
-    btn.onclick = (e) => { e.stopPropagation(); moveRole(btn.closest('.role-list-row').dataset.id, btn.dataset.dir); };
-  });
-  // Drag-and-drop reordering, on top of the up/down buttons above (which
-  // stay as the reliable fallback — touch devices and anyone who'd
-  // rather not drag can still use those).
-  if (canManageRoles) {
-    let dragRoleId = null;
-    wrap.querySelectorAll('.role-list-row[draggable]').forEach(row => {
-      row.addEventListener('dragstart', () => { dragRoleId = row.dataset.id; row.classList.add('dragging'); });
-      row.addEventListener('dragend', () => row.classList.remove('dragging'));
-      row.addEventListener('dragover', (e) => { e.preventDefault(); row.classList.add('drag-over'); });
-      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
-      row.addEventListener('drop', (e) => {
-        e.preventDefault();
-        row.classList.remove('drag-over');
-        if (dragRoleId && dragRoleId !== row.dataset.id) reorderRolesByDrag(dragRoleId, row.dataset.id);
-      });
-    });
+  if (tab === 'roles') {
+    rolesView = 'list'; selectedRoleId = null; roleListSearch = '';
+    resetRoleEditorState();
+    renderRolesPane();
   }
-  if (selectedRoleId && !roles.find(r => r.id === selectedRoleId)) { selectedRoleId = null; renderRoleEditor(null); }
 }
 
-async function moveRole(roleId, dir) {
+// ---- Discord-parity roles editor state ----
+let rolesView = 'list';          // 'list' (roles table) | 'edit' (single role editor)
+let selectedRoleId = null;
+let roleEditorTab = 'display';   // 'display' | 'permissions' | 'members'
+let roleEditorSnapshot = null;   // role as last saved, for dirty-checking and Reset
+let roleEditorPending = null;    // in-progress edits, survives tab switches
+let roleEditorPendingRoleId = null;
+let roleListSearch = '';
+let rolePermSearch = '';
+let roleMemberSearch = '';
+let roleAddMembersOpen = false;
+
+const ROLE_DEFAULT_COLOR = '#99aab5';
+const ROLE_COLOR_PALETTE = [
+  '#1abc9c', '#2ecc71', '#3498db', '#9b59b6', '#e91e63', '#f1c40f', '#e67e22', '#e74c3c', '#95a5a6', '#607d8b',
+  '#11806a', '#1f8b4c', '#206694', '#71368a', '#ad1457', '#c27c0e', '#a84300', '#992d22', '#979c9f', '#546e7a',
+];
+const ROLE_ICONS = {
+  shield: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.5 8 11 4.6-1.5 8-6 8-11V5l-8-3z"/></svg>',
+  person: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5z"/></svg>',
+  people: '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.6 3.1-6 7-6s7 2.4 7 6z"/><circle cx="17" cy="9" r="2.8"/><path d="M17.5 13.5c2.7.3 4.5 2.4 4.5 5.5h-4.2c0-2.3-.8-4.1-2.2-5.3.6-.1 1.2-.2 1.9-.2z"/></svg>',
+  search: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+  pencil: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M16.3 3.3a2.4 2.4 0 0 1 3.4 3.4L8.4 18l-4.9 1.4L5 14.6z"/></svg>',
+  drag: '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
+  chevronRight: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
+  chevronLeft: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+  x: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  check: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  dropper: '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M19.4 4.6a2.8 2.8 0 0 0-4 0l-2 2-1.2-1.2-1.4 1.4 1.2 1.2-7 7V19h3.4l7-7 1.2 1.2 1.4-1.4-1.2-1.2 2-2a2.8 2.8 0 0 0 0-4z"/></svg>',
+};
+
+function resetRoleEditorState() { roleEditorPending = null; roleEditorSnapshot = null; roleEditorPendingRoleId = null; }
+function roleSnapshotOf(role) { return { name: role.name, color: role.color || null, hoist: !!role.hoist, permissions: (role.permissions || []).slice() }; }
+function roleFormIsDirty(pending, original) {
+  if (!pending || !original) return false;
+  return pending.name !== original.name || (pending.color || null) !== (original.color || null) ||
+    !!pending.hoist !== !!original.hoist ||
+    pending.permissions.slice().sort().join(',') !== (original.permissions || []).slice().sort().join(',');
+}
+function updateRoleUnsavedBar() {
+  const bar = $('re-unsaved-bar');
+  if (bar) bar.classList.toggle('hidden', !roleFormIsDirty(roleEditorPending, roleEditorSnapshot));
+}
+// Discord blocks navigation while there are unsaved changes and shakes the bar.
+function flashUnsavedBar() {
+  const bar = $('re-unsaved-bar');
+  if (!bar) return;
+  bar.classList.remove('hidden', 'shake');
+  void bar.offsetWidth;
+  bar.classList.add('shake');
+}
+function sortedServerRoles() { return serverRoles(currentServerData).slice().sort((a, b) => b.position - a.position); }
+function findServerRole(id) {
+  return serverRoles(currentServerData).find(r => r.id === id) || (id === 'everyone' ? everyoneRole(currentServerData) : null);
+}
+function roleMemberIds(roleId) {
+  const members = currentServerData.members || [];
+  if (roleId === 'everyone') return members.slice();
+  const map = currentServerData.memberRoles || {};
+  return members.filter(uid => (map[uid] || []).includes(roleId));
+}
+// Owner-level can edit anything; Manage Roles can edit only roles ranked
+// strictly below their own highest role — same ceiling as Discord.
+function canEditRole(role) {
+  if (!currentServerData || !role) return false;
+  if (isServerOwnerLevel(currentServerData, myUid)) return true;
+  if (!hasServerPerm(currentServerData, myUid, 'manageRoles')) return false;
+  return topRoleOf(currentServerData, myUid).position > role.position;
+}
+
+function renderRolesPane() {
   if (!currentServerData) return;
-  const roles = serverRoles(currentServerData).slice().sort((a, b) => b.position - a.position);
-  const idx = roles.findIndex(r => r.id === roleId);
-  const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
-  if (idx < 0 || swapIdx < 0 || swapIdx >= roles.length || roles[swapIdx].id === 'everyone') return;
-  const a = roles[idx], b = roles[swapIdx];
-  const newRoles = serverRoles(currentServerData).map(r => {
-    if (r.id === a.id) return { ...r, position: b.position };
-    if (r.id === b.id) return { ...r, position: a.position };
-    return r;
-  });
-  try { await db.collection('servers').doc(currentServerId).update({ roles: newRoles }); }
-  catch (e) { toast(e.message || 'Could not reorder roles.', 'error'); }
+  const root = $('roles-pane-root');
+  if (!root) return;
+  if (rolesView === 'edit' && selectedRoleId && findServerRole(selectedRoleId)) renderRoleEditView(root);
+  else { rolesView = 'list'; renderRolesListView(root); }
 }
 
-// Dropped `draggedId` onto `targetId`'s row — reinserts it at that spot
-// and renumbers every non-@everyone role's position sequentially so the
-// new visual order is unambiguous, rather than trying to average/insert
-// between two position numbers.
+function renderRolesListView(root) {
+  const canManage = hasServerPerm(currentServerData, myUid, 'manageRoles');
+  const roles = sortedServerRoles().filter(r => r.id !== 'everyone');
+  root.innerHTML = `
+    <h2 class="ss-h2">Roles</h2>
+    <p class="ss-desc">Use roles to group your server members and assign permissions.</p>
+    <button type="button" class="dr-default-card" id="dr-everyone-card">
+      <span class="dr-default-icon">${ROLE_ICONS.people}</span>
+      <span class="dr-default-text"><b>Default Permissions</b><small>@everyone &bull; applies to all server members</small></span>
+      <span class="dr-chevron">${ROLE_ICONS.chevronRight}</span>
+    </button>
+    <div class="dr-toolbar">
+      <label class="dr-search dr-grow"><span class="sr-only">Search roles</span><input type="text" id="dr-role-search" placeholder="Search Roles" value="${esc(roleListSearch)}" autocomplete="off"><span class="dr-search-icon">${ROLE_ICONS.search}</span></label>
+      ${canManage ? '<button type="button" class="ds-btn ds-btn-brand" id="dr-create-role">Create Role</button>' : ''}
+    </div>
+    <p class="ss-hint">Members use the color of the highest role they have on this list.${canManage ? ' Drag roles to reorder them.' : ''}</p>
+    <div class="dr-table" role="table" aria-label="Roles">
+      <div class="dr-thead" role="row"><span role="columnheader">Roles &mdash; ${roles.length}</span><span role="columnheader">Members</span><span aria-hidden="true"></span></div>
+      ${roles.map(r => `
+        <div class="dr-row" role="row" tabindex="0" data-id="${esc(r.id)}" data-name="${esc(r.name.toLowerCase())}" ${canManage && canEditRole(r) ? 'draggable="true"' : ''}>
+          <span class="dr-cell-name" role="cell">
+            <span class="dr-drag">${canManage && canEditRole(r) ? ROLE_ICONS.drag : ''}</span>
+            <span class="dr-shield" style="color:${esc(r.color || ROLE_DEFAULT_COLOR)}">${ROLE_ICONS.shield}</span>
+            <span class="dr-name">${esc(r.name)}</span>
+          </span>
+          <span class="dr-cell-members" role="cell">${roleMemberIds(r.id).length}${ROLE_ICONS.person}</span>
+          <span class="dr-cell-actions" role="cell"><span class="dr-icon-btn" title="Edit role">${ROLE_ICONS.pencil}</span></span>
+        </div>`).join('')}
+      <div class="dr-empty${roles.length ? ' hidden' : ''}" id="dr-roles-empty">${roles.length ? 'No roles match your search.' : 'No roles yet. Create one to organize your members.'}</div>
+    </div>`;
+
+  const applyFilter = () => {
+    const q = roleListSearch.trim().toLowerCase();
+    let visible = 0;
+    root.querySelectorAll('.dr-row').forEach(row => {
+      const show = !q || row.dataset.name.includes(q);
+      row.classList.toggle('hidden', !show);
+      if (show) visible++;
+    });
+    if (roles.length) $('dr-roles-empty').classList.toggle('hidden', visible > 0);
+  };
+  $('dr-role-search').oninput = (e) => { roleListSearch = e.target.value; applyFilter(); };
+  applyFilter();
+  $('dr-everyone-card').onclick = () => openRoleEditor('everyone');
+  if ($('dr-create-role')) $('dr-create-role').onclick = createServerRole;
+  root.querySelectorAll('.dr-row').forEach(row => {
+    row.onclick = () => openRoleEditor(row.dataset.id);
+    row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRoleEditor(row.dataset.id); } };
+  });
+  wireRoleDrag(root.querySelectorAll('.dr-row[draggable]'));
+}
+
+function openRoleEditor(roleId) {
+  selectedRoleId = roleId;
+  rolesView = 'edit';
+  roleEditorTab = roleId === 'everyone' ? 'permissions' : 'display';
+  resetRoleEditorState();
+  rolePermSearch = ''; roleMemberSearch = ''; roleAddMembersOpen = false;
+  renderRolesPane();
+}
+
+function wireRoleDrag(rows) {
+  let dragId = null;
+  rows.forEach(row => {
+    row.addEventListener('dragstart', (e) => {
+      dragId = row.dataset.id;
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', dragId); } catch (err) {}
+    });
+    row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    row.addEventListener('dragover', (e) => { e.preventDefault(); row.classList.add('drag-over'); });
+    row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      row.classList.remove('drag-over');
+      if (dragId && dragId !== row.dataset.id) reorderRolesByDrag(dragId, row.dataset.id);
+    });
+  });
+}
+
+// Reinserts the dragged role at the drop target's spot and renumbers every
+// non-@everyone role sequentially so the visual order is unambiguous.
 async function reorderRolesByDrag(draggedId, targetId) {
   if (!currentServerData) return;
-  const ordered = serverRoles(currentServerData).slice().sort((a, b) => b.position - a.position);
-  const rest = ordered.filter(r => r.id !== 'everyone');
-  const fromIdx = rest.findIndex(r => r.id === draggedId);
-  const toIdx = rest.findIndex(r => r.id === targetId);
-  if (fromIdx < 0 || toIdx < 0) return;
-  const [moved] = rest.splice(fromIdx, 1);
-  rest.splice(toIdx, 0, moved);
+  const ordered = sortedServerRoles().filter(r => r.id !== 'everyone');
+  const dragged = ordered.find(r => r.id === draggedId);
+  const target = ordered.find(r => r.id === targetId);
+  if (!dragged || !target) return;
+  if (!isServerOwnerLevel(currentServerData, myUid)) {
+    const myTopPos = topRoleOf(currentServerData, myUid).position;
+    if (dragged.position >= myTopPos || target.position >= myTopPos) { toast("You can't move roles at or above your highest role.", 'error'); return; }
+  }
+  const movingDown = ordered.indexOf(dragged) < ordered.indexOf(target);
+  ordered.splice(ordered.indexOf(dragged), 1);
+  ordered.splice(ordered.indexOf(target) + (movingDown ? 1 : 0), 0, dragged);
   const newRoles = serverRoles(currentServerData).map(r => {
     if (r.id === 'everyone') return r;
-    const idx = rest.findIndex(x => x.id === r.id);
-    return { ...r, position: rest.length - idx };
+    return { ...r, position: ordered.length - ordered.findIndex(x => x.id === r.id) };
   });
-  try { await db.collection('servers').doc(currentServerId).update({ roles: newRoles }); }
-  catch (e) { toast(e.message || 'Could not reorder roles.', 'error'); }
+  try {
+    await db.collection('servers').doc(currentServerId).update({ roles: newRoles });
+    currentServerData = { ...currentServerData, roles: newRoles };
+    renderRolesPane();
+  } catch (e) { toast(e.message || 'Could not reorder roles.', 'error'); }
 }
 
-function renderRoleEditor(roleId) {
-  const col = $('role-editor-col');
-  const role = roleId && currentServerData ? serverRoles(currentServerData).find(r => r.id === roleId) : null;
-  if (!role) { col.innerHTML = '<div class="empty">Select a role to edit, or create a new one.</div>'; return; }
+function renderRoleEditView(root) {
+  const role = findServerRole(selectedRoleId);
   const isEveryone = role.id === 'everyone';
-  const myTop = topRoleOf(currentServerData, myUid);
-  // Manage Roles only lets you touch roles ranked strictly below your own
-  // highest role — the actual owner (or a platform admin) has no such
-  // ceiling, matching Discord's "can't edit a role at or above your own".
-  const canEditThis = currentServerData.ownerId === myUid || isAdmin || isOwner ||
-    (hasServerPerm(currentServerData, myUid, 'manageRoles') && myTop.position > role.position);
-  col.innerHTML = `
-    ${!canEditThis ? '<div class="role-editor-locked">You can only manage roles ranked below your own.</div>' : ''}
-    <div class="field"><label>Role Name</label><input type="text" id="role-name-input" maxlength="30" value="${esc(role.name)}" ${isEveryone ? 'disabled' : ''}></div>
-    <label class="np-check"><input type="checkbox" id="role-has-color-input" ${role.color ? 'checked' : ''}> Custom color</label>
-    <div class="field"><label>Role Color</label><input type="color" id="role-color-input" value="${esc(role.color || '#99aab5')}" ${role.color ? '' : 'disabled'}></div>
-    ${!isEveryone ? `<label class="np-check"><input type="checkbox" id="role-hoist-input" ${role.hoist ? 'checked' : ''}> Display separately in the member list</label>` : ''}
-    <div class="field"><label>Permissions</label>
-      <div class="role-perm-list">
-        ${SERVER_PERMISSIONS.map(p => `
-          <label class="role-perm-row">
-            <input type="checkbox" data-perm="${p.key}" ${(role.permissions || []).includes(p.key) ? 'checked' : ''}>
-            <span><b>${esc(p.label)}</b><small>${esc(p.desc)}</small></span>
-          </label>`).join('')}
-      </div>
+  const canEdit = canEditRole(role);
+  const canManage = hasServerPerm(currentServerData, myUid, 'manageRoles');
+  if (roleEditorPendingRoleId !== role.id) { roleEditorPending = roleSnapshotOf(role); roleEditorPendingRoleId = role.id; }
+  roleEditorSnapshot = roleSnapshotOf(role);
+  if (isEveryone) roleEditorTab = 'permissions';
+  const v = roleEditorPending;
+  const memberIds = isEveryone ? [] : roleMemberIds(role.id);
+  const sideRoles = sortedServerRoles().filter(r => r.id !== 'everyone');
+  const isCustomColor = !!v.color && !ROLE_COLOR_PALETTE.includes(v.color);
+  const tabBtn = (key, label) => `<button type="button" role="tab" aria-selected="${roleEditorTab === key}" class="dr-tab${roleEditorTab === key ? ' on' : ''}" data-tab="${key}">${label}</button>`;
+
+  const displayPane = `
+    <div class="field"><label for="role-name-input">Role Name <span class="dr-req">*</span></label><input type="text" id="role-name-input" maxlength="30" value="${esc(v.name)}"></div>
+    <div class="ss-divider"></div>
+    <div class="dr-section-title">Role Color <span class="dr-req">*</span></div>
+    <p class="ss-hint">Members use the color of the highest role they have on the roles list.</p>
+    <div class="dr-color-picker">
+      <button type="button" class="dr-color-big${!v.color ? ' on' : ''}" data-color="" style="background:${ROLE_DEFAULT_COLOR}" aria-label="Default color" title="Default">${!v.color ? ROLE_ICONS.check : ''}</button>
+      <label class="dr-color-big dr-color-custom${isCustomColor ? ' on' : ''}" id="dr-custom-swatch" style="background:${esc(isCustomColor ? v.color : '#4e5058')}" title="Custom color">
+        ${isCustomColor ? ROLE_ICONS.check : ''}<span class="dr-dropper">${ROLE_ICONS.dropper}</span>
+        <input type="color" id="role-color-input" value="${esc(v.color || ROLE_DEFAULT_COLOR)}" aria-label="Custom color">
+      </label>
+      <div class="dr-color-grid">${ROLE_COLOR_PALETTE.map(c => `<button type="button" class="dr-color-sm${v.color === c ? ' on' : ''}" data-color="${c}" style="background:${c}" aria-label="Color ${c}">${v.color === c ? ROLE_ICONS.check : ''}</button>`).join('')}</div>
     </div>
-    <div class="modal-actions">
-      ${!isEveryone ? '<button class="btn-danger" id="delete-role-btn">Delete Role</button>' : ''}
-      <button class="btn-accent-inline" id="save-role-btn">Save Role</button>
+    <div class="ss-divider"></div>
+    <div class="dr-toggle-row">
+      <div class="dr-toggle-title">Display role members separately from online members</div>
+      <label class="toggle-switch"><input type="checkbox" id="role-hoist-input" ${v.hoist ? 'checked' : ''} aria-label="Display role members separately"><span class="toggle-slider"></span></label>
+    </div>
+    <div class="ss-divider"></div>
+    <button type="button" class="ds-btn ds-btn-danger-outline" id="delete-role-btn">Delete Role</button>`;
+
+  const permissionsPane = `
+    ${isEveryone ? '<p class="ss-hint dr-everyone-note">This will change the permissions for <b>everyone</b> in this server.</p>' : ''}
+    <div class="dr-perm-toolbar">
+      <label class="dr-search dr-grow"><span class="sr-only">Search permissions</span><input type="text" id="dr-perm-search" placeholder="Search permissions" value="${esc(rolePermSearch)}" autocomplete="off"><span class="dr-search-icon">${ROLE_ICONS.search}</span></label>
+      <button type="button" class="ds-link-btn" id="dr-clear-perms">Clear permissions</button>
+    </div>
+    ${SERVER_PERMISSION_GROUPS.map(g => `
+      <div class="dr-perm-group" data-group="${g.key}">
+        <div class="dr-section-title">${esc(g.label)}</div>
+        ${SERVER_PERMISSIONS.filter(p => p.group === g.key).map(p => `
+          <div class="dr-perm-row" data-search="${esc((p.label + ' ' + p.desc).toLowerCase())}">
+            <div class="dr-toggle-row">
+              <div class="dr-toggle-title">${esc(p.label)}</div>
+              <label class="toggle-switch"><input type="checkbox" data-perm="${p.key}" ${v.permissions.includes(p.key) ? 'checked' : ''} aria-label="${esc(p.label)}"><span class="toggle-slider"></span></label>
+            </div>
+            <p class="dr-perm-desc">${esc(p.desc)}</p>
+          </div>`).join('')}
+      </div>`).join('')}
+    <div class="dr-empty hidden" id="dr-perm-empty">No permissions match your search.</div>`;
+
+  const membersPane = `
+    <div class="dr-perm-toolbar">
+      <label class="dr-search dr-grow"><span class="sr-only">Search members</span><input type="text" id="dr-member-search" placeholder="Search Members" value="${esc(roleMemberSearch)}" autocomplete="off"><span class="dr-search-icon">${ROLE_ICONS.search}</span></label>
+      ${canEdit ? `<button type="button" class="ds-btn ds-btn-brand" id="dr-add-members-btn">${roleAddMembersOpen ? 'Done' : 'Add Members'}</button>` : ''}
+    </div>
+    <div class="dr-add-panel${roleAddMembersOpen ? '' : ' hidden'}" id="re-members-add"></div>
+    <div class="dr-member-list" id="re-members-current"><div class="dr-empty">Loading members&hellip;</div></div>`;
+
+  const paneHTML = roleEditorTab === 'display' ? displayPane : roleEditorTab === 'members' ? membersPane : permissionsPane;
+
+  root.innerHTML = `
+    <div class="dr-edit">
+      <aside class="dr-edit-side" aria-label="Roles">
+        <div class="dr-edit-side-head">
+          <button type="button" class="dr-back" id="dr-back">${ROLE_ICONS.chevronLeft}<span>Back</span></button>
+          ${canManage ? `<button type="button" class="dr-icon-btn" id="dr-side-create" title="Create Role" aria-label="Create Role">${ROLE_ICONS.plus}</button>` : ''}
+        </div>
+        <div class="dr-side-list">
+          ${sideRoles.map(r => `<button type="button" class="dr-side-row${r.id === role.id ? ' on' : ''}" data-id="${esc(r.id)}" ${canManage && canEditRole(r) ? 'draggable="true"' : ''}><span class="dr-dot" style="background:${esc((r.id === role.id ? v.color : r.color) || ROLE_DEFAULT_COLOR)}"></span><span class="dr-side-name">${esc(r.id === role.id ? (v.name || r.name) : r.name)}</span></button>`).join('')}
+          <button type="button" class="dr-side-row${isEveryone ? ' on' : ''}" data-id="everyone"><span class="dr-dot" style="background:${ROLE_DEFAULT_COLOR}"></span><span class="dr-side-name">@everyone</span></button>
+        </div>
+      </aside>
+      <section class="dr-edit-main">
+        <div class="dr-edit-head"><h3>Edit Role &mdash; <span id="dr-edit-title-name">${esc(isEveryone ? '@everyone' : v.name)}</span></h3></div>
+        ${!canEdit ? '<div class="dr-locked">You can only edit roles ranked below your highest role.</div>' : ''}
+        <div class="dr-tabs" role="tablist">
+          ${!isEveryone ? tabBtn('display', 'Display') : ''}
+          ${tabBtn('permissions', 'Permissions')}
+          ${!isEveryone ? tabBtn('members', `Manage Members (${memberIds.length})`) : ''}
+        </div>
+        <div class="dr-pane" id="dr-pane" role="tabpanel">${paneHTML}</div>
+      </section>
+    </div>
+    <div class="ds-unsaved hidden" id="re-unsaved-bar" role="status">
+      <span>Careful &mdash; you have unsaved changes!</span>
+      <div class="ds-unsaved-actions">
+        <button type="button" class="ds-link-btn" id="re-reset-btn">Reset</button>
+        <button type="button" class="ds-btn ds-btn-green" id="re-save-btn">Save Changes</button>
+      </div>
     </div>`;
-  $('role-has-color-input').onchange = (e) => { $('role-color-input').disabled = !e.target.checked; };
-  if (!canEditThis) { col.querySelectorAll('input, button').forEach(el => el.disabled = true); return; }
-  $('save-role-btn').onclick = async () => {
-    const name = isEveryone ? '@everyone' : ($('role-name-input').value || '').trim();
-    if (!name) { toast('Enter a role name.'); return; }
-    const color = $('role-has-color-input').checked ? $('role-color-input').value : null;
-    const hoist = isEveryone ? false : $('role-hoist-input').checked;
-    const permissions = [...col.querySelectorAll('[data-perm]:checked')].map(el => el.dataset.perm);
-    const roles = serverRoles(currentServerData).map(r => r.id === roleId ? { ...r, name, color, hoist, permissions } : r);
-    try { await db.collection('servers').doc(currentServerId).update({ roles }); toast('Role saved.'); }
-    catch (e) { toast(e.message || 'Could not save role.', 'error'); }
+
+  const pending = () => { updateRoleUnsavedBar(); };
+
+  root.querySelectorAll('.dr-tab').forEach(btn => {
+    btn.onclick = () => { roleEditorTab = btn.dataset.tab; renderRolesPane(); };
+  });
+  $('dr-back').onclick = () => {
+    if (roleFormIsDirty(roleEditorPending, roleEditorSnapshot)) { flashUnsavedBar(); return; }
+    rolesView = 'list'; selectedRoleId = null; resetRoleEditorState(); renderRolesPane();
   };
-  if (!isEveryone) {
-    $('delete-role-btn').onclick = async () => {
-      if (!confirm(`Delete the "${role.name}" role? Members holding it will lose its permissions and color.`)) return;
-      const roles = serverRoles(currentServerData).filter(r => r.id !== roleId);
-      const memberRoles = { ...(currentServerData.memberRoles || {}) };
-      Object.keys(memberRoles).forEach(uid => { memberRoles[uid] = (memberRoles[uid] || []).filter(id => id !== roleId); });
-      try {
-        await db.collection('servers').doc(currentServerId).update({ roles, memberRoles });
-        selectedRoleId = null;
-        toast('Role deleted.');
-      } catch (e) { toast(e.message || 'Could not delete role.', 'error'); }
+  if ($('dr-side-create')) $('dr-side-create').onclick = createServerRole;
+  root.querySelectorAll('.dr-side-row').forEach(row => {
+    row.onclick = () => {
+      if (row.dataset.id === role.id) return;
+      if (roleFormIsDirty(roleEditorPending, roleEditorSnapshot)) { flashUnsavedBar(); return; }
+      openRoleEditor(row.dataset.id);
+    };
+  });
+  wireRoleDrag(root.querySelectorAll('.dr-side-row[draggable]'));
+
+  if (roleEditorTab === 'display' && !isEveryone) {
+    $('role-name-input').addEventListener('input', (e) => {
+      v.name = e.target.value;
+      $('dr-edit-title-name').textContent = v.name;
+      const sideName = root.querySelector(`.dr-side-row[data-id="${CSS.escape(role.id)}"] .dr-side-name`);
+      if (sideName) sideName.textContent = v.name || role.name;
+      pending();
+    });
+    root.querySelectorAll('.dr-color-sm, .dr-color-big[data-color]').forEach(sw => {
+      sw.onclick = () => { if (!canEdit) return; v.color = sw.dataset.color || null; renderRolesPane(); };
+    });
+    const colorInput = $('role-color-input');
+    colorInput.addEventListener('input', () => {
+      v.color = colorInput.value;
+      $('dr-custom-swatch').style.background = colorInput.value;
+      const dot = root.querySelector(`.dr-side-row[data-id="${CSS.escape(role.id)}"] .dr-dot`);
+      if (dot) dot.style.background = colorInput.value;
+      pending();
+    });
+    colorInput.addEventListener('change', () => renderRolesPane());
+    $('role-hoist-input').onchange = (e) => { v.hoist = e.target.checked; pending(); };
+    $('delete-role-btn').onclick = () => {
+      confirmAction({
+        title: `Delete '${role.name}'`, body: `Are you sure you want to delete the ${role.name} role? This cannot be undone.`, confirmLabel: 'Okay',
+        onConfirm: async () => {
+          const roles = serverRoles(currentServerData).filter(r => r.id !== role.id);
+          const memberRoles = { ...(currentServerData.memberRoles || {}) };
+          Object.keys(memberRoles).forEach(uid => { memberRoles[uid] = (memberRoles[uid] || []).filter(id => id !== role.id); });
+          try {
+            await db.collection('servers').doc(currentServerId).update({ roles, memberRoles });
+            currentServerData = { ...currentServerData, roles, memberRoles };
+            rolesView = 'list'; selectedRoleId = null; resetRoleEditorState();
+            renderRolesPane();
+            toast('Role deleted.');
+          } catch (e) { toast(e.message || 'Could not delete role.', 'error'); }
+        },
+      });
     };
   }
+
+  if (roleEditorTab === 'permissions') {
+    const applyPermFilter = () => {
+      const q = rolePermSearch.trim().toLowerCase();
+      let visible = 0;
+      root.querySelectorAll('.dr-perm-group').forEach(group => {
+        let groupVisible = 0;
+        group.querySelectorAll('.dr-perm-row').forEach(row => {
+          const show = !q || row.dataset.search.includes(q);
+          row.classList.toggle('hidden', !show);
+          if (show) groupVisible++;
+        });
+        group.classList.toggle('hidden', groupVisible === 0);
+        visible += groupVisible;
+      });
+      $('dr-perm-empty').classList.toggle('hidden', visible > 0);
+    };
+    $('dr-perm-search').oninput = (e) => { rolePermSearch = e.target.value; applyPermFilter(); };
+    applyPermFilter();
+    root.querySelectorAll('[data-perm]').forEach(cb => {
+      cb.onchange = () => {
+        const set = new Set(v.permissions);
+        if (cb.checked) set.add(cb.dataset.perm); else set.delete(cb.dataset.perm);
+        v.permissions = [...set];
+        pending();
+      };
+    });
+    $('dr-clear-perms').onclick = () => { if (!canEdit) return; v.permissions = []; renderRolesPane(); };
+  }
+
+  if (roleEditorTab === 'members' && !isEveryone) {
+    $('dr-member-search').oninput = (e) => { roleMemberSearch = e.target.value; renderRoleMembersTab(role, memberIds, canEdit); };
+    if ($('dr-add-members-btn')) $('dr-add-members-btn').onclick = () => { roleAddMembersOpen = !roleAddMembersOpen; renderRolesPane(); };
+    renderRoleMembersTab(role, memberIds, canEdit);
+  }
+
+  $('re-save-btn').onclick = () => saveRoleEdits(role);
+  $('re-reset-btn').onclick = () => { resetRoleEditorState(); renderRolesPane(); };
+  updateRoleUnsavedBar();
+
+  if (!canEdit) $('dr-pane').querySelectorAll('input:not([type="text"]), button, #role-name-input').forEach(el => { el.disabled = true; });
 }
 
-$('create-role-btn').onclick = async () => {
+async function saveRoleEdits(role) {
+  if (!currentServerData || !roleEditorPending) return;
+  const isEveryone = role.id === 'everyone';
+  const state = { ...roleEditorPending, name: isEveryone ? '@everyone' : (roleEditorPending.name || '').trim() };
+  if (!state.name) { toast('Enter a role name.'); flashUnsavedBar(); return; }
+  if (!canEditRole(role)) { toast('You can only edit roles ranked below your highest role.', 'error'); return; }
+  // No privilege escalation: a non-owner can only hand out permissions they hold themselves.
+  const mine = serverPermissionsFor(currentServerData, myUid);
+  const escalated = state.permissions.filter(p => !mine.has(p) && !(role.permissions || []).includes(p));
+  if (escalated.length) { toast("You can't grant permissions you don't have yourself.", 'error'); return; }
+  let roles = serverRoles(currentServerData);
+  if (!roles.find(r => r.id === role.id)) roles = [...roles, { ...role }];
+  roles = roles.map(r => r.id === role.id ? { ...r, ...state } : r);
+  try {
+    await db.collection('servers').doc(currentServerId).update({ roles });
+    currentServerData = { ...currentServerData, roles };
+    resetRoleEditorState();
+    renderRolesPane();
+    toast('Role saved.');
+  } catch (e) { toast(e.message || 'Could not save role.', 'error'); }
+}
+
+async function renderRoleMembersTab(role, memberIds, canEdit) {
+  await Promise.all((currentServerData.members || []).map(uid => getProfile(uid)));
+  const currentWrap = $('re-members-current');
+  const addWrap = $('re-members-add');
+  if (!currentWrap || !addWrap) return;
+  const q = roleMemberSearch.trim().toLowerCase();
+  const matches = (uid) => {
+    const p = profileCache[uid] || { username: uid };
+    return !q || displayNameOf(p).toLowerCase().includes(q) || String(p.username || uid).toLowerCase().includes(q);
+  };
+  const rowHTML = (uid, action) => {
+    const p = profileCache[uid] || { username: uid };
+    return `<div class="dr-member-row" data-u="${esc(uid)}">
+      ${avatarHTML(32, p.avatarColor, initials(p.username || uid), null, p.avatarUrl)}
+      <span class="dr-member-names"><b>${esc(displayNameOf(p) || uid)}</b><small>${esc(p.username || uid)}</small></span>
+      ${action}
+    </div>`;
+  };
+  const holders = memberIds.filter(matches);
+  currentWrap.innerHTML = holders.length
+    ? holders.map(uid => rowHTML(uid, canEdit ? `<button type="button" class="dr-member-remove" data-remove-uid="${esc(uid)}" title="Remove member" aria-label="Remove member">${ROLE_ICONS.x}</button>` : '')).join('')
+    : `<div class="dr-empty">${memberIds.length ? 'No members match your search.' : 'No members were found. Add members to this role.'}</div>`;
+  const others = (currentServerData.members || []).filter(uid => !memberIds.includes(uid) && matches(uid));
+  addWrap.innerHTML = `<div class="dr-section-title">Add Members</div>` + (others.length
+    ? others.map(uid => rowHTML(uid, `<button type="button" class="ds-btn ds-btn-brand ds-btn-sm" data-add-uid="${esc(uid)}">Add</button>`)).join('')
+    : '<div class="dr-empty">Everyone already has this role.</div>');
+  if (!canEdit) return;
+  currentWrap.querySelectorAll('[data-remove-uid]').forEach(btn => { btn.onclick = () => setMemberRole(btn.dataset.removeUid, role.id, false); });
+  addWrap.querySelectorAll('[data-add-uid]').forEach(btn => { btn.onclick = () => setMemberRole(btn.dataset.addUid, role.id, true); });
+}
+
+async function setMemberRole(uid, roleId, add) {
+  const memberRoles = { ...(currentServerData.memberRoles || {}) };
+  const current = memberRoles[uid] || [];
+  memberRoles[uid] = add ? [...new Set([...current, roleId])] : current.filter(id => id !== roleId);
+  try {
+    await db.collection('servers').doc(currentServerId).update({ memberRoles });
+    currentServerData = { ...currentServerData, memberRoles };
+    renderRolesPane();
+  } catch (e) { toast(e.message || 'Could not update roles.', 'error'); }
+}
+
+// New roles are created at the bottom of the list (just above @everyone),
+// named "new role", and opened straight into the editor — same as Discord.
+async function createServerRole() {
   if (!currentServerData) return;
   if (!hasServerPerm(currentServerData, myUid, 'manageRoles')) { toast('You need Manage Roles permission to do that.'); return; }
-  const roles = serverRoles(currentServerData);
-  const maxPos = roles.reduce((m, r) => Math.max(m, r.position), 0);
+  if (roleFormIsDirty(roleEditorPending, roleEditorSnapshot)) { flashUnsavedBar(); return; }
+  const shifted = serverRoles(currentServerData).map(r => r.id === 'everyone' ? r : { ...r, position: (r.position || 0) + 1 });
   const newRole = {
     id: 'role_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    name: 'New Role', color: '#99aab5', permissions: [], position: maxPos + 1,
+    name: 'new role', color: null, hoist: false, permissions: [], position: 1,
   };
+  const roles = [...shifted, newRole];
   try {
-    await db.collection('servers').doc(currentServerId).update({ roles: [...roles, newRole] });
-    selectedRoleId = newRole.id;
-    renderServerRoleList();
-    renderRoleEditor(newRole.id);
+    await db.collection('servers').doc(currentServerId).update({ roles });
+    currentServerData = { ...currentServerData, roles };
+    openRoleEditor(newRole.id);
   } catch (e) { toast(e.message || 'Could not create role.', 'error'); }
-};
+}
 
 // ============================================================
 // MANAGE MEMBER MODAL (assign roles, kick, ban)
@@ -2954,23 +3468,31 @@ function openManageMemberModal(uid, server) {
     };
   }
   if (canKick) {
-    $('mm-kick-btn').onclick = async () => {
-      if (!confirm(`Kick ${displayNameOf(p)} from the server?`)) return;
-      try {
-        await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayRemove(uid) });
-        toast('Member kicked.');
-        closeModal('manage-member-modal');
-      } catch (e) { toast(e.message || 'Could not kick member.', 'error'); }
+    $('mm-kick-btn').onclick = () => {
+      confirmAction({
+        title: 'Kick Member', body: `Kick ${displayNameOf(p)} from the server? They can rejoin with an invite.`, confirmLabel: 'Kick',
+        onConfirm: async () => {
+          try {
+            await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayRemove(uid) });
+            toast('Member kicked.');
+            closeModal('manage-member-modal');
+          } catch (e) { toast(e.message || 'Could not kick member.', 'error'); }
+        },
+      });
     };
   }
   if (canBan) {
-    $('mm-ban-btn').onclick = async () => {
-      if (!confirm(`Ban ${displayNameOf(p)} from the server? They won't be able to rejoin with an invite.`)) return;
-      try {
-        await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayRemove(uid), bannedUsers: FieldValue.arrayUnion(uid) });
-        toast('Member banned.');
-        closeModal('manage-member-modal');
-      } catch (e) { toast(e.message || 'Could not ban member.', 'error'); }
+    $('mm-ban-btn').onclick = () => {
+      confirmAction({
+        title: 'Ban Member', body: `Ban ${displayNameOf(p)} from the server? They won't be able to rejoin with an invite.`, confirmLabel: 'Ban',
+        onConfirm: async () => {
+          try {
+            await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayRemove(uid), bannedUsers: FieldValue.arrayUnion(uid) });
+            toast('Member banned.');
+            closeModal('manage-member-modal');
+          } catch (e) { toast(e.message || 'Could not ban member.', 'error'); }
+        },
+      });
     };
   }
   openModal('manage-member-modal');
@@ -3024,13 +3546,17 @@ function renderChannelRows(channels) {
     row.onclick = () => selectChannel(c);
     if (canManage) {
       row.querySelector('.channel-perms-btn').onclick = (e) => { e.stopPropagation(); openChannelPermsModal(c); };
-      row.querySelector('.del-channel').onclick = async (e) => {
+      row.querySelector('.del-channel').onclick = (e) => {
         e.stopPropagation();
-        if (!confirm(`Delete #${c.name}?`)) return;
-        const msgSnap = await db.collection('servers').doc(currentServerId).collection('channels').doc(c.id).collection('messages').get();
-        await Promise.all(msgSnap.docs.map(m => m.ref.delete()));
-        await db.collection('servers').doc(currentServerId).collection('channels').doc(c.id).delete();
-        if (currentChannelId === c.id) { currentChannelId = null; showWelcome(); }
+        confirmAction({
+          title: 'Delete Channel', body: `Delete #${c.name}? This cannot be undone.`, confirmLabel: 'Delete Channel',
+          onConfirm: async () => {
+            const msgSnap = await db.collection('servers').doc(currentServerId).collection('channels').doc(c.id).collection('messages').get();
+            await Promise.all(msgSnap.docs.map(m => m.ref.delete()));
+            await db.collection('servers').doc(currentServerId).collection('channels').doc(c.id).delete();
+            if (currentChannelId === c.id) { currentChannelId = null; showWelcome(); }
+          },
+        });
       };
     }
     return row;
@@ -3170,7 +3696,7 @@ $('mute-toggle').onclick = () => {
 
 function canPin() {
   if (currentView === 'dm') return true;
-  return isAdmin || (currentServerData && currentServerData.ownerId === myUid);
+  return !!(currentServerData && hasServerPerm(currentServerData, myUid, 'manageMessages'));
 }
 $('pins-toggle').onclick = () => {
   renderPinnedList(lastRawMessages.filter(m => m.pinned));
@@ -3394,7 +3920,7 @@ async function renderMemberPanel(members, ownerId, server) {
     const showGear = canManageMembers && uid !== myUid && uid !== ownerId;
     return `
     <div class="member-row" data-u="${esc(uid)}">
-      ${avatarHTML(32, p.avatarColor, initials(p.username), disp, p.avatarUrl, p.equippedDecoration)}
+      ${avatarHTML(32, p.avatarColor, initials(p.username), disp, p.avatarUrl, p.equippedDecoration, uid)}
       <span class="mname${disp !== 'offline' ? ' online-name' : ''}"${roleColor ? ` style="color:${esc(roleColor)}"` : ''}>${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}</span>
       ${topRole && topRole.color ? roleChipHTML(topRole) : ''}
       ${showGear ? `<span class="member-manage-btn" title="Manage Member" data-manage-uid="${esc(uid)}">${icon('gear')}</span>` : ''}
@@ -5440,8 +5966,11 @@ async function subscribeToPremium() {
 async function giftPremiumTo(recipientUsername) {
   const fresh = (await db.collection('users').doc(myUid).get()).data();
   if ((fresh.orbs || 0) < PREMIUM_COST_ORBS) { toast(`You need ${PREMIUM_COST_ORBS} Orbs to gift Premium.`); return; }
-  if (!confirm(`Gift Frixion Premium to ${recipientUsername} for ${PREMIUM_COST_ORBS} Orbs?`)) return;
   const days = Math.round(PREMIUM_DURATION_MS / 86400000);
+  confirmAction({
+    title: 'Gift Frixion Premium', body: `Gift Frixion Premium to ${recipientUsername} for ${PREMIUM_COST_ORBS} Orbs?`,
+    confirmLabel: 'Gift Premium', danger: false,
+    onConfirm: async () => {
   try {
     await db.collection('users').doc(myUid).update({ orbs: FieldValue.increment(-PREMIUM_COST_ORBS) });
     const code = await createRedeemCode('premium', days, myUid);
@@ -5457,6 +5986,8 @@ async function giftPremiumTo(recipientUsername) {
     toast(`Gifted Premium to ${recipientUsername}!`);
     closeModal('gift-modal');
   } catch (e) { toast('Something went wrong.', 'error'); }
+    },
+  });
 }
 
 async function redeemCode() {
@@ -5498,9 +6029,14 @@ function openPremiumModal() {
 function orbIconSVG(size) { return `<svg viewBox="0 0 24 24" width="${size}" height="${size}"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg>`; }
 
 function shopItemPreviewHTML(key, item) {
-  if (key === 'decorations') return avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, item.id);
+  if (key === 'decorations') return `<div class="sic-deco-stage">${avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, item.id)}</div>`;
+  if (key === 'banners') return `<div class="sic-banner-preview">
+    <div class="sic-banner-strip${item.animated ? ' banner-anim' : ''}" style="background:${esc(bannerGradientCSS(item))};"></div>
+    <div class="sic-banner-avatar">${avatarHTML(44, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl)}</div>
+    <div class="sic-banner-lines"><span></span><span></span></div>
+  </div>`;
   if (key === 'nameplates') {
-    const cls = 'sic-nameplate-preview' + (item.cssClass ? ' ' + item.cssClass : '') + (item.animated ? ' nameplate-shimmer' : '');
+    const cls = 'sic-nameplate-preview' + (item.cssClass ? ' ' + item.cssClass : '') + ((item.animated && !item.cssClass) ? ' nameplate-shimmer' : '');
     const style = item.colors ? `background:linear-gradient(135deg, ${esc(item.colors[0])}, ${esc(item.colors[1])});` : '';
     return `<div class="${cls}" style="${style}"><span>${esc(displayNameOf(myProfile))}</span></div>`;
   }
@@ -5572,7 +6108,11 @@ function renderShopCategoryPane(key) {
   const matches = (item) => !q || item.name.toLowerCase().includes(q);
   const animated = def.catalog.filter(i => i.animated && matches(i));
   const staticOnes = def.catalog.filter(i => !i.animated && matches(i));
-  const gridCls = 'shop-grid' + (key === 'themes' ? ' theme-shop-grid' : '');
+  const gridCls = 'shop-grid' + ((key === 'themes' || key === 'banners') ? ' theme-shop-grid' : '');
+  if (key === 'banners' && !def.catalog.length) {
+    wrap.innerHTML = `<div class="shop-section-label">Banners</div><div class="shop-empty-state"><b>No banners yet</b><span>Gradient banners published by Frixion staff will show up here.</span></div>`;
+    return;
+  }
   wrap.innerHTML =
     `<div class="shop-section-label">Animated</div>` +
     `<div class="${gridCls}">${animated.map(i => shopItemCardHTML(key, i)).join('') || '<div class="empty">No animated items found.</div>'}</div>` +
@@ -5800,6 +6340,7 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
       renderAdminProfileEffectList(); initEffectEditor();
       renderAdminProfileFrameList(); initFrameEditor();
     }
+    if (tab.dataset.adminTab === 'banners') { renderAdminBannerList(); initBannerEditor(); }
     if (tab.dataset.adminTab === 'systemhub') { adminSelectedUser = null; renderAdminList(); }
   };
 });
@@ -5962,6 +6503,7 @@ function renderAdminEmojiList() {
 
 // ---------- Avatar Decoration drawing editor (admin/owner only) ----------
 let decoEditorInitialized = false;
+let decoMode = 'draw'; // 'draw' | 'emoji' — the emoji path skips needing any drawing skill
 let decoDrawing = false;
 let decoBrushSize = 7;
 let decoErasing = false;
@@ -6006,6 +6548,19 @@ function initDecorationEditor() {
   const ctx = canvas.getContext('2d');
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+
+  document.querySelectorAll('.deco-mode-btn').forEach(btn => {
+    btn.onclick = () => {
+      decoMode = btn.dataset.decoMode;
+      document.querySelectorAll('.deco-mode-btn').forEach(b => b.classList.toggle('on', b === btn));
+      $('deco-mode-draw').classList.toggle('hidden', decoMode !== 'draw');
+      $('deco-draw-hint').classList.toggle('hidden', decoMode !== 'draw');
+      $('deco-mode-emoji').classList.toggle('hidden', decoMode !== 'emoji');
+    };
+  });
+  $('deco-emoji-input').addEventListener('input', () => {
+    $('deco-emoji-preview').textContent = $('deco-emoji-input').value || '🎩';
+  });
 
   const startDraw = (e) => {
     decoDrawing = true;
@@ -6061,13 +6616,16 @@ $('deco-publish-btn').onclick = async () => {
   const name = ($('deco-name-input').value || '').trim();
   const desc = ($('deco-desc-input').value || '').trim();
   const price = parseInt($('deco-price-input').value, 10);
-  if (decorationEditorCanvasIsBlank(canvas)) { toast('Draw something first.'); return; }
+  const emoji = decoMode === 'emoji' ? ($('deco-emoji-input').value || '').trim() : null;
+  if (decoMode === 'draw' && decorationEditorCanvasIsBlank(canvas)) { toast('Draw something first.'); return; }
+  if (decoMode === 'emoji' && !emoji) { toast('Pick an emoji first.'); return; }
   if (!name) { toast('Enter a name.'); return; }
   if (!desc) { toast('Enter a description.'); return; }
   if (!Number.isFinite(price) || price < 0) { toast('Enter a valid price.'); return; }
   try {
-    const imageUrl = canvas.toDataURL('image/png');
-    await db.collection('shopDecorations').add({ name, desc, price, imageUrl, createdBy: myUid, createdAt: FieldValue.serverTimestamp() });
+    const payload = { name, desc, price, createdBy: myUid, createdAt: FieldValue.serverTimestamp() };
+    if (emoji) payload.emoji = emoji; else payload.imageUrl = canvas.toDataURL('image/png');
+    await db.collection('shopDecorations').add(payload);
     canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
     $('deco-name-input').value = '';
     $('deco-desc-input').value = '';
@@ -6097,12 +6655,39 @@ function updateThemePreviewSwatch() {
   swatch.style.background = `linear-gradient(135deg, ${c1} 0%, ${c2} 55%, ${c3} 100%)`;
   swatch.innerHTML = `<span style="background:${accent}"></span>`;
 }
+// Generates a coherent dark-gradient-plus-vivid-accent palette in one
+// click, matching the style of the built-in themes — picking 5 fully
+// independent raw colors by hand is the single most tedious part of
+// making a theme, and a random hue-based starting point (which can still
+// be tweaked afterward) is far quicker than dialing in every value.
+function randomThemeColors() {
+  const hslToHex = (h, s, l) => {
+    s /= 100; l /= 100;
+    const k = n => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    const toHex = v => Math.round(255 * v).toString(16).padStart(2, '0');
+    return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+  };
+  const hue = Math.floor(Math.random() * 360);
+  const hue2 = (hue + 20 + Math.random() * 40) % 360;
+  return {
+    c1: hslToHex(hue, 55, 7), c2: hslToHex(hue, 50, 12), c3: hslToHex(hue2, 55, 18),
+    accent: hslToHex(hue, 75, 62), accent2: hslToHex(hue2, 70, 78),
+  };
+}
 function initThemeEditor() {
   if (themeEditorInitialized) { updateThemePreviewSwatch(); return; }
   themeEditorInitialized = true;
   ['theme-color1-input', 'theme-color2-input', 'theme-color3-input', 'theme-accent-input'].forEach(id => {
     $(id).addEventListener('input', updateThemePreviewSwatch);
   });
+  $('theme-randomize-btn').onclick = () => {
+    const c = randomThemeColors();
+    $('theme-color1-input').value = c.c1; $('theme-color2-input').value = c.c2; $('theme-color3-input').value = c.c3;
+    $('theme-accent-input').value = c.accent; $('theme-accent2-input').value = c.accent2;
+    updateThemePreviewSwatch();
+  };
   updateThemePreviewSwatch();
 }
 $('theme-publish-btn').onclick = async () => {
@@ -6182,6 +6767,73 @@ function renderAdminNameplateList() {
     : '<div class="empty">No custom nameplates yet.</div>';
   wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
     btn.onclick = async () => { await db.collection('shopNameplates').doc(btn.closest('.admin-emoji-chip').dataset.id).delete(); };
+  });
+}
+
+// ---------- Gradient Banner creator (admin/owner only) ----------
+let bannerEditorInitialized = false;
+function currentBannerDraft() {
+  return {
+    colors: [$('banner-color1-input').value, $('banner-color2-input').value, $('banner-color3-input').value],
+    angle: parseInt($('banner-angle-input').value, 10) || 0,
+    animated: $('banner-animated-input').checked,
+  };
+}
+function updateBannerPreview() {
+  const draft = currentBannerDraft();
+  const swatch = $('banner-preview-swatch');
+  swatch.style.background = bannerGradientCSS(draft);
+  swatch.classList.toggle('banner-anim', draft.animated);
+  $('banner-angle-label').textContent = draft.angle + '°';
+}
+function initBannerEditor() {
+  if (bannerEditorInitialized) { updateBannerPreview(); return; }
+  bannerEditorInitialized = true;
+  ['banner-color1-input', 'banner-color2-input', 'banner-color3-input', 'banner-angle-input'].forEach(id => $(id).addEventListener('input', updateBannerPreview));
+  $('banner-animated-input').addEventListener('change', updateBannerPreview);
+  $('banner-randomize-btn').onclick = () => {
+    const rand = () => '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
+    ['banner-color1-input', 'banner-color2-input', 'banner-color3-input'].forEach(id => { $(id).value = rand(); });
+    $('banner-angle-input').value = String(Math.round(Math.random() * 72) * 5);
+    updateBannerPreview();
+  };
+  updateBannerPreview();
+}
+$('banner-publish-btn').onclick = async () => {
+  if (!isAdmin && !isOwner) { toast('Admins only.', 'error'); return; }
+  const name = ($('banner-name-input').value || '').trim();
+  const desc = ($('banner-desc-input').value || '').trim();
+  const price = parseInt($('banner-price-input').value, 10);
+  if (!name) { toast('Enter a name.'); return; }
+  if (!desc) { toast('Enter a description.'); return; }
+  if (!Number.isFinite(price) || price < 0) { toast('Enter a valid price.'); return; }
+  const draft = currentBannerDraft();
+  try {
+    await db.collection('shopBanners').add({
+      name, desc, price, colors: draft.colors, angle: draft.angle, animated: draft.animated,
+      createdBy: myUid, createdAt: FieldValue.serverTimestamp(),
+    });
+    $('banner-name-input').value = '';
+    $('banner-desc-input').value = '';
+    $('banner-price-input').value = '';
+    toast(`Published "${name}" to the shop!`);
+  } catch (e) { toast(e.message || 'Failed to publish. Check your Firestore rules for shopBanners.', 'error'); }
+};
+function renderAdminBannerList() {
+  const wrap = $('admin-banner-list');
+  if (!wrap) return;
+  wrap.innerHTML = customBanners.length
+    ? customBanners.map(b => `<div class="admin-emoji-chip" data-id="${esc(b.id)}"><span class="admin-theme-chip-swatch" style="background:${esc(bannerGradientCSS(b))};"></span><span>${esc(b.name)}</span><span class="admin-chip-price">${esc(String(b.price))}</span><span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
+    : '<div class="empty">No banners published yet.</div>';
+  wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.closest('.admin-emoji-chip').dataset.id;
+      const b = bannerById(id);
+      confirmAction({
+        title: 'Delete Banner', body: `Remove "${b ? b.name : 'this banner'}" from the shop? People who bought it will lose it.`, confirmLabel: 'Delete',
+        onConfirm: async () => { try { await db.collection('shopBanners').doc(id).delete(); } catch (e) { toast(e.message || 'Could not delete.', 'error'); } },
+      });
+    };
   });
 }
 
@@ -6489,11 +7141,16 @@ async function adminRedirect(username) {
 async function adminDelete() {
   if (!isOwner) { toast('Only the owner can delete accounts.', 'error'); return; }
   if (!adminSelectedUser) return;
-  if (!confirm(`Permanently delete ${adminSelectedUser}'s account?`)) return;
-  await db.collection('users').doc(adminSelectedUser).delete();
-  toast(`Deleted ${adminSelectedUser}.`);
-  adminSelectedUser = null;
-  renderAdminList();
+  const target = adminSelectedUser;
+  confirmAction({
+    title: 'Delete Account', body: `Permanently delete ${target}'s account? This cannot be undone.`, confirmLabel: 'Delete Account',
+    onConfirm: async () => {
+      await db.collection('users').doc(target).delete();
+      toast(`Deleted ${target}.`);
+      adminSelectedUser = null;
+      renderAdminList();
+    },
+  });
 }
 
 // ============================================================

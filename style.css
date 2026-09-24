@@ -50,11 +50,21 @@ input, textarea,
 /* ---- Shop Themes (ported from Toblox) — a separate, independent layer on
    top of whichever Settings > Themes class is active. Applying one sets
    --shop-theme-bg plus overrides for the core bg/accent variables directly
-   via inline styles on <html> (see applyShopTheme in script.js), which
-   naturally wins over any body.theme-X class rule below since inline
-   style always beats a class selector. The animated gradient itself lives
-   on a fixed ::before layer (not <body> directly) so hue-rotating it never
-   turns fixed sidebars/topbars into scrolling elements.
+   via inline styles on <body> itself (see applyShopTheme in script.js) —
+   these used to live on <html> instead, which looked right ("inline
+   beats a class selector") but wasn't: those same variables are also set
+   by body.theme-light/ash/onyx below, and for custom properties, the
+   element CLOSEST to whatever's reading the value wins the inheritance
+   regardless of inline vs. class. Body is closer than html is, so with
+   any Settings theme other than Dark active, body's own class-based
+   value was silently shadowing the override before it ever reached
+   anything — shop themes only ever worked while Dark (which adds no
+   class to body at all) was the active Settings theme. Putting the
+   override on body itself, the same element the class rules are on,
+   makes inline-beats-class actually apply.
+   The animated gradient itself lives on a fixed ::before layer (not
+   <body> directly) so hue-rotating it never turns fixed sidebars/topbars
+   into scrolling elements.
    That gradient layer only shows up at all because applyShopTheme sets
    the panel bg variables to translucent rgba() rather than flat opaque
    hex — #server-rail/#side-panel/#main-col tile the full viewport with
@@ -219,6 +229,7 @@ a { color: var(--text-link); text-decoration: none; }
 .field { margin-bottom: 16px; }
 .field label { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.setting-row.compact { margin: 10px 0; }
 .setting-row-text { flex: 1; }
 .setting-row-title { font-size: 15px; font-weight: 500; color: var(--text-normal); margin-bottom: 2px; }
 .setting-row-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
@@ -358,8 +369,11 @@ a { color: var(--text-link); text-decoration: none; }
   /* Size and position are set inline per-avatar (see avatarHTML in script.js) so
      they scale correctly with whatever size that avatar is rendered at. The
      avatar itself gets a mask cutout so this dot always sits on a clean punched
-     hole instead of a border trying to guess the background color. */
-  position: absolute; border-radius: 50%;
+     hole instead of a border trying to guess the background color.
+     z-index higher than .avatar-decoration below — presence should always
+     stay visible no matter what decoration is equipped, not get buried
+     under one that happens to extend into that corner. */
+  position: absolute; border-radius: 50%; z-index: 3;
 }
 .status-dot.online { background: var(--online); }
 .status-dot.idle { background: var(--idle); }
@@ -775,12 +789,6 @@ body.action-sheet-open { overflow: hidden; }
 .role-chip .role-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--role-color, #99aab5); flex-shrink: 0; }
 
 /* ---- Server Settings: tabs ---- */
-.ss-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--divider); margin: 4px 0 18px; }
-.ss-tab {
-  padding: 8px 4px; font-size: 14px; font-weight: 600; color: var(--text-muted);
-  border-bottom: 2px solid transparent; margin-right: 16px; cursor: pointer;
-}
-.ss-tab.on { color: var(--text-normal); border-bottom-color: var(--accent); }
 .ss-pane.hidden { display: none; }
 
 /* ---- Server Settings: roles tab ---- */
@@ -801,11 +809,64 @@ body.action-sheet-open { overflow: hidden; }
   font-size: 13px; padding: 10px 12px; border-radius: 4px; margin-bottom: 14px;
 }
 .role-perm-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
-.role-perm-row { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
-.role-perm-row input { margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
+.role-perm-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--divider); }
+.role-perm-row:last-child { border-bottom: none; }
+.role-perm-row input { flex-shrink: 0; }
 .role-perm-row b { display: block; font-size: 13.5px; color: var(--text-normal); }
-.role-perm-row small { display: block; font-size: 12px; color: var(--text-muted); }
+.role-perm-row small { display: block; font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .role-perm-row.locked { opacity: .5; cursor: default; }
+label.role-perm-row { cursor: pointer; }
+
+.role-list-row .role-list-count { font-size: 11px; color: var(--text-faint); margin-left: auto; flex-shrink: 0; }
+.role-list-row .role-reorder-btns { margin-left: 6px; }
+
+.role-editor-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.role-editor-swatch { width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); }
+.role-editor-name-input {
+  flex: 1; background: transparent; border: none; border-bottom: 1px solid var(--divider);
+  font-size: 18px; font-weight: 700; color: var(--text-normal); padding: 4px 0; min-width: 0;
+}
+.role-editor-name-input:focus { outline: none; border-bottom-color: var(--accent); }
+.role-editor-name-input:disabled { color: var(--text-muted); }
+
+.re-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--divider); margin-bottom: 16px; }
+.re-tab { padding: 8px 2px; margin-right: 18px; font-size: 13px; font-weight: 600; color: var(--text-muted); border-bottom: 2px solid transparent; cursor: pointer; background: none; border-top: none; border-left: none; border-right: none; }
+.re-tab.on { color: var(--text-normal); border-bottom-color: var(--accent); }
+.re-pane.hidden { display: none; }
+
+.role-color-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--text-muted); margin-bottom: 8px; }
+.role-color-palette { display: grid; grid-template-columns: repeat(9, 1fr); gap: 8px; margin-bottom: 14px; }
+.role-color-swatch { width: 100%; aspect-ratio: 1; border-radius: 50%; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); transition: transform .1s ease; }
+.role-color-swatch:hover { transform: scale(1.12); }
+.role-color-swatch.on { box-shadow: 0 0 0 2px var(--bg-floating), 0 0 0 4px #fff; }
+
+/* In normal document flow rather than pinned/sticky to the modal edge —
+   a floating bar with negative-margin edge-bleed is fragile against
+   layout changes elsewhere in this nested grid, and a plain bordered bar
+   that appears right where the changes were made is just as clear. */
+.re-unsaved-bar {
+  margin-top: 20px; padding: 12px 16px; border-radius: 6px;
+  background: #17181a; border: 1px solid var(--divider);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-size: 13px; font-weight: 600; color: var(--text-normal);
+}
+.re-unsaved-bar.hidden { display: none; }
+.re-unsaved-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.re-unsaved-actions button { border: none; border-radius: 4px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+#re-reset-btn { background: transparent; color: var(--text-muted); }
+#re-reset-btn:hover { color: var(--text-normal); text-decoration: underline; }
+#re-save-btn { background: #3ba55d; color: #fff; }
+#re-save-btn:hover { background: #359151; }
+
+.re-member-list { display: flex; flex-direction: column; gap: 2px; max-height: 200px; overflow-y: auto; }
+.re-member-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; font-size: 13.5px; color: var(--text-normal); }
+.re-member-row:hover { background: var(--bg-modifier-hover); }
+.re-member-row .avatar { flex-shrink: 0; }
+.re-member-remove { margin-left: auto; color: var(--text-faint); cursor: pointer; flex-shrink: 0; display: flex; }
+.re-member-remove:hover { color: var(--danger); }
+.re-member-remove svg { width: 13px; height: 13px; }
+label.re-member-addable { cursor: pointer; }
+label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 .role-assign-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; max-height: 280px; overflow-y: auto; }
 
 /* ============ MODALS ============ */
@@ -1238,6 +1299,11 @@ body.action-sheet-open { overflow: hidden; }
 .deco-preview-avatar { width: 64px; height: 64px; }
 .deco-color-input { width: 60px; height: 34px; padding: 2px; border-radius: 6px; border: none; background: var(--bg-input); cursor: pointer; }
 .deco-size-btn.on, #deco-eraser-btn.on { background: var(--accent); color: #fff; }
+.deco-mode-btn.on { background: var(--accent); color: #fff; }
+.deco-editor.hidden { display: none; }
+.deco-emoji-preview { position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 6px; font-size: 64px; line-height: 1; pointer-events: none; }
+#deco-mode-emoji .deco-canvas-wrap { background: var(--bg-input); border-radius: 8px; border: 1px solid rgba(255,255,255,.08); }
+.avatar-decoration-emoji { position: absolute; top: 2%; left: 50%; transform: translateX(-50%); line-height: 1; }
 
 /* ============ THEME (GRADIENT) CREATOR ============ */
 .theme-editor { display: flex; gap: 20px; margin-top: 10px; flex-wrap: wrap; align-items: flex-start; }
@@ -1315,7 +1381,37 @@ body.action-sheet-open { overflow: hidden; }
 .friend-picker { max-height: 240px; overflow-y: auto; margin: 12px 0; border: 1px solid var(--divider); border-radius: 6px; padding: 6px; }
 .friend-pick-row { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 4px; cursor: pointer; font-size: 14px; }
 .friend-pick-row:hover { background: var(--bg-modifier-hover); }
-.friend-pick-row input { accent-color: var(--accent); }
+.friend-pick-row input { margin-left: auto; }
+
+/* ---- switch-styled checkboxes ----
+   Applied directly to the native <input type="checkbox"> itself (no
+   extra wrapper markup needed) wherever a plain checkbox was used as an
+   on/off toggle or list-item selector, so every one of these reads and
+   behaves the same way as the app's other toggles. */
+.role-perm-row input[type="checkbox"],
+.friend-pick-row input[type="checkbox"],
+.re-member-addable input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  width: 36px; height: 20px; min-width: 36px; border-radius: 10px;
+  background: var(--bg-tertiary); border: 1px solid rgba(255,255,255,.08);
+  position: relative; cursor: pointer; flex-shrink: 0; margin: 0;
+  transition: background .15s ease;
+}
+.role-perm-row input[type="checkbox"]::before,
+.friend-pick-row input[type="checkbox"]::before,
+.re-member-addable input[type="checkbox"]::before {
+  content: ''; position: absolute; top: 1px; left: 1px; width: 16px; height: 16px;
+  border-radius: 50%; background: #fff; transition: transform .15s ease;
+  box-shadow: 0 1px 2px rgba(0,0,0,.3);
+}
+.role-perm-row input[type="checkbox"]:checked,
+.friend-pick-row input[type="checkbox"]:checked,
+.re-member-addable input[type="checkbox"]:checked { background: var(--accent); }
+.role-perm-row input[type="checkbox"]:checked::before,
+.friend-pick-row input[type="checkbox"]:checked::before,
+.re-member-addable input[type="checkbox"]:checked::before { transform: translateX(16px); }
+.role-perm-row input[type="checkbox"]:disabled,
+.re-member-addable input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
 
 /* ============ CHANNEL CATEGORIES ============ */
 .category-header {
@@ -1790,4 +1886,447 @@ body.action-sheet-open { overflow: hidden; }
   #gift-btn, #gif-btn, #sticker-btn { display: none; }
   #composer { padding: 0 6px; }
   .composer-icon-btn { width: 30px; }
+}
+
+/* ============================================================
+   DISCORD-PARITY POLISH LAYER
+   Appended overrides that bring spacing, switches, presence, and
+   mobile behaviour in line with Discord's current client. Kept in one
+   block at the end so it wins the cascade over the older rules above.
+   ============================================================ */
+
+/* ---- Discord-style toggle switches (every on/off control) ---- */
+.toggle-switch { width: 40px; height: 24px; }
+.toggle-slider { background: #80848e; border-radius: 14px; transition: background .2s ease; }
+.toggle-slider::before {
+  width: 18px; height: 18px; left: 3px; top: 3px; background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.35);
+  transition: transform .2s cubic-bezier(.2,.8,.2,1), background .2s ease;
+}
+/* tiny "x" / check drawn on the knob, like Discord */
+.toggle-slider::after {
+  content: ''; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M6.5 6.5l7 7M13.5 6.5l-7 7' stroke='%2380848e' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") center/12px no-repeat;
+  transition: transform .2s cubic-bezier(.2,.8,.2,1);
+  pointer-events: none;
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--online); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); background: #fff; }
+.toggle-switch input:checked + .toggle-slider::after {
+  transform: translateX(16px);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 10.5l3.2 3.2L15 7' fill='none' stroke='%2323a55a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.toggle-switch input:focus-visible + .toggle-slider { box-shadow: 0 0 0 2px var(--accent); }
+.toggle-switch input:disabled + .toggle-slider { opacity: .5; cursor: default; }
+
+.role-perm-row input[type="checkbox"],
+.friend-pick-row input[type="checkbox"],
+.re-member-addable input[type="checkbox"] {
+  width: 40px; height: 24px; min-width: 40px; border-radius: 14px; border: none; background: #80848e;
+}
+.role-perm-row input[type="checkbox"]::before,
+.friend-pick-row input[type="checkbox"]::before,
+.re-member-addable input[type="checkbox"]::before {
+  width: 18px; height: 18px; top: 3px; left: 3px;
+}
+.role-perm-row input[type="checkbox"]:checked,
+.friend-pick-row input[type="checkbox"]:checked,
+.re-member-addable input[type="checkbox"]:checked { background: var(--online); }
+.role-perm-row input[type="checkbox"]:focus-visible,
+.friend-pick-row input[type="checkbox"]:focus-visible,
+.re-member-addable input[type="checkbox"]:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+/* Permission rows: label on the left, switch on the right, like Discord */
+.role-perm-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--divider); }
+.role-perm-row:last-child { border-bottom: none; }
+.role-perm-row > span { display: flex; flex-direction: column; gap: 2px; }
+.role-perm-row small { color: var(--text-muted); font-size: 12px; }
+
+/* ---- Mobile presence: phone glyph replaces the status dot ---- */
+.avatar .status-dot.mobile { width: auto; height: auto; background: transparent !important; border-radius: 0; display: flex; }
+.status-phone { display: block; }
+.status-dot.mobile .phone-body { fill: var(--online); }
+.status-dot.mobile .phone-screen { fill: #fff; }
+.status-dot.mobile.idle .phone-body { fill: var(--idle); }
+.status-dot.mobile.dnd .phone-body { fill: var(--dnd); }
+.status-dot.mobile.idle .phone-screen, .status-dot.mobile.dnd .phone-screen { fill: rgba(255,255,255,.9); }
+
+/* ---- Server rail: Discord's pill + hover shape ---- */
+.rail-item { transition: border-radius .2s ease, background .2s ease, color .2s ease; }
+.rail-item.dm-item { background: var(--bg-secondary); color: var(--text-normal); }
+.rail-item.dm-item.active, .rail-item.dm-item:hover { background: var(--accent); color: #fff; }
+.rail-item:not(.active):not(.dm-item):not(.action):not(.explore-btn):hover { background: var(--accent); }
+.rail-item.action, .rail-item.explore-btn { background: var(--bg-secondary); }
+.rail-item.action:hover, .rail-item.explore-btn:hover { border-radius: 16px; }
+
+/* ---- Sidebar / channel list ---- */
+#side-header { font-size: 15px; box-shadow: 0 1px 0 rgba(0,0,0,.24), 0 1.5px 0 rgba(0,0,0,.05), 0 2px 0 rgba(0,0,0,.05); }
+.channel-row, .dm-row { padding: 6px 8px; min-height: 34px; font-size: 16px; font-weight: 500; margin-bottom: 2px; }
+.channel-row .hash { font-size: 20px; line-height: 1; opacity: .6; }
+.channel-row.active .hash { opacity: 1; }
+.side-section-label { font-size: 12px; letter-spacing: .02em; padding: 16px 8px 4px; }
+.side-section-label:hover { color: var(--text-normal); }
+.home-nav-item { border-radius: 4px; }
+
+/* ---- User panel (bottom-left) ---- */
+#user-panel { height: 52px; padding: 0 8px; }
+#user-panel .who { padding: 4px 8px; }
+#user-panel .utag { font-size: 12px; line-height: 1.2; }
+
+/* ---- Chat header & messages ---- */
+#chat-header { box-shadow: 0 1px 0 rgba(0,0,0,.24), 0 1.5px 0 rgba(0,0,0,.05), 0 2px 0 rgba(0,0,0,.05); z-index: 1; position: relative; }
+#chat-header .hash { color: var(--text-muted); }
+.hdr-icon-btn:hover, #chat-header .members-toggle:hover { color: var(--text-normal); }
+
+/* ---- Buttons & inputs ---- */
+.btn-primary, .btn-accent-inline, .btn-danger, .btn-secondary { border-radius: 3px; font-weight: 500; transition: background .17s ease, color .17s ease; }
+.btn-primary { padding: 12px; min-height: 44px; font-size: 16px; }
+.field input, .field textarea, .field select { background: var(--bg-deepest); border-radius: 3px; border: 1px solid transparent; }
+.field input:focus, .field textarea:focus, .field select:focus { box-shadow: none; border-color: var(--accent); }
+.field label { font-size: 12px; letter-spacing: .02em; }
+
+/* ---- Auth card: Discord login look ---- */
+.auth-card { width: 480px; border-radius: 5px; padding: 32px; }
+.auth-card h1 { font-size: 24px; }
+.auth-card p.sub { font-size: 16px; }
+
+/* ---- Modals ---- */
+.modal-box { border-radius: 4px; }
+.modal-overlay { backdrop-filter: none; background: rgba(0,0,0,.7); }
+
+/* ---- Touch devices: fix the member-list overlay leaving a title-bar gap
+   (the title bar is hidden on phones, so there is nothing to offset) ---- */
+@media (hover: none) and (pointer: coarse) and (max-width: 600px),
+       (hover: none) and (pointer: coarse) and (max-height: 600px) {
+  #app.member-list-open #member-panel { top: 0; height: 100%; padding-top: max(16px, env(safe-area-inset-top)); }
+  #inbox-popover, #help-popover { top: 8px; }
+}
+/* Real-device class set by script.js — narrow browser windows on a phone
+   that report hover:hover (some Android browsers) still get phone layout. */
+body.is-mobile #title-bar { display: none; }
+body.is-mobile #page-body { height: 100%; }
+body.is-mobile #app.member-list-open #member-panel { top: 0; height: 100%; }
+body.is-mobile .msg-hover-actions { display: none !important; }
+body.is-mobile .channel-row, body.is-mobile .dm-row, body.is-mobile .home-nav-item { min-height: 42px; }
+body.is-mobile .rail-item { width: 44px; height: 44px; }
+
+/* ============================================================
+   FRIXION 3.1 POLISH LAYER
+   Modal stacking fixes, Discord-parity Server Settings + Roles,
+   shop card centering, and Gradient Banners.
+   ============================================================ */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+
+@keyframes frxFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes frxPop { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes frxSlideUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes frxSettingsIn { from { opacity: 0; transform: scale(1.03); } to { opacity: 1; transform: none; } }
+@keyframes frxShake {
+  0%, 100% { transform: none; }
+  10%, 50%, 90% { transform: translateX(-6px); background: var(--danger); }
+  30%, 70% { transform: translateX(6px); background: var(--danger); }
+}
+@keyframes frxBannerFlow { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+
+/* ---- Modal stacking: a confirmation always sits above whatever opened it ---- */
+.modal-overlay { z-index: 100; animation: frxFade .14s ease; }
+.ds-settings-layer { z-index: 150; }
+#confirm-modal { z-index: 400; }
+#toast-stack { z-index: 1000; }
+.modal-overlay:not(.ds-settings-layer) > .modal-box {
+  animation: frxPop .18s cubic-bezier(.2,.9,.3,1.15);
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.04), 0 16px 48px rgba(0,0,0,.5);
+}
+.modal-header-row { align-items: center; gap: 12px; margin-bottom: 8px; }
+.modal-header-row .x {
+  width: 32px; height: 32px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  border-radius: 4px; font-size: 18px; transition: background .12s ease, color .12s ease;
+}
+.modal-header-row .x:hover { background: var(--bg-modifier-hover); }
+
+/* ---- Discord-style confirmation dialog ---- */
+#confirm-modal .modal-box { width: 440px; padding: 0; overflow: hidden; background: var(--bg-primary); }
+#confirm-modal .modal-header-row { padding: 20px 16px 0; margin: 0; }
+#confirm-modal h2 { font-size: 20px; font-weight: 700; margin: 0; }
+#confirm-modal p.desc { padding: 12px 16px 20px; margin: 0; font-size: 15px; line-height: 1.4; color: var(--text-normal); opacity: .85; }
+#confirm-modal .modal-actions { margin: 0; padding: 16px; background: var(--bg-secondary); }
+#confirm-modal .btn-secondary { background: transparent; }
+#confirm-modal .btn-secondary:hover { background: transparent; text-decoration: underline; }
+
+/* ---- Buttons ---- */
+.btn-accent-inline, .btn-danger, .btn-secondary { min-height: 38px; padding: 2px 16px; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.btn-accent-inline.slim, .btn-secondary.slim { min-height: 32px; padding: 2px 12px; font-size: 13px; }
+button:focus-visible, [tabindex]:focus-visible, .ds-nav-item:focus-visible { outline: 2px solid var(--text-link); outline-offset: 2px; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.ds-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex-shrink: 0;
+  min-height: 38px; padding: 2px 16px; border-radius: 3px; font-size: 14px; font-weight: 500;
+  color: #fff; white-space: nowrap; transition: background .17s ease, color .17s ease, border-color .17s ease;
+}
+.ds-btn-sm { min-height: 32px; padding: 2px 14px; }
+.ds-btn-brand { background: var(--accent); }
+.ds-btn-brand:hover { background: var(--accent-hover); }
+.ds-btn-green { background: #248046; }
+.ds-btn-green:hover { background: #1a6334; }
+.ds-btn-danger-outline { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+.ds-btn-danger-outline:hover { background: var(--danger); color: #fff; }
+.ds-link-btn { background: none; color: var(--text-normal); font-size: 14px; font-weight: 500; padding: 2px 4px; flex-shrink: 0; }
+.ds-link-btn:hover { text-decoration: underline; }
+
+/* ---- Small global touches ---- */
+.channel-row, .dm-row, .home-nav-item, .friends-tab, .shop-tab, .admin-tab, .explore-server-row { transition: background .12s ease, color .12s ease; }
+.explore-server-row:hover { background: var(--bg-tertiary); }
+.toast { border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.35); animation: frxSlideUp .2s ease; }
+.admin-tabs { overflow-x: auto; scrollbar-width: none; }
+.admin-tabs::-webkit-scrollbar { display: none; }
+.admin-tab { white-space: nowrap; flex-shrink: 0; }
+.admin-block, .admin-block:last-child {
+  background: var(--bg-secondary); border: 1px solid var(--divider); border-radius: 8px;
+  padding: 16px; margin-bottom: 14px;
+}
+.admin-pane { padding-top: 14px; }
+.admin-chip-price { font-size: 11px; font-weight: 700; color: #f0b232; }
+
+/* ============ SERVER SETTINGS — full-screen, Discord layout ============ */
+.ds-settings-layer { background: var(--bg-primary); align-items: stretch; justify-content: stretch; animation: frxSettingsIn .2s ease; }
+.ds-settings { display: flex; width: 100%; height: 100%; }
+.ds-sidebar { flex: 1 0 218px; display: flex; justify-content: flex-end; background: var(--bg-secondary); overflow-y: auto; }
+.ds-sidebar-inner { width: 218px; padding: 60px 6px 60px 20px; display: flex; flex-direction: column; gap: 2px; }
+.ds-nav-label {
+  padding: 6px 10px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
+  color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ds-nav-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 32px;
+  padding: 6px 10px; border-radius: 4px; text-align: left; font-size: 16px; font-weight: 500; line-height: 20px;
+  color: var(--text-muted); transition: background .12s ease, color .12s ease;
+}
+.ds-nav-item:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
+.ds-nav-item.on { background: var(--bg-modifier-selected); color: var(--text-normal); }
+.ds-nav-item.ds-nav-danger { color: #f23f42; }
+.ds-nav-item.ds-nav-danger:hover { background: rgba(242,63,66,.1); color: #f23f42; }
+.ds-nav-sep { height: 1px; margin: 8px 10px; background: var(--divider); }
+.ds-content { flex: 1 1 800px; display: flex; align-items: flex-start; overflow-y: auto; background: var(--bg-primary); }
+.ds-content-inner { flex: 1 1 auto; max-width: 740px; min-width: 0; padding: 60px 40px 80px; }
+.ds-close-wrap {
+  position: sticky; top: 60px; margin-top: 60px; margin-right: 21px; flex: 0 0 36px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.ds-close {
+  width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--text-muted); color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center; transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.ds-close:hover { background: var(--bg-modifier-hover); color: var(--text-normal); border-color: var(--text-normal); }
+.ds-close-kbd { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+
+.ss-h2 { font-size: 20px; font-weight: 700; line-height: 24px; color: var(--text-normal); margin-bottom: 20px; }
+.ss-desc { font-size: 14px; line-height: 1.4; color: var(--text-muted); margin: -12px 0 20px; }
+.ss-hint { font-size: 14px; line-height: 1.4; color: var(--text-muted); margin: 8px 0 16px; }
+.ss-divider { height: 1px; background: var(--divider); margin: 28px 0; }
+.ss-overview-top { display: flex; align-items: center; gap: 24px; }
+.ss-grow { flex: 1; min-width: 0; margin: 0; }
+.ss-icon-preview {
+  width: 100px; height: 100px; flex-shrink: 0; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 36px; font-weight: 700;
+  box-shadow: inset 0 0 0 4px rgba(255,255,255,.08);
+}
+.ss-invite-row { display: flex; gap: 8px; }
+.ss-invite-row input { flex: 1; min-width: 0; }
+.ss-footer-actions { display: flex; justify-content: flex-end; }
+.ds-settings .field input:disabled { opacity: .6; cursor: not-allowed; }
+
+/* ---- Roles: list view ---- */
+.dr-default-card {
+  width: 100%; display: flex; align-items: center; gap: 16px; padding: 16px; margin-bottom: 24px;
+  border-radius: 8px; background: var(--bg-secondary); text-align: left; transition: background .12s ease;
+}
+.dr-default-card:hover { background: var(--bg-tertiary); }
+.dr-default-icon {
+  width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; background: var(--bg-input);
+  display: flex; align-items: center; justify-content: center; color: var(--text-normal);
+}
+.dr-default-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dr-default-text b { font-size: 16px; font-weight: 600; color: var(--text-normal); }
+.dr-default-text small { font-size: 14px; color: var(--text-muted); }
+.dr-chevron { display: flex; color: var(--text-muted); }
+.dr-toolbar, .dr-perm-toolbar { display: flex; align-items: center; gap: 16px; }
+.dr-perm-toolbar { margin-bottom: 24px; }
+.dr-search { position: relative; display: flex; align-items: center; }
+.dr-grow { flex: 1; min-width: 0; }
+.dr-search input {
+  width: 100%; height: 34px; padding: 0 32px 0 10px; border: none; border-radius: 4px; outline: none;
+  background: var(--bg-deepest); color: var(--text-normal); font-size: 14px;
+}
+.dr-search input::placeholder { color: var(--text-faint); }
+.dr-search input:focus { box-shadow: 0 0 0 1px var(--accent); }
+.dr-search-icon { position: absolute; right: 9px; display: flex; color: var(--text-muted); pointer-events: none; }
+.dr-table { margin-top: 8px; }
+.dr-thead, .dr-row { display: grid; grid-template-columns: minmax(0, 1fr) 120px 56px; align-items: center; }
+.dr-thead {
+  padding: 0 8px 8px 30px; border-bottom: 1px solid var(--divider);
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; color: var(--text-muted);
+}
+.dr-row { min-height: 60px; padding: 0 8px; border-bottom: 1px solid var(--divider); border-radius: 4px; cursor: pointer; transition: background .1s ease; }
+.dr-row:hover { background: var(--bg-modifier-hover); }
+.dr-cell-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dr-drag { width: 14px; flex-shrink: 0; display: flex; color: var(--text-faint); opacity: 0; cursor: grab; }
+.dr-row:hover .dr-drag { opacity: 1; }
+.dr-shield { display: flex; flex-shrink: 0; }
+.dr-name { font-size: 16px; font-weight: 500; color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dr-cell-members { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-muted); }
+.dr-cell-actions { display: flex; justify-content: flex-end; }
+.dr-icon-btn {
+  width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; background: var(--bg-secondary); color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center; transition: background .12s ease, color .12s ease;
+}
+.dr-row:hover .dr-icon-btn, .dr-icon-btn:hover { background: var(--bg-tertiary); color: var(--text-normal); }
+.dr-row.dragging, .dr-side-row.dragging { opacity: .4; }
+.dr-row.drag-over, .dr-side-row.drag-over { box-shadow: inset 0 2px 0 var(--accent); }
+.dr-empty { padding: 24px 8px; text-align: center; font-size: 14px; color: var(--text-muted); }
+
+/* ---- Roles: edit view ---- */
+.dr-edit { display: flex; align-items: flex-start; }
+.dr-edit-side {
+  position: sticky; top: 0; width: 200px; flex-shrink: 0; max-height: calc(100dvh - 140px);
+  display: flex; flex-direction: column; padding-right: 16px; margin-right: 24px; border-right: 1px solid var(--divider);
+}
+.dr-edit-side-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.dr-back { display: flex; align-items: center; gap: 6px; padding: 6px 4px; font-size: 13px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); }
+.dr-back:hover { color: var(--text-normal); }
+.dr-edit-side-head .dr-icon-btn { width: 28px; height: 28px; background: transparent; }
+.dr-side-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.dr-side-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 6px 10px;
+  border-radius: 4px; text-align: left; font-size: 14px; font-weight: 500; color: var(--text-muted);
+}
+.dr-side-row:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
+.dr-side-row.on { background: var(--bg-modifier-selected); color: var(--text-normal); }
+.dr-dot { width: 12px; height: 12px; flex-shrink: 0; border-radius: 50%; }
+.dr-side-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dr-edit-main { flex: 1; min-width: 0; }
+.dr-edit-head h3 {
+  margin-bottom: 16px; font-size: 16px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase;
+  color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dr-tabs { display: flex; gap: 24px; margin-bottom: 24px; border-bottom: 1px solid var(--divider); overflow-x: auto; scrollbar-width: none; }
+.dr-tab {
+  flex-shrink: 0; padding: 0 0 12px; margin-bottom: -1px; border-bottom: 2px solid transparent;
+  font-size: 15px; font-weight: 500; color: var(--text-muted); transition: color .12s ease, border-color .12s ease;
+}
+.dr-tab:hover { color: var(--text-normal); border-bottom-color: rgba(255,255,255,.2); }
+.dr-tab.on { color: var(--text-normal); border-bottom-color: var(--accent); }
+.dr-locked { margin-bottom: 16px; padding: 10px 12px; border-radius: 4px; background: var(--accent-soft); color: var(--text-normal); font-size: 14px; }
+.dr-everyone-note { margin-top: 0; }
+.dr-req { color: var(--dnd); }
+.dr-section-title { margin-bottom: 8px; font-size: 12px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--text-muted); }
+.dr-color-picker { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.dr-color-big {
+  position: relative; width: 66px; height: 50px; flex-shrink: 0; border-radius: 4px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; color: #fff;
+}
+.dr-color-custom input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: none; opacity: 0; cursor: pointer; }
+.dr-dropper { position: absolute; top: 4px; right: 4px; display: flex; color: #fff; pointer-events: none; }
+.dr-color-grid { display: grid; grid-template-columns: repeat(10, 20px); gap: 10px; }
+.dr-color-sm { width: 20px; height: 20px; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #fff; }
+.dr-color-sm svg { width: 12px; height: 12px; }
+.dr-color-sm:hover, .dr-color-big:hover { filter: brightness(1.12); }
+.dr-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.dr-toggle-title { font-size: 16px; font-weight: 500; line-height: 1.25; color: var(--text-normal); }
+.dr-perm-group { margin-bottom: 28px; }
+.dr-perm-group > .dr-section-title { margin-bottom: 14px; }
+.dr-perm-row { padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--divider); }
+.dr-perm-row:last-child { margin-bottom: 0; border-bottom: none; }
+.dr-perm-desc { margin-top: 8px; padding-right: 56px; font-size: 14px; line-height: 1.4; color: var(--text-muted); }
+.dr-member-list, .dr-add-panel { display: flex; flex-direction: column; gap: 2px; }
+.dr-add-panel { max-height: 320px; overflow-y: auto; margin-bottom: 16px; padding: 12px; border-radius: 8px; background: var(--bg-secondary); }
+.dr-member-row { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 4px; }
+.dr-member-row:hover { background: var(--bg-modifier-hover); }
+.dr-member-names { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dr-member-names b { font-size: 15px; font-weight: 600; color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dr-member-names small { font-size: 13px; color: var(--text-muted); }
+.dr-member-remove {
+  width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); background: var(--bg-secondary); transition: background .12s ease, color .12s ease;
+}
+.dr-member-remove:hover { background: var(--danger); color: #fff; }
+
+/* Unsaved-changes notice — floats at the bottom like Discord's */
+.ds-unsaved {
+  position: sticky; bottom: 20px; z-index: 5; margin-top: 32px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 10px 10px 16px; border-radius: 8px; background: #111214; color: #f2f3f5;
+  font-size: 15px; font-weight: 500; box-shadow: 0 8px 24px rgba(0,0,0,.4); animation: frxSlideUp .2s ease;
+}
+.ds-unsaved.shake { animation: frxShake .5s ease; }
+.ds-unsaved-actions { display: flex; align-items: center; gap: 12px; }
+.ds-unsaved .ds-link-btn { color: #f2f3f5; }
+
+@media (max-width: 760px) {
+  .ds-settings { flex-direction: column; }
+  .ds-sidebar { flex: 0 0 auto; justify-content: flex-start; }
+  .ds-sidebar-inner { width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 60px 12px 12px; }
+  .ds-nav-label { width: 100%; }
+  .ds-nav-item { width: auto; }
+  .ds-nav-sep { display: none; }
+  .ds-content-inner { padding: 24px 16px 60px; }
+  .ds-close-wrap { position: fixed; top: 12px; right: 12px; margin: 0; z-index: 2; }
+  .ds-close-kbd { display: none; }
+  .ss-overview-top { flex-direction: column; align-items: stretch; }
+  .ss-icon-preview { width: 72px; height: 72px; font-size: 28px; }
+  .dr-edit { flex-direction: column; align-items: stretch; }
+  .dr-edit-side { position: static; width: 100%; max-height: 180px; margin: 0 0 16px; padding: 0 0 12px; border-right: none; border-bottom: 1px solid var(--divider); }
+  .dr-thead, .dr-row { grid-template-columns: minmax(0, 1fr) 64px 44px; }
+  .dr-toolbar { flex-wrap: wrap; }
+  .dr-perm-desc { padding-right: 0; }
+  .ds-unsaved { flex-direction: column; align-items: stretch; text-align: center; }
+  .ds-unsaved-actions { justify-content: center; }
+}
+
+/* ============ SHOP — centered, even cards ============ */
+.shop-grid .empty { grid-column: 1 / -1; }
+.shop-item-card {
+  position: relative; overflow: hidden; padding: 12px; gap: 6px; border-radius: 12px;
+  background: var(--bg-secondary); border: 1px solid var(--divider);
+}
+.shop-item-card:hover { border-color: rgba(255,255,255,.14); }
+.sic-preview {
+  display: flex; align-items: center; justify-content: center; min-height: 108px; padding: 8px; margin-bottom: 6px;
+  border-radius: 8px; overflow: hidden;
+  background: radial-gradient(circle at 50% 42%, rgba(255,255,255,.07), transparent 68%), var(--bg-tertiary);
+}
+.sic-preview > * { max-width: 100%; }
+.is-theme-card .sic-preview, .shop-item-card[data-cat="banners"] .sic-preview { min-height: 0; padding: 0; background: none; }
+.sic-deco-stage { width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; }
+.sic-deco-stage .avatar { margin: 0 auto; }
+.sic-name { width: 100%; justify-content: center; text-align: center; line-height: 1.25; }
+.sic-desc { width: 100%; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.sic-btn { min-height: 32px; border-radius: 4px; }
+.shop-empty-state {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 48px 16px; text-align: center;
+  border: 1px dashed var(--divider); border-radius: 12px; font-size: 14px; color: var(--text-muted);
+}
+.shop-empty-state b { font-size: 16px; color: var(--text-normal); }
+
+/* ---- Gradient Banners ---- */
+.banner-anim { background-size: 220% 220% !important; animation: frxBannerFlow 6s ease infinite; }
+.sic-banner-preview { position: relative; width: 100%; padding-bottom: 12px; border-radius: 8px; overflow: hidden; background: var(--bg-floating); text-align: left; }
+.sic-banner-strip { height: 64px; }
+.sic-banner-avatar { position: absolute; left: 12px; top: 36px; display: flex; padding: 4px; border-radius: 50%; background: var(--bg-floating); }
+.sic-banner-lines { display: flex; flex-direction: column; gap: 6px; padding: 30px 12px 0; }
+.sic-banner-lines span { height: 8px; width: 60%; border-radius: 4px; background: var(--bg-input); }
+.sic-banner-lines span + span { width: 38%; }
+.banner-editor { display: flex; gap: 20px; flex-wrap: wrap; }
+.banner-editor-preview { width: 260px; max-width: 100%; flex-shrink: 0; }
+.banner-editor .theme-editor-tools { flex: 1; min-width: 240px; }
+.banner-mock { position: relative; overflow: hidden; padding-bottom: 16px; border-radius: 8px; background: var(--bg-floating); border: 1px solid var(--divider); }
+.banner-mock-banner { height: 96px; }
+.banner-mock-avatar { position: absolute; left: 14px; top: 58px; width: 68px; height: 68px; border-radius: 50%; background: var(--accent); border: 6px solid var(--bg-floating); }
+.banner-mock-lines { display: flex; flex-direction: column; gap: 8px; padding: 40px 14px 0; }
+.banner-mock-lines span { height: 10px; width: 55%; border-radius: 5px; background: var(--bg-input); }
+.banner-mock-lines span + span { width: 35%; }
+.banner-range { width: 100%; accent-color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .banner-anim, .modal-overlay, .modal-box, .ds-unsaved, .toast { animation: none !important; }
 }
