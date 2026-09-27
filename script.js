@@ -756,7 +756,7 @@ const EMOJI_CATEGORIES = [
   } },
   { key: 'activities', label: 'Activities', icon: '⚽', items: {
     soccer:'⚽', basketball:'🏀', football:'🏈', baseball:'⚾', softball:'🥎', tennis:'🎾',
-    volleyball:'🏐', rugby:'🏉', frisbee:'🥏', pool_8ball:'🎱', bowling:'🎳', golf:'⛳', dart:'🎯',
+    volleyball:'🏐', rugby:'🏉', frisbee:'🥏', pool_8ball:'🎱', bowling:'������', golf:'⛳', dart:'🎯',
     fishing:'🎣', boxing:'🥊', martial_arts:'🥋', running:'🏃', swimmer:'🏊', surfing:'🏄',
     weightlifting:'🏋️', biking:'🚴', mountain_biking:'🚵', skateboard:'🛹', skiing:'⛷️',
     snowboarding:'🏂', ice_skate:'⛸️', trophy:'🏆', medal:'🏅', first_place:'🥇', second_place:'🥈',
@@ -911,13 +911,13 @@ function renderMessageText(rawText) {
 // (rather than only pinging users currently online) since precisely
 // tracking "was I online the instant this was sent" isn't worth the
 // complexity for what's fundamentally the same "hey, pay attention" signal.
-function messageTextMentionsMe(text) {
+function messageTextMentionsMe(text, allowEveryone = true) {
   if (!text || !myUid) return false;
   const re = /(^|[\s(>])@([A-Za-z0-9_]{3,24})\b/g;
   let match;
   while ((match = re.exec(text))) {
     const lower = match[2].toLowerCase();
-    if (lower === 'everyone' || lower === 'here' || match[2] === myUid) return true;
+    if ((allowEveryone && (lower === 'everyone' || lower === 'here')) || match[2] === myUid) return true;
   }
   return false;
 }
@@ -1036,8 +1036,9 @@ function genCode(len = 6) {
   for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
 }
+const CHANNEL_NAME_MAX = 20;
 function sanitizeChannelName(s) {
-  return s.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-_]/g, '').slice(0, 30) || 'new-channel';
+  return s.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-_]/g, '').replace(/-{2,}/g, '-').slice(0, CHANNEL_NAME_MAX) || 'new-channel';
 }
 function dmIdFor(a, b) { return [a, b].sort().join('_'); }
 function toast(msg, type = '') {
@@ -1082,9 +1083,10 @@ function decorationOverlayHTML(decorationId, size, hole) {
 // Discord's mobile presence indicator: a little phone glyph in the status
 // color, shown in place of the round dot when that person is online from a
 // phone. Sized relative to the dot it replaces.
-function mobileStatusSVG(status, dotD) {
-  const w = Math.round(dotD * 0.78), h = Math.round(dotD * 1.15);
-  return `<svg class="status-phone" viewBox="0 0 12 18" width="${w}" height="${h}" aria-label="${status} on mobile"><rect x="0" y="0" width="12" height="18" rx="2.6" class="phone-body"/><rect x="1.6" y="2.6" width="8.8" height="11" rx="0.8" class="phone-screen"/><circle cx="6" cy="15.6" r="0.9" class="phone-screen"/></svg>`;
+// The screen and home button are real cut-outs (evenodd), not white shapes
+// painted on top, so the glyph looks right on every background/theme.
+function mobileStatusSVG(status, w, h) {
+  return `<svg class="status-phone" viewBox="0 0 12 18" width="${w}" height="${h}" aria-hidden="true"><path class="phone-body" fill-rule="evenodd" d="M2.6 0h6.8A2.6 2.6 0 0 1 12 2.6v12.8A2.6 2.6 0 0 1 9.4 18H2.6A2.6 2.6 0 0 1 0 15.4V2.6A2.6 2.6 0 0 1 2.6 0zM2 2.4h8v10.4H2zM6 14.3a1 1 0 1 0 0 2a1 1 0 1 0 0-2z"/></svg>`;
 }
 function avatarHTML(size, color, letter, status, avatarUrl, decorationId, uid) {
   let maskStyle = '';
@@ -1103,15 +1105,24 @@ function avatarHTML(size, color, letter, status, avatarUrl, decorationId, uid) {
     const center = Math.round(dotD / 2 + Math.max(1, Math.round(size * 0.02)));
     const onMobile = status !== 'offline' && uid && isOnMobile(uid);
     const dotOffset = center - dotD / 2;
-    // The phone glyph is taller than the dot, so give it a slightly larger notch.
-    const r = onMobile ? Math.round(holeR * 1.25) : holeR;
-    const c = onMobile ? Math.round(center * 1.05) : center;
-    hole = { r, center: c };
-    const grad = `radial-gradient(circle ${r}px at calc(100% - ${c}px) calc(100% - ${c}px), transparent ${r - 1}px, #000 ${r}px)`;
-    maskStyle = `-webkit-mask-image:${grad};mask-image:${grad};`;
-    dotHTML = onMobile
-      ? `<span class="status-dot ${status} mobile" title="${status === 'idle' ? 'Idle' : 'Online'} on mobile" style="right:${dotOffset - 1}px;bottom:${dotOffset - 2}px;">${mobileStatusSVG(status, dotD)}</span>`
-      : `<span class="status-dot ${status}" style="width:${dotD}px;height:${dotD}px;right:${dotOffset}px;bottom:${dotOffset}px;"></span>`;
+    if (onMobile) {
+      // Phone glyph centered on the exact same point the round dot uses,
+      // with an elliptical notch that hugs its taller shape.
+      const pw = Math.max(7, Math.round(dotD * 0.72));
+      const ph = Math.round(pw * 1.5);
+      const gap = Math.max(2, Math.round(size * 0.06));
+      const rx = pw / 2 + gap, ry = ph / 2 + gap;
+      const cy = center + Math.round((ph - dotD) / 4);
+      hole = { r: Math.round(ry), center };
+      const grad = `radial-gradient(ellipse ${rx}px ${ry}px at calc(100% - ${center}px) calc(100% - ${cy}px), transparent 96%, #000 100%)`;
+      maskStyle = `-webkit-mask-image:${grad};mask-image:${grad};`;
+      dotHTML = `<span class="status-dot ${status} mobile" title="${status === 'idle' ? 'Idle' : 'Online'} on mobile" style="width:${pw}px;height:${ph}px;right:${center - pw / 2}px;bottom:${cy - ph / 2}px;">${mobileStatusSVG(status, pw, ph)}</span>`;
+    } else {
+      hole = { r: holeR, center };
+      const grad = `radial-gradient(circle ${holeR}px at calc(100% - ${center}px) calc(100% - ${center}px), transparent ${holeR - 1}px, #000 ${holeR}px)`;
+      maskStyle = `-webkit-mask-image:${grad};mask-image:${grad};`;
+      dotHTML = `<span class="status-dot ${status}" style="width:${dotD}px;height:${dotD}px;right:${dotOffset}px;bottom:${dotOffset}px;"></span>`;
+    }
   }
   const inner = `<img src="${esc(avatarUrl || DEFAULT_AVATAR_URL)}" alt="" loading="lazy" style="${maskStyle}">`;
   return `<div class="avatar has-image" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.42)}px;background:transparent">${inner}${dotHTML}${decorationOverlayHTML(decorationId, size, hole)}</div>`;
@@ -1119,8 +1130,30 @@ function avatarHTML(size, color, letter, status, avatarUrl, decorationId, uid) {
 function premiumStar(profile) { return isPremium(profile) ? icon('star', 'premium-star') : ''; }
 function opTag(profile) { return profile && profile.op ? '<span class="op-tag">Admin</span>' : ''; }
 function ownerTag(profile) { return profile && profile.owner ? '<span class="owner-tag">Owner</span>' : ''; }
-// Owner supersedes admin in the badge — a profile with both shows only Owner.
-function roleTag(profile) { return profile && profile.owner ? ownerTag(profile) : opTag(profile); }
+function coOwnerTag(profile) { return profile && profile.coowner ? '<span class="coowner-tag">Co-Owner</span>' : ''; }
+// Platform hierarchy: Owner (3) > Co-Owner (2) > Admin (1) > everyone (0).
+// Only the highest rank's badge is shown.
+function platformRank(profile) {
+  if (!profile) return 0;
+  if (profile.owner) return 3;
+  if (profile.coowner) return 2;
+  if (profile.op) return 1;
+  return 0;
+}
+function roleTag(profile) {
+  const r = platformRank(profile);
+  return r === 3 ? ownerTag(profile) : r === 2 ? coOwnerTag(profile) : opTag(profile);
+}
+// You can manage yourself, or anyone strictly below you. Admins can still
+// manage other admins (unchanged), but nobody can touch an equal-or-higher
+// Co-Owner/Owner — so admins can't manage Owner/Co-Owner, and Co-Owners
+// can't manage the Owner.
+function canManagePlatformUser(target) {
+  if (!target || target.username === myUid) return true;
+  const mine = platformRank(myProfile), theirs = platformRank(target);
+  if (theirs >= 2) return mine > theirs;
+  return mine >= 1;
+}
 function botTag(profile) { return profile && profile.bot ? `<span class="bot-tag" title="Verified App">${icon('check')}<span>APP</span></span>` : ''; }
 
 // ============================================================
@@ -1312,6 +1345,55 @@ function canViewChannel(channel, server, uid) {
   if (!channel || !server) return true;
   return hasChannelPerm(channel, server, uid, 'viewChannels');
 }
+// Permission check for "right here" — the open server channel. DMs and
+// group DMs have no server permissions, so everything is allowed there.
+function canHere(perm) {
+  if (currentView !== 'channel' || !currentServerData) return true;
+  const ch = currentChannelObj();
+  return ch ? hasChannelPerm(ch, currentServerData, myUid, perm) : true;
+}
+// Timeouts live on the server doc as timeouts: { uid: untilMillis }.
+function timeoutUntil(server, uid) {
+  const t = server && server.timeouts && server.timeouts[uid];
+  return typeof t === 'number' && t > Date.now() ? t : 0;
+}
+function isTimedOutHere() {
+  if (currentView !== 'channel' || !currentServerData) return false;
+  if (isServerOwnerLevel(currentServerData, myUid) || hasServerPerm(currentServerData, myUid, 'administrator')) return false;
+  return !!timeoutUntil(currentServerData, myUid);
+}
+function timeoutLeftText(until) {
+  const s = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+  if (s >= 86400) return `${Math.ceil(s / 86400)}d`;
+  if (s >= 3600) return `${Math.ceil(s / 3600)}h`;
+  if (s >= 60) return `${Math.ceil(s / 60)}m`;
+  return `${s}s`;
+}
+// Per-server nicknames: nicknames: { uid: 'name' } on the server doc.
+const NICKNAME_MAX = 32;
+function serverNickFor(uid, server = currentServerData) {
+  if (!server || !server.nicknames) return '';
+  return server.nicknames[uid] || '';
+}
+// Lightweight audit log kept on the server doc (last 100 entries).
+async function logAudit(serverId, action) {
+  if (!serverId) return;
+  try {
+    const ref = db.collection('servers').doc(serverId);
+    const snap = await ref.get();
+    const log = (snap.exists && Array.isArray(snap.data().auditLog)) ? snap.data().auditLog : [];
+    log.push({ at: Date.now(), by: myUid, action: String(action).slice(0, 200) });
+    await ref.update({ auditLog: log.slice(-100) });
+  } catch (e) { console.warn('Audit log write failed', e); }
+}
+// Permissions that exist in the editor for Discord parity but map to
+// features Frixion doesn't have yet (voice, stage, events, threads...).
+const UNUSED_PERMISSIONS = new Set([
+  'manageWebhooks', 'sendMessagesInThreads', 'createPublicThreads', 'createPrivateThreads', 'manageThreads',
+  'sendVoiceMessages', 'connect', 'speak', 'video', 'useSoundboard', 'useExternalSounds', 'useVAD',
+  'prioritySpeaker', 'muteMembers', 'deafenMembers', 'moveMembers', 'setVoiceChannelStatus',
+  'useActivities', 'useExternalApps', 'requestToSpeak', 'createEvents', 'manageEvents',
+]);
 // The username itself is permanent (it's the Firestore doc ID), but anyone
 // can set a separate Display Name that's shown instead almost everywhere.
 function displayNameOf(profile) { return (profile && profile.displayName) ? profile.displayName : ((profile && profile.username) || ''); }
@@ -1366,27 +1448,45 @@ function isMobileDevice() {
   return uaMobile && (navigator.maxTouchPoints > 0 || 'ontouchstart' in window);
 }
 function isOnMobile(uid) { return !!mobileCache[uid]; }
+// Multi-device presence: every open tab/device writes its OWN child under
+// presence/{uid}/connections/{connId} instead of all of them fighting over
+// one shared record. Before, logging in on a phone and a PC at once meant
+// whichever device disconnected (or went idle) last overwrote the other,
+// so you'd flicker between online/offline/mobile. Now:
+//   online = at least one connection exists
+//   idle   = every connection is idle
+//   mobile = every connection is mobile (any PC session wins → shows PC)
+let myPresenceConnRef = null;
+let presenceConnectedCb = null;
 function initPresence() {
   if (!rtdb || !myUid) return;
   try {
     const myRef = rtdb.ref('presence/' + myUid);
-    rtdb.ref('.info/connected').on('value', (snap) => {
-      if (snap.val() === true) {
-        myRef.onDisconnect().set({ online: false, idle: false, mobile: false, lastChanged: firebase.database.ServerValue.TIMESTAMP })
-          .then(() => myRef.set({ online: true, idle: document.hidden, mobile: isMobileDevice(), lastChanged: firebase.database.ServerValue.TIMESTAMP }));
-      }
-    });
+    if (presenceConnectedCb) rtdb.ref('.info/connected').off('value', presenceConnectedCb);
+    presenceConnectedCb = (snap) => {
+      if (snap.val() !== true) return;
+      if (!myPresenceConnRef) myPresenceConnRef = myRef.child('connections').push();
+      const connRef = myPresenceConnRef;
+      connRef.onDisconnect().remove()
+        .then(() => connRef.set({ idle: document.hidden, mobile: isMobileDevice(), at: firebase.database.ServerValue.TIMESTAMP }))
+        .then(() => myRef.update({ online: null, idle: null, mobile: null, lastChanged: firebase.database.ServerValue.TIMESTAMP }))
+        .catch(() => {});
+    };
+    rtdb.ref('.info/connected').on('value', presenceConnectedCb);
   } catch (e) { console.warn('Presence init failed', e); }
 }
-// Whenever the tab is backgrounded or restored, tell everyone else —
-// this is what makes idle show up for other people, not just you.
 document.addEventListener('visibilitychange', () => {
-  if (!rtdb || !myUid) return;
-  try { rtdb.ref('presence/' + myUid).update({ idle: document.hidden, mobile: isMobileDevice(), lastChanged: firebase.database.ServerValue.TIMESTAMP }); } catch (e) {}
+  if (!rtdb || !myUid || !myPresenceConnRef) return;
+  try { myPresenceConnRef.update({ idle: document.hidden, mobile: isMobileDevice(), at: firebase.database.ServerValue.TIMESTAMP }); } catch (e) {}
 });
 function teardownPresence() {
   if (!rtdb || !myUid) return;
-  try { rtdb.ref('presence/' + myUid).set({ online: false, idle: false, lastChanged: firebase.database.ServerValue.TIMESTAMP }); } catch (e) {}
+  try {
+    if (presenceConnectedCb) rtdb.ref('.info/connected').off('value', presenceConnectedCb);
+    presenceConnectedCb = null;
+    if (myPresenceConnRef) { myPresenceConnRef.onDisconnect().cancel(); myPresenceConnRef.remove(); }
+    myPresenceConnRef = null;
+  } catch (e) {}
   Object.values(presenceListeners).forEach(l => { try { l.ref.off('value', l.cb); } catch (e) {} });
   presenceListeners = {};
   presenceCache = {};
@@ -1399,9 +1499,21 @@ function subscribePresence(uid) {
     const ref = rtdb.ref('presence/' + uid);
     const cb = (snap) => {
       const val = snap.val();
-      presenceCache[uid] = !!(val && val.online);
-      idleCache[uid] = !!(val && val.idle);
-      mobileCache[uid] = !!(val && val.online && val.mobile);
+      const conns = val && val.connections ? Object.values(val.connections).filter(Boolean) : [];
+      let online, idle, mobile;
+      if (conns.length) {
+        online = true;
+        idle = conns.every(c => c.idle);
+        mobile = conns.every(c => c.mobile);
+      } else {
+        online = !!(val && val.online);
+        idle = !!(val && val.idle);
+        mobile = !!(val && val.online && val.mobile);
+      }
+      if (presenceCache[uid] === online && idleCache[uid] === idle && mobileCache[uid] === mobile) return;
+      presenceCache[uid] = online;
+      idleCache[uid] = idle;
+      mobileCache[uid] = mobile;
       renderCurrentView();
       renderDMRows();
       renderSelfPanel();
@@ -1606,7 +1718,7 @@ function enterApp() {
   $('auth-screen').classList.add('hidden');
   $('app').classList.remove('hidden');
   isAdmin = !!(myProfile && myProfile.op);
-  isOwner = !!(myProfile && myProfile.owner);
+  isOwner = !!(myProfile && (myProfile.owner || myProfile.coowner));
   applyAdminVisibility();
   initAppForUser();
 }
@@ -1733,7 +1845,7 @@ function initAppForUser() {
       return;
     }
     isAdmin = !!myProfile.op;
-    isOwner = !!myProfile.owner;
+    isOwner = !!(myProfile.owner || myProfile.coowner);
     applyAdminVisibility();
     applyTheme(myProfile.theme || 'default');
     applyCustomKeyboardSetting();
@@ -1752,15 +1864,31 @@ function initAppForUser() {
     if (currentServerId) {
       const cur = servers.find(s => s.id === currentServerId);
       if (cur) {
+        const prev = currentServerData;
         currentServerData = cur;
+        $('side-header-title').textContent = cur.name;
         // Role/permission changes (or a rename) should take effect live
         // for anyone currently looking at this server, not just after
         // they navigate away and back — both of these read straight from
         // currentServerData on every render.
+        renderChannelRows(lastChannelsList);
         if (currentView === 'channel') {
           renderMemberPanel(cur.members || [], cur.ownerId, cur);
-          renderChannelRows(lastChannelsList);
+          const ch = currentChannelObj();
+          if (ch && !canViewChannel(ch, cur, myUid)) {
+            toast('You no longer have access to that channel.');
+            if (unsub.messages) { unsub.messages(); unsub.messages = null; }
+            currentChannelId = null; currentView = 'none';
+            showWelcome(); setMobilePane('list');
+          } else {
+            refreshChannelComposerState();
+            if (prev && JSON.stringify(prev.nicknames || {}) !== JSON.stringify(cur.nicknames || {})) renderMessages(lastRawMessages);
+          }
         }
+      } else if (servers.length || !snap.metadata.fromCache) {
+        // Kicked, banned, or the server was deleted while you had it open.
+        if (leavingServerId !== currentServerId) toast('You are no longer a member of that server.');
+        showHomeView();
       }
     }
   }, err => console.error(err));
@@ -2008,16 +2136,36 @@ $('back-to-list-btn').onclick = () => setMobilePane('list');
 function syncMobileViewport() {
   const root = document.documentElement;
   const appEl = $('app');
+  if (appEl) appEl.style.transform = '';
   if (!isTouchDevice()) {
     root.style.removeProperty('--mobile-viewport-height');
-    if (appEl) appEl.style.transform = '';
+    document.body.style.transform = '';
     return;
   }
   const vv = window.visualViewport;
   const visibleHeight = vv ? vv.height : window.innerHeight;
   root.style.setProperty('--mobile-viewport-height', `${Math.round(visibleHeight)}px`);
-  if (appEl) appEl.style.transform = (vv && vv.offsetTop) ? `translateY(${vv.offsetTop}px)` : '';
+  // Shift <body> itself (not #app inside it). Body has overflow:hidden and
+  // is only visibleHeight tall, so translating a CHILD of body pushed the
+  // composer and newest messages outside body's clip box — that's why the
+  // DM went blank and the text box vanished while the iOS keyboard was up.
+  document.body.style.transform = (vv && vv.offsetTop > 0) ? `translateY(${Math.round(vv.offsetTop)}px)` : '';
+  document.body.classList.toggle('keyboard-open', !!vv && (window.innerHeight - vv.height) > 120);
 }
+// Keep the newest messages in view when the keyboard (or anything else)
+// shrinks the message list: preserve the distance from the bottom instead
+// of the distance from the top.
+(function keepMessagesAnchored() {
+  const wrap = $('messages');
+  if (!wrap || typeof ResizeObserver === 'undefined') return;
+  let distFromBottom = 0;
+  wrap.addEventListener('scroll', () => {
+    distFromBottom = wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight;
+  }, { passive: true });
+  new ResizeObserver(() => {
+    wrap.scrollTop = wrap.scrollHeight - wrap.clientHeight - (distFromBottom < 80 ? 0 : distFromBottom);
+  }).observe(wrap);
+})();
 window.addEventListener('resize', syncMobileViewport);
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', syncMobileViewport);
@@ -2823,7 +2971,7 @@ function renderStickerGrid() {
           uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
           sticker: { name: names[i], dataUrl: stickerCache[names[i]].dataUrl },
         });
-      } catch (e) { toast('Could not send sticker.', 'error'); }
+      } catch (e) { toast(e.message || 'Could not send sticker.', 'error'); }
     };
   });
 }
@@ -2896,7 +3044,7 @@ async function klipySearch(query) {
             text: '', uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
             gifUrl: url,
           });
-        } catch (e) { toast('Could not send GIF.', 'error'); }
+        } catch (e) { toast(e.message || 'Could not send GIF.', 'error'); }
       };
     });
   } catch (e) {
@@ -3075,6 +3223,9 @@ const SM_ICONS = {
   category: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7zM12 11v5M9.5 13.5h5"/>',
   copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   leave: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  edit: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  audit: '<path d="M4 4h11l5 5v11H4z"/><path d="M8 13h8M8 17h5M8 9h4"/>',
+  insights: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
 };
 const smIcon = (name) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SM_ICONS[name]}</svg>`;
 
@@ -3105,6 +3256,11 @@ function buildServerMenuItems(server) {
       can('manageChannels') && { id: 'channel', icon: 'channel', label: 'Create Channel' },
       can('manageChannels') && { id: 'category', icon: 'category', label: 'Create Category' },
       can('manageChannels') && currentChannelId && { id: 'edit-channel', icon: 'settings', label: 'Edit Current Channel' },
+    ],
+    [
+      can('changeNickname') && { id: 'nickname', icon: 'edit', label: 'Change Nickname' },
+      can('viewAuditLog') && { id: 'audit', icon: 'audit', label: 'Audit Log' },
+      can('viewServerInsights') && { id: 'insights', icon: 'insights', label: 'Server Insights' },
     ],
     [{ id: 'copy-id', icon: 'copy', label: 'Copy Server ID' }],
     [!isOwnerHere && { id: 'leave', icon: 'leave', label: 'Leave Server', danger: true }],
@@ -3140,13 +3296,83 @@ function runServerMenuAction(action, server) {
       title: `Leave '${server.name}'`, body: `Are you sure you want to leave ${server.name}? You won't be able to rejoin unless you are re-invited.`, confirmLabel: 'Leave Server',
       onConfirm: async () => {
         try {
+          leavingServerId = server.id;
           await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayRemove(myUid) });
-          showHomeView();
+          if (currentServerId === server.id) showHomeView();
           toast(`You left ${server.name}.`);
         } catch (e) { toast(e.message || 'Could not leave the server.', 'error'); }
+        finally { leavingServerId = null; }
       },
     });
   }
+  else if (action === 'nickname') openNicknameEditor(server, myUid);
+  else if (action === 'audit') openAuditLog(server);
+  else if (action === 'insights') openServerInsights(server);
+}
+let leavingServerId = null;
+
+// ---- generic lightweight modal (audit log, insights, nickname) ----
+function openInfoModal(title, bodyHTML) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay frx-info-modal';
+  overlay.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+    <div class="modal-header-row"><h2>${esc(title)}</h2><span class="x" role="button" tabindex="0" aria-label="Close">✕</span></div>
+    <div class="frx-info-body">${bodyHTML}</div></div>`;
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('.x').onclick = close;
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(overlay);
+  return { overlay, close };
+}
+function openNicknameEditor(server, uid) {
+  const self = uid === myUid;
+  if (self ? !hasServerPerm(server, myUid, 'changeNickname') : !hasServerPerm(server, myUid, 'manageNicknames')) {
+    toast('You do not have permission to change that nickname.', 'error'); return;
+  }
+  const p = profileCache[uid] || { username: uid };
+  const { overlay, close } = openInfoModal(self ? 'Change Nickname' : `Nickname for ${displayNameOf(p)}`, `
+    <div class="field"><label for="frx-nick-input">Nickname</label>
+      <input type="text" id="frx-nick-input" maxlength="${NICKNAME_MAX}" placeholder="${esc(displayNameOf(p))}" value="${esc(serverNickFor(uid, server))}"></div>
+    <p class="desc">Only shows in ${esc(server.name)}. Leave empty to reset.</p>
+    <div class="modal-actions"><button class="btn-secondary" data-act="reset">Reset</button><button class="btn-accent-inline" data-act="save">Save</button></div>`);
+  const input = overlay.querySelector('#frx-nick-input');
+  input.focus();
+  const save = async (value) => {
+    const nick = value.trim().slice(0, NICKNAME_MAX);
+    try {
+      await db.collection('servers').doc(server.id).update({ [`nicknames.${uid}`]: nick ? nick : FieldValue.delete() });
+      if (!self) logAudit(server.id, `changed ${p.username}'s nickname to ${nick || '(reset)'}`);
+      toast(nick ? 'Nickname updated.' : 'Nickname reset.');
+      close();
+    } catch (e) { toast(e.message || 'Could not update nickname.', 'error'); }
+  };
+  overlay.querySelector('[data-act="save"]').onclick = () => save(input.value);
+  overlay.querySelector('[data-act="reset"]').onclick = () => save('');
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) save(input.value); });
+}
+async function openAuditLog(server) {
+  if (!hasServerPerm(server, myUid, 'viewAuditLog')) { toast('You do not have permission to view the audit log.', 'error'); return; }
+  const log = [...(server.auditLog || [])].reverse();
+  await Promise.all([...new Set(log.map(e => e.by))].map(u => getProfile(u)));
+  openInfoModal('Audit Log', log.length
+    ? `<ul class="frx-audit-list">${log.map(e => `<li><b>${esc(displayNameOf(profileCache[e.by] || { username: e.by }))}</b> ${esc(e.action)}<time>${esc(new Date(e.at).toLocaleString())}</time></li>`).join('')}</ul>`
+    : '<div class="empty">Nothing here yet. Kicks, bans, timeouts, nickname and channel changes show up here.</div>');
+}
+function openServerInsights(server) {
+  if (!hasServerPerm(server, myUid, 'viewServerInsights')) { toast('You do not have permission to view insights.', 'error'); return; }
+  const members = server.members || [];
+  const online = members.filter(u => computeDisplayStatus(u) !== 'offline').length;
+  const mobile = members.filter(u => computeDisplayStatus(u) !== 'offline' && isOnMobile(u)).length;
+  const timedOut = Object.keys(server.timeouts || {}).filter(u => timeoutUntil(server, u)).length;
+  const stat = (n, l) => `<div class="frx-stat"><div class="frx-stat-n">${n}</div><div class="frx-stat-l">${l}</div></div>`;
+  openInfoModal('Server Insights', `<div class="frx-stats">
+    ${stat(members.length, 'Members')}${stat(online, 'Online now')}${stat(mobile, 'On mobile')}
+    ${stat(lastChannelsList.length, 'Channels')}${stat(lastCategoriesList.length, 'Categories')}
+    ${stat(serverRoles(server).filter(r => r.id !== 'everyone').length, 'Roles')}
+    ${stat((server.bannedUsers || []).length, 'Banned')}${stat(timedOut, 'Timed out')}
+  </div>`);
 }
 
 $('side-header').onclick = (e) => {
@@ -3535,7 +3761,7 @@ function renderRoleEditView(root) {
         ${SERVER_PERMISSIONS.filter(p => p.group === g.key).map(p => `
           <div class="dr-perm-row" data-search="${esc((p.label + ' ' + p.desc).toLowerCase())}">
             <div class="dr-toggle-row">
-              <div class="dr-toggle-title">${esc(p.label)}</div>
+              <div class="dr-toggle-title">${esc(p.label)}${UNUSED_PERMISSIONS.has(p.key) ? ' <span class="perm-soon-tag" title="Saved now, takes effect once this feature exists in Frixion">Coming soon</span>' : ''}</div>
               <label class="toggle-switch"><input type="checkbox" data-perm="${p.key}" ${v.permissions.includes(p.key) ? 'checked' : ''} aria-label="${esc(p.label)}"><span class="toggle-slider"></span></label>
             </div>
             <p class="dr-perm-desc">${esc(p.desc)}</p>
@@ -3778,6 +4004,10 @@ function openManageMemberModal(uid, server) {
   const canManageRoles = hasServerPerm(server, myUid, 'manageRoles');
   const canKick = hasServerPerm(server, myUid, 'kickMembers');
   const canBan = hasServerPerm(server, myUid, 'banMembers');
+  const targetIsOwner = server.ownerId === uid;
+  const canTimeout = hasServerPerm(server, myUid, 'timeoutMembers') && uid !== myUid && !targetIsOwner && topRoleOf(server, uid).position < myTop.position;
+  const canNick = uid === myUid ? hasServerPerm(server, myUid, 'changeNickname') : hasServerPerm(server, myUid, 'manageNicknames') && !targetIsOwner;
+  const tUntil = timeoutUntil(server, uid);
   const assignedIds = (server.memberRoles && server.memberRoles[uid]) || [];
   const assignableRoles = serverRoles(server).filter(r => r.id !== 'everyone').sort((a, b) => b.position - a.position);
   const body = $('manage-member-body');
@@ -3796,7 +4026,19 @@ function openManageMemberModal(uid, server) {
           }).join('') || '<div class="empty">No roles yet — create one in Server Settings → Roles.</div>'}
         </div>
       </div>` : ''}
+    ${canTimeout ? `
+      <div class="field"><label for="mm-timeout-select">Timeout${tUntil ? ` <span class="mm-timeout-left">(${timeoutLeftText(tUntil)} left)</span>` : ''}</label>
+        <div class="mm-inline-row">
+          <select id="mm-timeout-select">
+            <option value="60">60 seconds</option><option value="300">5 minutes</option><option value="600">10 minutes</option>
+            <option value="3600">1 hour</option><option value="86400">1 day</option><option value="604800">1 week</option>
+          </select>
+          <button class="btn-secondary" id="mm-timeout-btn">Timeout</button>
+          ${tUntil ? '<button class="btn-secondary" id="mm-untimeout-btn">Remove</button>' : ''}
+        </div>
+      </div>` : ''}
     <div class="modal-actions">
+      ${canNick ? '<button class="btn-secondary" id="mm-nick-btn">Nickname</button>' : ''}
       ${canKick ? '<button class="btn-secondary" id="mm-kick-btn">Kick</button>' : ''}
       ${canBan ? '<button class="btn-danger" id="mm-ban-btn">Ban</button>' : ''}
       ${canManageRoles ? '<button class="btn-accent-inline" id="mm-save-roles-btn">Save Roles</button>' : ''}
@@ -3826,6 +4068,7 @@ function openManageMemberModal(uid, server) {
         onConfirm: async () => {
           try {
             await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayRemove(uid) });
+            logAudit(server.id, `kicked ${p.username || uid}`);
             toast('Member kicked.');
             closeModal('manage-member-modal');
           } catch (e) { toast(e.message || 'Could not kick member.', 'error'); }
@@ -3840,11 +4083,32 @@ function openManageMemberModal(uid, server) {
         onConfirm: async () => {
           try {
             await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayRemove(uid), bannedUsers: FieldValue.arrayUnion(uid) });
+            logAudit(server.id, `banned ${p.username || uid}`);
             toast('Member banned.');
             closeModal('manage-member-modal');
           } catch (e) { toast(e.message || 'Could not ban member.', 'error'); }
         },
       });
+    };
+  }
+  if (canNick) $('mm-nick-btn').onclick = () => { closeModal('manage-member-modal'); openNicknameEditor(server, uid); };
+  if (canTimeout) {
+    $('mm-timeout-btn').onclick = async () => {
+      const secs = +$('mm-timeout-select').value;
+      try {
+        await db.collection('servers').doc(server.id).update({ [`timeouts.${uid}`]: Date.now() + secs * 1000 });
+        logAudit(server.id, `timed out ${p.username || uid} for ${timeoutLeftText(Date.now() + secs * 1000)}`);
+        toast(`${displayNameOf(p)} is timed out.`);
+        closeModal('manage-member-modal');
+      } catch (e) { toast(e.message || 'Could not time out member.', 'error'); }
+    };
+    if (tUntil) $('mm-untimeout-btn').onclick = async () => {
+      try {
+        await db.collection('servers').doc(server.id).update({ [`timeouts.${uid}`]: FieldValue.delete() });
+        logAudit(server.id, `removed the timeout on ${p.username || uid}`);
+        toast('Timeout removed.');
+        closeModal('manage-member-modal');
+      } catch (e) { toast(e.message || 'Could not remove timeout.', 'error'); }
     };
   }
   openModal('manage-member-modal');
@@ -3862,8 +4126,19 @@ function subscribeChannels(serverId) {
       snap.forEach(d => channels.push({ id: d.id, ...d.data() }));
       lastChannelsList = channels;
       renderChannelRows(channels);
-      if (!currentChannelId && channels.length) selectChannel(channels[0]);
-      else if (!channels.length) showWelcome();
+      // PC jumps straight into the first channel you can see; on a phone
+      // you stay on the channel list and pick one yourself, like Discord.
+      const firstVisible = channels.find(c => canViewChannel(c, currentServerData, myUid));
+      if (!currentChannelId && firstVisible && !isMobile()) selectChannel(firstVisible);
+      else if (!currentChannelId) showWelcome();
+      else if (!channels.some(c => c.id === currentChannelId)) {
+        if (unsub.messages) { unsub.messages(); unsub.messages = null; }
+        currentChannelId = null;
+        currentView = 'none';
+        showWelcome();
+        setMobilePane('list');
+        if (firstVisible && !isMobile()) selectChannel(firstVisible);
+      } else if (currentView === 'channel') refreshChannelComposerState();
     });
   unsub.categories = db.collection('servers').doc(serverId).collection('categories').orderBy('createdAt', 'asc')
     .onSnapshot(snap => {
@@ -3906,8 +4181,13 @@ function renderChannelRows(channels) {
           onConfirm: async () => {
             const msgSnap = await db.collection('servers').doc(currentServerId).collection('channels').doc(c.id).collection('messages').get();
             await Promise.all(msgSnap.docs.map(m => m.ref.delete()));
-            await db.collection('servers').doc(currentServerId).collection('channels').doc(c.id).delete();
-            if (currentChannelId === c.id) { currentChannelId = null; showWelcome(); }
+            const sid = currentServerId;
+            if (currentChannelId === c.id) {
+              if (unsub.messages) { unsub.messages(); unsub.messages = null; }
+              currentChannelId = null; currentView = 'none'; showWelcome(); setMobilePane('list');
+            }
+            await db.collection('servers').doc(sid).collection('channels').doc(c.id).delete();
+            logAudit(sid, `deleted #${c.name}`);
           },
         });
       };
@@ -3971,12 +4251,24 @@ function renderSlowmodeIndicator() {
 }
 function refreshChannelComposerState() {
   const input = $('composer-input');
-  if (currentView !== 'channel') { input.disabled = false; $('slowmode-indicator').classList.add('hidden'); $('chat-header-topic').classList.add('hidden'); return; }
+  if (currentView !== 'channel') {
+    input.disabled = false;
+    $('attach-btn').classList.remove('hidden');
+    $('sticker-btn').classList.remove('hidden');
+    $('gif-btn').classList.remove('hidden');
+    $('slowmode-indicator').classList.add('hidden'); $('chat-header-topic').classList.add('hidden');
+    return;
+  }
   const channel = currentChannelObj();
   if (!channel) return;
   const canSend = hasChannelPerm(channel, currentServerData, myUid, 'sendMessages');
-  input.disabled = !canSend;
-  input.placeholder = canSend ? `Message #${channel.name}` : 'You do not have permission to send messages in this channel.';
+  const tUntil = isTimedOutHere() ? timeoutUntil(currentServerData, myUid) : 0;
+  input.disabled = !canSend || !!tUntil;
+  input.placeholder = tUntil ? `You are timed out for ${timeoutLeftText(tUntil)}.`
+    : canSend ? `Message #${channel.name}` : 'You do not have permission to send messages in this channel.';
+  $('attach-btn').classList.toggle('hidden', !canSend || !!tUntil);
+  $('sticker-btn').classList.toggle('hidden', !canHere('useExternalStickers'));
+  $('gif-btn').classList.toggle('hidden', !canHere('embedLinks'));
   $('chat-header-title').textContent = channel.name;
   $('chat-header-topic').textContent = channel.topic || '';
   $('chat-header-topic').title = channel.topic || '';
@@ -4160,6 +4452,7 @@ $('confirm-create-channel').onclick = async () => {
   const categoryId = $('new-channel-category').value || null;
   if (!currentServerId) return;
   await db.collection('servers').doc(currentServerId).collection('channels').add({ name, categoryId, autoDelete: true, createdAt: FieldValue.serverTimestamp() });
+  logAudit(currentServerId, `created #${name}`);
   closeModal('create-channel-modal');
 };
 
@@ -4170,7 +4463,7 @@ $('category-add-btn').onclick = () => {
   openModal('create-category-modal');
 };
 $('confirm-create-category').onclick = async () => {
-  const name = ($('new-category-name').value || '').trim().toUpperCase();
+  const name = ($('new-category-name').value || '').trim().toUpperCase().slice(0, 24);
   if (!name || !currentServerId) { toast('Enter a category name.'); return; }
   await db.collection('servers').doc(currentServerId).collection('categories').add({ name, createdAt: FieldValue.serverTimestamp() });
   closeModal('create-category-modal');
@@ -4182,6 +4475,7 @@ function selectChannel(channel) {
   clearMyTypingDoc();
   currentChannelId = channel.id;
   currentView = 'channel';
+  channelOpenedAt = Date.now();
   subscribeTyping();
   $('chat-header-hash').textContent = '#';
   $('chat-header-title').textContent = channel.name;
@@ -4205,7 +4499,11 @@ function selectChannel(channel) {
         snap.docChanges().forEach(change => {
           if (change.type !== 'added') return;
           const m = change.doc.data();
-          if (m.uid !== myUid && messageTextMentionsMe(m.text || '') && !isConversationMuted('ch', channel.id)) playPingSound();
+          if (m.uid === myUid || isConversationMuted('ch', channel.id)) return;
+          if (messageTextMentionsMe(m.text || '', m.everyoneBlocked !== true)) playPingSound();
+          if (m.tts && m.text && 'speechSynthesis' in window) {
+            try { speechSynthesis.speak(new SpeechSynthesisUtterance(`${m.username || 'Someone'} said ${m.text.slice(0, 300)}`)); } catch (e) {}
+          }
         });
       }
       channelFirstSync = false;
@@ -4239,8 +4537,8 @@ $('mute-toggle').onclick = () => {
 };
 
 function canPin() {
-  if (currentView === 'dm') return true;
-  return !!(currentServerData && hasServerPerm(currentServerData, myUid, 'manageMessages'));
+  if (currentView === 'dm' || currentView === 'groupdm') return true;
+  return !!(currentServerData && (canHere('pinMessages') || canHere('manageMessages')));
 }
 $('pins-toggle').onclick = () => {
   renderPinnedList(lastRawMessages.filter(m => m.pinned));
@@ -4335,7 +4633,17 @@ function hideHeaderActions() {
   $('search-bar').classList.add('hidden');
 }
 
+// Without Read Message History you only see messages sent after you
+// opened the channel (plus your own pending ones), same as Discord.
+let channelOpenedAt = 0;
 function onMessagesUpdate(msgs) {
+  if (currentView === 'channel' && !canHere('readMessageHistory')) {
+    msgs = msgs.filter(m => {
+      if (!m.createdAt) return true;
+      const t = m.createdAt.toMillis ? m.createdAt.toMillis() : new Date(m.createdAt).getTime();
+      return t >= channelOpenedAt - 2000;
+    });
+  }
   cancelMsgLoading();
   lastRawMessages = msgs;
   renderMessages(msgs);
@@ -4436,6 +4744,97 @@ function openMessageActionSheet(msgId) {
   wrap.addEventListener('touchcancel', cancel);
 })();
 
+// Double-click (PC) / double-tap (phone) a message: your own opens the
+// editor, anyone else's starts a reply. Ignored on links, buttons,
+// reactions, attachments, and while already editing.
+function handleMessageDoubleActivate(line) {
+  const mid = line && line.dataset.mid;
+  if (!mid || !['channel', 'dm', 'groupdm'].includes(currentView)) return;
+  const m = lastRawMessages.find(x => x.id === mid);
+  if (!m || m.system) return;
+  try { window.getSelection().removeAllRanges(); } catch (e) {}
+  if (m.uid === myUid && m.text && !m.sticker && !m.poll) startEditMessage(mid);
+  else setReplyTarget(mid);
+}
+const DOUBLE_ACTIVATE_IGNORE = 'a, button, input, textarea, .reaction, .reactions, .msg-hover-actions, .msg-attachment, .poll-card, .msg-edit-box, .avatar, .author';
+(function setupMessageDoubleActivate() {
+  const wrap = $('messages');
+  wrap.addEventListener('dblclick', (e) => {
+    if (e.target.closest(DOUBLE_ACTIVATE_IGNORE)) return;
+    handleMessageDoubleActivate(e.target.closest('.msg-line'));
+  });
+  let lastTapAt = 0, lastTapMid = null, tapX = 0, tapY = 0, moved = false;
+  wrap.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    tapX = e.touches[0].clientX; tapY = e.touches[0].clientY; moved = false;
+  }, { passive: true });
+  wrap.addEventListener('touchmove', (e) => {
+    if (Math.abs(e.touches[0].clientX - tapX) > 10 || Math.abs(e.touches[0].clientY - tapY) > 10) moved = true;
+  }, { passive: true });
+  wrap.addEventListener('touchend', (e) => {
+    if (moved || openActionSheet || e.target.closest(DOUBLE_ACTIVATE_IGNORE)) { lastTapAt = 0; return; }
+    const line = e.target.closest('.msg-line');
+    const mid = line && line.dataset.mid;
+    const now = Date.now();
+    if (mid && mid === lastTapMid && now - lastTapAt < 320) {
+      e.preventDefault();
+      lastTapAt = 0; lastTapMid = null;
+      handleMessageDoubleActivate(line);
+      return;
+    }
+    lastTapAt = now; lastTapMid = mid;
+  });
+})();
+
+// Quick delete (PC): press Backspace/Delete while not typing, then click a
+// message you're allowed to delete. Stays armed while the key is held and
+// for 3s after release; Esc or clicking elsewhere disarms.
+let quickDeleteArmed = false, quickDeleteTimer = null;
+function setQuickDelete(on) {
+  quickDeleteArmed = on;
+  clearTimeout(quickDeleteTimer);
+  document.body.classList.toggle('quick-delete-armed', on);
+}
+function isTypingTarget(el) {
+  return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+}
+document.addEventListener('keydown', (e) => {
+  if ((e.key === 'Backspace' || e.key === 'Delete') && !isTypingTarget(document.activeElement)
+      && ['channel', 'dm', 'groupdm'].includes(currentView) && !document.querySelector('.modal-overlay:not(.hidden)')) {
+    e.preventDefault();
+    setQuickDelete(true);
+  } else if (e.key === 'Escape' && quickDeleteArmed) setQuickDelete(false);
+});
+document.addEventListener('keyup', (e) => {
+  if ((e.key === 'Backspace' || e.key === 'Delete') && quickDeleteArmed) {
+    clearTimeout(quickDeleteTimer);
+    quickDeleteTimer = setTimeout(() => setQuickDelete(false), 3000);
+  }
+});
+$('messages').addEventListener('click', (e) => {
+  if (!quickDeleteArmed) return;
+  const line = e.target.closest('.msg-line');
+  const m = line && lastRawMessages.find(x => x.id === line.dataset.mid);
+  if (!m) { setQuickDelete(false); return; }
+  e.preventDefault(); e.stopPropagation();
+  const canDelete = m.uid === myUid || (currentView === 'channel' && currentServerData && canHere('manageMessages'));
+  if (!canDelete) { toast("You can't delete that message.", 'error'); return; }
+  deleteMessage(m.id);
+}, true);
+
+// Keyboard shortcuts in the composer: ↑ on an empty box edits your last
+// message, Esc cancels a reply.
+$('composer-input').addEventListener('keydown', (e) => {
+  if (mentionState || e.isComposing || e.keyCode === 229) return;
+  if (e.key === 'ArrowUp' && !e.target.value && ['channel', 'dm', 'groupdm'].includes(currentView)) {
+    const mine = [...lastRawMessages].reverse().find(m => m.uid === myUid && m.text && !m.sticker && !m.poll);
+    if (mine) { e.preventDefault(); startEditMessage(mine.id); }
+  } else if (e.key === 'Escape' && replyTarget) {
+    e.preventDefault();
+    clearReplyTarget();
+  }
+});
+
 // ============================================================
 // MEMBER PANEL
 // ============================================================
@@ -4447,7 +4846,7 @@ $('members-toggle').onclick = () => {
 async function renderMemberPanel(members, ownerId, server) {
   members = members || [];
   await Promise.all(members.map(uid => getProfile(uid)));
-  const canManageMembers = server && (hasServerPerm(server, myUid, 'manageRoles') || hasServerPerm(server, myUid, 'kickMembers') || hasServerPerm(server, myUid, 'banMembers'));
+  const canManageMembers = server && ['manageRoles', 'kickMembers', 'banMembers', 'timeoutMembers', 'manageNicknames'].some(k => hasServerPerm(server, myUid, k));
   const online = [], offline = [];
   members.forEach(uid => {
     const p = profileCache[uid] || { username: uid, avatarColor: '#5865f2' };
@@ -4846,7 +5245,7 @@ async function renderMessages(rawMsgs) {
       const meta = document.createElement('div');
       meta.className = 'msg-meta';
       const roleColor = (currentView === 'channel' && currentServerData) ? roleColorFor(currentServerData, m.uid) : null;
-      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}"${roleColor ? ` style="color:${esc(roleColor)}"` : ''}>${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
+      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}"${roleColor ? ` style="color:${esc(roleColor)}"` : ''}>${esc((currentView === 'channel' && serverNickFor(m.uid)) || displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
       body.appendChild(meta);
       body.appendChild(buildMessageLineEl(m, canDelete));
       groupEl.innerHTML = avatarHTML(40, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration);
@@ -4925,6 +5324,12 @@ async function toggleReaction(msgId, emoji) {
   const ref = msgRef(msgId);
   const msg = lastRawMessages.find(m => m.id === msgId);
   const already = !!(msg && msg.reactions && (msg.reactions[emoji] || []).includes(myUid));
+  if (!already) {
+    if (isTimedOutHere()) { toast('You cannot react while timed out.', 'error'); return; }
+    const isNewEmoji = !(msg && msg.reactions && (msg.reactions[emoji] || []).length);
+    if (isNewEmoji && !canHere('addReactions')) { toast('You can only join existing reactions in this channel.', 'error'); return; }
+    if (/^:[A-Za-z0-9_]+:$/.test(emoji) && !canHere('useExternalEmoji')) { toast('You cannot use custom emoji in this channel.', 'error'); return; }
+  }
   try {
     await ref.update({ [`reactions.${emoji}`]: already ? FieldValue.arrayRemove(myUid) : FieldValue.arrayUnion(myUid) });
     if (!already) db.collection('users').doc(myUid).update({
@@ -5166,6 +5571,8 @@ function resetPollModal() {
 }
 
 function openPollModal() {
+  if (!canHere('createPolls')) { toast('You do not have permission to create polls in this channel.', 'error'); return; }
+  if (isTimedOutHere()) { toast('You cannot create polls while timed out.', 'error'); return; }
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
   resetPollModal();
   openModal('poll-modal');
@@ -5213,6 +5620,14 @@ document.querySelectorAll('#poll-modal [data-close="poll-modal"]').forEach(el =>
 });
 
 async function sendToCurrentConversation(payload) {
+  if (currentView === 'channel' && currentServerData) {
+    if (isTimedOutHere()) throw new Error(`You are timed out for ${timeoutLeftText(timeoutUntil(currentServerData, myUid))}.`);
+    if (!canHere('sendMessages')) throw new Error('You do not have permission to send messages in this channel.');
+    if (payload.sticker && !canHere('useExternalStickers')) throw new Error('You cannot use stickers in this channel.');
+    if (payload.gifUrl && !canHere('embedLinks')) throw new Error('You cannot post GIFs or embeds in this channel.');
+    if (payload.attachments && payload.attachments.length && !canHere('attachFiles')) throw new Error('You do not have permission to attach files in this channel.');
+    if (payload.poll && !canHere('createPolls')) throw new Error('You do not have permission to create polls in this channel.');
+  }
   let ref;
   if (currentView === 'channel') {
     ref = await db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').add(payload);
@@ -5259,7 +5674,7 @@ async function postBotMessage(payload) {
 const SAPPHIRE_PURGE_MAX = 1000; // safety ceiling when an explicit count is given
 const SAPPHIRE_PURGE_BATCH_SIZE = 450; // stay safely under Firestore's 500-op batch cap
 async function runPurgeCommand(rawCountText) {
-  if (!isAdmin && !isOwner) { toast('Only admins can use /purge.', 'error'); return; }
+  if (!isAdmin && !isOwner) { toast('Only admins, co-owners and the owner can use /purge.', 'error'); return; }
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
   const parsed = parseInt(rawCountText, 10);
   const n = Number.isFinite(parsed) && parsed > 0 ? Math.min(SAPPHIRE_PURGE_MAX, parsed) : null; // no count → delete everything
@@ -5303,8 +5718,31 @@ async function sendMessage() {
     toast(`Slowmode is on. You can send another message in ${slowmodeRemaining(sendChannel)}s.`);
     return;
   }
-  const raw = input.value.trim();
+  if (isTimedOutHere()) {
+    toast(`You are timed out in this server for ${timeoutLeftText(timeoutUntil(currentServerData, myUid))}.`, 'error');
+    return;
+  }
+  let raw = input.value.trim();
   const pendingAttachments = draftAttachments.slice();
+  if (pendingAttachments.length && !canHere('attachFiles')) {
+    toast('You do not have permission to attach files in this channel.', 'error');
+    return;
+  }
+  if (sendChannel && /^\/(poll|purge)\b/i.test(raw) && !canHere('useApplicationCommands')) {
+    toast('You do not have permission to use commands in this channel.', 'error');
+    return;
+  }
+  // "/tts hello" speaks the message aloud for everyone viewing the channel.
+  let ttsFlag = false;
+  if (/^\/tts\s+\S/i.test(raw)) {
+    raw = raw.replace(/^\/tts\s+/i, '');
+    if (canHere('sendTTS')) ttsFlag = true;
+    else toast('You cannot send text-to-speech here — sent as a normal message.');
+  }
+  if (raw && !canHere('useExternalEmoji')) {
+    const usesCustom = (raw.match(/:([A-Za-z0-9_]+):/g) || []).some(code => customEmojis[code.slice(1, -1)]);
+    if (usesCustom) { toast('You cannot use custom emoji in this channel.', 'error'); return; }
+  }
   // Typing "/poll" alone and hitting Enter opens the poll composer instead
   // of sending it as a message — same trigger word, but it now behaves
   // like every other slash command (acts on send, not on keystroke), and
@@ -5343,6 +5781,8 @@ async function sendMessage() {
   renderAttachmentDraft();
   const text = raw ? applyMessageFilter(raw) : '';
   const payload = { text, uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp() };
+  if (ttsFlag) payload.tts = true;
+  if (text && /(^|[\s(>])@(everyone|here)\b/i.test(text) && !canHere('mentionEveryone')) payload.everyoneBlocked = true;
   if (replyTarget) payload.replyTo = { id: replyTarget.id, uid: replyTarget.uid, username: replyTarget.username, text: replyTarget.text };
   try {
     if (pendingAttachments.length) {
@@ -7714,7 +8154,13 @@ async function renderAdminActions() {
   const snap = await db.collection('users').doc(adminSelectedUser).get();
   if (!snap.exists) { wrap.innerHTML = '<div class="empty">User not found.</div>'; adminSelectedUser = null; return; }
   const u = snap.data();
+  if (!canManagePlatformUser(u)) {
+    wrap.innerHTML = `<div class="admin-sel-head">${avatarHTML(44, u.avatarColor, initials(u.username), null, u.avatarUrl)}<div><div class="as-name">${esc(u.username)}${roleTag(u)}</div></div></div>
+      <div class="empty">You can't manage a ${u.owner ? 'Owner' : 'Co-Owner'} — they outrank you.</div>`;
+    return;
+  }
   const ban = banStatus(u);
+  queueMicrotask(() => renderCoOwnerBlock(wrap, u));
   wrap.innerHTML = `
     <div class="admin-sel-head">${avatarHTML(44, u.avatarColor, initials(u.username), null, u.avatarUrl)}<div><div class="as-name">${esc(u.username)}${roleTag(u)}</div><div class="as-sub">${ban.banned ? ('Banned — ' + esc(ban.reason)) : 'Not banned'}</div></div></div>
     <div class="admin-block">
@@ -7814,8 +8260,34 @@ async function adminAdjustOrbs(username, sign) {
   } catch (e) { toast('Could not update Orbs.', 'error'); }
 }
 
+// Only the real Owner can hand out or take away Co-Owner.
+function renderCoOwnerBlock(wrap, u) {
+  if (!myProfile || !myProfile.owner || u.username === myUid || u.owner) return;
+  if (wrap.querySelector('#admin-coowner-block')) return;
+  wrap.insertAdjacentHTML('beforeend', `
+    <div class="admin-block" id="admin-coowner-block">
+      <div class="ab-title">Co-Owner</div>
+      <span class="ab-note">${u.coowner ? 'Can do everything you can, except manage you.' : 'Not a co-owner.'}</span>
+      <div class="ab-row" style="margin-top:8px">
+        <button class="${u.coowner ? 'btn-secondary' : 'btn-accent-inline'} slim" id="admin-coowner-btn">${u.coowner ? 'Remove Co-Owner' : 'Make Co-Owner'}</button>
+      </div>
+    </div>`);
+  $('admin-coowner-btn').onclick = async () => {
+    try {
+      await db.collection('users').doc(u.username).update({ coowner: !u.coowner });
+      toast(u.coowner ? `Removed co-owner from ${u.username}.` : `Made ${u.username} a co-owner.`);
+      renderAdminList();
+    } catch (e) { toast(e.message || 'Could not update co-owner.', 'error'); }
+  };
+}
+function guardPlatformTarget(username) {
+  const target = profileCache[username] || { username };
+  if (!canManagePlatformUser(target)) { toast("You can't manage someone who outranks you.", 'error'); return false; }
+  return true;
+}
 async function adminSetOp(username, val) {
   if (!isOwner) { toast('Only the owner can grant or remove admin.', 'error'); return; }
+  if (!guardPlatformTarget(username)) return;
   await db.collection('users').doc(username).update({ op: val });
   if (username === myUid) { isAdmin = val; applyAdminVisibility(); }
   toast(val ? `Made ${username} an admin.` : `Removed admin from ${username}.`);
@@ -7827,6 +8299,7 @@ async function adminBan() {
   const unit = parseInt($('admin-ban-unit').value, 10);
   const reason = ($('admin-ban-reason').value || '').trim() || 'No reason given';
   if (!adminSelectedUser || !dur || dur < 1) { toast('Enter a duration.'); return; }
+  if (!guardPlatformTarget(adminSelectedUser)) return;
   const until = Date.now() + dur * unit;
   await db.collection('users').doc(adminSelectedUser).update({ banned: true, banReason: reason, bannedUntil: until });
   toast(`Banned ${adminSelectedUser}.`);
@@ -7840,6 +8313,7 @@ async function adminUnban() {
 }
 async function adminRedirect(username) {
   if (!isOwner) { toast('Only the owner can redirect users.', 'error'); return; }
+  if (!guardPlatformTarget(username)) return;
   const raw = ($('admin-redirect-url').value || '').trim();
   if (!raw) { toast('Enter a URL to redirect to.'); return; }
   const url = /^https?:\/\//i.test(raw) ? raw : 'https://' + raw;
@@ -7854,7 +8328,7 @@ async function adminRedirect(username) {
 }
 async function adminDelete() {
   if (!isOwner) { toast('Only the owner can delete accounts.', 'error'); return; }
-  if (!adminSelectedUser) return;
+  if (!adminSelectedUser || !guardPlatformTarget(adminSelectedUser)) return;
   const target = adminSelectedUser;
   confirmAction({
     title: 'Delete Account', body: `Permanently delete ${target}'s account? This cannot be undone.`, confirmLabel: 'Delete Account',

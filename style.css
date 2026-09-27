@@ -2539,3 +2539,101 @@ body.shop-theme-active .server-menu {
 .invite-meta { color: var(--text-muted); font-size: 13px; margin-bottom: 12px; }
 .invite-actions { justify-content: center; }
 body.shop-theme-active .ds-settings-layer#channel-settings-modal { background: var(--shop-theme-bg); }
+
+/* ============================================================
+   FRIXION 3.2 FIX LAYER
+   ============================================================ */
+
+/* ---- Phone layout: stop hidden panes from bleeding through ----
+   Shop themes make panel backgrounds translucent, so the server rail and
+   channel list were visible underneath the open chat (and vice versa).
+   The pane that isn't on screen is now hidden once its slide finishes;
+   during a swipe (.mobile-dragging) both stay visible so the drag works. */
+@media (hover: none) and (pointer: coarse) and (max-width: 600px),
+       (hover: none) and (pointer: coarse) and (max-height: 600px) {
+  #server-rail, #side-panel { transition: transform .28s cubic-bezier(.25,.75,.4,1), visibility 0s linear 0s; }
+  #main-col { transition: transform .28s cubic-bezier(.25,.75,.4,1), visibility 0s linear .28s; visibility: hidden; background: var(--bg-primary); }
+  #app.mobile-show-chat #main-col { visibility: visible; transition: transform .28s cubic-bezier(.25,.75,.4,1), visibility 0s linear 0s; }
+  #app.mobile-show-chat #server-rail,
+  #app.mobile-show-chat #side-panel { visibility: hidden; transition: transform .28s cubic-bezier(.25,.75,.4,1), visibility 0s linear .28s; }
+  #app.mobile-dragging #server-rail, #app.mobile-dragging #side-panel, #app.mobile-dragging #main-col { visibility: visible !important; }
+  body.shop-theme-active #main-col { background: color-mix(in srgb, var(--bg-primary) 92%, #000); }
+
+  #chat-header .mobile-back-btn {
+    width: 34px; height: 34px; flex-shrink: 0; align-items: center; justify-content: center;
+    border-radius: 8px; color: var(--text-normal); margin-right: 2px;
+  }
+  #chat-header .mobile-back-btn:active { background: var(--bg-modifier-hover); }
+
+  /* keyboard up: no home-indicator padding under the composer */
+  body.keyboard-open #composer-wrap { padding-bottom: 6px; }
+  #messages { overflow-anchor: none; }
+  html, body { overscroll-behavior: none; }
+}
+
+/* ---- Mobile presence glyph (cut-out phone, no white fill) ---- */
+.avatar .status-dot.mobile { padding: 0; align-items: center; justify-content: center; line-height: 0; }
+.status-dot.mobile .status-phone { width: 100%; height: 100%; display: block; }
+.status-dot.mobile .phone-body { fill: var(--online); }
+.status-dot.mobile.idle .phone-body { fill: var(--idle); }
+.status-dot.mobile.dnd .phone-body { fill: var(--dnd); }
+
+/* ---- Long channel / category names never break the layout ---- */
+.channel-row .cname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#chat-header .title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#side-header-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- Permission editor: features that aren't in Frixion yet ---- */
+.perm-soon-tag {
+  display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; vertical-align: middle;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
+  background: var(--bg-modifier-selected); color: var(--text-muted);
+}
+
+/* ---- Info modals: nickname, audit log, insights ---- */
+.frx-info-modal .modal-box { width: 460px; max-width: 94vw; max-height: 80vh; display: flex; flex-direction: column; padding: 20px; background: var(--bg-primary); }
+.frx-info-modal .modal-header-row { display: flex; justify-content: space-between; }
+.frx-info-modal h2 { font-size: 18px; font-weight: 700; }
+.frx-info-modal .x { cursor: pointer; color: var(--text-muted); }
+.frx-info-body { overflow-y: auto; min-height: 0; }
+.frx-info-body .desc { color: var(--text-muted); font-size: 13px; margin-bottom: 12px; }
+.frx-audit-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.frx-audit-list li { padding: 8px 10px; border-radius: 6px; font-size: 14px; line-height: 1.4; }
+.frx-audit-list li:nth-child(odd) { background: var(--bg-secondary); }
+.frx-audit-list time { display: block; font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+.frx-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.frx-stat { background: var(--bg-secondary); border-radius: 8px; padding: 14px 12px; }
+.frx-stat-n { font-size: 24px; font-weight: 800; }
+.frx-stat-l { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+/* ---- Manage member: timeout row ---- */
+.mm-inline-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mm-inline-row select { flex: 1; min-width: 140px; padding: 9px 10px; border-radius: 4px; border: 1px solid var(--divider); background: var(--bg-deepest); color: var(--text-normal); font-family: inherit; }
+.mm-timeout-left { color: var(--dnd); text-transform: none; font-weight: 600; }
+
+/* ---- Double-click / double-tap hint ---- */
+.msg-line { -webkit-tap-highlight-color: transparent; }
+
+/* ============ FRIXION 3.3: rank tags, Discord-style hover bar, quick delete ============ */
+/* Owner + Co-Owner are always red, Admin always gold — regardless of theme. */
+.owner-tag, .coowner-tag, .op-tag {
+  display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 3px; margin-left: 5px; vertical-align: middle; letter-spacing: .3px;
+}
+.owner-tag, .coowner-tag { background: rgba(237,66,69,.18) !important; color: #ed4245 !important; }
+.op-tag { background: rgba(240,177,50,.18) !important; color: #f0b132 !important; }
+
+/* Hover toolbar floats over the top-right corner of the message, like Discord. */
+.msg-line .msg-hover-actions {
+  top: -16px; right: 16px; padding: 2px; gap: 0;
+  border-radius: 8px; background: var(--bg-secondary); border: 1px solid var(--divider);
+  box-shadow: 0 4px 12px rgba(0,0,0,.35); z-index: 8;
+}
+.msg-line:hover { z-index: 7; }
+.msg-line .msg-hover-actions .hover-icon-btn { padding: 6px; }
+#messages > :first-child .msg-line:first-child .msg-hover-actions { top: 0; }
+
+/* Quick delete armed: red outline on hover, trash cursor feel */
+body.quick-delete-armed #messages .msg-line { cursor: pointer; }
+body.quick-delete-armed #messages .msg-line:hover { background: rgba(237,66,69,.14); box-shadow: inset 2px 0 0 #ed4245; }
+body.quick-delete-armed #messages .msg-line:hover .msg-hover-actions { display: none; }

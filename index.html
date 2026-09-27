@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=35">
+<link rel="stylesheet" href="style.css?v=37">
 </head>
 <body>
 
@@ -66,6 +66,12 @@
     <div class="help-row"><kbd>Enter</kbd><span>Send a message</span></div>
     <div class="help-row"><kbd>Shift</kbd> + <kbd>Enter</kbd><span>New line</span></div>
     <div class="help-row"><kbd>:name:</kbd><span>Insert an emoji</span></div>
+    <div class="help-row"><kbd>↑</kbd><span>Edit your last message (empty box)</span></div>
+    <div class="help-row"><kbd>Esc</kbd><span>Cancel reply / edit</span></div>
+    <div class="help-row"><kbd>Double-click</kbd><span>Your message: edit · Others: reply</span></div>
+    <div class="help-row"><kbd>Backspace</kbd> + <kbd>Click</kbd><span>Delete a message</span></div>
+    <div class="help-row"><kbd>/tts text</kbd><span>Send a text-to-speech message</span></div>
+    <div class="help-row"><kbd>/poll</kbd><span>Create a poll</span></div>
   </div>
   <div class="help-foot">Frixion v3.0 — see what's new in Settings → Update Log.</div>
 </div>
@@ -521,7 +527,7 @@
           <h2 class="ss-h2">Overview</h2>
           <div class="field">
             <label for="cs-name">Channel Name</label>
-            <input type="text" id="cs-name" maxlength="30">
+            <input type="text" id="cs-name" maxlength="20">
           </div>
           <div class="field">
             <label for="cs-topic">Channel Topic</label>
@@ -596,7 +602,7 @@
 <div class="modal-overlay hidden" id="create-channel-modal">
   <div class="modal-box">
     <div class="modal-header-row"><h2>Create Text Channel</h2><span class="x" data-close="create-channel-modal">✕</span></div>
-    <div class="field"><label>Channel Name</label><input type="text" id="new-channel-name" maxlength="30" placeholder="new-channel"></div>
+    <div class="field"><label>Channel Name</label><input type="text" id="new-channel-name" maxlength="20" placeholder="new-channel"></div>
     <div class="field"><label>Category</label><select id="new-channel-category" class="fld-input"></select></div>
     <div class="modal-actions">
       <button class="btn-secondary" data-close="create-channel-modal">Cancel</button>
@@ -609,7 +615,7 @@
 <div class="modal-overlay hidden" id="create-category-modal">
   <div class="modal-box">
     <div class="modal-header-row"><h2>Create Category</h2><span class="x" data-close="create-category-modal">✕</span></div>
-    <div class="field"><label>Category Name</label><input type="text" id="new-category-name" maxlength="30" placeholder="NEW CATEGORY"></div>
+    <div class="field"><label>Category Name</label><input type="text" id="new-category-name" maxlength="24" placeholder="NEW CATEGORY"></div>
     <div class="modal-actions">
       <button class="btn-secondary" data-close="create-category-modal">Cancel</button>
       <button class="btn-accent-inline" id="confirm-create-category">Create Category</button>
@@ -1287,6 +1293,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
-<script src="script.js?v=35"></script>
+<script src="script.js?v=37"></script>
 </body>
 </html>
