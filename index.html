@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=37">
+<link rel="stylesheet" href="style.css?v=47">
 </head>
 <body>
 
@@ -257,9 +257,8 @@
     <div id="quests-view" class="hidden main-page-view">
       <div class="mp-header"><span>Quests</span></div>
       <div class="mp-body">
-        <p class="desc">Complete quests to earn Orbs, then spend them on Frixion Premium. New quests every day.</p>
-        <div id="quests-list-main"></div>
-        <div class="hint" id="quests-reset-note-main"></div>
+        <p class="desc">Play games to earn Orbs, then spend them on Frixion Premium.</p>
+        <div class="fg-mount"></div>
       </div>
     </div>
 
@@ -287,6 +286,7 @@
             <button class="shop-tab" id="shop-browse-toggle">Browse <span class="caret">▾</span></button>
             <div class="shop-browse-menu hidden" id="shop-browse-menu">
               <div class="shop-browse-opt" data-shop-tab="decorations">Avatar Decorations</div>
+              <div class="shop-browse-opt" data-shop-tab="masks">Avatar Masks</div>
               <div class="shop-browse-opt" data-shop-tab="nameplates">Nameplates</div>
               <div class="shop-browse-opt" data-shop-tab="profile_effects">Profile Effects</div>
               <div class="shop-browse-opt" data-shop-tab="profile_frames">Profile Frames</div>
@@ -304,6 +304,7 @@
         <div class="shop-pane hidden" id="shop-pane-themes"></div>
         <div class="shop-pane hidden" id="shop-pane-banners"></div>
         <div class="shop-pane hidden" id="shop-pane-decorations"></div>
+        <div class="shop-pane hidden" id="shop-pane-masks"></div>
         <div class="shop-pane hidden" id="shop-pane-nameplates"></div>
         <div class="shop-pane hidden" id="shop-pane-profile_effects"></div>
         <div class="shop-pane hidden" id="shop-pane-profile_frames"></div>
@@ -346,6 +347,8 @@
         <input type="file" id="file-input" class="hidden" accept="image/*,.pdf,.txt,.zip,.mp4,.mp3" multiple>
         <div id="attachment-draft" class="attachment-draft hidden"></div>
         <div id="mention-popup" class="hidden"></div>
+        <div id="slash-popup" class="hidden" role="listbox" aria-label="Commands"></div>
+        <div id="cmd-bar" class="hidden"></div>
         <div id="composer">
           <button class="composer-icon-btn" id="attach-btn" title="Add attachment or more"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></button>
           <textarea id="composer-input" rows="1" placeholder="Message" autocomplete="off" autocapitalize="sentences" inputmode="text"></textarea>
@@ -391,6 +394,8 @@
     <p class="desc">Give your new server a personality with a name. You can change this later.</p>
     <div class="auth-error" id="create-server-error"></div>
     <div class="field"><label>Server Name</label><input type="text" id="new-server-name" maxlength="40" placeholder="My Awesome Server"></div>
+    <div class="field"><label>Invite Code</label><input type="text" id="new-server-code" maxlength="5" placeholder="5 letters or numbers" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <p class="hint" style="margin-top:6px">Your invite link will be <b id="new-server-code-preview">equilibrium-incarnate.pages.dev/·····</b>. <b>You can't change this code later</b>, so choose carefully.</p></div>
     <div class="modal-actions">
       <button class="btn-secondary" data-close="create-server-modal">Cancel</button>
       <button class="btn-accent-inline" id="confirm-create-server">Create</button>
@@ -418,6 +423,7 @@
   <div class="modal-box">
     <div class="modal-header-row"><h2 id="confirm-modal-title">Are you sure?</h2><span class="x" data-close="confirm-modal">✕</span></div>
     <p class="desc" id="confirm-modal-body"></p>
+    <input type="text" id="confirm-modal-input" class="fld-input hidden" style="margin:-4px 0 16px;width:100%" autocomplete="off">
     <div class="modal-actions">
       <button class="btn-secondary" data-close="confirm-modal">Cancel</button>
       <button class="btn-danger" id="confirm-modal-confirm-btn">Confirm</button>
@@ -474,17 +480,18 @@
             </div>
             <p class="ss-hint">Anyone with this link can join. Invite code: <strong id="server-invite-code"></strong></p>
           </div>
-          <div class="ss-divider"></div>
-          <div class="field">
-            <label>Reset Invite Link</label>
-            <p class="ss-hint">Makes a new link and code. The old one stops working right away.</p>
-            <button type="button" class="ds-btn ds-btn-danger-outline" id="reset-invite-btn">Reset Invite Link</button>
-          </div>
+          <p class="ss-hint">Invite codes are permanent. They are chosen when a server is created and can't be changed or reset.</p>
         </section>
         <section class="ss-pane hidden" id="ss-pane-bans">
-          <h2 class="ss-h2">Server Ban List</h2>
-          <p class="ss-hint">Banned members can&apos;t rejoin, even with an invite link.</p>
-          <input type="search" id="bans-search" class="ss-search" placeholder="Search bans by username" aria-label="Search bans">
+          <div class="bans-head">
+            <div><h2 class="ss-h2">Server Ban List</h2>
+            <p class="ss-hint">Banned members can&apos;t rejoin, even with an invite link.</p></div>
+            <span class="bans-count none" id="bans-count">0 banned</span>
+          </div>
+          <label class="bans-search-wrap">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input type="search" id="bans-search" class="bans-search" placeholder="Search bans by username" aria-label="Search bans" autocomplete="off">
+          </label>
           <div id="bans-list" class="bans-list"></div>
         </section>
         <section class="ss-pane hidden" id="ss-pane-roles">
@@ -830,8 +837,8 @@
 
       <div class="settings-pane hidden" id="pane-quests">
         <h2>Quests</h2>
-        <p class="desc">Complete quests to earn Orbs, then spend them on Frixion Premium.</p>
-        <div id="quests-list"></div>
+        <p class="desc">Play games to earn Orbs, then spend them on Frixion Premium.</p>
+        <div class="fg-mount"></div>
       </div>
 
       <div class="settings-pane hidden" id="pane-themes">
@@ -965,16 +972,8 @@
           </div>
         </div>
         <small class="hint" id="deco-draw-hint">The dashed circle shows roughly where the avatar itself sits — draw around it (ears, hats, effects) rather than over it.</small>
-        <div class="deco-editor hidden" id="deco-mode-emoji">
-          <div class="deco-canvas-wrap">
-            <div class="deco-guide-circle"></div>
-            <div id="deco-emoji-preview" class="deco-emoji-preview">🎩</div>
-          </div>
-          <div class="deco-editor-tools">
-            <div class="field"><label class="fld-label">Emoji</label><input type="text" id="deco-emoji-input" maxlength="8" placeholder="🎩" class="fld-input" value="🎩"></div>
-            <small class="hint">Paste or type any emoji — it'll sit above the avatar like a hat, same spot the drawn decorations use.</small>
-          </div>
-        </div>
+        <div class="hidden" id="deco-mode-emoji"></div>
+        <label class="deco-mask-opt"><input type="checkbox" id="deco-mask-input"> <span><b>Full avatar mask</b> — covers the whole avatar and is sold in the shop's Avatar Masks section instead of Avatar Decorations</span></label>
         <div class="field" style="margin-top:14px;"><label class="fld-label">Name</label><input type="text" id="deco-name-input" maxlength="24" placeholder="e.g. Wizard Hat" class="fld-input"></div>
         <div class="field"><label class="fld-label">Description</label><input type="text" id="deco-desc-input" maxlength="80" placeholder="e.g. A pointy hat for the truly magical" class="fld-input"></div>
         <div class="field"><label class="fld-label">Price (Orbs)</label><input type="number" id="deco-price-input" min="0" placeholder="800" class="fld-input"></div>
@@ -1293,6 +1292,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
-<script src="script.js?v=37"></script>
+<script src="script.js?v=47"></script>
 </body>
 </html>

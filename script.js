@@ -446,7 +446,10 @@ function applyShopTheme(themeId) {
 // profile fields it reads/writes — lets the shop's render/buy/equip code
 // stay generic instead of four near-identical copies of the same logic.
 const SHOP_CATEGORY_DEFS = {
-  decorations: { label: 'Avatar Decorations', get catalog() { return [...AVATAR_DECORATIONS, ...customDecorations]; }, ownedField: 'ownedDecorations', equipField: 'equippedDecoration' },
+  decorations: { label: 'Avatar Decorations', get catalog() { return [...AVATAR_DECORATIONS, ...customDecorations.filter(d => !d.mask)]; }, ownedField: 'ownedDecorations', equipField: 'equippedDecoration' },
+  // Full avatar masks are decorations flagged `mask` in the admin editor. They share the
+  // decoration slot, so wearing a mask replaces whatever decoration was equipped.
+  masks: { label: 'Avatar Masks', get catalog() { return customDecorations.filter(d => d.mask); }, ownedField: 'ownedDecorations', equipField: 'equippedDecoration' },
   nameplates: { label: 'Nameplates', get catalog() { return [...NAMEPLATES, ...customNameplates]; }, ownedField: 'ownedNameplates', equipField: 'equippedNameplate' },
   profile_effects: { label: 'Profile Effects', get catalog() { return [...PROFILE_EFFECTS, ...customProfileEffects]; }, ownedField: 'ownedProfileEffects', equipField: 'equippedProfileEffect' },
   profile_frames: { label: 'Profile Frames', get catalog() { return [...PROFILE_FRAMES, ...customProfileFrames]; }, ownedField: 'ownedProfileFrames', equipField: 'equippedProfileFrame' },
@@ -456,24 +459,6 @@ const SHOP_CATEGORY_DEFS = {
 const PREMIUM_DURATION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 function isPremium(p) { return !!(p && p.premiumUntil && p.premiumUntil > Date.now()); }
 function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
-
-// ---------- Quests (reset daily) ----------
-const QUESTS = [
-  { id: 'daily_msgs20', title: 'Chatterbox', desc: 'Send 20 messages', stat: 'messagesSent', goal: 20, reward: 40 },
-  { id: 'daily_react10', title: 'Reactionary', desc: 'React to 10 messages', stat: 'reactionsGiven', goal: 10, reward: 25 },
-  { id: 'daily_dm', title: 'Say Hi', desc: 'Send a direct message', stat: 'dmsMessaged', goal: 1, reward: 15 },
-  { id: 'daily_server', title: 'Show Up', desc: 'Send a message in a server channel', stat: 'channelsMessaged', goal: 1, reward: 15 },
-];
-async function ensureQuestsFresh(profile) {
-  if (profile.questsDate === todayStr()) return profile;
-  const reset = {
-    questsDate: todayStr(),
-    dailyStats: { messagesSent: 0, reactionsGiven: 0, dmsMessaged: 0, channelsMessaged: 0 },
-    claimedQuestsToday: [],
-  };
-  try { await db.collection('users').doc(myUid).update(reset); } catch (e) {}
-  return { ...profile, ...reset };
-}
 
 // ============================================================
 // UPDATE LOG — newest first.
@@ -495,6 +480,37 @@ async function ensureQuestsFresh(profile) {
 //      use today's date. Don't let this log fall behind reality.
 // ============================================================
 const UPDATES = [
+  { v: '3.5', date: '2026-10-03', title: 'Slash commands',
+    notes: [
+      'Typing / now opens a command list with autofill, descriptions and the options each command takes. Pick one with a tap, Tab or Enter.',
+      'New /hyperlink command for everyone: type a message and a link and it posts as a clickable link. You can also write [text](https://link) yourself.',
+      'Commands show their options as chips above the message box, like Discord. Enter moves to the next option, then sends.',
+    ] },
+  { v: '3.4', date: '2026-10-02', title: 'Invites, mutes and bans',
+    notes: [
+      'Invite links now look like equilibrium-incarnate.pages.dev/abc12. When you create a server you pick its 5-character invite code, and it can\'t be changed afterwards.',
+      'Owners, co-owners and admins can mute people for a set time, following the same rules as banning. Muted accounts can read but not send, react or start polls.',
+      'Banned accounts can still sign in, but see a full-screen notice with the reason and time left. "I understand" signs them out.',
+      'Server ban lists show who banned each member, when, and why, with a cleaner layout. You can add a reason when you ban someone.',
+      'Snake glides, Blox Merge tiles slide, Memory Match cards really flip, and Connect Four discs drop.',
+    ] },
+  { v: '3.3', date: '2026-10-01', title: 'Avatar Masks',
+    notes: [
+      'New Avatar Masks section in the shop (under Browse): full masks that cover your whole avatar instead of sitting around it.',
+    ] },
+  { v: '3.2', date: '2026-10-01', title: 'Keyboard fix and emoji decorations',
+    notes: [
+      'Fixed the keyboard\'s Quick Text list getting stuck on screen when you swipe back to your DMs.',
+      'Emoji avatar decorations can now be dragged, resized and combined (up to six per decoration) in the shop editor.',
+    ] },
+  { v: '3.1', date: '2026-09-30', title: 'Games, Orbs and bigger menus',
+    notes: [
+      'Quests are now games. Play Grow a Garden, Cookie Clicker, Liquid Dash, Snake, Sudoku and 13 more, and earn Orbs when a run ends.',
+      'Games open in a fullscreen window and work on phones.',
+      'Cookie Clicker is a slow grind at first, then speeds up: your momentum builds the longer you bake, and owning 10, 25, 50 and more of a building doubles its output. Cashing out pays Orbs for your whole run and resets it.',
+      'Big Orb balances now show as 2.5M, 2.5B or 2.5T instead of a long string of digits.',
+      'Settings, server menus and dialogs are bigger and easier to read.',
+    ] },
   { v: '3.0', date: '2026-09-18', title: 'Server Roles have arrived',
     notes: [
       'Server owners can now create custom roles — give them a name, a color, and a set of permissions (Manage Server, Manage Roles, Manage Channels, Manage Messages, Kick, Ban), then hand them out to members.',
@@ -879,8 +895,13 @@ function subscribeCustomProfileFrames() {
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminProfileFrameList();
   });
 }
+// [label](https://link) shows as a clickable "label". /hyperlink writes this form, and
+// anyone can type it too. The destination is always visible on hover.
+const MASKED_LINK_RE = /\[([^\[\]\n]{1,120})\]\((https?:\/\/[^\s()<>"']{1,500})\)/gi;
 function renderMessageText(rawText) {
-  const safe = esc(rawText);
+  const masked = [];
+  const stripped = String(rawText).replace(MASKED_LINK_RE, (_, label, url) => { masked.push({ label, url }); return `\uE000${masked.length - 1}\uE001`; });
+  const safe = esc(stripped);
   const withEmoji = safe.replace(/:([a-z0-9_]+):/gi, (whole, name) => {
     const key = name.toLowerCase();
     if (customEmojis[key]) return `<img class="custom-emoji" src="${customEmojis[key].dataUrl}" alt=":${esc(key)}:" title=":${esc(key)}:">`;
@@ -903,7 +924,10 @@ function renderMessageText(rawText) {
     const cls = 'mention-pill mention-glow' + (name === myUid ? ' mention-self' : '');
     return `${lead}<span class="${cls}">@${esc(name)}</span>`;
   });
-  return linkifyText(withMentions);
+  return linkifyText(withMentions).replace(/\uE000(\d+)\uE001/g, (_, i) => {
+    const { label, url } = masked[+i];
+    return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="msg-link" title="${esc(url)}">${esc(label)}</a>`;
+  });
 }
 // Same matching rules as the @mention renderer above, kept in sync
 // deliberately — this decides whether a message plays a ping sound for the
@@ -1054,11 +1078,22 @@ function toast(msg, type = '') {
 // .avatar deliberately has no overflow:hidden (see its CSS) specifically so
 // this isn't clipped. Skipped below a small size since a decoration on a
 // 20px avatar just reads as visual noise.
+// Emoji decorations are a list of layers: { e: emoji, x, y: centre as a % of the
+// decoration box, s: size as a % of the box }. Older single-emoji decorations
+// (just `emoji`) become one layer at the spot they always sat.
+function decoEmojiLayers(deco) {
+  if (deco && Array.isArray(deco.emojis) && deco.emojis.length) return deco.emojis;
+  return deco && deco.emoji ? [{ e: deco.emoji, x: 50, y: 23, s: 42 }] : [];
+}
 function decorationOverlayHTML(decorationId, size, hole) {
-  const deco = size >= 28 ? decorationById(decorationId) : null;
+  return size >= 28 ? decorationBoxHTML(decorationById(decorationId), size, hole) : '';
+}
+function decorationBoxHTML(deco, size, hole) {
   if (!deco) return '';
-  const decoSize = Math.round(size * 1.3);
-  const decoOffset = Math.round((decoSize - size) / 2);
+  // A full avatar mask is drawn at exactly the avatar's size and clipped to its circle;
+  // ordinary decorations are 30% larger so they can poke out around it.
+  const decoSize = deco.mask ? size : Math.round(size * 1.3);
+  const decoOffset = deco.mask ? 0 : Math.round((decoSize - size) / 2);
   // When the avatar has a status indicator, punch the same hole out of the
   // decoration layer — otherwise an oversized decoration paints straight
   // over the cutout and the status dot looks like it's sitting on top of
@@ -1071,14 +1106,13 @@ function decorationOverlayHTML(decorationId, size, hole) {
     maskStyle = `-webkit-mask-image:${grad};mask-image:${grad};`;
   }
   // Built-in decorations render their own SVG; admin-drawn ones store a
-  // plain image (a canvas export) instead, so they render as an <img>;
-  // emoji-based ones (the easier alternative to drawing) render as text,
-  // sized and positioned to sit like a hat above the avatar, same spot
-  // the drawn/SVG ones occupy.
-  const inner = deco.emoji
-    ? `<span class="avatar-decoration-emoji" style="font-size:${Math.round(decoSize * 0.42)}px;">${esc(deco.emoji)}</span>`
+  // plain image (a canvas export), so they render as an <img>; emoji ones
+  // render as text layers placed wherever the editor left them.
+  const layers = decoEmojiLayers(deco);
+  const inner = layers.length
+    ? layers.map(l => `<span class="avatar-decoration-emoji" style="left:${l.x}%;top:${l.y}%;font-size:${(decoSize * l.s / 100).toFixed(1)}px;">${esc(l.e)}</span>`).join('')
     : deco.imageUrl ? `<img src="${esc(deco.imageUrl)}" alt="" draggable="false">` : deco.svg(decoSize);
-  return `<span class="avatar-decoration" style="width:${decoSize}px;height:${decoSize}px;left:${-decoOffset}px;top:${-decoOffset}px;${maskStyle}">${inner}</span>`;
+  return `<span class="avatar-decoration${deco.mask ? ' is-mask' : ''}" style="width:${decoSize}px;height:${decoSize}px;left:${-decoOffset}px;top:${-decoOffset}px;${maskStyle}">${inner}</span>`;
 }
 // Discord's mobile presence indicator: a little phone glyph in the status
 // color, shown in place of the round dot when that person is online from a
@@ -1537,14 +1571,19 @@ function closeModal(id) { $(id).classList.add('hidden'); }
 // Discord-style confirmation dialog, replacing the browser's native
 // confirm() for anything destructive (delete server/channel/role, kick,
 // ban) — styled like the rest of the app instead of a jarring OS popup.
-function confirmAction({ title, body, confirmLabel, danger = true, onConfirm }) {
+function confirmAction({ title, body, confirmLabel, danger = true, input, onConfirm }) {
   $('confirm-modal-title').textContent = title || 'Are you sure?';
   $('confirm-modal-body').textContent = body || '';
   const btn = $('confirm-modal-confirm-btn');
   btn.textContent = confirmLabel || 'Confirm';
   btn.className = danger ? 'btn-danger' : 'btn-accent-inline';
-  btn.onclick = async () => { closeModal('confirm-modal'); await onConfirm(); };
+  const field = $('confirm-modal-input');
+  field.classList.toggle('hidden', !input);
+  field.value = '';
+  if (input) { field.placeholder = input.placeholder || ''; field.maxLength = input.maxLength || 120; }
+  btn.onclick = async () => { const typed = field.value.trim(); closeModal('confirm-modal'); await onConfirm(typed); };
   openModal('confirm-modal');
+  if (input) setTimeout(() => field.focus(), 50);
 }
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => closeModal(el.dataset.close)));
 document.querySelectorAll('[data-back]').forEach(el => {
@@ -1659,6 +1698,17 @@ function banStatus(profile) {
   return { banned: true, reason: profile.banReason || 'No reason given', until: profile.bannedUntil };
 }
 
+// A muted account can still read and browse, but can't post, react or start polls anywhere.
+function muteStatus(profile) {
+  if (!profile || !profile.mutedUntil || profile.mutedUntil <= Date.now()) return { muted: false };
+  return { muted: true, until: profile.mutedUntil, reason: profile.muteReason || 'No reason given' };
+}
+function isSiteMuted() { return muteStatus(myProfile).muted; }
+function siteMuteText() {
+  const m = muteStatus(myProfile);
+  return `You are muted for ${timeoutLeftText(m.until)}. Reason: ${m.reason}`;
+}
+
 // Backfills fields added in later updates onto accounts created earlier, so old accounts never crash on missing data.
 function defaultProfileFields(existing) {
   return {
@@ -1690,6 +1740,47 @@ async function normalizeProfile(username, data) {
   return data;
 }
 
+// ---------- Account bans: full-screen notice ----------
+// A banned account can still log in, but all it gets is this screen. "I understand" signs out.
+let banScreenTimer = null;
+function banLeftText(ms) {
+  const t = Math.max(0, Math.floor(ms / 1000)), d = Math.floor(t / 86400), hr = Math.floor(t % 86400 / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60;
+  return d ? `${d}d ${hr}h ${m}m` : hr ? `${hr}h ${m}m ${sec}s` : m ? `${m}m ${sec}s` : `${sec}s`;
+}
+function showBanScreen(ban, signedIn) {
+  let el = $('ban-screen');
+  if (!el) { el = document.createElement('div'); el.id = 'ban-screen'; document.body.append(el); }
+  const ends = ban.until ? new Date(ban.until).toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' }) : null;
+  el.innerHTML = `
+    <div class="ban-card" role="alertdialog" aria-modal="true" aria-labelledby="ban-title">
+      <div class="ban-icon"><svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.5"/><path d="M5.3 5.3l13.4 13.4"/></svg></div>
+      <h1 id="ban-title">You have been banned</h1>
+      <p class="ban-lead">This account can't be used on Frixion right now.</p>
+      <dl class="ban-facts">
+        <div><dt>Time remaining</dt><dd id="ban-left">${ban.until ? banLeftText(ban.until - Date.now()) : 'Until further notice'}</dd></div>
+        <div><dt>Ban ends</dt><dd>${ends ? esc(ends) : 'Not set'}</dd></div>
+        <div class="wide"><dt>Reason</dt><dd>${esc(ban.reason)}</dd></div>
+      </dl>
+      <button type="button" class="ban-ack" id="ban-ack">I understand</button>
+    </div>`;
+  clearInterval(banScreenTimer);
+  if (ban.until) banScreenTimer = setInterval(() => {
+    const left = ban.until - Date.now(), node = $('ban-left');
+    if (!node) return clearInterval(banScreenTimer);
+    node.textContent = left > 0 ? banLeftText(left) : 'Your ban has ended. Sign in again.';
+  }, 1000);
+  $('ban-ack').onclick = async () => {
+    clearInterval(banScreenTimer);
+    el.remove();
+    if (signedIn && myUid) { await $('logout-btn').onclick(); return; }
+    setSession(null);
+    $('login-password').value = '';
+    $('login-btn').disabled = false; $('login-btn').textContent = 'Log In';
+    showAuthScreen();
+  };
+  $('ban-ack').focus();
+}
+
 async function boot() {
   const saved = getSession();
   if (!saved) { showAuthScreen(); return; }
@@ -1697,7 +1788,7 @@ async function boot() {
   if (!snap.exists) { setSession(null); showAuthScreen(); return; }
   const data = snap.data();
   const ban = banStatus(data);
-  if (ban.banned) { setSession(null); showAuthScreen(); $('login-error').textContent = `You're banned: ${ban.reason}`; return; }
+  if (ban.banned) { showAuthScreen(); showBanScreen(ban, false); return; }
   await normalizeProfile(saved, data);
   myUid = saved;
   myProfile = data;
@@ -1744,9 +1835,8 @@ $('login-btn').onclick = async () => {
     const data = snap.data();
     const ban = banStatus(data);
     if (ban.banned) {
-      const until = ban.until ? new Date(ban.until).toLocaleString() : 'further notice';
-      $('login-error').textContent = `You're banned until ${until}. Reason: ${ban.reason}`;
-      $('login-btn').disabled = false; $('login-btn').textContent = 'Log In'; return;
+      $('login-btn').disabled = false; $('login-btn').textContent = 'Log In';
+      showBanScreen(ban, false); return;
     }
     if (ban.expired) { await db.collection('users').doc(username).update({ banned: false, banReason: '', bannedUntil: null }); data.banned = false; }
     await normalizeProfile(username, data);
@@ -1803,6 +1893,7 @@ $('logout-btn').onclick = async () => {
   try { if (myUid) await db.collection('users').doc(myUid).update({ status: 'offline' }); } catch (e) {}
   cleanupAllListeners();
   setSession(null);
+  stopGameEngines();
   myUid = null; myProfile = null; profileCache = {}; isAdmin = false; isOwner = false; seedBotProfiles();
   applyAdminVisibility();
   clearMyTypingDoc();
@@ -1834,6 +1925,9 @@ function initAppForUser() {
     if (!snap.exists) return;
     myProfile = snap.data();
     profileCache[myUid] = myProfile;
+    syncGameState(myProfile);
+    const liveBan = banStatus(myProfile);
+    if (liveBan.banned) showBanScreen(liveBan, true);   // banned while signed in
     applyShopTheme(myProfile.equippedTheme);
     // Admin-triggered redirect: fires once per nonce, then best-effort
     // clears the field so a later reconnect doesn't replay it.
@@ -1964,28 +2058,52 @@ $('choice-join').onclick = () => { closeModal('server-choice-modal'); openModal(
 
 $('confirm-create-server').onclick = async () => {
   const name = $('new-server-name').value.trim();
+  const code = $('new-server-code').value.trim().toLowerCase();
   $('create-server-error').textContent = '';
   if (!name) { $('create-server-error').textContent = 'Please enter a server name.'; return; }
+  if (!/^[a-z0-9]{5}$/.test(code)) { $('create-server-error').textContent = 'The invite code must be exactly 5 letters or numbers.'; return; }
   try {
+    if (await findServerByInvite(code)) { $('create-server-error').textContent = `The code "${code}" is already taken. Pick another one.`; return; }
     const ref = await db.collection('servers').add({
-      name, ownerId: myUid, members: [myUid], inviteCode: genCode(), createdAt: FieldValue.serverTimestamp(),
+      name, ownerId: myUid, members: [myUid], inviteCode: code, createdAt: FieldValue.serverTimestamp(),
       roles: [{ id: 'everyone', name: '@everyone', color: null, permissions: DEFAULT_EVERYONE_PERMISSIONS.slice(), position: 0, permsV2: true }],
       memberRoles: {}, bannedUsers: [],
     });
     await ref.collection('channels').add({ name: 'general', categoryId: null, autoDelete: true, createdAt: FieldValue.serverTimestamp() });
-    $('new-server-name').value = '';
+    $('new-server-name').value = ''; $('new-server-code').value = ''; updateNewServerCodePreview();
     closeModal('create-server-modal');
     toast('Server created.');
     db.collection('users').doc(myUid).update({ 'stats.serversCount': FieldValue.increment(1) }).catch(() => {});
   } catch (e) { $('create-server-error').textContent = e.message; }
 };
 
+// Invite links look like https://equilibrium-incarnate.pages.dev/abc12 (new servers use a
+// 5-character code; older servers keep their 6-character one). Older ?invite= links still work.
+const INVITE_BASE = 'https://equilibrium-incarnate.pages.dev/';
+const INVITE_CODE_RE = /^[a-z0-9]{5,6}$/i;
+$('new-server-code').addEventListener('input', () => {
+  const el = $('new-server-code');
+  el.value = el.value.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5);
+  updateNewServerCodePreview();
+});
+function updateNewServerCodePreview() {
+  $('new-server-code-preview').textContent = INVITE_BASE.replace('https://', '') + ($('new-server-code').value || '·····');
+}
+
 function parseInviteCode(input) {
   const v = (input || '').trim();
-  const m = /[?&#]invite=([a-z0-9]+)/i.exec(v) || /\/invite\/([a-z0-9]+)/i.exec(v);
+  const m = /[?&#]invite=([a-z0-9]+)/i.exec(v) || /\/invite\/([a-z0-9]+)/i.exec(v)
+    || /^(?:https?:\/\/)?[^\/\s]+\/([a-z0-9]{5,6})\/?(?:[?#].*)?$/i.exec(v);
   return (m ? m[1] : v).toLowerCase();
 }
-function inviteLinkFor(code) { return `${location.origin}${location.pathname}?invite=${encodeURIComponent(code)}`; }
+function inviteLinkFor(code) { return INVITE_BASE + encodeURIComponent(code); }
+// The invite code in the address bar, if the page was opened from an invite link.
+function inviteCodeFromLocation() {
+  const q = new URLSearchParams(location.search).get('invite');
+  if (q) return q;
+  const seg = location.pathname.replace(/^\/+|\/+$/g, '');
+  return INVITE_CODE_RE.test(seg) ? seg : null;
+}
 async function findServerByInvite(code) {
   const q = await db.collection('servers').where('inviteCode', '==', code).limit(1).get();
   return q.empty ? null : q.docs[0];
@@ -2041,22 +2159,26 @@ $('invite-accept-btn').onclick = async () => {
   } catch (e) { $('invite-error').textContent = e.message; }
 };
 function handleInviteFromUrl() {
-  const code = new URLSearchParams(location.search).get('invite');
+  const code = inviteCodeFromLocation();
   if (!code) return;
   const url = new URL(location.href);
   url.searchParams.delete('invite');
+  if (INVITE_CODE_RE.test(url.pathname.replace(/^\/+|\/+$/g, ''))) url.pathname = '/';
   history.replaceState(null, '', url.pathname + url.search + url.hash);
   openInvitePreview(parseInviteCode(code));
 }
 // Invite links clicked inside chat open the preview instead of reloading the app.
 document.addEventListener('click', (e) => {
-  const a = e.target.closest && e.target.closest('a[href*="invite="]');
+  const a = e.target.closest && e.target.closest('a[href]');
   if (!a || !myUid) return;
   let url;
   try { url = new URL(a.href); } catch (_) { return; }
-  if (url.origin !== location.origin || !url.searchParams.get('invite')) return;
+  const viaQuery = url.origin === location.origin && url.searchParams.get('invite');
+  const inviteHost = url.origin === INVITE_BASE.replace(/\/$/, '');
+  const viaPath = (inviteHost || url.origin === location.origin) && INVITE_CODE_RE.test(url.pathname.replace(/^\/+|\/+$/g, ''));
+  if (!viaQuery && !viaPath) return;
   e.preventDefault();
-  openInvitePreview(parseInviteCode(url.searchParams.get('invite')));
+  openInvitePreview(parseInviteCode(viaQuery || url.pathname));
 });
 
 // ============================================================
@@ -2092,6 +2214,10 @@ function isTouchDevice() {
 }
 function setMobilePane(pane) {
   $('app').classList.toggle('mobile-show-chat', pane === 'chat');
+  // Anything the keyboard floated over the chat (quick text, the keyboard itself)
+  // has no business staying on screen once the chat slides away.
+  closeCkQuickTextPopover();
+  if (pane === 'list') hideCustomKeyboard();
 }
 // Applied whenever a channel or group DM is opened. Respects a manual
 // toggle made earlier this session; otherwise defaults to open, but never
@@ -2402,7 +2528,7 @@ function groupDMDisplayName(g) {
 function previewForMessage(message, includeAuthor = false) {
   if (!message) return 'No messages yet';
   if (typeof message === 'string') return message;
-  let text = (message.text || '').trim();
+  let text = (message.text || '').replace(MASKED_LINK_RE, '$1').trim();
   if (!text && message.attachments && message.attachments.length) {
     text = message.attachments.length > 1
       ? `Sent ${message.attachments.length} photos`
@@ -2500,6 +2626,7 @@ async function selectDM(id, otherUid) {
   clearReplyTarget();
   clearMyTypingDoc();
   currentServerId = null; currentServerData = null; currentChannelId = null; currentGroupDMId = null;
+  exitCommandMode();
   currentView = 'dm'; currentDMId = id; currentDMOtherUid = otherUid;
   clearHomeNavActive();
   subscribeTyping();
@@ -2535,6 +2662,7 @@ async function selectGroupDM(id) {
   clearMyTypingDoc();
   currentServerId = null; currentServerData = null; currentChannelId = null;
   currentDMId = null; currentDMOtherUid = null;
+  exitCommandMode();
   currentView = 'groupdm'; currentGroupDMId = id;
   clearHomeNavActive();
   subscribeTyping();
@@ -2662,7 +2790,7 @@ function renderBannerSwatches(current) {
 
 function openGiftModal(username) {
   $('gift-modal-desc').textContent = `Send Frixion Premium to ${username}.`;
-  $('gift-modal-orb-amt').textContent = myProfile.orbs || 0;
+  $('gift-modal-orb-amt').textContent = fmtOrbs(myProfile.orbs);
   $('confirm-gift-premium').onclick = () => giftPremiumTo(username);
   openModal('gift-modal');
 }
@@ -3415,40 +3543,47 @@ function openServerSettings(tab) {
   openModal('server-settings-modal');
 }
 
-$('reset-invite-btn').onclick = () => {
-  if (!currentServerData || !hasServerPerm(currentServerData, myUid, 'manageServer')) return;
-  confirmAction({
-    title: 'Reset Invite Link', body: 'The current invite link and code will stop working. Continue?', confirmLabel: 'Reset',
-    onConfirm: async () => {
-      const code = genCode();
-      await db.collection('servers').doc(currentServerId).update({ inviteCode: code });
-      $('server-invite-display').value = inviteLinkFor(code);
-      $('server-invite-code').textContent = code;
-      toast('Invite link reset.');
-    },
-  });
-};
-
 async function renderBansList() {
   const list = $('bans-list');
-  const banned = (currentServerData && currentServerData.bannedUsers) || [];
+  const server = currentServerData || {};
+  const banned = server.bannedUsers || [];
+  const info = server.banInfo || {};
   const q = $('bans-search').value.trim().toLowerCase();
-  if (!banned.length) { list.innerHTML = '<div class="bans-empty">No bans. Nobody has been banned from this server yet.</div>'; return; }
-  const profiles = await Promise.all(banned.map(uid => getProfile(uid).catch(() => null)));
-  const rows = banned.map((uid, i) => ({ uid, p: profiles[i] || { username: uid } }))
-    .filter(({ p }) => !q || (p.username || '').toLowerCase().includes(q) || displayNameOf(p).toLowerCase().includes(q));
-  list.innerHTML = rows.map(({ uid, p }) => `<div class="ban-row">
-      ${avatarHTML(32, p.avatarColor, initials(p.username || uid), null, p.avatarUrl, null, uid)}
-      <span class="ban-name">${esc(displayNameOf(p) || uid)}</span>
-      <button type="button" class="ds-btn ds-btn-danger-outline" data-unban="${esc(uid)}">Revoke Ban</button>
-    </div>`).join('') || '<div class="bans-empty">No bans match your search.</div>';
+  $('bans-count').textContent = `${banned.length} banned`;
+  $('bans-count').classList.toggle('none', !banned.length);
+  const empty = (title, text) => `<div class="bans-empty"><div class="bans-empty-icon"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-2.9 8.3-7 10-4.1-1.7-7-5.6-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></div><b>${title}</b><span>${text}</span></div>`;
+  if (!banned.length) { list.innerHTML = empty('No bans', 'Nobody has been banned from this server yet.'); return; }
+  const people = [...new Set([...banned, ...banned.map(u => info[u] && info[u].by).filter(Boolean)])];
+  const profiles = {};
+  await Promise.all(people.map(async u => { profiles[u] = await getProfile(u).catch(() => null) || { username: u }; }));
+  const rows = banned.map(uid => ({ uid, p: profiles[uid], i: info[uid] || {} }))
+    .filter(({ p }) => !q || (p.username || '').toLowerCase().includes(q) || displayNameOf(p).toLowerCase().includes(q))
+    .sort((a, b) => (b.i.at || 0) - (a.i.at || 0));
+  if (!rows.length) { list.innerHTML = empty('No matches', 'No banned member matches your search.'); return; }
+  list.innerHTML = rows.map(({ uid, p, i }) => {
+    const when = i.at ? new Date(i.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+    const by = i.by && profiles[i.by] ? displayNameOf(profiles[i.by]) : null;
+    const meta = [by ? `Banned by ${esc(by)}` : 'Banned', when].filter(Boolean).join(' · ');
+    return `<div class="ban-row">
+      ${avatarHTML(44, p.avatarColor, initials(p.username || uid), null, p.avatarUrl, null, uid)}
+      <div class="ban-info">
+        <div class="ban-name">${esc(displayNameOf(p) || uid)}<span class="ban-handle">@${esc(p.username || uid)}</span></div>
+        <div class="ban-meta">${meta}</div>
+        ${i.reason ? `<div class="ban-reason"><span>Reason</span>${esc(i.reason)}</div>` : ''}
+      </div>
+      <button type="button" class="ban-revoke" data-unban="${esc(uid)}">Revoke ban</button>
+    </div>`;
+  }).join('');
   list.querySelectorAll('[data-unban]').forEach(b => { b.onclick = async () => {
+    const uid = b.dataset.unban;
+    b.disabled = true;
     try {
-      await db.collection('servers').doc(currentServerId).update({ bannedUsers: FieldValue.arrayRemove(b.dataset.unban) });
-      if (currentServerData.bannedUsers) currentServerData.bannedUsers = currentServerData.bannedUsers.filter(u => u !== b.dataset.unban);
+      await db.collection('servers').doc(currentServerId).update({ bannedUsers: FieldValue.arrayRemove(uid), [`banInfo.${uid}`]: FieldValue.delete() });
+      if (currentServerData.bannedUsers) currentServerData.bannedUsers = currentServerData.bannedUsers.filter(u => u !== uid);
+      if (currentServerData.banInfo) delete currentServerData.banInfo[uid];
       toast('Ban revoked.');
       renderBansList();
-    } catch (e) { toast(e.message || 'Could not revoke the ban.', 'error'); }
+    } catch (e) { b.disabled = false; toast(e.message || 'Could not revoke the ban.', 'error'); }
   }; });
 }
 $('bans-search').addEventListener('input', () => renderBansList());
@@ -4080,9 +4215,13 @@ function openManageMemberModal(uid, server) {
     $('mm-ban-btn').onclick = () => {
       confirmAction({
         title: 'Ban Member', body: `Ban ${displayNameOf(p)} from the server? They won't be able to rejoin with an invite.`, confirmLabel: 'Ban',
-        onConfirm: async () => {
+        input: { placeholder: 'Reason (optional)', maxLength: 120 },
+        onConfirm: async (reason) => {
           try {
-            await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayRemove(uid), bannedUsers: FieldValue.arrayUnion(uid) });
+            await db.collection('servers').doc(server.id).update({
+              members: FieldValue.arrayRemove(uid), bannedUsers: FieldValue.arrayUnion(uid),
+              [`banInfo.${uid}`]: { by: myUid, at: Date.now(), reason: reason || '' },
+            });
             logAudit(server.id, `banned ${p.username || uid}`);
             toast('Member banned.');
             closeModal('manage-member-modal');
@@ -4263,10 +4402,11 @@ function refreshChannelComposerState() {
   if (!channel) return;
   const canSend = hasChannelPerm(channel, currentServerData, myUid, 'sendMessages');
   const tUntil = isTimedOutHere() ? timeoutUntil(currentServerData, myUid) : 0;
-  input.disabled = !canSend || !!tUntil;
-  input.placeholder = tUntil ? `You are timed out for ${timeoutLeftText(tUntil)}.`
+  const muted = isSiteMuted();
+  input.disabled = !canSend || !!tUntil || muted;
+  input.placeholder = muted ? siteMuteText() : tUntil ? `You are timed out for ${timeoutLeftText(tUntil)}.`
     : canSend ? `Message #${channel.name}` : 'You do not have permission to send messages in this channel.';
-  $('attach-btn').classList.toggle('hidden', !canSend || !!tUntil);
+  $('attach-btn').classList.toggle('hidden', !canSend || !!tUntil || muted);
   $('sticker-btn').classList.toggle('hidden', !canHere('useExternalStickers'));
   $('gif-btn').classList.toggle('hidden', !canHere('embedLinks'));
   $('chat-header-title').textContent = channel.name;
@@ -4473,6 +4613,7 @@ function selectChannel(channel) {
   if (!canViewChannel(channel, currentServerData, myUid)) { toast("You don't have access to that channel."); return; }
   clearReplyTarget();
   clearMyTypingDoc();
+  exitCommandMode();
   currentChannelId = channel.id;
   currentView = 'channel';
   channelOpenedAt = Date.now();
@@ -5325,6 +5466,7 @@ async function toggleReaction(msgId, emoji) {
   const msg = lastRawMessages.find(m => m.id === msgId);
   const already = !!(msg && msg.reactions && (msg.reactions[emoji] || []).includes(myUid));
   if (!already) {
+    if (isSiteMuted()) { toast(siteMuteText(), 'error'); return; }
     if (isTimedOutHere()) { toast('You cannot react while timed out.', 'error'); return; }
     const isNewEmoji = !(msg && msg.reactions && (msg.reactions[emoji] || []).length);
     if (isNewEmoji && !canHere('addReactions')) { toast('You can only join existing reactions in this channel.', 'error'); return; }
@@ -5572,6 +5714,7 @@ function resetPollModal() {
 
 function openPollModal() {
   if (!canHere('createPolls')) { toast('You do not have permission to create polls in this channel.', 'error'); return; }
+  if (isSiteMuted()) { toast(siteMuteText(), 'error'); return; }
   if (isTimedOutHere()) { toast('You cannot create polls while timed out.', 'error'); return; }
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
   resetPollModal();
@@ -5620,6 +5763,7 @@ document.querySelectorAll('#poll-modal [data-close="poll-modal"]').forEach(el =>
 });
 
 async function sendToCurrentConversation(payload) {
+  if (isSiteMuted()) throw new Error(siteMuteText());
   if (currentView === 'channel' && currentServerData) {
     if (isTimedOutHere()) throw new Error(`You are timed out for ${timeoutLeftText(timeoutUntil(currentServerData, myUid))}.`);
     if (!canHere('sendMessages')) throw new Error('You do not have permission to send messages in this channel.');
@@ -5718,10 +5862,13 @@ async function sendMessage() {
     toast(`Slowmode is on. You can send another message in ${slowmodeRemaining(sendChannel)}s.`);
     return;
   }
+  if (isSiteMuted()) { toast(siteMuteText(), 'error'); return; }
   if (isTimedOutHere()) {
     toast(`You are timed out in this server for ${timeoutLeftText(timeoutUntil(currentServerData, myUid))}.`, 'error');
     return;
   }
+  if (slashState) { selectSlashCommand(slashCandidates[slashIndex]); return; }
+  if (cmdMode) { const text = finishCommandMode(); if (text == null) return; input.value = text; }
   let raw = input.value.trim();
   const pendingAttachments = draftAttachments.slice();
   if (pendingAttachments.length && !canHere('attachFiles')) {
@@ -5807,6 +5954,7 @@ async function sendMessage() {
 }
 // No explicit Send button — matches Discord's real composer (Enter to send).
 $('composer-input').addEventListener('keydown', (e) => {
+  if (slashHandleKey(e)) { e.preventDefault(); return; }
   if (mentionState) {
     if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); completeMention(mentionCandidates[mentionSelectedIndex]); return; }
     if (e.key === 'ArrowDown') { e.preventDefault(); mentionSelectedIndex = (mentionSelectedIndex + 1) % mentionCandidates.length; renderMentionPopup(); return; }
@@ -5912,7 +6060,7 @@ function subscribeTyping() {
     renderTypingIndicator(names);
   });
 }
-$('composer-input').addEventListener('input', (e) => { autoResize(e.target); updateMentionState(e.target); updateComposerCharCount(); noteComposerTyping(); });
+$('composer-input').addEventListener('input', (e) => { autoResize(e.target); commandInputChanged(e.target); updateSlashState(e.target); updateMentionState(e.target); updateComposerCharCount(); noteComposerTyping(); });
 
 // ============================================================
 // MENTIONS (@ autocomplete + rendering)
@@ -5931,6 +6079,208 @@ function currentContextUsernames() {
     return g ? (g.participants || []) : [];
   }
   return [];
+}
+
+
+// ============================================================
+// SLASH COMMANDS
+// Typing "/" opens a list of the commands you can use. Picking one (click, Tab or
+// Enter) switches the composer into command mode: a bar above it shows the command
+// and its options as chips, and the composer edits the highlighted option. Enter
+// moves to the next empty required option, then runs the command. Running a command
+// just produces the same text the composer already understood ("/poll", "/purge 20",
+// "/tts hi"), plus "[label](url)" for /hyperlink, so sending works as before.
+// ============================================================
+const SLASH_COMMANDS = [
+  { name: 'hyperlink', desc: 'Send a message with a clickable link', appCmd: true, options: [
+    { name: 'message', desc: 'The text people will see', required: true },
+    { name: 'link', desc: 'The web address it opens, like https://example.com', required: true, type: 'link' },
+  ] },
+  { name: 'poll', desc: 'Create a poll for this conversation', appCmd: true, options: [] },
+  { name: 'purge', desc: 'A Frixion command for admins', appCmd: true, admin: true, options: [
+    { name: 'count', desc: 'How many recent messages to delete. Leave empty to delete everything.', required: false, type: 'count' },
+  ] },
+  { name: 'tts', desc: 'Send a text-to-speech message', needs: 'sendTTS', options: [
+    { name: 'message', desc: 'What should be read out loud', required: true },
+  ] },
+];
+let slashState = null;       // { query } while the command list is open
+let slashCandidates = [];
+let slashIndex = 0;
+let cmdMode = null;          // { cmd, values: [], active, prevPlaceholder } while a command is being filled in
+
+function slashCommandsForMe() {
+  return SLASH_COMMANDS.filter(cmd =>
+    (!cmd.admin || isAdmin || isOwner) && (!cmd.appCmd || canHere('useApplicationCommands')) && (!cmd.needs || canHere(cmd.needs)));
+}
+function updateSlashState(el) {
+  if (cmdMode) { closeSlashPopup(); return; }
+  const v = el.value;
+  const typed = /^\/([a-z]*)\s/i.exec(v);          // "/hyperlink " typed out by hand
+  if (typed) {
+    const cmd = slashCommandsForMe().find(x => x.name === typed[1].toLowerCase());
+    if (cmd) { enterCommandMode(cmd, v.slice(typed[0].length)); return; }
+  }
+  const m = /^\/([a-z]*)$/i.exec(v);
+  if (!m) { closeSlashPopup(); return; }
+  const q = m[1].toLowerCase();
+  const all = slashCommandsForMe();
+  slashCandidates = [...all.filter(x => x.name.startsWith(q)), ...all.filter(x => !x.name.startsWith(q) && x.name.includes(q))];
+  if (!slashCandidates.length) { closeSlashPopup(); return; }
+  slashState = { query: q };
+  slashIndex = Math.min(slashIndex, slashCandidates.length - 1);
+  renderSlashPopup();
+}
+function closeSlashPopup() {
+  slashState = null; slashCandidates = []; slashIndex = 0;
+  $('slash-popup').classList.add('hidden');
+}
+function renderSlashPopup() {
+  const pop = $('slash-popup');
+  pop.innerHTML =
+    `<div class="slash-head"><span>${slashState.query ? `Commands matching <b>/${esc(slashState.query)}</b>` : 'Commands'}</span><span class="slash-app">Frixion</span></div>` +
+    slashCandidates.map((cmd, i) => `
+      <div class="slash-row${i === slashIndex ? ' selected' : ''}" data-i="${i}">
+        <span class="slash-ico">/</span>
+        <span class="slash-main">
+          <span class="slash-name">/${esc(cmd.name)}</span>
+          ${cmd.options.map(o => `<span class="slash-opt${o.required ? '' : ' optional'}">${esc(o.name)}</span>`).join('')}
+        </span>
+        <span class="slash-desc">${esc(cmd.desc)}</span>
+      </div>`).join('') +
+    `<div class="slash-foot"><b>↑↓</b> to navigate · <b>Tab</b> or <b>Enter</b> to select · <b>Esc</b> to close</div>`;
+  pop.classList.remove('hidden');
+  pop.querySelectorAll('.slash-row').forEach(row => {
+    row.onmousedown = e => e.preventDefault();   // keep the composer focused
+    row.onclick = () => selectSlashCommand(slashCandidates[+row.dataset.i]);
+  });
+  const sel = pop.querySelector('.slash-row.selected');
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+function selectSlashCommand(cmd) {
+  if (!cmd) return;
+  closeSlashPopup();
+  enterCommandMode(cmd, '');
+}
+// On phones the on-screen keyboard is Frixion's own, so the field must not take real focus.
+function focusComposerForCommand(el) { if (!(typeof useCustomKeyboard === 'function' && useCustomKeyboard())) el.focus(); }
+function enterCommandMode(cmd, firstValue) {
+  const input = $('composer-input');
+  closeSlashPopup();
+  cmdMode = { cmd, values: cmd.options.map(() => ''), active: 0, prevPlaceholder: input.placeholder };
+  if (cmd.options.length) cmdMode.values[0] = firstValue || '';
+  input.value = cmd.options.length ? cmdMode.values[0] : '';
+  renderCommandBar();
+  autoResize(input);
+  focusComposerForCommand(input);
+  if (cmd.options.length) { input.selectionStart = input.selectionEnd = input.value.length; }
+  if (ckField && ckField.el === input) positionCkCursor();
+}
+function exitCommandMode(clearText = true) {
+  if (!cmdMode) return;
+  const input = $('composer-input');
+  input.placeholder = cmdMode.prevPlaceholder;
+  cmdMode = null;
+  $('cmd-bar').classList.add('hidden');
+  if (clearText) { input.value = ''; autoResize(input); }
+  updateComposerCharCount();
+}
+function renderCommandBar() {
+  const bar = $('cmd-bar'), { cmd, values, active } = cmdMode, input = $('composer-input');
+  const opt = cmd.options[active];
+  bar.innerHTML = `
+    <div class="cmd-top">
+      <span class="cmd-ico">/</span>
+      <span class="cmd-name">${esc(cmd.name)}</span>
+      ${cmd.options.map((o, i) => `<button type="button" class="cmd-chip${i === active ? ' active' : ''}${o.required && !values[i].trim() ? ' need' : ''}" data-i="${i}"><span class="cmd-chip-name">${esc(o.name)}</span><span class="cmd-chip-val">${esc(values[i])}</span></button>`).join('')}
+      <button type="button" class="cmd-close" aria-label="Cancel command">✕</button>
+    </div>
+    <div class="cmd-hint">${opt
+      ? `<b>${esc(opt.name)}</b>${opt.required ? '' : ' <i>optional</i>'} · ${esc(opt.desc)}`
+      : `<b>/${esc(cmd.name)}</b> · ${esc(cmd.desc)}. Press Enter to run it.`}</div>`;
+  bar.classList.remove('hidden');
+  input.placeholder = opt ? (opt.required ? `${opt.name}` : `${opt.name} (optional)`) : 'Press Enter to run';
+  bar.querySelectorAll('.cmd-chip').forEach(chip => {
+    chip.onmousedown = e => e.preventDefault();
+    chip.onclick = () => switchCommandOption(+chip.dataset.i);
+  });
+  bar.querySelector('.cmd-close').onmousedown = e => e.preventDefault();
+  bar.querySelector('.cmd-close').onclick = () => { exitCommandMode(); focusComposerForCommand($('composer-input')); };
+}
+function switchCommandOption(i) {
+  if (!cmdMode || i === cmdMode.active || !cmdMode.cmd.options[i]) return;
+  const input = $('composer-input');
+  cmdMode.values[cmdMode.active] = input.value;
+  cmdMode.active = i;
+  input.value = cmdMode.values[i];
+  renderCommandBar();
+  autoResize(input);
+  focusComposerForCommand(input);
+  input.selectionStart = input.selectionEnd = input.value.length;
+  if (ckField && ckField.el === input) positionCkCursor();
+}
+function commandInputChanged(el) {
+  if (!cmdMode || !cmdMode.cmd.options.length) return;
+  cmdMode.values[cmdMode.active] = el.value;
+  const chip = $('cmd-bar').querySelector(`.cmd-chip[data-i="${cmdMode.active}"]`);
+  if (chip) {
+    chip.querySelector('.cmd-chip-val').textContent = el.value;
+    chip.classList.toggle('need', !!cmdMode.cmd.options[cmdMode.active].required && !el.value.trim());
+  }
+}
+// Backspace on an empty option steps back to the previous one, and past the first one
+// leaves command mode. Returns true when it handled the keypress.
+function commandBackspaceOnEmpty(el) {
+  if (!cmdMode || el.value) return false;
+  if (cmdMode.active > 0) switchCommandOption(cmdMode.active - 1);
+  else exitCommandMode();
+  return true;
+}
+// Called when Enter is pressed in command mode. Returns the text to send, or null when the
+// command isn't ready yet (focus moves to the option that still needs a value).
+function finishCommandMode() {
+  const { cmd } = cmdMode, input = $('composer-input');
+  cmdMode.values[cmdMode.active] = input.value;
+  const vals = cmdMode.values.map(v => v.trim());
+  const missing = cmd.options.findIndex((o, i) => o.required && !vals[i]);
+  if (missing !== -1) {
+    switchCommandOption(missing);
+    toast(`Enter a ${cmd.options[missing].name} first.`);
+    return null;
+  }
+  if (cmd.appCmd && !canHere('useApplicationCommands')) { toast('You do not have permission to use commands in this channel.', 'error'); return null; }
+  let text;
+  if (cmd.name === 'hyperlink') {
+    const label = vals[0].replace(/[\[\]]/g, '');
+    let url = vals[1];
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    if (/\s/.test(url) || !/^https?:\/\/[^\s.\/]+\.[^\s]{2,}/i.test(url) || /[()<>"']/.test(url)) { switchCommandOption(1); toast('That link doesn\'t look right. Try something like https://example.com', 'error'); return null; }
+    if (label.length > 120) { switchCommandOption(0); toast('Keep the message under 120 characters.', 'error'); return null; }
+    if (url.length > 500) { switchCommandOption(1); toast('That link is too long.', 'error'); return null; }
+    text = `[${label}](${url})`;
+  } else if (cmd.name === 'purge') {
+    if (vals[0] && !/^\d+$/.test(vals[0])) { switchCommandOption(0); toast('The count must be a whole number.', 'error'); return null; }
+    text = vals[0] ? `/purge ${vals[0]}` : '/purge';
+  } else if (cmd.name === 'tts') text = `/tts ${vals[0]}`;
+  else text = `/${cmd.name}`;
+  exitCommandMode(false);
+  return text;
+}
+// Keys for the list and command mode. Returns true when the key was used.
+function slashHandleKey(e) {
+  if (slashState) {
+    if (e.key === 'ArrowDown') { slashIndex = (slashIndex + 1) % slashCandidates.length; renderSlashPopup(); return true; }
+    if (e.key === 'ArrowUp') { slashIndex = (slashIndex - 1 + slashCandidates.length) % slashCandidates.length; renderSlashPopup(); return true; }
+    if (e.key === 'Tab' || e.key === 'Enter') { selectSlashCommand(slashCandidates[slashIndex]); return true; }
+    if (e.key === 'Escape') { closeSlashPopup(); return true; }
+    return false;
+  }
+  if (cmdMode) {
+    if (e.key === 'Escape') { exitCommandMode(); return true; }
+    if (e.key === 'Tab' && cmdMode.cmd.options.length) { switchCommandOption((cmdMode.active + (e.shiftKey ? -1 : 1) + cmdMode.cmd.options.length) % cmdMode.cmd.options.length); return true; }
+    if (e.key === 'Backspace') return commandBackspaceOnEmpty(e.target);
+  }
+  return false;
 }
 
 let mentionState = null;      // { el, start, query } — start is the index of "@" in el.value
@@ -6243,6 +6593,7 @@ function ckFindClosestWord(word) {
 // message length.
 function ckWordBoundaryCheck(el) {
   if (!isAutocorrectEnabled()) return;
+  if (el.id === 'composer-input' && (cmdMode || slashState)) return;   // don't autocorrect command names or links
   const pos = el.selectionStart;
   if (pos == null) return;
   // Called right after a space is inserted (cursor now sits after that
@@ -6293,6 +6644,7 @@ function insertAtCursor(el, text) {
   if (ckField && ckField.el === el) positionCkCursor();
 }
 function deleteAtCursor(el) {
+  if (el.id === 'composer-input' && commandBackspaceOnEmpty(el)) return;
   // One immediate backspace right after an autocorrect undoes it
   // instead of just chopping its last letter — matches how phone
   // keyboards handle this. Covers both the space-triggered case
@@ -6481,6 +6833,9 @@ function ckClearSelectionHighlight() { if (ckField) ckField.el.classList.remove(
 // the field — no separate "are you sure" step, matching a one-tap canned
 // reply rather than a snippet you'd still need to review and send. ----
 function getQuickTexts() { return (myProfile && Array.isArray(myProfile.quickTexts)) ? myProfile.quickTexts : []; }
+// The popover closes on the first touch outside it (pointerdown, not click:
+// a swipe never produces a click, so swiping a pane away used to leave it
+// hanging over the next screen) and whenever the keyboard or pane goes away.
 function ckQuickTextOutsideClick(e) {
   const pop = $('ck-quicktext-popover');
   if (pop && !pop.contains(e.target) && !e.target.closest('[data-act="quick-text"]')) closeCkQuickTextPopover();
@@ -6488,11 +6843,12 @@ function ckQuickTextOutsideClick(e) {
 function closeCkQuickTextPopover() {
   const pop = $('ck-quicktext-popover');
   if (pop) pop.remove();
-  document.removeEventListener('click', ckQuickTextOutsideClick);
+  document.removeEventListener('pointerdown', ckQuickTextOutsideClick, true);
+  window.removeEventListener('resize', closeCkQuickTextPopover);
 }
 function ckTapQuickText(btn) {
   if (!ckField) return;
-  closeCkQuickTextPopover();
+  if ($('ck-quicktext-popover')) { closeCkQuickTextPopover(); return; }   // second tap toggles it shut
   const items = getQuickTexts();
   const pop = document.createElement('div');
   pop.className = 'ck-quicktext-popover';
@@ -6518,7 +6874,8 @@ function ckTapQuickText(btn) {
       ckField.onEnter(field);
     });
   });
-  setTimeout(() => document.addEventListener('click', ckQuickTextOutsideClick), 0);
+  document.addEventListener('pointerdown', ckQuickTextOutsideClick, true);
+  window.addEventListener('resize', closeCkQuickTextPopover);
 }
 
 // ---- press feedback + long-press for accented/alternate characters ----
@@ -6672,7 +7029,11 @@ function renderCustomKeyboard() {
       ckConsumeOneShotShift();
     });
   });
-  kb.querySelectorAll('.ck-key[data-act]').forEach(btn => {
+  kb.querySelectorAll('.ck-key[data-act="quick-text"]').forEach(btn => {
+    btn.addEventListener('pointerdown', (e) => { e.stopPropagation(); ckTapQuickText(btn); });
+    btn.addEventListener('click', (e) => e.stopPropagation());
+  });
+  kb.querySelectorAll('.ck-key[data-act]:not([data-act="quick-text"])').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const act = btn.dataset.act;
@@ -6685,7 +7046,6 @@ function renderCustomKeyboard() {
       else if (act === 'page1') { ckPage = 'symbols1'; renderCustomKeyboard(); }
       else if (act === 'page2') { ckPage = 'symbols2'; renderCustomKeyboard(); }
       else if (act === 'emoji') ckTapEmojiToggle();
-      else if (act === 'quick-text') ckTapQuickText(btn);
       else if (act === 'copy') ckTapCopy();
       else if (act === 'paste') ckTapPaste();
     });
@@ -6728,6 +7088,7 @@ function showCustomKeyboardFor(el, opts) {
 }
 function showCustomKeyboard() { showCustomKeyboardFor($('composer-input'), { onEnter: () => sendMessage(), multiline: true }); }
 function hideCustomKeyboard() {
+  closeCkQuickTextPopover();
   $('custom-keyboard').classList.add('hidden');
   $('ck-cursor').style.display = 'none';
   ckAdjustFloatingPanels(false);
@@ -6893,7 +7254,7 @@ function populateSettings() {
     swatchWrap.appendChild(sw);
   });
 
-  $('orb-balance-amt').textContent = myProfile.orbs || 0;
+  $('orb-balance-amt').textContent = fmtOrbs(myProfile.orbs);
   $('premium-action-area').innerHTML = buildPremiumActionHTML();
   wirePremiumActionButtons('premium-action-area');
 
@@ -6915,7 +7276,7 @@ function buildPremiumActionHTML() {
   const canAfford = balance >= PREMIUM_COST_ORBS;
   return `
     <button class="btn-accent-inline" style="width:100%;" data-premium-action="subscribe" ${canAfford ? '' : 'disabled'}>Subscribe — ${PREMIUM_COST_ORBS} Orbs / ${days} days</button>
-    ${canAfford ? '' : `<p class="desc" style="margin-top:10px;">You have ${balance} Orbs. Complete quests to earn the rest.</p>`}`;
+    ${canAfford ? '' : `<p class="desc" style="margin-top:10px;">You have ${balance} Orbs. Play games to earn the rest.</p>`}`;
 }
 function wirePremiumActionButtons(containerId) {
   const btn = $(containerId).querySelector('[data-premium-action]');
@@ -6947,7 +7308,7 @@ $('code-reveal-copy').onclick = () => {
 
 async function subscribeToPremium() {
   const fresh = (await db.collection('users').doc(myUid).get()).data();
-  if ((fresh.orbs || 0) < PREMIUM_COST_ORBS) { toast('Not enough Orbs — complete quests to earn more.'); return; }
+  if ((fresh.orbs || 0) < PREMIUM_COST_ORBS) { toast('Not enough Orbs. Play games to earn more.'); return; }
   const days = Math.round(PREMIUM_DURATION_MS / 86400000);
   try {
     await db.collection('users').doc(myUid).update({ orbs: FieldValue.increment(-PREMIUM_COST_ORBS) });
@@ -7010,7 +7371,7 @@ async function redeemCode() {
 }
 
 function openPremiumModal() {
-  $('premium-modal-orb-amt').textContent = myProfile.orbs || 0;
+  $('premium-modal-orb-amt').textContent = fmtOrbs(myProfile.orbs);
   $('premium-modal-action-area').innerHTML = buildPremiumActionHTML();
   wirePremiumActionButtons('premium-modal-action-area');
   openModal('premium-modal');
@@ -7023,7 +7384,7 @@ function openPremiumModal() {
 function orbIconSVG(size) { return `<svg viewBox="0 0 24 24" width="${size}" height="${size}"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg>`; }
 
 function shopItemPreviewHTML(key, item) {
-  if (key === 'decorations') return `<div class="sic-deco-stage">${avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, item.id)}</div>`;
+  if (key === 'decorations' || key === 'masks') return `<div class="sic-deco-stage">${avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, item.id)}</div>`;
   if (key === 'banners') return `<div class="sic-banner-preview">
     <div class="sic-banner-strip${item.animated ? ' banner-anim' : ''}" style="background:${esc(bannerGradientCSS(item))};"></div>
     <div class="sic-banner-avatar">${avatarHTML(44, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl)}</div>
@@ -7103,6 +7464,14 @@ function renderShopCategoryPane(key) {
   const animated = def.catalog.filter(i => i.animated && matches(i));
   const staticOnes = def.catalog.filter(i => !i.animated && matches(i));
   const gridCls = 'shop-grid' + ((key === 'themes' || key === 'banners') ? ' theme-shop-grid' : '');
+  if (key === 'masks') {
+    const list = def.catalog.filter(matches);
+    wrap.innerHTML = `<div class="shop-section-label">Avatar Masks</div>` + (list.length
+      ? `<div class="shop-grid">${list.map(i => shopItemCardHTML(key, i)).join('')}</div>`
+      : `<div class="shop-empty-state"><b>${q ? 'No masks found' : 'No masks yet'}</b><span>${q ? 'Try a different search.' : 'Full avatar masks published by Frixion staff will show up here.'}</span></div>`);
+    wireShopCardButtons(wrap);
+    return;
+  }
   if (key === 'banners' && !def.catalog.length) {
     wrap.innerHTML = `<div class="shop-section-label">Banners</div><div class="shop-empty-state"><b>No banners yet</b><span>Gradient banners published by Frixion staff will show up here.</span></div>`;
     return;
@@ -7117,7 +7486,7 @@ function renderShopCategoryPane(key) {
 
 function refreshOpenShopPanes() {
   if ($('shop-view').classList.contains('hidden')) return;
-  $('shop-orb-amt').textContent = myProfile.orbs || 0;
+  $('shop-orb-amt').textContent = fmtOrbs(myProfile.orbs);
   renderShopFeatured();
   Object.keys(SHOP_CATEGORY_DEFS).forEach(renderShopCategoryPane);
 }
@@ -7129,7 +7498,7 @@ async function buyShopItem(key, id) {
   try {
     const fresh = (await db.collection('users').doc(myUid).get()).data();
     if ((fresh[def.ownedField] || []).includes(id)) { toast('You already own this.'); return; }
-    if ((fresh.orbs || 0) < item.price) { toast('Not enough Orbs — complete quests to earn more.'); return; }
+    if ((fresh.orbs || 0) < item.price) { toast('Not enough Orbs. Play games to earn more.'); return; }
     // Equip it immediately on purchase, matching how Discord's own shop works.
     await db.collection('users').doc(myUid).update({
       orbs: FieldValue.increment(-item.price),
@@ -7152,7 +7521,7 @@ async function equipShopItem(key, id) {
 }
 
 function openShop() {
-  $('shop-orb-amt').textContent = myProfile.orbs || 0;
+  $('shop-orb-amt').textContent = fmtOrbs(myProfile.orbs);
   document.querySelectorAll('.shop-tab').forEach(t => t.classList.remove('on'));
   document.querySelector('.shop-tab[data-shop-tab="featured"]').classList.add('on');
   document.querySelectorAll('.shop-pane').forEach(p => p.classList.add('hidden'));
@@ -7200,57 +7569,7 @@ function renderThemeGrid() {
   });
 }
 
-function questRowsHTML(profile) {
-  const stats = profile.dailyStats || {};
-  const claimed = profile.claimedQuestsToday || [];
-  return QUESTS.map(q => {
-    const progress = Math.min(stats[q.stat] || 0, q.goal);
-    const pct = Math.round((progress / q.goal) * 100);
-    const done = progress >= q.goal;
-    const isClaimed = claimed.includes(q.id);
-    return `
-    <div class="quest-row">
-      <div class="quest-info">
-        <div class="quest-title">${esc(q.title)}</div>
-        <div class="quest-desc">${esc(q.desc)}</div>
-        <div class="quest-bar"><div class="quest-bar-fill" style="width:${pct}%"></div></div>
-        <div class="quest-progress">${progress} / ${q.goal}</div>
-      </div>
-      <div class="quest-reward">
-        <span class="orb-chip small">${icon('orb')}${q.reward}</span>
-        ${isClaimed
-          ? '<span class="quest-claimed">Claimed</span>'
-          : (done ? `<button class="btn-accent-inline slim" data-qid="${q.id}">Claim</button>` : '<span class="quest-locked">In progress</span>')}
-      </div>
-    </div>`;
-  }).join('');
-}
-async function renderQuests() {
-  myProfile = await ensureQuestsFresh(myProfile);
-  const html = questRowsHTML(myProfile);
-  [$('quests-list'), $('quests-list-main')].forEach(el => { if (el) el.innerHTML = html; });
-  document.querySelectorAll('#quests-list [data-qid], #quests-list-main [data-qid]').forEach(btn => {
-    btn.onclick = () => claimQuest(btn.dataset.qid);
-  });
-  const note = 'Quests refresh every day at midnight.';
-  if ($('quests-reset-note-main')) $('quests-reset-note-main').textContent = note;
-}
-
-async function claimQuest(id) {
-  const q = QUESTS.find(x => x.id === id);
-  if (!q) return;
-  const fresh = await ensureQuestsFresh((await db.collection('users').doc(myUid).get()).data());
-  const stats = fresh.dailyStats || {};
-  const claimed = fresh.claimedQuestsToday || [];
-  if (claimed.includes(id) || (stats[q.stat] || 0) < q.goal) return;
-  try {
-    await db.collection('users').doc(myUid).update({
-      orbs: FieldValue.increment(q.reward),
-      claimedQuestsToday: FieldValue.arrayUnion(id),
-    });
-    toast(`+${q.reward} Orbs — ${q.title} complete!`);
-  } catch (e) { toast('Could not claim reward.', 'error'); }
-}
+function renderQuests() { mountGameHubs(); }
 
 $('save-account-btn').onclick = async () => {
   const uname = $('set-username').value.trim();
@@ -7495,9 +7814,124 @@ function renderAdminEmojiList() {
   });
 }
 
+// ---------- Emoji layout editor ----------
+// Drag emoji around a box that stands in for the decoration area (the dashed
+// circle is where the avatar sits), resize the selected one with the slider or
+// mouse wheel, and add or remove emoji. Used by the decoration creator and by
+// the shop item editor.
+const EMOJI_BOX = 200, EMOJI_MIN = 10, EMOJI_MAX = 90, EMOJI_LIMIT = 6;
+const EMOJI_DEFAULT = { hat: { e: '🎩', x: 50, y: 23, s: 42 }, mask: { e: '😷', x: 50, y: 50, s: 80 } };
+function createEmojiLayoutEditor(host, initial, opts = {}) {
+  let mask = !!opts.mask;
+  let pristine = !(initial && initial.length);   // still the untouched starter emoji
+  let layers = (initial && initial.length ? initial : [mask ? EMOJI_DEFAULT.mask : EMOJI_DEFAULT.hat]).map(l => ({ e: l.e, x: l.x, y: l.y, s: l.s }));
+  let sel = 0, drag = null;
+  host.innerHTML = `
+    <div class="deco-editor">
+      <div class="deco-canvas-wrap eml-stage${mask ? ' is-mask' : ''}"><div class="deco-guide-circle"></div><div class="eml-layers"></div></div>
+      <div class="deco-editor-tools">
+        <div class="deco-preview-block"><label class="fld-label">Preview</label><div class="deco-preview-avatar eml-preview"></div></div>
+        <div class="field"><label class="fld-label">Emoji</label><input type="text" class="fld-input eml-input" maxlength="8" placeholder="🎩"></div>
+        <div class="field"><label class="fld-label">Size <span class="eml-size-val"></span></label><input type="range" class="eml-size" min="${EMOJI_MIN}" max="${EMOJI_MAX}" step="1"></div>
+        <div class="ab-row">
+          <button type="button" class="btn-secondary slim eml-add">+ Add emoji</button>
+          <button type="button" class="btn-secondary slim eml-remove">Remove</button>
+        </div>
+        <small class="hint eml-hint"></small>
+      </div>
+    </div>`;
+  const stage = host.querySelector('.eml-stage'), layerBox = host.querySelector('.eml-layers');
+  const input = host.querySelector('.eml-input'), size = host.querySelector('.eml-size');
+  const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+
+  function paintLayers() {
+    layerBox.innerHTML = layers.map((l, i) =>
+      `<span class="eml-layer${i === sel ? ' sel' : ''}" data-i="${i}" style="left:${l.x}%;top:${l.y}%;font-size:${(EMOJI_BOX * l.s / 100).toFixed(1)}px;">${esc(l.e)}</span>`).join('');
+  }
+  function paintPreview() {
+    const wrap = host.querySelector('.eml-preview');
+    if (!myProfile) return;
+    wrap.innerHTML = avatarHTML(64, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, null);
+    wrap.querySelector('.avatar').insertAdjacentHTML('beforeend', decorationBoxHTML({ emojis: layers, mask }, 64, null));
+  }
+  function paintControls() {
+    const l = layers[sel];
+    if (document.activeElement !== input) input.value = l.e;
+    size.value = l.s;
+    host.querySelector('.eml-size-val').textContent = Math.round(l.s) + '%';
+    host.querySelector('.eml-remove').disabled = layers.length < 2;
+  }
+  const paintHint = () => {
+    host.querySelector('.eml-hint').textContent = (mask
+      ? 'The circle is the whole avatar and this mask covers it. '
+      : 'The dashed circle is where the avatar sits. ') + 'Drag an emoji to move it, tap one to select it, then change its size with the slider (or scroll over the box).';
+  };
+  const repaint = () => { paintLayers(); paintControls(); paintPreview(); paintHint(); };
+  const touched = () => { pristine = false; };
+
+  stage.addEventListener('pointerdown', e => {
+    const el = e.target.closest('.eml-layer');
+    if (!el) return;
+    sel = Number(el.dataset.i);
+    drag = e.pointerId;
+    stage.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    repaint();
+  });
+  stage.addEventListener('pointermove', e => {
+    if (drag !== e.pointerId) return;
+    const r = stage.getBoundingClientRect(), l = layers[sel];
+    touched();
+    l.x = Math.round(clamp((e.clientX - r.left) / r.width * 100, 0, 100) * 10) / 10;
+    l.y = Math.round(clamp((e.clientY - r.top) / r.height * 100, 0, 100) * 10) / 10;
+    paintLayers(); paintPreview();
+  });
+  const endDrag = e => { if (drag === e.pointerId) drag = null; };
+  stage.addEventListener('pointerup', endDrag);
+  stage.addEventListener('pointercancel', endDrag);
+  stage.addEventListener('wheel', e => {
+    e.preventDefault();
+    touched();
+    layers[sel].s = clamp(layers[sel].s - Math.sign(e.deltaY) * 3, EMOJI_MIN, EMOJI_MAX);
+    repaint();
+  }, { passive: false });
+
+  size.addEventListener('input', () => { touched(); layers[sel].s = Number(size.value); repaint(); });
+  input.addEventListener('input', () => { touched(); layers[sel].e = input.value.trim() || layers[sel].e; paintLayers(); paintPreview(); });
+  host.querySelector('.eml-add').onclick = () => {
+    if (layers.length >= EMOJI_LIMIT) { toast(`You can place up to ${EMOJI_LIMIT} emoji.`); return; }
+    touched();
+    layers.push({ e: '⭐', x: 50, y: 50, s: 30 });
+    sel = layers.length - 1;
+    repaint();
+    input.focus(); input.select();
+  };
+  host.querySelector('.eml-remove').onclick = () => {
+    if (layers.length < 2) return;
+    touched();
+    layers.splice(sel, 1);
+    sel = Math.min(sel, layers.length - 1);
+    repaint();
+  };
+  repaint();
+  return {
+    getLayers: () => layers.filter(l => l.e).map(l => ({ e: l.e, x: l.x, y: l.y, s: Math.round(l.s) })),
+    refreshPreview: paintPreview,
+    // Switching between hat and mask: an untouched starter emoji follows along to the matching default.
+    setMask(on) {
+      mask = !!on;
+      stage.classList.toggle('is-mask', mask);
+      if (pristine) { layers = [{ ...(mask ? EMOJI_DEFAULT.mask : EMOJI_DEFAULT.hat) }]; sel = 0; }
+      repaint();
+    },
+  };
+}
+
 // ---------- Avatar Decoration drawing editor (admin/owner only) ----------
 let decoEditorInitialized = false;
 let decoMode = 'draw'; // 'draw' | 'emoji' — the emoji path skips needing any drawing skill
+let decoEmojiEditor = null;
+const DECO_DRAW_HINT = 'The dashed circle shows roughly where the avatar itself sits — draw around it (ears, hats, effects) rather than over it.';
 let decoDrawing = false;
 let decoBrushSize = 7;
 let decoErasing = false;
@@ -7511,6 +7945,7 @@ function decorationEditorCanvasIsBlank(canvas) {
   return true;
 }
 
+const decoMaskOn = () => !!($('deco-mask-input') && $('deco-mask-input').checked);
 function updateDecorationPreview() {
   const canvas = $('deco-draw-canvas');
   const wrap = $('deco-preview-avatar');
@@ -7521,10 +7956,11 @@ function updateDecorationPreview() {
   if (!blank) {
     // Preview the in-progress drawing directly, without needing it saved
     // anywhere yet — same overlay sizing math as a real equipped decoration.
-    const decoSize = Math.round(64 * 1.3);
-    const decoOffset = Math.round((decoSize - 64) / 2);
+    const mask = decoMaskOn();
+    const decoSize = mask ? 64 : Math.round(64 * 1.3);
+    const decoOffset = mask ? 0 : Math.round((decoSize - 64) / 2);
     wrap.querySelector('.avatar').insertAdjacentHTML('beforeend',
-      `<span class="avatar-decoration" style="width:${decoSize}px;height:${decoSize}px;left:${-decoOffset}px;top:${-decoOffset}px;"><img src="${dataUrl}" alt=""></span>`);
+      `<span class="avatar-decoration${mask ? ' is-mask' : ''}" style="width:${decoSize}px;height:${decoSize}px;left:${-decoOffset}px;top:${-decoOffset}px;"><img src="${dataUrl}" alt=""></span>`);
   }
 }
 
@@ -7552,8 +7988,15 @@ function initDecorationEditor() {
       $('deco-mode-emoji').classList.toggle('hidden', decoMode !== 'emoji');
     };
   });
-  $('deco-emoji-input').addEventListener('input', () => {
-    $('deco-emoji-preview').textContent = $('deco-emoji-input').value || '🎩';
+  decoEmojiEditor = createEmojiLayoutEditor($('deco-mode-emoji'), null);
+  $('deco-mask-input').addEventListener('change', () => {
+    const on = decoMaskOn();
+    document.querySelector('#deco-mode-draw .deco-canvas-wrap').classList.toggle('is-mask', on);
+    $('deco-draw-hint').textContent = on
+      ? 'The circle is the whole avatar and your mask covers it, so draw edge to edge. Anything you leave empty lets the real avatar show through.'
+      : DECO_DRAW_HINT;
+    decoEmojiEditor.setMask(on);
+    updateDecorationPreview();
   });
 
   const startDraw = (e) => {
@@ -7610,22 +8053,23 @@ $('deco-publish-btn').onclick = async () => {
   const name = ($('deco-name-input').value || '').trim();
   const desc = ($('deco-desc-input').value || '').trim();
   const price = parseInt($('deco-price-input').value, 10);
-  const emoji = decoMode === 'emoji' ? ($('deco-emoji-input').value || '').trim() : null;
+  const emojis = decoMode === 'emoji' && decoEmojiEditor ? decoEmojiEditor.getLayers() : null;
   if (decoMode === 'draw' && decorationEditorCanvasIsBlank(canvas)) { toast('Draw something first.'); return; }
-  if (decoMode === 'emoji' && !emoji) { toast('Pick an emoji first.'); return; }
+  if (decoMode === 'emoji' && !(emojis && emojis.length)) { toast('Add an emoji first.'); return; }
   if (!name) { toast('Enter a name.'); return; }
   if (!desc) { toast('Enter a description.'); return; }
   if (!Number.isFinite(price) || price < 0) { toast('Enter a valid price.'); return; }
   try {
     const payload = { name, desc, price, createdBy: myUid, createdAt: FieldValue.serverTimestamp() };
-    if (emoji) payload.emoji = emoji; else payload.imageUrl = canvas.toDataURL('image/png');
+    if (emojis) { payload.emojis = emojis; payload.emoji = emojis[0].e; } else payload.imageUrl = canvas.toDataURL('image/png');
+    if (decoMaskOn()) payload.mask = true;
     await db.collection('shopDecorations').add(payload);
     canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
     $('deco-name-input').value = '';
     $('deco-desc-input').value = '';
     $('deco-price-input').value = '';
     updateDecorationPreview();
-    toast(`Published "${name}" to the shop!`);
+    toast(decoMaskOn() ? `Published "${name}" to the Avatar Masks section!` : `Published "${name}" to the shop!`);
   } catch (e) { toast(e.message || 'Failed to publish.', 'error'); }
 };
 
@@ -7633,7 +8077,7 @@ function renderAdminDecorationList() {
   const wrap = $('admin-decoration-list');
   if (!wrap) return;
   wrap.innerHTML = customDecorations.length
-    ? customDecorations.map(d => `<div class="admin-emoji-chip editable" data-id="${esc(d.id)}">${d.emoji ? `<span class="admin-chip-emoji">${esc(d.emoji)}</span>` : `<img src="${esc(d.imageUrl || '')}" alt="">`}<span>${esc(d.name)}</span><span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
+    ? customDecorations.map(d => `<div class="admin-emoji-chip editable" data-id="${esc(d.id)}">${decoEmojiLayers(d).length ? `<span class="admin-chip-emoji">${esc(decoEmojiLayers(d).map(l => l.e).join(''))}</span>` : `<img src="${esc(d.imageUrl || '')}" alt="">`}<span>${esc(d.name)}</span>${d.mask ? '<span class="admin-chip-tag">Mask</span>' : ''}<span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
     : '<div class="empty">No custom decorations yet.</div>';
   wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
     btn.onclick = async () => { await db.collection('shopDecorations').doc(btn.closest('.admin-emoji-chip').dataset.id).delete(); };
@@ -7951,7 +8395,10 @@ const SHOP_EDIT_TYPES = {
 };
 const colorField = (path, label) => ({ path, label, type: 'color' });
 const SHOP_EDIT_EXTRA_FIELDS = {
-  decorations: item => item.emoji ? [{ path: 'emoji', label: 'Emoji', type: 'text', full: true }] : [],
+  decorations: item => [
+    ...(decoEmojiLayers(item).length ? [{ path: 'emojis', label: 'Emoji layout', type: 'emoji-layout', full: true }] : []),
+    { path: 'mask', label: 'Full avatar mask (sold in the Avatar Masks section)', type: 'checkbox' },
+  ],
   themes: () => [colorField('bg.0', 'Color 1'), colorField('bg.1', 'Color 2'), colorField('bg.2', 'Color 3'), colorField('accent', 'Accent'), colorField('accent2', 'Accent 2')],
   banners: () => [colorField('colors.0', 'Color 1'), colorField('colors.1', 'Color 2'), colorField('colors.2', 'Color 3'), { path: 'angle', label: 'Angle', type: 'number' }, { path: 'animated', label: 'Animated', type: 'checkbox' }],
   nameplates: () => [colorField('colors.0', 'Color 1'), colorField('colors.1', 'Color 2'), { path: 'animated', label: 'Shimmer', type: 'checkbox' }],
@@ -8018,11 +8465,17 @@ function openShopItemEditor(type, id) {
   $('shop-edit-extra').innerHTML = fields.map((f, i) => {
     const val = getByPath(item, f.path);
     const inputId = `shop-edit-x${i}`;
+    if (f.type === 'emoji-layout') return `<div class="field full"><label>${esc(f.label)}</label><div id="${inputId}" class="eml-host" data-path="${f.path}" data-type="emoji-layout"></div></div>`;
     if (f.type === 'checkbox') return `<label class="shop-edit-check field full"><input type="checkbox" id="${inputId}" data-path="${f.path}" data-type="checkbox"${val ? ' checked' : ''}> ${esc(f.label)}</label>`;
     if (f.type === 'select') return `<div class="field full"><label for="${inputId}">${esc(f.label)}</label><select id="${inputId}" data-path="${f.path}" data-type="select">${f.options.map(o => `<option value="${o}"${o === val ? ' selected' : ''}>${o[0].toUpperCase() + o.slice(1)}</option>`).join('')}</select></div>`;
     const safeVal = f.type === 'color' ? (/^#[0-9a-f]{6}$/i.test(val || '') ? val : '#ffffff') : (val ?? '');
     return `<div class="field${f.full ? ' full' : ''}"><label for="${inputId}">${esc(f.label)}</label><input type="${f.type}" id="${inputId}" data-path="${f.path}" data-type="${f.type}" value="${esc(String(safeVal))}"${f.type === 'number' ? ' min="0" max="360"' : ''}></div>`;
   }).join('');
+  $('shop-edit-extra').querySelectorAll('.eml-host').forEach(h => {
+    h._editor = createEmojiLayoutEditor(h, decoEmojiLayers(item), { mask: !!item.mask });
+    const maskBox = $('shop-edit-extra').querySelector('[data-path="mask"]');
+    if (maskBox) maskBox.addEventListener('change', () => h._editor.setMask(maskBox.checked));
+  });
   $('shop-edit-delete-btn').classList.toggle('hidden', !custom);
   $('shop-edit-reset-btn').classList.toggle('hidden', !!custom || !shopOverrides[shopOverrideKey(type, id)]);
   openModal('shop-edit-modal');
@@ -8044,7 +8497,7 @@ $('shop-edit-save-btn').onclick = async () => {
       const item = def.custom().find(x => x.id === id) || {};
       $('shop-edit-extra').querySelectorAll('[data-path]').forEach(input => {
         const kind = input.dataset.type;
-        let val = kind === 'checkbox' ? input.checked : input.value;
+        let val = kind === 'checkbox' ? input.checked : kind === 'emoji-layout' ? input._editor.getLayers() : input.value;
         if (kind === 'number') val = Math.max(0, Math.min(360, parseInt(val, 10) || 0));
         const [root, idx] = input.dataset.path.split('.');
         if (idx !== undefined) {
@@ -8053,7 +8506,10 @@ $('shop-edit-save-btn').onclick = async () => {
         } else update[root] = val;
       });
       if (type === 'profile_frames') update.animated = !!update.glow;
-      if (type === 'decorations' && 'emoji' in update && !update.emoji) { toast('Pick an emoji.'); return; }
+      if (type === 'decorations' && 'emojis' in update) {
+        if (!update.emojis.length) { toast('Add at least one emoji.'); return; }
+        update.emoji = update.emojis[0].e;
+      }
       await db.collection(def.collection).doc(id).update(update);
     } else {
       await db.collection('config').doc('shopOverrides').set({ [shopOverrideKey(type, id)]: update }, { merge: true });
@@ -8138,7 +8594,7 @@ async function renderAdminList() {
     return `<div class="admin-row ${adminSelectedUser === u.username ? 'on' : ''}" data-u="${esc(u.username)}">
       ${avatarHTML(30, u.avatarColor, initials(u.username), null, u.avatarUrl)}
       <span class="ar-name">${esc(u.username)}</span>
-      ${roleTag(u)}${ban.banned ? '<span class="ban-tag">Banned</span>' : ''}
+      ${roleTag(u)}${ban.banned ? '<span class="ban-tag">Banned</span>' : ''}${muteStatus(u).muted ? '<span class="ban-tag mute-tag">Muted</span>' : ''}
     </div>`;
   }).join('') || '<div class="empty">No users found.</div>';
   list.querySelectorAll('.admin-row').forEach(row => {
@@ -8164,7 +8620,7 @@ async function renderAdminActions() {
   wrap.innerHTML = `
     <div class="admin-sel-head">${avatarHTML(44, u.avatarColor, initials(u.username), null, u.avatarUrl)}<div><div class="as-name">${esc(u.username)}${roleTag(u)}</div><div class="as-sub">${ban.banned ? ('Banned — ' + esc(ban.reason)) : 'Not banned'}</div></div></div>
     <div class="admin-block">
-      <div class="ab-title">Orbs — Balance: ${u.orbs || 0}</div>
+      <div class="ab-title">Orbs — Balance: ${fmtOrbs(u.orbs)}</div>
       <div class="ab-row">
         <input id="admin-orbs-amt" type="number" min="1" placeholder="Amount" class="fld-input">
         <button class="btn-accent-inline slim" id="admin-orbs-grant">Grant</button>
@@ -8177,6 +8633,22 @@ async function renderAdminActions() {
         <input id="admin-premium-days" type="number" min="1" placeholder="Days" class="fld-input">
         <button class="btn-accent-inline slim" id="admin-premium-grant">Grant</button>
         <button class="btn-secondary slim" id="admin-premium-remove">Remove</button>
+      </div>
+    </div>
+    <div class="admin-block">
+      <div class="ab-title">Mute${muteStatus(u).muted ? ' — muted for ' + esc(timeoutLeftText(muteStatus(u).until)) : ''}</div>
+      <div class="ab-row">
+        <input id="admin-mute-dur" type="number" min="1" placeholder="Duration" class="fld-input">
+        <select id="admin-mute-unit" class="fld-input">
+          <option value="60000">Minutes</option>
+          <option value="3600000" selected>Hours</option>
+          <option value="86400000">Days</option>
+        </select>
+      </div>
+      <input id="admin-mute-reason" type="text" placeholder="Reason" class="fld-input" style="margin-top:8px" maxlength="120">
+      <div class="ab-row" style="margin-top:8px">
+        <button class="btn-accent-inline slim" id="admin-mute-btn">Mute</button>
+        ${muteStatus(u).muted ? '<button class="btn-secondary slim" id="admin-unmute-btn">Unmute</button>' : ''}
       </div>
     </div>
     <div class="admin-block">
@@ -8223,6 +8695,8 @@ async function renderAdminActions() {
   $('admin-premium-remove').onclick = () => adminAdjustPremium(u.username, -1);
   $('admin-ban-btn').onclick = adminBan;
   if (ban.banned) $('admin-unban-btn').onclick = adminUnban;
+  $('admin-mute-btn').onclick = adminMute;
+  if (muteStatus(u).muted) $('admin-unmute-btn').onclick = adminUnmute;
   if (isOwner) {
     if (u.op) $('admin-deop-btn').onclick = () => adminSetOp(u.username, false);
     else $('admin-op-btn').onclick = () => adminSetOp(u.username, true);
@@ -8305,6 +8779,30 @@ async function adminBan() {
   toast(`Banned ${adminSelectedUser}.`);
   renderAdminList(); renderAdminActions();
 }
+// Muting follows the same hierarchy as banning: owners can act on anyone, co-owners on admins
+// and members, admins on members. guardPlatformTarget() enforces it.
+// Checks rank against the user's current document rather than a cached copy.
+async function mayManage(username) {
+  const snap = await db.collection('users').doc(username).get();
+  if (!snap.exists || !canManagePlatformUser(snap.data())) { toast("You can't manage someone who outranks you.", 'error'); return false; }
+  return true;
+}
+async function adminMute() {
+  const dur = parseInt($('admin-mute-dur').value || '0', 10);
+  const unit = parseInt($('admin-mute-unit').value, 10);
+  const reason = ($('admin-mute-reason').value || '').trim() || 'No reason given';
+  if (!adminSelectedUser || !dur || dur < 1) { toast('Enter a duration.'); return; }
+  if (!(await mayManage(adminSelectedUser))) return;
+  await db.collection('users').doc(adminSelectedUser).update({ mutedUntil: Date.now() + dur * unit, muteReason: reason });
+  toast(`Muted ${adminSelectedUser}.`);
+  renderAdminList(); renderAdminActions();
+}
+async function adminUnmute() {
+  if (!adminSelectedUser || !(await mayManage(adminSelectedUser))) return;
+  await db.collection('users').doc(adminSelectedUser).update({ mutedUntil: null, muteReason: '' });
+  toast(`Unmuted ${adminSelectedUser}.`);
+  renderAdminList(); renderAdminActions();
+}
 async function adminUnban() {
   if (!adminSelectedUser) return;
   await db.collection('users').doc(adminSelectedUser).update({ banned: false, banReason: '', bannedUntil: null });
@@ -8353,3 +8851,2167 @@ window.addEventListener('beforeunload', () => {
 });
 
 boot();
+
+// ============================================================
+// GAMES
+// Twenty in-page games, ported from Toblox. Each game keeps its progress in
+// the `UC` object and pays Orbs when a run ends, using its own payout rules
+// (the same way Toblox paid out Bottlecaps). Orbs are the profile's `orbs`
+// field. Everything else a game saves lives under `tb` on the user document.
+// ============================================================
+
+const FB_READY = false;   // Toblox's admin-published seeds are not part of Frixion
+const CAP = '<span class="orb-ic"></span>';
+let UC = {};
+let currentGameId = null;
+let settledOrbs = 0;      // the Orb balance as of the last write this layer made
+let gameStateOwner = null;
+
+const gameDefaults = () => ({
+  cookies: 0, cookiesAllTime: 0, cookiesRun: null, cookieRunSecs: 0, cookieBuildings: {}, cookieLastSave: null,
+  ggSheckles: 50, ggShecklesAllTime: 0, ggPlots: [], ggUnlocked: 4, ggInventory: [], ggPets: [],
+  gamePlay: {}, typingBest: 0, aimBest: 0, dwDate: null, dwRows: [], dwDone: null, dwHints: [],
+  blastBest: 0, suDate: null, suProgress: null, suDone: null, stackBest: 0, memoryBest: 0, crushBest: 0, brickBest: 0, simonBest: 0,
+});
+
+function getU() { return myUid; }
+function showToast(msg) { toast(msg); }
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function trackQuest() {}   // Frixion has no quest tracking any more
+function hexToRgb(h) { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function rgba(h, a) { const [r, g, b] = hexToRgb(h); return `rgba(${r},${g},${b},${a})`; }
+function lighten(h, amt) { const [r, g, b] = hexToRgb(h); const f = v => Math.min(255, v + amt).toString(16).padStart(2, '0'); return `#${f(r)}${f(g)}${f(b)}`; }
+function darken(h, amt) { const [r, g, b] = hexToRgb(h); const f = v => Math.max(0, v - amt).toString(16).padStart(2, '0'); return `#${f(r)}${f(g)}${f(b)}`; }
+
+// Merge a user document with its saved game state so games can read `u.ggPlots` etc.
+const withGameState = d => ({ ...d, ...(d.tb || {}) });
+async function dbGetUser(name) { const d = await db.collection('users').doc(name).get(); return d.exists ? withGameState(d.data()) : null; }
+async function dbAllUsers() { const s = await db.collection('users').get(); return s.docs.map(d => withGameState(d.data())); }
+
+function avatarBox(u, size) {
+  return avatarHTML(size, u.avatarColor, initials(u.username), null, u.avatarUrl);
+}
+
+// Games write Toblox-shaped changes. `coins` becomes an Orb increment and
+// everything else is stored under `tb`.
+async function dbUpdateUser(uid, changes) {
+  const update = {};
+  for (const [key, val] of Object.entries(changes)) if (key !== 'coins') update['tb.' + key] = val;
+  if (uid === myUid) {
+    if ('coins' in changes) {
+      const delta = changes.coins - settledOrbs;
+      settledOrbs = changes.coins;
+      if (delta) update.orbs = firebase.firestore.FieldValue.increment(delta);
+    }
+    Object.assign(UC, changes);
+  }
+  if (Object.keys(update).length) await db.collection('users').doc(uid).update(update);
+}
+
+// Called from the profile snapshot: load saved game state once per login, then
+// keep the Orb balance in step with the profile (Premium purchases, gifts, etc.).
+function syncGameState(profile) {
+  if (gameStateOwner !== myUid) {
+    gameStateOwner = myUid;
+    Object.keys(UC).forEach(k => delete UC[k]);
+    Object.assign(UC, gameDefaults(), profile.tb || {});
+    startCookieEngine();
+  }
+  UC.coins = settledOrbs = profile.orbs || 0;
+  refreshCaps();
+}
+
+function stopGameEngines() {
+  closeGame();
+  stopCookieEngine();
+  gameStateOwner = null;
+}
+
+function refreshCaps() {
+  document.querySelectorAll('.fg-orbs').forEach(e => { e.textContent = fmtOrbs(UC.coins); });
+}
+
+
+
+const AI_CONFIG = {
+  enabled: false,
+  endpoint: '',          // set to a server-side AI proxy to turn on X-tra Math's AI-written problems
+  apiKey: '',            // token is server-side in serve.ps1, never in this client file
+  model: 'openai-fast'
+};
+function aiOn(){ return !!(AI_CONFIG.endpoint && (AI_CONFIG.enabled || AI_CONFIG.apiKey)); }
+function aiHeaders(){ const h={'Content-Type':'application/json'}; if(AI_CONFIG.apiKey) h['Authorization']='Bearer '+AI_CONFIG.apiKey; return h; }
+// ============================================================
+//  GAMES — COOKIE CLICKER
+// ============================================================
+const COOKIE_CASH_RATE=10000; // cookies per 1 Orb
+const COOKIE_BUILDINGS=[
+  {id:'cursor',name:'Cursor',base:15,cps:0.1,ic:'👆'},
+  {id:'grandma',name:'Grandma',base:100,cps:1,ic:'👵'},
+  {id:'farm',name:'Farm',base:1100,cps:8,ic:'🌾'},
+  {id:'mine',name:'Mine',base:12000,cps:47,ic:'⛏️'},
+  {id:'factory',name:'Factory',base:130000,cps:260,ic:'🏭'},
+  {id:'bank',name:'Bank',base:1400000,cps:1400,ic:'🏦'},
+  {id:'temple',name:'Temple',base:20000000,cps:7800,ic:'🏛️'},
+  {id:'wizard',name:'Wizard Tower',base:330000000,cps:44000,ic:'🧙'},
+  {id:'shipment',name:'Shipment',base:5100000000,cps:260000,ic:'🚀'},
+  {id:'alchemy',name:'Alchemy Lab',base:75000000000,cps:1600000,ic:'🧪'},
+  {id:'portal',name:'Portal',base:1000000000000,cps:10000000,ic:'🌀'},
+  {id:'timemachine',name:'Time Machine',base:14000000000000,cps:65000000,ic:'⏳'},
+  {id:'antimatter',name:'Antimatter Condenser',base:170000000000000,cps:430000000,ic:'☢️'},
+  {id:'prism',name:'Prism',base:2100000000000000,cps:2900000000,ic:'🌈'},
+];
+// Compact numbers: 1.23K, 4.56M, 7.89B, 1.20T. Past a quadrillion they are written as a
+// power of ten (3.33x10^66) so the text never turns into a wall of digits or "e+" notation.
+function fmtNum(n){
+  if(!isFinite(n)) return n>0 ? '∞' : '0';
+  n=Math.floor(n||0);
+  if(n<1000) return ''+n;
+  if(n>=1e15) return fmtPower(n);
+  const u=['K','M','B','T']; let i=-1, x=n;
+  while(x>=1000){ x/=1000; i++; }
+  return (x<10?x.toFixed(2):x<100?x.toFixed(1):Math.floor(x))+u[i];
+}
+function fmtPower(n){ const [m,e]=n.toExponential(2).split('e'); return m+'×10^'+(+e); }
+// Orb balances show in full up to 999,999, then switch to the compact form.
+function fmtOrbs(n){
+  n=Math.floor(n||0);
+  return n<1e6 ? n.toLocaleString() : fmtNum(n);
+}
+function cookieBuildingPrice(b, owned){ return Math.floor(b.base*Math.pow(1.15, owned)); }
+// Owning 10, 25, 50, 100, 150 and 200 of a building doubles its output each time.
+const COOKIE_MILESTONES=[10,25,50,100,150,200];
+const cookieBuildingMult=n=>Math.pow(2, COOKIE_MILESTONES.filter(m=>n>=m).length);
+function cookieCPS(){ if(!UC) return 0; const bld=UC.cookieBuildings||{}; let c=0; COOKIE_BUILDINGS.forEach(b=>{ const n=bld[b.id]||0; c+=b.cps*n*cookieBuildingMult(n); }); return c; }
+function cookieClickPower(){ return 1 + cookieCPS()*0.02; }
+// A run starts at a quarter speed, which makes the first few minutes a grind,
+// then picks up pace the longer you keep baking (slowly at first, then faster).
+// Cashing out ends the run, which resets momentum along with everything else.
+const COOKIE_MOMENTUM_START=0.25, COOKIE_MOMENTUM_MAX=2, COOKIE_MOMENTUM_RAMP=3000; // seconds to reach the max
+function cookieMomentum(){
+  const t=Math.min(1, ((UC&&UC.cookieRunSecs)||0)/COOKIE_MOMENTUM_RAMP);
+  return COOKIE_MOMENTUM_START + (COOKIE_MOMENTUM_MAX-COOKIE_MOMENTUM_START)*Math.pow(t, 1.5);
+}
+const cookieMult=()=>cookieMomentum();
+function cookieBaked(){ if(UC.cookiesRun==null) UC.cookiesRun=UC.cookies||0; return UC.cookiesRun; }
+function ckNum(n){ return n<1 ? n.toFixed(2) : n<10 ? n.toFixed(1) : fmtNum(n); }
+let cookieEngine=null, _cookieSaveAt=0;
+function startCookieEngine(){
+  if(!UC) return;
+  // No offline earnings: cookies only accrue while Toblox is open.
+  UC.cookieLastSave=Date.now();
+  if(cookieEngine) clearInterval(cookieEngine);
+  cookieEngine=setInterval(()=>{
+    const cps=cookieCPS(); if(cps>0){ const add=cps*0.2*cookieMult(); UC.cookies=(UC.cookies||0)+add; UC.cookiesAllTime=(UC.cookiesAllTime||0)+add; UC.cookiesRun=cookieBaked()+add; }
+    UC.cookieRunSecs=(UC.cookieRunSecs||0)+0.2;
+    if(currentGameId==='cookie') updateCookieView();
+    if(Date.now()-_cookieSaveAt>20000) saveCookies();
+  }, 200);
+}
+function stopCookieEngine(){ if(cookieEngine){ clearInterval(cookieEngine); cookieEngine=null; } }
+async function saveCookies(){
+  if(!UC) return; _cookieSaveAt=Date.now(); UC.cookieLastSave=Date.now();
+  try{ await dbUpdateUser(getU(), {cookies:UC.cookies, cookiesAllTime:UC.cookiesAllTime, cookiesRun:cookieBaked(), cookieRunSecs:UC.cookieRunSecs||0, cookieBuildings:UC.cookieBuildings, cookieLastSave:UC.cookieLastSave}); }catch(e){}
+}
+function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
+function renderCookie(){
+  const v=document.getElementById('cookie-game'); if(!v||!UC) return;
+  v.innerHTML=`
+    <div class="ck-left">
+      <div class="ck-count"><span id="ck-cookies">0</span></div>
+      <div class="ck-sub">cookies &middot; <span id="ck-cps">0</span>/sec</div>
+      <button class="ck-cookie" id="ck-cookie" onclick="clickCookie(event)">🍪</button>
+      <div class="ck-sub">+<span id="ck-click">1</span> per click</div>
+      <div class="ck-run">
+        <div><span>Momentum</span><b id="ck-momentum">x0.50</b></div>
+        <div><span>Baked this run</span><b id="ck-baked">0</b></div>
+      </div>
+      <button class="ck-cashout" id="ck-cashout" onclick="cashOutCookies()">Cash out</button>
+      <div class="ck-note">Cashing out pays Orbs for everything baked this run, then resets your cookies, buildings and momentum.</div>
+    </div>
+    <div class="ck-shop" id="ck-shop"></div>`;
+  renderCookieShop(); updateCookieView();
+}
+function renderCookieShop(){
+  const shop=document.getElementById('ck-shop'); if(!shop) return;
+  const bld=UC.cookieBuildings||{};
+  shop.innerHTML=COOKIE_BUILDINGS.map(b=>{
+    const owned=bld[b.id]||0, price=cookieBuildingPrice(b,owned), afford=(UC.cookies||0)>=price;
+    const next=COOKIE_MILESTONES.find(m=>m>owned);
+    return `<button class="ck-item ${afford?'':'no'}" onclick="buyCookieBuilding('${b.id}')" ${afford?'':'disabled'}>
+      <span class="cki-ic">${b.ic}</span>
+      <span class="cki-mid"><span class="cki-name">${b.name}</span><span class="cki-price">🍪 ${fmtNum(price)} &middot; ${ckNum(b.cps*cookieBuildingMult(owned))}/s each${next?' &middot; x2 at '+next:''}</span></span>
+      <span class="cki-owned">${owned}</span>
+    </button>`;
+  }).join('');
+}
+function updateCookieView(){
+  const c=document.getElementById('ck-cookies'); if(c) c.textContent=fmtNum(UC.cookies||0);
+  const m=cookieMult();
+  const cps=document.getElementById('ck-cps'); if(cps) cps.textContent=ckNum(cookieCPS()*m);
+  const cl=document.getElementById('ck-click'); if(cl) cl.textContent=ckNum(cookieClickPower()*m);
+  const mo=document.getElementById('ck-momentum'); if(mo) mo.textContent='x'+cookieMomentum().toFixed(2);
+  const bk=document.getElementById('ck-baked'); if(bk) bk.textContent=fmtNum(cookieBaked());
+  const co=document.getElementById('ck-cashout');
+  if(co){ const orbs=Math.floor(cookieBaked()/COOKIE_CASH_RATE); co.disabled=orbs<1; co.textContent = orbs<1 ? 'Bake '+fmtNum(COOKIE_CASH_RATE)+' cookies to cash out' : 'Cash out for '+fmtOrbs(orbs)+' Orbs'; }
+  const shop=document.getElementById('ck-shop');
+  if(shop){ COOKIE_BUILDINGS.forEach((b,i)=>{ const el=shop.children[i]; if(!el)return; const owned=(UC.cookieBuildings||{})[b.id]||0; const afford=(UC.cookies||0)>=cookieBuildingPrice(b,owned); el.classList.toggle('no',!afford); el.disabled=!afford; }); }
+}
+function clickCookie(e){
+  if(!UC) return;
+  const p=cookieClickPower()*cookieMult(); UC.cookies=(UC.cookies||0)+p; UC.cookiesAllTime=(UC.cookiesAllTime||0)+p; UC.cookiesRun=cookieBaked()+p;
+  trackQuest('cookie',1);
+  updateCookieView();
+  const btn=document.getElementById('ck-cookie'); if(btn){ btn.style.transform='scale(.94)'; setTimeout(()=>btn.style.transform='',80); }
+  try{ const f=document.createElement('div'); f.className='ck-float'; f.textContent='+'+ckNum(p); f.style.left=e.clientX+'px'; f.style.top=e.clientY+'px'; document.body.appendChild(f); setTimeout(()=>f.remove(),900); }catch(_){}
+}
+function buyCookieBuilding(id){
+  const b=COOKIE_BUILDINGS.find(x=>x.id===id); if(!b||!UC) return;
+  const owned=(UC.cookieBuildings||{})[id]||0, price=cookieBuildingPrice(b,owned);
+  if((UC.cookies||0)<price){ showToast('Not enough cookies.'); return; }
+  UC.cookies-=price; UC.cookieBuildings=UC.cookieBuildings||{}; UC.cookieBuildings[id]=owned+1;
+  renderCookieShop(); updateCookieView(); saveCookies();
+}
+function cashOutCookies(){
+  if(!UC) return;
+  const baked=Math.floor(cookieBaked()), orbs=Math.floor(baked/COOKIE_CASH_RATE);
+  if(orbs<1){ showToast('Bake at least '+fmtNum(COOKIE_CASH_RATE)+' cookies this run to cash out.'); return; }
+  confirmAction({
+    title:'Cash out and start over?',
+    body:'You baked '+fmtNum(baked)+' cookies this run. Cashing out pays '+fmtOrbs(orbs)+' Orbs and resets your cookies, buildings and momentum.',
+    confirmLabel:'Cash out', danger:false,
+    onConfirm: async ()=>{
+      const paid=Math.floor(cookieBaked()/COOKIE_CASH_RATE);
+      if(paid<1) return;
+      UC.cookies=0; UC.cookiesRun=0; UC.cookieRunSecs=0; UC.cookieBuildings={};
+      UC.coins=(UC.coins||0)+paid;
+      await dbUpdateUser(getU(), {coins:UC.coins, cookies:0, cookiesRun:0, cookieRunSecs:0, cookieBuildings:{}});
+      refreshCaps();
+      if(currentGameId==='cookie'){ renderCookieShop(); updateCookieView(); }
+      showToast('Cashed out '+fmtOrbs(paid)+' Orbs. Fresh run started.');
+    }
+  });
+}
+
+// ============================================================
+//  GAMES — GROW A GARDEN  (featured)
+// ============================================================
+const GG_CASH_RATE=1000000;   // Sheckles per 1 Orb
+const GG_MAX_PLOTS=12, GG_START_PLOTS=4;
+const SHK='<span class="gg-shk">S</span>';   // styled Sheckles token (no emoji, per request)
+// Rarity ladder (low to high). Colors live in CSS as .r-<id>; the top three are animated gradients.
+const GG_RARITY={
+  common:{n:'Common'}, uncommon:{n:'Uncommon'}, rare:{n:'Rare'}, epic:{n:'Epic'},
+  legendary:{n:'Legendary'}, divine:{n:'Divine'}, super:{n:'Super'}, prismatic:{n:'Prismatic'}, transcendent:{n:'Transcendent'}
+};
+function ggRar(r){ return GG_RARITY[r]?r:'common'; }
+function rarBadge(r){ r=ggRar(r); return `<span class="gg-rar r-${r}">${GG_RARITY[r].n}</span>`; }
+const GG_RARITY_ORDER=Object.keys(GG_RARITY).reduce((m,k,i)=>{ m[k]=i; return m; },{});
+function ggRarOrd(r){ const o=GG_RARITY_ORDER[ggRar(r)]; return o==null?0:o; }
+// Order any item list (built-in or admin made) by rarity, common first, then by price.
+function ggSortByRarity(arr){ return arr.slice().sort((a,b)=> ggRarOrd(a.rarity)-ggRarOrd(b.rarity) || (a.cost||0)-(b.cost||0)); }
+const GG_BASE_SEEDS=[
+  {id:'carrot',     name:'Carrot',       ic:'🥕', rarity:'common',    cost:10,  grow:8000,   sell:18,      baseWeight:0.30},
+  {id:'strawberry', name:'Strawberry',   ic:'🍓', rarity:'common',    cost:30,  grow:14000,  sell:55,      baseWeight:0.25},
+  {id:'blueberry',  name:'Blueberry',    ic:'🫐', rarity:'uncommon',  cost:75,  grow:22000,  sell:140,     baseWeight:0.18},
+  {id:'tomato',     name:'Tomato',       ic:'🍅', rarity:'uncommon',  cost:200,  grow:34000,  sell:380,     baseWeight:0.60},
+  {id:'corn',       name:'Corn',         ic:'🌽', rarity:'rare',      cost:500,  grow:48000,  sell:980,     baseWeight:1.20},
+  {id:'watermelon', name:'Watermelon',   ic:'🍉', rarity:'rare',      cost:1500,  grow:75000,  sell:3000,    baseWeight:6.00},
+  {id:'pumpkin',    name:'Pumpkin',      ic:'🎃', rarity:'epic',      cost:5000,  grow:110000, sell:11000,   baseWeight:9.00},
+  {id:'apple',      name:'Apple',        ic:'🍎', rarity:'epic',      cost:12000,  grow:150000, sell:28000,   baseWeight:0.40},
+  {id:'pineapple',  name:'Pineapple',    ic:'🍍', rarity:'legendary', cost:35000,  grow:200000, sell:86000,   baseWeight:2.00},
+  {id:'grape',      name:'Grape',        ic:'🍇', rarity:'legendary', cost:90000, grow:270000, sell:240000,  baseWeight:0.80},
+  {id:'mango',      name:'Mango',        ic:'🥭', rarity:'divine',    cost:250000, grow:360000, sell:720000,  baseWeight:1.50},
+  {id:'dragon',     name:'Dragon Fruit', ic:'🐉', rarity:'super',     cost:700000, grow:480000, sell:2200000, baseWeight:1.80},
+];
+// A sprinkler attaches to a plant: speed = how much faster it grows, weight = PERCENT extra weight (= value).
+const GG_BASE_SPRINKLERS=[
+  {id:'basic',    name:'Basic Sprinkler',    ic:'💧', rarity:'common',    cost:1500,  speed:0.5, weight:0.25},
+  {id:'advanced', name:'Advanced Sprinkler', ic:'🚿', rarity:'rare',      cost:8000,  speed:1.0, weight:0.60},
+  {id:'godly',    name:'Godly Sprinkler',    ic:'⛲', rarity:'legendary', cost:40000,  speed:2.5, weight:1.20},
+  {id:'master',   name:'Master Sprinkler',   ic:'🌧️', rarity:'divine',    cost:150000, speed:5.0, weight:2.50},
+];
+// Pets give a global sell-value bonus (stacks).
+const GG_BASE_PETS=[
+  {id:'snail',     name:'Snail',   ic:'🐌', rarity:'common',      cost:5000,  sell:0.03},
+  {id:'bunny',     name:'Bunny',   ic:'🐰', rarity:'uncommon',    cost:25000,  sell:0.06},
+  {id:'cat',       name:'Cat',     ic:'🐱', rarity:'rare',        cost:100000,  sell:0.10},
+  {id:'dog',       name:'Dog',     ic:'🐶', rarity:'epic',        cost:400000,  sell:0.15},
+  {id:'fox',       name:'Fox',     ic:'🦊', rarity:'legendary',   cost:1500000,  sell:0.25},
+];
+let GG_SEEDS=ggSortByRarity(GG_BASE_SEEDS), GG_SEED_MAP={};
+let GG_SPRINKLERS=ggSortByRarity(GG_BASE_SPRINKLERS), GG_SPRINKLER_MAP={};
+let GG_PETS=ggSortByRarity(GG_BASE_PETS), GG_PET_MAP={};
+function ggRebuildMaps(){ GG_SEED_MAP={}; GG_SEEDS.forEach(s=>GG_SEED_MAP[s.id]=s); GG_SPRINKLER_MAP={}; GG_SPRINKLERS.forEach(s=>GG_SPRINKLER_MAP[s.id]=s); GG_PET_MAP={}; GG_PETS.forEach(s=>GG_PET_MAP[s.id]=s); }
+ggRebuildMaps();
+let ggCustomSeeds=[], ggCustomSprinklers=[];
+// Custom seeds + sprinklers published from the admin panel, merged on top of the built-ins.
+async function loadGardenContent(){
+  let seeds=[], spr=[];
+  if(FB_READY){
+    try{ const s=await db.collection('gardenSeeds').get(); seeds=s.docs.map(d=>d.data()); }catch(e){}
+    try{ const p=await db.collection('gardenSprinklers').get(); spr=p.docs.map(d=>d.data()); }catch(e){}
+  } else {
+    seeds=JSON.parse(localStorage.getItem('tb_customseeds')||'[]');
+    spr=JSON.parse(localStorage.getItem('tb_customsprinklers')||'[]');
+  }
+  ggCustomSeeds=seeds||[]; ggCustomSprinklers=spr||[];
+  GG_SEEDS=ggSortByRarity(GG_BASE_SEEDS.concat(ggCustomSeeds));
+  GG_SPRINKLERS=ggSortByRarity(GG_BASE_SPRINKLERS.concat(ggCustomSprinklers));
+  ggRebuildMaps();
+}
+let ggSel='carrot', ggSprSel='basic', ggPetSel='snail', ggEngine=null, _ggSaveAt=0, ggShopTab='seeds', ggShovel=false;
+let _ggPetStepAt=0;
+function ggInitState(){
+  if(!UC) return;
+  if(typeof UC.ggSheckles!=='number') UC.ggSheckles=50;
+  if(typeof UC.ggShecklesAllTime!=='number') UC.ggShecklesAllTime=0;
+  if(!Array.isArray(UC.ggPlots)) UC.ggPlots=[];
+  if(!Array.isArray(UC.ggInventory)) UC.ggInventory=[];
+  if(!Array.isArray(UC.ggPets)) UC.ggPets=[];
+  if(typeof UC.ggUnlocked!=='number') UC.ggUnlocked=GG_START_PLOTS;
+  // migrate old single-sprinkler plots to the new multi-sprinkler array
+  UC.ggPlots.forEach(p=>{ if(p){ if(!Array.isArray(p.sprinklers)) p.sprinklers = p.sprinkler ? [p.sprinkler] : []; if('sprinkler' in p) delete p.sprinkler; } });
+  while(UC.ggPlots.length<GG_MAX_PLOTS) UC.ggPlots.push(null);
+}
+// A plant can hold several different sprinklers; their speed and weight boosts stack. Works for any owner.
+function ggPlotSprs(p){ if(!p) return []; let ids=Array.isArray(p.sprinklers)?p.sprinklers:(p.sprinkler?[p.sprinkler]:[]); return ids.map(id=>GG_SPRINKLER_MAP[id]).filter(Boolean); }
+function ggPlotSpeed(p){ let b=0; ggPlotSprs(p).forEach(s=>b+=(s.speed||0)); return 1+b; }
+function ggPlotWeightMult(p){ let b=0; ggPlotSprs(p).forEach(s=>b+=(s.weight||0)); return 1+b; }   // percent boost: 0.25 = +25%
+// Pets: own a pet to collect its global sell bonus; bonuses stack across pets.
+function ggOwnsPet(id){ return !!(UC && Array.isArray(UC.ggPets) && UC.ggPets.indexOf(id)>=0); }
+function ggPetSellMult(){ let b=0; if(UC&&Array.isArray(UC.ggPets)) UC.ggPets.forEach(id=>{ const p=GG_PET_MAP[id]; if(p) b+=(p.sell||0); }); return 1+b; }
+function ggGrowMs(s,p){ return Math.max(50, ((s&&s.grow)||8000)/ggPlotSpeed(p)); }
+function ggRollW(){ return +(0.8+Math.random()*0.5).toFixed(3); }
+function ggPlotReady(p){ if(!p) return false; const s=GG_SEED_MAP[p.seed]; return s?Date.now()-p.at>=ggGrowMs(s,p):false; }
+function ggPlotProgress(p){ if(!p) return 0; const s=GG_SEED_MAP[p.seed]; return s?Math.min(1,(Date.now()-p.at)/ggGrowMs(s,p)):1; }
+function ggPlotFactor(p){ return (p&&typeof p.w==='number'?p.w:1)*ggPlotWeightMult(p); }     // weight/value multiplier
+function ggPlotWeight(p){ const s=GG_SEED_MAP[p.seed]; return (s?(s.baseWeight||0.5):0.5)*ggPlotFactor(p); }  // kilograms
+function ggPlotValue(p){ const s=GG_SEED_MAP[p.seed]; if(!s) return 0; return Math.max(1, Math.floor(s.sell*ggPlotFactor(p))); }
+function fmtWeight(kg){ return (kg<10?kg.toFixed(2):kg.toFixed(1))+' kg'; }
+function ggExpandCost(){ const extra=(UC.ggUnlocked||GG_START_PLOTS)-GG_START_PLOTS; return Math.floor(150*Math.pow(2.4, extra)); }
+function ggGrowLabel(ms){ const s=Math.round(ms/1000); if(s<60) return s+'s'; const m=Math.floor(s/60), r=s%60; return m+'m'+(r?(' '+r+'s'):''); }
+function ggRollMut(){ const r=Math.random(); if(r<0.02) return {id:'rainbow',name:'Rainbow',badge:'🌈',mult:5}; if(r<0.12) return {id:'gold',name:'Gold',badge:'✨',mult:2}; return null; }
+async function saveGarden(){ if(!UC) return; _ggSaveAt=Date.now(); try{ await dbUpdateUser(getU(), {ggSheckles:UC.ggSheckles, ggShecklesAllTime:UC.ggShecklesAllTime, ggPlots:UC.ggPlots, ggUnlocked:UC.ggUnlocked, ggInventory:UC.ggInventory, ggPets:UC.ggPets}); }catch(e){} }
+function renderGrowGarden(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  ggInitState();
+  ggShovel=false; ggShopTab='seeds';
+  stage.innerHTML='<div class="gg-game" id="gg-game"></div>';
+  renderGardenAll();
+  startGGEngine();
+  // pull in any admin-published custom seeds/sprinklers, then refresh the shop
+  loadGardenContent().then(()=>{ if(currentGameId==='growgarden'){ renderGGShop(); updateGGBank(); } });
+}
+function renderGardenAll(){
+  const g=document.getElementById('gg-game'); if(!g) return;
+  g.innerHTML=`
+    <div class="gg-top">
+      <div class="gg-bank">
+        <div class="gg-bank-amt"><span id="gg-sheckles">0</span></div>
+        <div class="gg-bank-sub">Sheckles &middot; <span id="gg-boost">Harvest crops, then sell them</span></div>
+      </div>
+      <div class="gg-actions">
+        <button class="gg-btn gg-harvest" onclick="ggHarvestAll()">🧺 Harvest All</button>
+        <button class="gg-btn gg-shovel-btn${ggShovel?' on':''}" onclick="ggToggleShovel()">🪏 Shovel</button>
+        <button class="gg-btn gg-cash" onclick="ggCashOut()">Cash Out (${fmtNum(GG_CASH_RATE)} ${SHK} = 1 <span class="orb-ic"></span>)</button>
+        
+        
+      </div>
+    </div>
+    <div class="gg-main">
+      <div class="gg-garden">
+        <div class="gg-plots" id="gg-plots"></div>
+        <div class="gg-pets-layer" id="gg-pets-layer"></div>
+        <div class="gg-hint" id="gg-hint">Pick a seed and tap a plot to plant. Crops regrow after every harvest, so harvest into your basket and sell, or dig a plant up with the shovel.</div>
+      </div>
+      <div class="gg-shop">
+        <div class="gg-shoptabs">
+          <button class="gg-shoptab${ggShopTab==='seeds'?' on':''}" data-tab="seeds" onclick="ggSetShopTab('seeds')">🌱 Seeds</button>
+          <button class="gg-shoptab${ggShopTab==='sprinklers'?' on':''}" data-tab="sprinklers" onclick="ggSetShopTab('sprinklers')">💧 Sprinklers</button>
+          <button class="gg-shoptab${ggShopTab==='pets'?' on':''}" data-tab="pets" onclick="ggSetShopTab('pets')">🐾 Pets</button>
+          <button class="gg-shoptab${ggShopTab==='sell'?' on':''}" data-tab="sell" onclick="ggSetShopTab('sell')">🧺 Sell</button>
+        </div>
+        <div id="gg-shopbody"></div>
+      </div>
+    </div>`;
+  renderGGPlots(); renderGardenPets(); renderGGShop(); updateGGBank();
+}
+function ggSetShopTab(t){ ggShopTab=t; document.querySelectorAll('.gg-shoptab').forEach(b=>b.classList.toggle('on', b.dataset.tab===t)); renderGGShop(); renderGGPlots(); }
+function ggToggleShovel(){ ggShovel=!ggShovel; const b=document.querySelector('.gg-shovel-btn'); if(b) b.classList.toggle('on',ggShovel); renderGGPlots(); if(ggShovel) showToast('Shovel ready. Tap a plant to dig it up.'); }
+function renderGGPlots(){
+  const wrap=document.getElementById('gg-plots'); if(!wrap) return;
+  let html='';
+  for(let i=0;i<GG_MAX_PLOTS;i++){
+    if(i>=UC.ggUnlocked){
+      const isNext=(i===UC.ggUnlocked);
+      html+=`<div class="gg-plot locked${isNext?' next':''}"${isNext?' onclick="ggExpand()"':''}>
+        <span class="gg-lock">🔒</span>${isNext?`<span class="gg-lock-cost">${SHK} ${fmtNum(ggExpandCost())}</span><span class="gg-lock-hint">Unlock</span>`:''}</div>`;
+      continue;
+    }
+    const p=UC.ggPlots[i];
+    if(!p){ html+=`<div class="gg-plot empty${ggShovel?' dig':''}" onclick="ggPlotTap(${i})"><span class="gg-soil">+</span></div>`; continue; }
+    const s=GG_SEED_MAP[p.seed], ready=ggPlotReady(p), prog=ggPlotProgress(p), pct=Math.round(prog*100), sprs=ggPlotSprs(p);
+    const canSprinkle=ggShopTab==='sprinklers'&&sprs.length<GG_SPRINKLERS.length;
+    const cls='gg-plot planted'+(ready?' ready':'')+(ggShovel?' dig':'')+(canSprinkle?' sprinklable':'');
+    html+=`<div class="${cls}" data-i="${i}" onclick="ggPlotTap(${i})">
+      ${sprs.length?`<span class="gg-plot-spr" title="${sprs.map(x=>escapeHtml(x.name)).join(', ')}">${sprs.map(x=>x.ic).join('')}</span>`:''}
+      <span class="gg-plant" style="${ready?'':'opacity:'+(0.4+0.6*prog).toFixed(2)+';transform:scale('+(0.7+0.3*prog).toFixed(2)+')'}">${s?s.ic:'🌱'}</span>
+      ${ready?`<span class="gg-ready-tag">${fmtWeight(ggPlotWeight(p))}</span>`:`<div class="gg-grow"><div class="gg-grow-bar" style="width:${pct}%"></div></div>`}</div>`;
+  }
+  wrap.innerHTML=html;
+}
+async function ggPlotTap(i){
+  if(!UC||i>=UC.ggUnlocked) return;
+  const p=UC.ggPlots[i];
+  if(ggShovel){ if(p) ggDig(i); else showToast('Nothing planted there.'); return; }
+  if(ggShopTab==='sprinklers'){ if(p) await ggPlaceSprinkler(i); else showToast('Plant something here first.'); return; }
+  if(!p){ await ggPlant(i); return; }
+  if(ggPlotReady(p)) ggHarvest(i); else showToast('Still growing.');
+}
+function renderGGShop(){
+  const body=document.getElementById('gg-shopbody'); if(!body) return;
+  if(ggShopTab==='sprinklers'){ body.innerHTML=ggSprinklerShopHtml(); return; }
+  if(ggShopTab==='pets'){ body.innerHTML=ggPetShopHtml(); return; }
+  if(ggShopTab==='sell'){ body.innerHTML=ggSellShopHtml(); return; }
+    const rows=GG_SEEDS.map(s=>{
+    const sel=ggSel===s.id;
+    const afford=(UC.ggSheckles||0)>=s.cost;
+    const priceStr=SHK+' '+fmtNum(s.cost);
+    return `<div class="gg-seed${sel?' sel':''}${afford?'':' poor'}" onclick="ggSelect('${s.id}')">
+      <span class="gg-seed-ic">${s.ic}</span>
+      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)}</span><span class="gg-seed-meta">${priceStr} · ${ggGrowLabel(s.grow)} · sells ${SHK} ${fmtNum(s.sell)}</span></span>
+      ${sel?'<span class="gg-seed-sel">✓</span>':''}</div>`;
+  }).join('');
+  body.innerHTML=`<div class="gg-seedlist">${rows}</div>`;
+}
+function ggSprinklerShopHtml(){
+    const note=`<div class="gg-spr-note">Pick a sprinkler, then tap one of your plants to place it. You can stack several different sprinklers on the same plant and their boosts add up. They stay until you dig the plant up.</div>`;
+  const rows=GG_SPRINKLERS.map(s=>{
+    const sel=ggSprSel===s.id;
+    const afford=(UC.ggSheckles||0)>=(s.cost||0);
+    const priceStr=SHK+' '+fmtNum(s.cost||0);
+    return `<div class="gg-seed gg-spr${sel?' sel':''}${afford?'':' poor'}" onclick="ggSelectSpr('${s.id}')">
+      <span class="gg-seed-ic">${s.ic}</span>
+      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)}</span><span class="gg-seed-meta">${priceStr} · +${Math.round((s.speed||0)*100)}% speed · +${Math.round((s.weight||0)*100)}% weight</span></span>
+      ${sel?'<span class="gg-seed-sel">✓</span>':''}</div>`;
+  }).join('');
+  return note+`<div class="gg-seedlist">${rows}</div>`;
+}
+function ggPetShopHtml(){
+    const bonus=Math.round((ggPetSellMult()-1)*100);
+  const note=`<div class="gg-spr-note">Pets give a global sell bonus that stacks${bonus?(' (yours: +'+bonus+'%)'):''}.</div>`;
+  const rows=GG_PETS.map(s=>{
+    const owned=ggOwnsPet(s.id);
+    const afford=(UC.ggSheckles||0)>=s.cost;
+    const priceStr=SHK+' '+fmtNum(s.cost);
+    const ability='+'+Math.round((s.sell||0)*100)+'% sell value';
+    return `<div class="gg-seed gg-pet${owned?' owned':''}${(owned||afford)?'':' poor'}"${owned?'':` onclick="ggBuyPet('${s.id}')"`}>
+      <span class="gg-seed-ic">${s.ic}</span>
+      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)}</span><span class="gg-seed-meta">${owned?'Owned':priceStr} · ${ability}</span></span>
+      ${owned?'<span class="gg-seed-sel">✓</span>':''}</div>`;
+  }).join('');
+  return note+`<div class="gg-seedlist">${rows}</div>`;
+}
+function ggSellShopHtml(){
+  const inv=(UC&&UC.ggInventory)||[];
+  if(!inv.length) return `<div class="gg-spr-note">Your basket is empty. Harvest ripe crops, then sell them here for Sheckles.</div>`;
+  const groups={};
+  inv.forEach(it=>{ const g=groups[it.seed]||(groups[it.seed]={seed:it.seed,count:0,value:0,heaviest:0,muts:0}); g.count++; g.value+=(it.value||0); g.heaviest=Math.max(g.heaviest,it.weight||0); if(it.mut) g.muts++; });
+  const total=inv.reduce((a,b)=>a+(b.value||0),0);
+  const rows=Object.keys(groups).map(k=>{ const g=groups[k], s=GG_SEED_MAP[g.seed];
+    return `<div class="gg-seed gg-sell" onclick="ggSellType('${g.seed}')">
+      <span class="gg-seed-ic">${s?s.ic:'🌱'}</span>
+      <span class="gg-seed-mid"><span class="gg-seed-name">${s?escapeHtml(s.name):g.seed} ×${g.count}${g.muts?(' ✨'+g.muts):''}</span><span class="gg-seed-meta">worth ${SHK} ${fmtNum(g.value)} · up to ${fmtWeight(g.heaviest)}</span></span>
+      <span class="gg-sell-btn">Sell</span></div>`;
+  }).join('');
+  return `<button class="gg-btn gg-sellall" onclick="ggSellAll()">Sell Everything (${SHK} ${fmtNum(total)})</button><div class="gg-seedlist">${rows}</div>`;
+}
+function updateGGBank(){
+  const e=document.getElementById('gg-sheckles'); if(e) e.textContent=fmtNum(UC.ggSheckles||0);
+  const b=document.getElementById('gg-boost'); if(b){ const n=((UC&&UC.ggInventory)||[]).length; b.textContent=n?(n+' crop'+(n>1?'s':'')+' in your basket — sell in the 🧺 tab'):'Harvest crops, then sell them'; }
+}
+function ggSelect(id){ if(!GG_SEED_MAP[id]) return; ggSel=id; renderGGShop(); }
+function ggSelectSpr(id){ if(!GG_SPRINKLER_MAP[id]) return; ggSprSel=id; renderGGShop(); }
+async function ggPlant(i){
+  if(!UC||i>=UC.ggUnlocked||UC.ggPlots[i]) return;
+  const s=GG_SEED_MAP[ggSel]; if(!s){ showToast('Pick a seed first.'); return; }
+  if((UC.ggSheckles||0)<s.cost){ showToast('Not enough Sheckles for a '+s.name+' seed.'); return; }
+  UC.ggSheckles-=s.cost;
+  UC.ggPlots[i]={seed:s.id, at:Date.now(), w:ggRollW(), sprinklers:[]};
+  renderGGPlots(); renderGGShop(); updateGGBank(); saveGarden();
+}
+async function ggPlaceSprinkler(i){
+  const p=UC.ggPlots[i]; if(!p) return;
+  if(!Array.isArray(p.sprinklers)) p.sprinklers=[];
+  const s=GG_SPRINKLER_MAP[ggSprSel]; if(!s){ showToast('Pick a sprinkler first.'); return; }
+  if(p.sprinklers.indexOf(s.id)>=0){ showToast('This plant already has a '+s.name+'. Add a different one for more boost.'); return; }
+  if((UC.ggSheckles||0)<(s.cost||0)){ showToast('Not enough Sheckles for '+s.name+'.'); return; }
+  UC.ggSheckles-=(s.cost||0);
+  p.sprinklers.push(s.id);
+  renderGGPlots(); renderGGShop(); updateGGBank(); saveGarden();
+  showToast('Placed a '+s.name+' on this plant ('+p.sprinklers.length+' sprinkler'+(p.sprinklers.length>1?'s':'')+' now).');
+}
+function ggSelectPet(id){ if(!GG_PET_MAP[id]) return; ggPetSel=id; renderGGShop(); }
+async function ggBuyPet(id){
+  const s=GG_PET_MAP[id]; if(!s||!UC) return;
+  if(ggOwnsPet(id)){ showToast('You already own the '+s.name+'.'); return; }
+  if((UC.ggSheckles||0)<s.cost){ showToast('Not enough Sheckles for the '+s.name+'.'); return; }
+  UC.ggSheckles-=s.cost;
+  UC.ggPets=UC.ggPets||[]; UC.ggPets.push(id);
+  renderGGShop(); renderGardenPets(); updateGGBank(); saveGarden();
+  showToast('🐾 You adopted the '+s.name+'!');
+}
+// Owned pets wander around the garden: one emoji per pet that strolls to random spots.
+function renderGardenPets(){
+  const layer=document.getElementById('gg-pets-layer'); if(!layer||!UC) return;
+  layer.innerHTML=(UC.ggPets||[]).map(id=>{ const p=GG_PET_MAP[id]; if(!p) return '';
+    const l=(6+Math.random()*82).toFixed(1), t=(12+Math.random()*70).toFixed(1);
+    return `<span class="gg-pet-walker" data-pet="${id}" title="${escapeHtml(p.name)}" style="left:${l}%;top:${t}%"><span class="gg-pet-body">${p.ic}</span></span>`;
+  }).join('');
+  _ggPetStepAt=0; ggPetStep();
+}
+function ggPetStep(){
+  const layer=document.getElementById('gg-pets-layer'); if(!layer) return;
+  layer.querySelectorAll('.gg-pet-walker').forEach(w=>{
+    const curL=parseFloat(w.style.left)||50;
+    const nl=6+Math.random()*82, nt=12+Math.random()*70, dur=(2.4+Math.random()*2.8).toFixed(2);
+    w.style.transition='left '+dur+'s linear, top '+dur+'s linear, transform .25s';
+    w.style.left=nl.toFixed(1)+'%'; w.style.top=nt.toFixed(1)+'%';
+    w.style.transform='scaleX('+(nl<curL?-1:1)+')';
+  });
+}
+function ggDig(i){
+  if(!UC) return;
+  const p=UC.ggPlots[i]; if(!p) return;
+  const s=GG_SEED_MAP[p.seed], nspr=ggPlotSprs(p).length;
+  UC.ggPlots[i]=null;
+  renderGGPlots(); renderGGShop(); updateGGBank(); saveGarden();
+  showToast('Dug up the '+(s?s.name:'plant')+(nspr?(' and its '+nspr+' sprinkler'+(nspr>1?'s':'')+'.'):'.'));
+}
+function ggHarvest(i){
+  if(!UC) return;
+  const p=UC.ggPlots[i]; if(!p) return;
+  if(!ggPlotReady(p)){ showToast('Still growing.'); return; }
+  const s=GG_SEED_MAP[p.seed]; if(!s){ UC.ggPlots[i]=null; renderGGPlots(); return; }
+  const mut=ggRollMut(), weight=ggPlotWeight(p), value=Math.max(1, Math.floor(ggPlotValue(p)*(mut?mut.mult:1)*ggPetSellMult()));
+  UC.ggInventory=UC.ggInventory||[]; UC.ggInventory.push({seed:s.id, weight:+weight.toFixed(3), value, mut:mut?mut.id:null});
+  trackQuest('harvest',1);
+  ggFloat(i, fmtWeight(weight)+(mut?(' '+mut.badge):'')+' picked', mut);
+  p.at=Date.now(); p.w=ggRollW();   // multigrow: the plant stays and regrows
+  renderGGPlots(); renderGGShop(); updateGGBank(); saveGarden();
+  if(mut) showToast(mut.badge+' '+mut.name+' '+s.name+'! '+fmtWeight(weight)+' added to your basket.');
+}
+function ggHarvestAll(){
+  if(!UC) return;
+  UC.ggInventory=UC.ggInventory||[];
+  let count=0, best=null;
+  for(let i=0;i<UC.ggPlots.length;i++){
+    const p=UC.ggPlots[i]; if(!p||!ggPlotReady(p)) continue;
+    const s=GG_SEED_MAP[p.seed]; if(!s) continue;
+    const mut=ggRollMut(), weight=ggPlotWeight(p), value=Math.max(1, Math.floor(ggPlotValue(p)*(mut?mut.mult:1)*ggPetSellMult()));
+    UC.ggInventory.push({seed:s.id, weight:+weight.toFixed(3), value, mut:mut?mut.id:null});
+    count++; if(mut) best=mut.name;
+    p.at=Date.now(); p.w=ggRollW();
+  }
+  if(!count){ showToast('Nothing ready to harvest yet.'); return; }
+  trackQuest('harvest',count);
+  renderGGPlots(); renderGGShop(); updateGGBank(); saveGarden();
+  showToast('Harvested '+count+' crop'+(count>1?'s':'')+' into your basket'+(best?(' (incl. a '+best+'!)'):'')+'. Sell them in the 🧺 tab.');
+}
+function ggSellType(seedId){
+  if(!UC||!Array.isArray(UC.ggInventory)) return;
+  let gained=0, n=0;
+  UC.ggInventory=UC.ggInventory.filter(it=>{ if(it.seed===seedId){ gained+=(it.value||0); n++; return false; } return true; });
+  if(!n) return;
+  trackQuest('sell',n);
+  UC.ggSheckles=(UC.ggSheckles||0)+gained; UC.ggShecklesAllTime=(UC.ggShecklesAllTime||0)+gained;
+  renderGGShop(); updateGGBank(); saveGarden();
+  const s=GG_SEED_MAP[seedId];
+  showToast('Sold '+n+' '+(s?s.name:'crop')+(n>1?'s':'')+' for '+fmtNum(gained)+' Sheckles.');
+}
+function ggSellAll(){
+  if(!UC||!Array.isArray(UC.ggInventory)||!UC.ggInventory.length){ showToast('Your basket is empty.'); return; }
+  const gained=UC.ggInventory.reduce((a,b)=>a+(b.value||0),0), n=UC.ggInventory.length;
+  trackQuest('sell',n);
+  UC.ggInventory=[];
+  UC.ggSheckles=(UC.ggSheckles||0)+gained; UC.ggShecklesAllTime=(UC.ggShecklesAllTime||0)+gained;
+  renderGGShop(); updateGGBank(); saveGarden();
+  showToast('Sold '+n+' crop'+(n>1?'s':'')+' for '+fmtNum(gained)+' Sheckles.');
+}
+function ggExpand(){
+  if(!UC) return;
+  if(UC.ggUnlocked>=GG_MAX_PLOTS){ showToast('All plots unlocked!'); return; }
+  const cost=ggExpandCost();
+  if((UC.ggSheckles||0)<cost){ showToast('Need '+fmtNum(cost)+' Sheckles to unlock a new plot.'); return; }
+  UC.ggSheckles-=cost; UC.ggUnlocked++;
+  renderGGPlots(); updateGGBank(); saveGarden();
+  showToast('New plot unlocked! You now have '+UC.ggUnlocked+' plots.');
+}
+async function ggCashOut(){
+  if(!UC) return;
+  const caps=Math.floor((UC.ggSheckles||0)/GG_CASH_RATE);
+  if(caps<1){ showToast('Need at least '+fmtNum(GG_CASH_RATE)+' Sheckles to cash out.'); return; }
+  UC.ggSheckles-=caps*GG_CASH_RATE; UC.coins=(UC.coins||0)+caps; trackQuest('caps',caps);
+  await dbUpdateUser(getU(), {ggSheckles:UC.ggSheckles, coins:UC.coins});
+  refreshCaps(); updateGGBank(); renderGGShop();
+  showToast('Cashed out '+fmtOrbs(caps)+' Orb'+(caps>1?'s':'')+'!');
+}
+function ggFloat(i, text, mut){
+  try{
+    const plot=document.querySelector('.gg-plot[data-i="'+i+'"]'); if(!plot) return;
+    const r=plot.getBoundingClientRect();
+    const f=document.createElement('div'); f.className='gg-float'+(mut?(' '+mut.id):'');
+    f.textContent=text; f.style.left=(r.left+r.width/2)+'px'; f.style.top=(r.top+8)+'px';
+    document.body.appendChild(f); setTimeout(()=>f.remove(),1100);
+  }catch(_){}
+}
+function startGGEngine(){ stopGGEngine(); ggEngine=setInterval(()=>{
+  if(currentGameId==='growgarden' && document.getElementById('gg-plots')){
+    renderGGPlots();
+    if(Date.now()-_ggPetStepAt>2600){ _ggPetStepAt=Date.now(); ggPetStep(); }
+  }
+  if(Date.now()-_ggSaveAt>20000) saveGarden();
+}, 600); }
+function stopGGEngine(){ if(ggEngine){ clearInterval(ggEngine); ggEngine=null; } }
+function ggCleanup(){ stopGGEngine(); }
+
+// ============================================================
+//  LIQUID DASH  (geometry-dash: cube, ship, ball, wave, spider, swing)
+// ============================================================
+const GEO_CAP_DIV=100; // score points needed per Orb earned
+const GD_MODES=['cube','ship','ball','wave','spider','swing'];
+const GD_PORTAL_COL={ ship:'#19c3ff', ball:'#ffb020', wave:'#ff3df0', spider:'#9b5cff', swing:'#2ee6a6' }; // cube uses accent
+let gdState=null, gdKeyHandler=null, gdKeyUpHandler=null, gdPointerUp=null;
+// Canvas games read theme colors from the game window, where the theme's variables
+// are in effect. Each color is resolved through a probe element, so hex, rgb(), hsl()
+// and var() chains from custom themes all come back as a plain #rrggbb.
+function gameStyle(){
+  const host=document.querySelector('.fg-window')||document.body;
+  const cs=getComputedStyle(host);
+  return { getPropertyValue(name){
+    const raw=cs.getPropertyValue(name).trim();
+    if(!raw || /gradient|url\(/i.test(raw)) return '';
+    const probe=document.createElement('span');
+    probe.style.cssText='position:absolute;visibility:hidden;color:rgb(1,2,3)';
+    probe.style.color=raw;   // an unusable value is ignored and leaves the sentinel behind
+    host.appendChild(probe);
+    const painted=getComputedStyle(probe).color;
+    probe.remove();
+    const rgb=painted==='rgb(1, 2, 3)' ? [] : (painted.match(/[\d.]+/g)||[]).slice(0,3);
+    return rgb.length===3 ? '#'+rgb.map(v=>Math.round(+v).toString(16).padStart(2,'0')).join('') : '';
+  } };
+}
+// Boards keep a dark surface under light themes so pieces drawn in white stay visible.
+function boardSurface(hex){ if(!hex) return '#17171c'; const [r,g,b]=hexToRgb(hex); return (0.299*r+0.587*g+0.114*b)>150 ? '#1f2024' : hex; }
+function gdThemeColors(){
+  const cs=gameStyle();
+  const hx=n=>{ const v=(cs.getPropertyValue(n)||'').trim(); return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)?v:null; };
+  const accent=hx('--accent')||'#e23b3b';
+  const surface=boardSurface(hx('--card-bg'));
+  return { cube:accent, spike:hx('--accent-2')||lighten(accent,40), ground:surface, line:lighten(accent,10), sky1:darken(surface,4), sky2:darken(surface,22) };
+}
+function renderGeoDash(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  stage.innerHTML=`<div class="gd-wrap">
+    <div class="gd-hud"><span>Score <b id="gd-score">0</b></span><span id="gd-mode-tag" class="gd-mode-tag">Cube</span><span>Best <b id="gd-best">${UC.geoBest||0}</b></span></div>
+    <canvas id="gd-canvas" class="gd-canvas"></canvas>
+    <div class="gd-overlay" id="gd-overlay">
+      <div class="gd-card">
+        <div class="gd-title">Liquid Dash</div>
+        <div class="gd-sub">Tap, click or press Space, and hold to keep jumping as a cube. Ship and wave you hold to steer, ball flips gravity only while resting on a surface, spider teleports between floor and ceiling, and swing flips gravity even in mid-air. Dodge everything. The further you go, the more Orbs you earn.</div>
+        <button class="gd-btn" onclick="gdStart()">Play</button>
+      </div>
+    </div>
+  </div>`;
+  gdInit();
+}
+function gdInit(){
+  const cv=document.getElementById('gd-canvas'); if(!cv) return;
+  const W=Math.max(320, (cv.parentElement&&cv.parentElement.clientWidth)||640), H=380;
+  cv.width=W; cv.height=H;
+  gdState={ cv, ctx:cv.getContext('2d'), W, H, groundY:H-56, ceil:16, size:28, x:90,
+    y:H-56-28, vy:0, grav:0.9, jump:-13.2, baseSpeed:5.72, speed:5.72,
+    shipUp:0.55, shipDown:0.4, shipMax:6.4, ballMax:8, swingMax:6, gravDir:1,
+    dist:0, score:0, obstacles:[], grounded:true, rot:0, mode:'cube', holding:false, flash:0,
+    genMode:'cube', sinceSwitch:1, segLen:6, lastGapC:(H-56+16)/2, lastSurfSide:'ceiling',
+    running:false, dead:false, started:false, raf:0, colors:gdThemeColors() };
+  gdSeed();
+  gdCleanupListeners();
+  gdKeyHandler=function(e){ if((e.code==='Space'||e.key===' '||e.key==='ArrowUp'||e.key==='Up')&&currentGameId==='geodash'){ e.preventDefault(); if(e.repeat){ if(gdState) gdState.holding=true; } else gdDown(); } };
+  gdKeyUpHandler=function(e){ if((e.code==='Space'||e.key===' '||e.key==='ArrowUp'||e.key==='Up')&&gdState) gdState.holding=false; };
+  gdPointerUp=function(){ if(gdState) gdState.holding=false; };
+  document.addEventListener('keydown', gdKeyHandler);
+  document.addEventListener('keyup', gdKeyUpHandler);
+  window.addEventListener('pointerup', gdPointerUp);
+  cv.onpointerdown=function(e){ e.preventDefault(); gdDown(); };
+  gdDraw();
+}
+function gdDown(){ const s=gdState; if(!s||s.dead) return; s.holding=true; if(!s.started){ gdStart(); return; }
+  if(s.mode==='cube'){ if(s.grounded){ s.vy=s.jump; s.grounded=false; } }
+  else if(s.mode==='ball'){ const onF=s.y>=s.groundY-s.size-0.6, onC=s.y<=s.ceil+0.6; if((s.gravDir>0&&onF)||(s.gravDir<0&&onC)) s.gravDir=-s.gravDir; }
+  else if(s.mode==='spider'){ s.gravDir=-s.gravDir; s.y = s.gravDir>0 ? (s.groundY-s.size) : s.ceil; s.vy=0; }
+  else if(s.mode==='swing'){ s.gravDir=-s.gravDir; }
+}
+function gdNextMode(m){ return GD_MODES[(GD_MODES.indexOf(m)+1)%GD_MODES.length]; }
+function gdSetMode(s,m){ s.mode=m; s.vy=0; s.flash=12;
+  if(m==='ship'||m==='wave'||m==='swing'){ s.y=(s.ceil+(s.groundY-s.size))/2; if(m==='swing') s.gravDir=1; }
+  else if(m==='ball'||m==='spider'){ s.gravDir=1; s.y=s.groundY-s.size; }
+  const tag=document.getElementById('gd-mode-tag'); if(tag) tag.textContent=m.charAt(0).toUpperCase()+m.slice(1);
+}
+function gdCubeGap(s){ const air=2*Math.abs(s.jump)/s.grav, reach=air*s.speed; return reach*1.3 + Math.random()*reach*0.6; }
+function gdGenAhead(s){
+  let last=s.obstacles.length? s.obstacles[s.obstacles.length-1].x : s.W;
+  while(last < s.W+300){
+    if(s.sinceSwitch>=s.segLen){
+      const nm=gdNextMode(s.genMode);
+      last+=170; s.obstacles.push({type:'portal', x:last, w:16, mode:nm});
+      last+=140; s.genMode=nm; s.sinceSwitch=0;
+      s.segLen = nm==='cube'? 5+Math.floor(Math.random()*3) : nm==='spider'? 6+Math.floor(Math.random()*3) : 4+Math.floor(Math.random()*2);
+      s.lastGapC=(s.ceil+(s.groundY-s.size))/2; s.lastSurfSide='ceiling';
+      continue;
+    }
+    if(s.genMode==='cube'){
+      last+=gdCubeGap(s); const n=Math.random()<0.82?1:2;
+      s.obstacles.push({type:'spike', x:last, w:26*n, n});
+    } else if(s.genMode==='ship'||s.genMode==='wave'||s.genMode==='swing'){
+      const gm=s.genMode;
+      last+= s.speed*(gm==='ship'?(48+Math.random()*20):(50+Math.random()*20));
+      const gapSize = gm==='ship'?184 : gm==='swing'?172 : 170;
+      const minC=s.ceil+gapSize/2+8, maxC=s.groundY-gapSize/2-8;
+      let cc=s.lastGapC + (Math.random()*2-1)*(gm==='wave'?46 : gm==='swing'?40 : 66);
+      cc=Math.max(minC, Math.min(maxC, cc)); s.lastGapC=cc;
+      s.obstacles.push({type:'gap', x:last, w:26, gapTop:cc-gapSize/2, gapBot:cc+gapSize/2});
+    } else { // ball or spider: spikes on the floor or ceiling, flip/teleport to dodge
+      last+= s.speed*(s.genMode==='ball'?(70+Math.random()*34):(44+Math.random()*16));
+      const side = s.lastSurfSide==='floor'?'ceiling':'floor'; s.lastSurfSide=side;
+      s.obstacles.push({type:'surf', x:last, w:26, side});
+    }
+    s.sinceSwitch++;
+  }
+}
+function gdSeed(){ const s=gdState; s.obstacles=[]; s.genMode='cube'; s.sinceSwitch=1; s.segLen=6; s.lastGapC=(s.ceil+(s.groundY-s.size))/2; s.lastSurfSide='ceiling';
+  s.obstacles.push({type:'spike', x:s.W+180, w:26, n:1}); gdGenAhead(s); }
+function gdStart(){
+  if(!gdState){ gdInit(); }
+  const ov=document.getElementById('gd-overlay'); if(ov) ov.style.display='none';
+  const s=gdState;
+  s.started=true; s.dead=false; s.running=true;
+  s.mode='cube'; s.holding=false; s.gravDir=1; s.y=s.groundY-s.size; s.vy=0; s.grounded=true;
+  s.dist=0; s.score=0; s.speed=s.baseSpeed; s.rot=0; s.flash=0; s.shield=false; s.invuln=0;
+  s.colors=gdThemeColors(); gdSeed();
+  const tag=document.getElementById('gd-mode-tag'); if(tag) tag.textContent='Cube';
+  gdLoop();
+}
+function gdLoop(){
+  const s=gdState; if(!s||!s.running) return;
+  if(currentGameId!=='geodash'||!document.body.contains(s.cv)){ gdLeave(); return; }
+  s.speed=Math.min(9.1, s.baseSpeed + s.dist/16000);
+  s.dist+=s.speed; s.score=Math.floor(s.dist/10);
+  const floor=s.groundY-s.size;
+  if(s.mode==='cube'){
+    s.vy+=s.grav; s.y+=s.vy;
+    if(s.y>=floor){ s.y=floor; s.vy=0; s.grounded=true; s.rot=Math.round(s.rot/(Math.PI/2))*(Math.PI/2); if(s.holding){ s.vy=s.jump; s.grounded=false; } }
+    else { s.grounded=false; s.rot+=0.16; }
+  } else if(s.mode==='ship'){
+    s.vy += s.holding? -s.shipUp : s.shipDown;
+    s.vy=Math.max(-s.shipMax, Math.min(s.shipMax, s.vy)); s.y+=s.vy;
+    if(s.y<s.ceil){ s.y=s.ceil; if(s.vy<0) s.vy=0; }
+    if(s.y>floor){ s.y=floor; if(s.vy>0) s.vy=0; }
+    s.rot=Math.max(-0.5,Math.min(0.5,s.vy*0.05)); s.grounded=false;
+  } else if(s.mode==='wave'){
+    const wv=s.speed*0.8; s.vy = s.holding? -wv : wv; s.y+=s.vy;
+    if(s.y<s.ceil) s.y=s.ceil; if(s.y>floor) s.y=floor;
+    s.rot=s.holding?-0.6:0.6; s.grounded=false;
+  } else if(s.mode==='ball'){
+    s.vy += s.grav*0.78*s.gravDir;
+    s.vy=Math.max(-s.ballMax, Math.min(s.ballMax, s.vy)); s.y+=s.vy;
+    if(s.y>=floor){ s.y=floor; if(s.gravDir>0) s.vy=0; }
+    if(s.y<=s.ceil){ s.y=s.ceil; if(s.gravDir<0) s.vy=0; }
+    s.rot+=s.gravDir*0.2; s.grounded=false;
+  } else if(s.mode==='spider'){ // snapped to its current surface, taps teleport it
+    s.y = s.gravDir>0 ? floor : s.ceil; s.vy=0; s.rot=0; s.grounded=false;
+  } else { // swing: gravity flip you can use mid-air, fly straight through the corridors
+    s.vy += s.grav*0.5*s.gravDir;
+    s.vy=Math.max(-s.swingMax, Math.min(s.swingMax, s.vy)); s.y+=s.vy;
+    if(s.y<s.ceil){ s.y=s.ceil; if(s.vy<0) s.vy=0; }
+    if(s.y>floor){ s.y=floor; if(s.vy>0) s.vy=0; }
+    s.rot=Math.max(-0.6,Math.min(0.6,s.vy*0.06)); s.grounded=false;
+  }
+  for(const o of s.obstacles) o.x-=s.speed;
+  s.obstacles=s.obstacles.filter(o=>o.x+(o.w||26)>-16);
+  gdGenAhead(s);
+  for(const o of s.obstacles){ if(o.type==='portal'&&!o.used&&o.x<=s.x+s.size/2){ o.used=true; gdSetMode(s,o.mode); } }
+  if(s.flash>0) s.flash--;
+  if(gdCollide(s)){ if(s.shield){ s.shield=false; s.invuln=s.dist+240; s.flash=18; showToast('Shield used!'); } else { gdDie(); return; } }
+  gdDraw();
+  const sc=document.getElementById('gd-score'); if(sc) sc.textContent=s.score;
+  s.raf=requestAnimationFrame(gdLoop);
+}
+function gdCollide(s){
+  if(s.invuln && s.dist < s.invuln) return false;
+  const cl=s.x+5, cr=s.x+s.size-5, ctop=s.y+4, cb=s.y+s.size-3;
+  for(const o of s.obstacles){
+    if(o.type==='portal') continue;
+    if(cr<o.x || cl>o.x+o.w) continue;
+    if(o.type==='spike'){ if(cb>s.groundY-24+5) return true; }
+    else if(o.type==='gap'){ if(ctop<o.gapTop || cb>o.gapBot) return true; }
+    else if(o.type==='surf'){ if(o.side==='floor'){ if(cb>s.groundY-22) return true; } else { if(ctop<s.ceil+22) return true; } }
+  }
+  return false;
+}
+function gdDie(){
+  const s=gdState; s.running=false; s.dead=true; if(s.raf) cancelAnimationFrame(s.raf);
+  let caps=Math.floor(s.score/GEO_CAP_DIV); if(s.score>=GEO_CAP_DIV*0.4 && caps<1) caps=1;
+  if(s.score>(UC.geoBest||0)) UC.geoBest=s.score;
+  const best=UC.geoBest||0;
+  if(caps>0){ UC.coins=(UC.coins||0)+caps; trackQuest('caps',caps); }
+  try{ dbUpdateUser(getU(),{coins:UC.coins, geoBest:best}); }catch(e){}
+  refreshCaps();
+  const b=document.getElementById('gd-best'); if(b) b.textContent=best;
+  gdDraw(); s.ctx.fillStyle='rgba(0,0,0,.38)'; s.ctx.fillRect(0,0,s.W,s.H);
+  const ov=document.getElementById('gd-overlay');
+  if(ov){ ov.style.display='flex'; ov.innerHTML=`<div class="gd-card">
+    <div class="gd-title">Game Over</div>
+    <div class="gd-sub">Score ${s.score} &middot; Best ${best}</div>
+    <div class="gd-reward">${caps>0?('<span class="orb-ic"></span> +'+caps+' Orbs'):'Get a bit further next time to earn Orbs.'}</div>
+    <button class="gd-btn" onclick="gdStart()">Play again</button></div>`; }
+  if(caps>0) showToast('Liquid Dash: +'+caps+' Orbs!');
+}
+function gdDraw(){
+  const s=gdState; if(!s) return; const c=s.ctx, W=s.W, H=s.H, col=s.colors;
+  const g=c.createLinearGradient(0,0,0,H); g.addColorStop(0,col.sky1); g.addColorStop(1,col.sky2);
+  c.fillStyle=g; c.fillRect(0,0,W,H);
+  c.fillStyle=col.ground; c.fillRect(0,s.groundY,W,H-s.groundY); c.fillRect(0,0,W,s.ceil);
+  c.fillStyle=col.line; c.fillRect(0,s.groundY,W,3); c.fillRect(0,s.ceil-2,W,2);
+  for(const o of s.obstacles){
+    if(o.type==='spike'){ c.fillStyle=col.spike; for(let i=0;i<(o.n||1);i++){ const bx=o.x+i*26, base=s.groundY; c.beginPath(); c.moveTo(bx,base); c.lineTo(bx+13,base-26); c.lineTo(bx+26,base); c.closePath(); c.fill(); } }
+    else if(o.type==='gap'){ c.fillStyle=col.spike; c.fillRect(o.x,s.ceil,o.w,o.gapTop-s.ceil); c.fillRect(o.x,o.gapBot,o.w,s.groundY-o.gapBot); }
+    else if(o.type==='surf'){ c.fillStyle=col.spike; if(o.side==='floor'){ c.beginPath(); c.moveTo(o.x,s.groundY); c.lineTo(o.x+13,s.groundY-24); c.lineTo(o.x+26,s.groundY); c.closePath(); c.fill(); } else { c.beginPath(); c.moveTo(o.x,s.ceil); c.lineTo(o.x+13,s.ceil+24); c.lineTo(o.x+26,s.ceil); c.closePath(); c.fill(); } }
+    else if(o.type==='portal'){ const pc=GD_PORTAL_COL[o.mode]||col.cube; c.fillStyle=pc; c.globalAlpha=0.3; c.fillRect(o.x-2,s.ceil,o.w+4,s.groundY-s.ceil); c.globalAlpha=1; c.fillRect(o.x,s.ceil,3,s.groundY-s.ceil); c.fillRect(o.x+o.w-3,s.ceil,3,s.groundY-s.ceil); }
+  }
+  const cx=s.x+s.size/2, cy=s.y+s.size/2, h=s.size/2;
+  c.save(); c.translate(cx,cy); c.rotate(s.rot);
+  c.fillStyle = s.flash>0 ? '#ffffff' : col.cube;
+  if(s.mode==='cube'){ c.fillRect(-h,-h,s.size,s.size); c.fillStyle='rgba(255,255,255,.85)'; c.fillRect(-h+6,-h+6,7,7); }
+  else if(s.mode==='ship'){ c.beginPath(); c.moveTo(-h,-h+3); c.lineTo(h-5,-h+5); c.lineTo(h,0); c.lineTo(h-5,h-5); c.lineTo(-h,h-3); c.closePath(); c.fill();
+    if(s.holding){ c.fillStyle='#ffd23b'; c.beginPath(); c.moveTo(-h,-4); c.lineTo(-h-9,0); c.lineTo(-h,4); c.closePath(); c.fill(); }
+    c.fillStyle='rgba(255,255,255,.85)'; c.beginPath(); c.arc(2,-2,3,0,7); c.fill(); }
+  else if(s.mode==='wave'){ c.beginPath(); c.moveTo(h,0); c.lineTo(-h,-h+2); c.lineTo(-h*0.3,0); c.lineTo(-h,h-2); c.closePath(); c.fill(); }
+  else if(s.mode==='ball'){ c.font=(s.size+2)+'px "Segoe UI Emoji","Apple Color Emoji",serif'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('⚽',0,1); }
+  else if(s.mode==='spider'){ c.fillRect(-h,-h,s.size,s.size); c.strokeStyle='rgba(255,255,255,.55)'; c.lineWidth=2; for(let li=-1;li<=1;li++){ c.beginPath(); c.moveTo(-h,li*7); c.lineTo(-h-6,li*7); c.stroke(); c.beginPath(); c.moveTo(h,li*7); c.lineTo(h+6,li*7); c.stroke(); } c.fillStyle='rgba(255,255,255,.85)'; c.fillRect(-4,-h+5,8,4); }
+  else { c.beginPath(); c.moveTo(0,-h); c.lineTo(h,0); c.lineTo(0,h); c.lineTo(-h,0); c.closePath(); c.fill(); c.fillStyle='rgba(255,255,255,.85)'; c.beginPath(); c.arc(0,0,3.5,0,7); c.fill(); }
+  if(s.shield){ c.strokeStyle='rgba(255,255,255,.9)'; c.lineWidth=2.5; c.beginPath(); c.arc(0,0,h+5,0,Math.PI*2); c.stroke(); }
+  c.restore();
+}
+function gdLeave(){ if(gdState){ gdState.running=false; if(gdState.raf) cancelAnimationFrame(gdState.raf); } }
+function gdCleanupListeners(){
+  if(gdKeyHandler){ document.removeEventListener('keydown', gdKeyHandler); gdKeyHandler=null; }
+  if(gdKeyUpHandler){ document.removeEventListener('keyup', gdKeyUpHandler); gdKeyUpHandler=null; }
+  if(gdPointerUp){ window.removeEventListener('pointerup', gdPointerUp); gdPointerUp=null; }
+}
+function gdCleanup(){ gdLeave(); gdCleanupListeners(); gdState=null; }
+
+// ============================================================
+//  SNAKE  (eat orbs, grow, earn Orbs by length)
+// ============================================================
+let snakeState=null, snakeTimer=null, snakeKeyHandler=null;
+function snakeColors(){ const cs=gameStyle(); const hx=n=>{const v=(cs.getPropertyValue(n)||'').trim(); return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)?v:null;};
+  const accent=hx('--accent')||'#2faf4e', surface=boardSurface(hx('--card-bg'));
+  return { snake:accent, head:lighten(accent,35), food:'#f5c518', bg:darken(surface,6) }; }
+function renderSnake(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  stage.innerHTML=`<div class="sn-wrap">
+    <div class="sn-hud"><span>Orbs eaten <b id="sn-eaten">0</b></span><span>Best <b id="sn-best">${UC.snakeBest||0}</b></span></div>
+    <canvas id="sn-canvas" class="sn-canvas"></canvas>
+    <div class="sn-overlay" id="sn-overlay"><div class="sn-card">
+      <div class="sn-title">Snake</div>
+      <div class="sn-sub">Arrow keys, WASD or swipe to steer. Eat the Orbs to grow. Do not hit the walls or yourself.</div>
+      <button class="sn-btn" onclick="snakeStart()">Play</button>
+    </div></div>
+  </div>`;
+  snakeInit();
+}
+function snakeInit(){
+  const cv=document.getElementById('sn-canvas'); if(!cv) return;
+  const W=Math.max(300,(cv.parentElement&&cv.parentElement.clientWidth)||640);
+  const cell=Math.max(16, Math.floor(W/26)), cols=Math.floor(W/cell), rows=Math.max(12, Math.floor(340/cell));
+  cv.width=cols*cell; cv.height=rows*cell;
+  snakeState={ cv, ctx:cv.getContext('2d'), cell, cols, rows, body:[], dir:{x:1,y:0}, nextDir:{x:1,y:0}, food:null, eaten:0, alive:false, started:false, colors:snakeColors(), touch:null, prev:null, stepAt:0, stepMs:130, raf:0, fx:[], eatAt:0, foodAt:0, dyingAt:0 };
+  if(snakeKeyHandler) document.removeEventListener('keydown', snakeKeyHandler);
+  snakeKeyHandler=function(e){ if(currentGameId!=='snake'||!snakeState) return; const k=(e.key||'').toLowerCase(); let d=null;
+    if(k==='arrowup'||k==='w') d={x:0,y:-1}; else if(k==='arrowdown'||k==='s') d={x:0,y:1}; else if(k==='arrowleft'||k==='a') d={x:-1,y:0}; else if(k==='arrowright'||k==='d') d={x:1,y:0}; else return;
+    e.preventDefault(); if(!snakeState.started){ snakeStart(); return; }
+    const cur=snakeState.dir; if(d.x===-cur.x&&d.y===-cur.y) return; snakeState.nextDir=d; };
+  document.addEventListener('keydown', snakeKeyHandler);
+  cv.onpointerdown=function(e){ if(!snakeState) return; snakeState.touch={x:e.clientX,y:e.clientY}; if(!snakeState.started) snakeStart(); };
+  cv.onpointerup=function(e){ if(!snakeState||!snakeState.touch) return; const dx=e.clientX-snakeState.touch.x, dy=e.clientY-snakeState.touch.y; snakeState.touch=null; if(Math.abs(dx)<12&&Math.abs(dy)<12) return; const d=Math.abs(dx)>Math.abs(dy)?{x:dx>0?1:-1,y:0}:{x:0,y:dy>0?1:-1}; const cur=snakeState.dir; if(d.x===-cur.x&&d.y===-cur.y) return; snakeState.nextDir=d; };
+  snakeDraw();
+}
+function snakeSpawnFood(){ const s=snakeState; let p, tries=0; do{ p={x:Math.floor(Math.random()*s.cols), y:Math.floor(Math.random()*s.rows)}; tries++; }while(tries<300 && s.body.some(b=>b.x===p.x&&b.y===p.y)); s.food=p; s.foodAt=performance.now(); }
+function snakeStart(){
+  if(!snakeState) snakeInit(); const s=snakeState;
+  const ov=document.getElementById('sn-overlay'); if(ov) ov.style.display='none';
+  const cx=Math.floor(s.cols/2), cy=Math.floor(s.rows/2);
+  s.body=[{x:cx,y:cy},{x:cx-1,y:cy},{x:cx-2,y:cy}]; s.dir={x:1,y:0}; s.nextDir={x:1,y:0}; s.eaten=0; s.alive=true; s.started=true; s.revive=false; s.colors=snakeColors();
+  s.prev=s.body.map(b=>({x:b.x,y:b.y})); s.stepMs=130; s.stepAt=performance.now(); s.fx=[]; s.dyingAt=0; s.eatAt=0;
+  snakeSpawnFood();
+  const e=document.getElementById('sn-eaten'); if(e) e.textContent='0';
+  if(snakeTimer) clearInterval(snakeTimer);
+  snakeTimer=setInterval(snakeStep, s.stepMs);
+  cancelAnimationFrame(s.raf); snakeLoop();
+}
+// The game logic still moves one cell per tick; drawing runs every frame and slides each
+// segment from where it was to where it is now, so the snake glides instead of hopping.
+function snakeLoop(){
+  const s=snakeState; if(!s) return;
+  snakeDraw();
+  const crashing=s.dyingAt && performance.now()-s.dyingAt<650;
+  if(s.alive||crashing) s.raf=requestAnimationFrame(snakeLoop);
+}
+function snakeStep(){
+  const s=snakeState; if(!s||!s.alive) return;
+  if(currentGameId!=='snake'){ snakeCleanup(); return; }
+  s.dir=s.nextDir;
+  const head={x:s.body[0].x+s.dir.x, y:s.body[0].y+s.dir.y};
+  if(head.x<0||head.y<0||head.x>=s.cols||head.y>=s.rows || s.body.some(b=>b.x===head.x&&b.y===head.y)){
+    if(s.revive){ s.revive=false; const cx=Math.floor(s.cols/2), cy=Math.floor(s.rows/2); s.body=[{x:cx,y:cy},{x:cx-1,y:cy},{x:cx-2,y:cy}]; s.dir={x:1,y:0}; s.nextDir={x:1,y:0}; s.prev=s.body.map(b=>({x:b.x,y:b.y})); s.stepAt=performance.now(); snakeSpawnFood(); showToast('Extra life used!'); return; }
+    s.dyingAt=performance.now(); snakeDie(); s.raf=requestAnimationFrame(snakeLoop); return;
+  }
+  const old=s.body.map(b=>({x:b.x,y:b.y}));
+  s.body.unshift(head);
+  if(s.food && head.x===s.food.x && head.y===s.food.y){
+    s.eaten++; const e=document.getElementById('sn-eaten'); if(e){ e.textContent=s.eaten; e.classList.remove('bump'); void e.offsetWidth; e.classList.add('bump'); }
+    s.eatAt=performance.now(); s.fx.push({x:head.x, y:head.y, t0:s.eatAt});
+    snakeSpawnFood();
+    if(s.eaten%4===0){ clearInterval(snakeTimer); s.stepMs=Math.max(70, 130-Math.floor(s.eaten/4)*8); snakeTimer=setInterval(snakeStep, s.stepMs); } }
+  else s.body.pop();
+  s.prev=s.body.map((_,i)=>old[Math.min(i,old.length-1)]);   // a segment that just grew stays put for one tick
+  s.stepAt=performance.now();
+}
+function snakeDraw(){
+  const s=snakeState; if(!s) return; const c=s.ctx, cell=s.cell, col=s.colors, W=s.cv.width, H=s.cv.height, now=performance.now();
+  const crash=s.dyingAt? now-s.dyingAt : -1;
+  const p = s.alive ? Math.min(1,(now-s.stepAt)/s.stepMs) : 1;
+  c.save();
+  if(crash>=0 && crash<500){ const k=1-crash/500; c.translate(Math.sin(crash/16)*cell*0.35*k, Math.cos(crash/21)*cell*0.2*k); }
+  const g=c.createLinearGradient(0,0,0,H); g.addColorStop(0,col.bg); g.addColorStop(1,darken(col.bg,6)); c.fillStyle=g; c.fillRect(-20,-20,W+40,H+40);
+  c.strokeStyle='rgba(255,255,255,.04)'; c.lineWidth=1;
+  for(let x=cell;x<W;x+=cell){ c.beginPath(); c.moveTo(x+.5,0); c.lineTo(x+.5,H); c.stroke(); }
+  for(let y=cell;y<H;y+=cell){ c.beginPath(); c.moveTo(0,y+.5); c.lineTo(W,y+.5); c.stroke(); }
+  if(s.food){ const fx=s.food.x*cell+cell/2, fy=s.food.y*cell+cell/2;
+    const born=Math.min(1,(now-s.foodAt)/260);
+    const r=cell*(0.34+0.04*Math.sin(now/170))*Math.max(0.05,born<1?born*1.15:1);
+    c.save(); c.shadowColor=col.food; c.shadowBlur=14+6*Math.sin(now/170); c.fillStyle=col.food; c.beginPath(); c.arc(fx,fy,r,0,Math.PI*2); c.fill(); c.restore();
+    c.fillStyle='rgba(255,255,255,.8)'; c.beginPath(); c.arc(fx-r*0.32,fy-r*0.32,r*0.28,0,Math.PI*2); c.fill(); }
+  // rings and sparks where an orb was eaten
+  s.fx=s.fx.filter(f=>now-f.t0<420);
+  s.fx.forEach(f=>{ const k=(now-f.t0)/420, x=f.x*cell+cell/2, y=f.y*cell+cell/2;
+    c.strokeStyle='rgba(245,197,24,'+(0.8*(1-k)).toFixed(3)+')'; c.lineWidth=Math.max(1.5,cell*0.1*(1-k)); c.beginPath(); c.arc(x,y,cell*(0.4+k*1.1),0,Math.PI*2); c.stroke();
+    c.fillStyle='rgba(245,197,24,'+(0.9*(1-k)).toFixed(3)+')';
+    for(let i=0;i<6;i++){ const a=i*Math.PI/3+0.4, d=cell*(0.5+k*1.0); c.beginPath(); c.arc(x+Math.cos(a)*d, y+Math.sin(a)*d, Math.max(0.5,cell*0.09*(1-k)),0,Math.PI*2); c.fill(); } });
+  const n=s.body.length; if(!n){ c.restore(); return; }
+  const pts=s.body.map((b,i)=>{ const q=(s.prev&&s.prev[i])||b; return { x:(q.x+(b.x-q.x)*p)*cell+cell/2, y:(q.y+(b.y-q.y)*p)*cell+cell/2 }; });
+  const hurt = crash>=0 && Math.floor(crash/90)%2===0;
+  const body = hurt ? '#e34b4b' : col.snake;
+  c.lineJoin='round'; c.lineCap='round';
+  const trace=()=>{ c.beginPath(); c.moveTo(pts[0].x,pts[0].y); for(let i=1;i<n;i++) c.lineTo(pts[i].x,pts[i].y); if(n===1) c.lineTo(pts[0].x+0.1,pts[0].y); c.stroke(); };
+  c.strokeStyle=darken(body,20); c.lineWidth=cell*0.84; trace();
+  c.strokeStyle=body; c.lineWidth=cell*0.6; trace();
+  const hx=pts[0].x, hy=pts[0].y, ex=s.dir.x, ey=s.dir.y;
+  const squash=1+0.28*Math.max(0,1-(now-s.eatAt)/200);
+  c.fillStyle=hurt?lighten('#e34b4b',25):col.head; c.beginPath(); c.arc(hx,hy,cell*0.46*squash,0,Math.PI*2); c.fill();
+  const flick=Math.sin(now/110)>0.2 ? 1 : 0.55;
+  c.strokeStyle='#e34b4b'; c.lineWidth=Math.max(1.5,cell*0.07); c.beginPath(); c.moveTo(hx+ex*cell*0.44,hy+ey*cell*0.44); c.lineTo(hx+ex*cell*0.72*flick,hy+ey*cell*0.72*flick); c.stroke();
+  const off=cell*0.2, er=Math.max(1.8,cell*0.12), fwd=cell*0.13, px=-ey, py=ex;
+  [[hx+ex*fwd+px*off, hy+ey*fwd+py*off],[hx+ex*fwd-px*off, hy+ey*fwd-py*off]].forEach(e=>{
+    c.fillStyle='#fff'; c.beginPath(); c.arc(e[0],e[1],er,0,Math.PI*2); c.fill();
+    if(crash>=0){ c.strokeStyle='#111'; c.lineWidth=Math.max(1,er*0.4); c.beginPath(); c.moveTo(e[0]-er*0.5,e[1]-er*0.5); c.lineTo(e[0]+er*0.5,e[1]+er*0.5); c.moveTo(e[0]+er*0.5,e[1]-er*0.5); c.lineTo(e[0]-er*0.5,e[1]+er*0.5); c.stroke(); }
+    else { c.fillStyle='#111'; c.beginPath(); c.arc(e[0]+ex*er*0.5,e[1]+ey*er*0.5,er*0.55,0,Math.PI*2); c.fill(); } });
+  c.restore();
+}
+function snakeDie(){
+  const s=snakeState; s.alive=false; if(snakeTimer){ clearInterval(snakeTimer); snakeTimer=null; }
+  const caps=Math.floor(s.eaten/2);
+  if(s.eaten>(UC.snakeBest||0)) UC.snakeBest=s.eaten;
+  if(caps>0){ UC.coins=(UC.coins||0)+caps; trackQuest('caps',caps); }
+  try{ dbUpdateUser(getU(),{coins:UC.coins, snakeBest:UC.snakeBest}); }catch(e){}
+  refreshCaps();
+  const bb=document.getElementById('sn-best'); if(bb) bb.textContent=UC.snakeBest||0;
+  const ov=document.getElementById('sn-overlay');
+  if(ov){ ov.style.display='none'; setTimeout(()=>{ if(snakeState===s && ov.isConnected) ov.style.display='flex'; }, 650); ov.innerHTML=`<div class="sn-card"><div class="sn-title">Game Over</div><div class="sn-sub">You ate ${s.eaten} Orb${s.eaten===1?'':'s'}. Best ${UC.snakeBest||0}.</div><div class="sn-reward">${caps>0?('<span class="orb-ic"></span> +'+caps+' Orbs'):'Eat a couple more next time to earn Orbs.'}</div><button class="sn-btn" onclick="snakeStart()">Play again</button></div>`; }
+  if(caps>0) showToast('Snake: +'+caps+' Orbs!');
+}
+function snakeCleanup(){ if(snakeState) cancelAnimationFrame(snakeState.raf); if(snakeTimer){ clearInterval(snakeTimer); snakeTimer=null; } if(snakeKeyHandler){ document.removeEventListener('keydown', snakeKeyHandler); snakeKeyHandler=null; } snakeState=null; }
+
+// ============================================================
+//  BLOX MERGE  (2048-style, Orbs for each new high tile)
+// ============================================================
+let mergeState=null, mergeKeyHandler=null;
+const MERGE_COLORS={2:'#eee4da',4:'#ede0c8',8:'#f2b179',16:'#f59563',32:'#f67c5f',64:'#f65e3b',128:'#edcf72',256:'#edcc61',512:'#edc850',1024:'#edc53f',2048:'#edc22e'};
+function mergeTileColor(v){ return MERGE_COLORS[v]||'#3c3a32'; }
+function renderMerge(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  stage.innerHTML=`<div class="mg-wrap">
+    <div class="mg-hud"><span>Score <b id="mg-score">0</b></span><span>Best tile <b id="mg-best">${UC.mergeBest||0}</b></span></div>
+    <div class="mg-board" id="mg-board"></div>
+    <div class="mg-foot">Arrow keys, WASD or swipe. Reach a new high tile to earn Orbs.<button class="mg-restart" onclick="mergeStart()">Restart</button></div>
+    <div class="mg-over" id="mg-over" style="display:none"></div>
+  </div>`;
+  mergeInit();
+}
+function mergeInit(){
+  mergeState={ grid:[[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]], score:0, highest:0, awarded:{}, over:false, touch:null, prevGrid:null, prevScore:0, spawnCell:null, mergedCells:[] };
+  if(mergeKeyHandler) document.removeEventListener('keydown', mergeKeyHandler);
+  mergeKeyHandler=function(e){ if(currentGameId!=='merge'||!mergeState||mergeState.over) return; const k=(e.key||'').toLowerCase(); let dir=null;
+    if(k==='arrowleft'||k==='a')dir='left'; else if(k==='arrowright'||k==='d')dir='right'; else if(k==='arrowup'||k==='w')dir='up'; else if(k==='arrowdown'||k==='s')dir='down'; else return;
+    e.preventDefault(); mergeMove(dir); };
+  document.addEventListener('keydown', mergeKeyHandler);
+  const board=document.getElementById('mg-board');
+  if(board){ board.onpointerdown=function(e){ if(mergeState) mergeState.touch={x:e.clientX,y:e.clientY}; };
+    board.onpointerup=function(e){ if(!mergeState||!mergeState.touch||mergeState.over) return; const dx=e.clientX-mergeState.touch.x, dy=e.clientY-mergeState.touch.y; mergeState.touch=null; if(Math.abs(dx)<20&&Math.abs(dy)<20) return; mergeMove(Math.abs(dx)>Math.abs(dy)?(dx>0?'right':'left'):(dy>0?'down':'up')); }; }
+  mergeStart();
+}
+function mergeStart(){
+  const s=mergeState; if(!s) return;
+  s.grid=[[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]]; s.score=0; s.highest=0; s.awarded={}; s.over=false; s.prevGrid=null; s.spawnCell=null; s.mergedCells=[];
+  mergeSpawn(); mergeSpawn();
+  const ov=document.getElementById('mg-over'); if(ov) ov.style.display='none';
+  mergeDraw();
+}
+function mergeSpawn(){ const s=mergeState; const empty=[]; for(let r=0;r<4;r++)for(let c=0;c<4;c++) if(s.grid[r][c]===0) empty.push([r,c]); if(!empty.length) return; const cell=empty[Math.floor(Math.random()*empty.length)]; s.grid[cell[0]][cell[1]]=Math.random()<0.9?2:4; s.spawnCell=[cell[0],cell[1]]; }
+function mergeSlide(line){ const a=[]; line.forEach((v,j)=>{ if(v) a.push({v,j}); });
+  const out=[], moves=[]; let gained=0, i=0, mergedAt=[];
+  while(i<a.length){
+    if(i+1<a.length&&a[i].v===a[i+1].v){ out.push(a[i].v*2); gained+=a[i].v*2; mergedAt.push(out.length-1); moves.push({from:a[i].j,to:out.length-1,v:a[i].v},{from:a[i+1].j,to:out.length-1,v:a[i+1].v,ghost:true}); i+=2; }
+    else { out.push(a[i].v); moves.push({from:a[i].j,to:out.length-1,v:a[i].v}); i++; } }
+  while(out.length<4) out.push(0); return {out, gained, mergedAt, moves}; }
+function mergeMove(dir){
+  const s=mergeState; if(!s||s.over) return; const g=s.grid; let changed=false, gained=0;
+  const snap=g.map(r=>r.slice()), snapScore=s.score;
+  const getLine=i=> dir==='left'?[g[i][0],g[i][1],g[i][2],g[i][3]] : dir==='right'?[g[i][3],g[i][2],g[i][1],g[i][0]] : dir==='up'?[g[0][i],g[1][i],g[2][i],g[3][i]] : [g[3][i],g[2][i],g[1][i],g[0][i]];
+  const setLine=(i,arr)=>{ if(dir==='left'){ for(let j=0;j<4;j++) g[i][j]=arr[j]; } else if(dir==='right'){ for(let j=0;j<4;j++) g[i][3-j]=arr[j]; } else if(dir==='up'){ for(let j=0;j<4;j++) g[j][i]=arr[j]; } else { for(let j=0;j<4;j++) g[3-j][i]=arr[j]; } };
+  const cellOf=(i,j)=> dir==='left'?[i,j] : dir==='right'?[i,3-j] : dir==='up'?[j,i] : [3-j,i];
+  s.mergedCells=[]; s.spawnCell=null; s.slides=[];
+  for(let i=0;i<4;i++){ const before=getLine(i), r=mergeSlide(before); gained+=r.gained; r.moves.forEach(m=>s.slides.push({from:cellOf(i,m.from), to:cellOf(i,m.to), v:m.v, ghost:!!m.ghost})); for(let j=0;j<4;j++) if(before[j]!==r.out[j]) changed=true; setLine(i,r.out); r.mergedAt.forEach(j=>s.mergedCells.push(cellOf(i,j))); }
+  if(!changed) return;
+  s.prevGrid=snap; s.prevScore=snapScore;
+  s.score+=gained; mergeSpawn();
+  let hi=0; for(let r=0;r<4;r++)for(let c=0;c<4;c++) if(g[r][c]>hi) hi=g[r][c];
+  if(hi>s.highest){ s.highest=hi;
+    if(hi>=64 && !s.awarded[hi]){ s.awarded[hi]=1; const caps=hi/32; UC.coins=(UC.coins||0)+caps; if(hi>(UC.mergeBest||0)) UC.mergeBest=hi; try{ dbUpdateUser(getU(),{coins:UC.coins, mergeBest:UC.mergeBest}); }catch(e){} refreshCaps(); showToast('Blox Merge: reached '+hi+'! +'+caps+' Orbs'); }
+    else if(hi>(UC.mergeBest||0)){ UC.mergeBest=hi; try{ dbUpdateUser(getU(),{mergeBest:UC.mergeBest}); }catch(e){} } }
+  mergeDraw();
+  if(mergeNoMoves()){ s.over=true; const ov=document.getElementById('mg-over'); if(ov){ ov.style.display='flex'; ov.innerHTML=`<div class="mg-over-card"><div class="sn-title">No moves left</div><div class="sn-sub">Score ${s.score} &middot; Best tile ${s.highest}</div><button class="sn-btn" onclick="mergeStart()">Play again</button></div>`; } }
+}
+function mergeNoMoves(){ const g=mergeState.grid; for(let r=0;r<4;r++)for(let c=0;c<4;c++){ if(g[r][c]===0) return false; if(c<3&&g[r][c]===g[r][c+1]) return false; if(r<3&&g[r][c]===g[r+1][c]) return false; } return true; }
+function mergeDraw(){
+  const s=mergeState; const board=document.getElementById('mg-board'); if(!board) return;
+  const sc=document.getElementById('mg-score'); if(sc) sc.textContent=s.score;
+  const bt=document.getElementById('mg-best'); if(bt) bt.textContent=UC.mergeBest||0;
+  let html='';
+  for(let r=0;r<4;r++)for(let c=0;c<4;c++){ const v=s.grid[r][c];
+    if(!v){ html+='<div class="mg-cell"></div>'; continue; }
+    const isNew=s.spawnCell&&s.spawnCell[0]===r&&s.spawnCell[1]===c;
+    const isMerged=(s.mergedCells||[]).some(m=>m[0]===r&&m[1]===c);
+    const fg = v<=4?'#3a352f':'#fff';
+    const fs = v>=1000?'1.15rem':(v>=100?'1.45rem':'1.7rem');
+    html+=`<div class="mg-cell"><div class="mg-tile${isNew?' mg-new':isMerged?' mg-merged':''}" style="background:${mergeTileColor(v)};color:${fg};font-size:${fs}">${v}</div></div>`; }
+  board.innerHTML=html;
+  mergeSlideTiles(board, s);
+  s.slides=[];
+}
+// Tiles glide from where they were to where they landed. The second tile of a merge
+// slides in as a ghost and fades out as the combined tile pulses.
+function mergeSlideTiles(board, s){
+  if(!s.slides||!s.slides.length||matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cells=board.children, at=p=>cells[p[0]*4+p[1]];
+  s.slides.forEach(m=>{
+    if(m.from[0]===m.to[0]&&m.from[1]===m.to[1]) return;
+    const dest=at(m.to), src=at(m.from); if(!dest||!src) return;
+    const d=dest.getBoundingClientRect(), o=src.getBoundingClientRect();
+    let el;
+    if(m.ghost){ el=document.createElement('div'); el.className='mg-tile mg-ghost'; el.textContent=m.v;
+      el.style.cssText='background:'+mergeTileColor(m.v)+';color:'+(m.v<=4?'#3a352f':'#fff')+';font-size:'+(m.v>=1000?'1.15rem':(m.v>=100?'1.45rem':'1.7rem'))+';z-index:0';
+      dest.insertBefore(el, dest.firstChild); }
+    else el=dest.querySelector('.mg-tile');
+    if(!el) return;
+    el.style.transition='none'; el.style.transform='translate('+(o.left-d.left)+'px,'+(o.top-d.top)+'px)';
+    void el.offsetWidth;
+    el.style.transition='transform .13s ease-out'; el.style.transform='';
+    if(m.ghost) setTimeout(()=>el.remove(), 150);
+  });
+}
+function mergeCleanup(){ if(mergeKeyHandler){ document.removeEventListener('keydown', mergeKeyHandler); mergeKeyHandler=null; } mergeState=null; }
+
+// ============================================================
+//  TYPING SPRINT
+// ============================================================
+const TS_WORDS=['orb','red','game','play','jump','race','dash','snake','merge','planet','frixion','cookie','tower','math','speed','type','word','level','score','boost','wave','ball','spider','shield','swing','block','green','blue','fast','slow','best','high','click','target','daily','rebirth','theme','avatar','chat','friend','trade','gold','coin','bonus','quick','sharp','focus','power','energy','rocket','pixel','arcade','combo','streak','master','rookie','legend','craft','quest','online','badge','crown','royal','swift','blaze','frost','storm','flame','ocean','forest','galaxy','matrix','neon','cyber','retro','vault','quest','climb','flash'];
+let tsState=null;
+function renderTyping(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  stage.innerHTML=`<div class="ts-wrap">
+    <div class="ts-hud"><span>Cleared <b id="ts-cleared">0</b></span><span id="ts-lives"></span><span>Best <b id="ts-best">${UC.typingBest||0}</b></span></div>
+    <div class="ts-field" id="ts-field"></div>
+    <div class="ts-foot"><input class="ts-input" id="ts-input" placeholder="Type a word and press Enter" autocomplete="off" autocapitalize="off" spellcheck="false" onkeydown="if(event.key==='Enter')tsSubmit()"></div>
+    <div class="ts-overlay" id="ts-overlay"><div class="ts-card"><div class="ts-title">Typing Sprint</div><div class="ts-sub">Words fly in from the right. Type each one and press Enter before it escapes. Three misses ends the run.</div><button class="ts-btn" onclick="tsStart()">Play</button></div></div>
+  </div>`;
+  tsState={ field:document.getElementById('ts-field'), words:[], lives:3, cleared:0, speed:1.1, spawnT:30, running:false, raf:0 };
+}
+function tsStart(){
+  if(!tsState) return; const s=tsState;
+  const ov=document.getElementById('ts-overlay'); if(ov) ov.style.display='none';
+  s.words.forEach(w=>w.el.remove()); s.words=[]; s.lives=3; s.cleared=0; s.speed=1.1; s.spawnT=15; s.running=true;
+  tsUpdateHud();
+  const inp=document.getElementById('ts-input'); if(inp){ inp.value=''; inp.focus(); }
+  tsLoop();
+}
+function tsSpawn(){
+  const s=tsState, field=s.field; const fw=field.clientWidth||640, fh=field.clientHeight||320;
+  const text=TS_WORDS[Math.floor(Math.random()*TS_WORDS.length)];
+  const el=document.createElement('div'); el.className='ts-word'; el.textContent=text;
+  el.style.top=(10+Math.random()*(fh-46))+'px'; el.style.left=fw+'px'; field.appendChild(el);
+  s.words.push({text:text.toLowerCase(), x:fw, el});
+}
+function tsLoop(){
+  const s=tsState; if(!s||!s.running) return;
+  if(currentGameId!=='typing'||!document.body.contains(s.field)){ tsCleanup(); return; }
+  s.spawnT--; if(s.spawnT<=0){ tsSpawn(); s.spawnT=Math.max(34, 105 - s.cleared*1.4); }
+  s.speed=Math.min(3.4, 1.1 + s.cleared*0.025);
+  for(let i=s.words.length-1;i>=0;i--){ const w=s.words[i]; w.x-=s.speed; w.el.style.left=w.x+'px';
+    if(w.x < -10 - w.el.offsetWidth){ w.el.remove(); s.words.splice(i,1); s.lives--; tsUpdateHud(); if(s.lives<=0){ tsGameOver(); return; } } }
+  s.raf=requestAnimationFrame(tsLoop);
+}
+function tsUpdateHud(){
+  const s=tsState; const cl=document.getElementById('ts-cleared'); if(cl) cl.textContent=s.cleared;
+  const lv=document.getElementById('ts-lives'); if(lv){ const live=Math.max(0,s.lives); lv.innerHTML='<span style="color:#e34b4b">'+'♥'.repeat(live)+'</span>'; }
+}
+function tsSubmit(){
+  const s=tsState; if(!s||!s.running) return;
+  const inp=document.getElementById('ts-input'); const val=(inp.value||'').trim().toLowerCase(); inp.value='';
+  if(!val) return;
+  let idx=-1, minx=Infinity;
+  for(let i=0;i<s.words.length;i++){ if(s.words[i].text===val && s.words[i].x<minx){ minx=s.words[i].x; idx=i; } }
+  if(idx>=0){ const el=s.words[idx].el; el.classList.add('hit'); setTimeout(()=>el.remove(),120); s.words.splice(idx,1); s.cleared++; tsUpdateHud(); }
+  else { inp.classList.add('wrong'); setTimeout(()=>inp.classList.remove('wrong'),200); }
+}
+function tsGameOver(){
+  const s=tsState; s.running=false; if(s.raf) cancelAnimationFrame(s.raf);
+  s.words.forEach(w=>w.el.remove()); s.words=[];
+  const caps=Math.floor(s.cleared/2);
+  if(s.cleared>(UC.typingBest||0)) UC.typingBest=s.cleared;
+  if(caps>0){ UC.coins=(UC.coins||0)+caps; trackQuest('caps',caps); }
+  try{ dbUpdateUser(getU(),{coins:UC.coins, typingBest:UC.typingBest}); }catch(e){}
+  refreshCaps();
+  const bb=document.getElementById('ts-best'); if(bb) bb.textContent=UC.typingBest||0;
+  const ov=document.getElementById('ts-overlay'); if(ov){ ov.style.display='flex'; ov.innerHTML=`<div class="ts-card"><div class="ts-title">Run over</div><div class="ts-sub">You cleared ${s.cleared} word${s.cleared===1?'':'s'}.</div><div class="ts-reward">${caps>0?('<span class="orb-ic"></span> +'+caps+' Orbs'):'Clear a couple more to earn Orbs.'}</div><button class="ts-btn" onclick="tsStart()">Play again</button></div>`; }
+  if(caps>0) showToast('Typing Sprint: +'+caps+' Orbs!');
+}
+function tsCleanup(){ if(tsState){ if(tsState.raf) cancelAnimationFrame(tsState.raf); tsState.running=false; } tsState=null; }
+
+// ============================================================
+//  AIM TRAINER
+// ============================================================
+let atState=null;
+function renderAim(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  stage.innerHTML=`<div class="at-wrap">
+    <div class="at-hud"><span>Time <b id="at-time">30</b></span><span>Hits <b id="at-hits">0</b></span><span>Acc <b id="at-acc">100%</b></span><span>Best <b id="at-best">${UC.aimBest||0}</b></span></div>
+    <div class="at-field" id="at-field" onpointerdown="atMiss(event)"></div>
+    <div class="at-overlay ts-overlay" id="at-overlay"><div class="ts-card"><div class="ts-title">Aim Trainer</div><div class="ts-sub">Pop as many targets as you can in 30 seconds. Precision counts.</div><button class="ts-btn" onclick="atStart()">Play</button></div></div>
+  </div>`;
+  atState={ hits:0, misses:0, running:false, endTime:0, timer:null };
+}
+function atStart(){
+  const s=atState; if(!s) return;
+  const ov=document.getElementById('at-overlay'); if(ov) ov.style.display='none';
+  s.hits=0; s.misses=0; s.running=true; s.endTime=Date.now()+30000;
+  atUpdateHud(); atSpawn();
+  if(s.timer) clearInterval(s.timer);
+  s.timer=setInterval(()=>{ if(!atState||!atState.running) return; const left=Math.max(0,Math.ceil((s.endTime-Date.now())/1000)); const t=document.getElementById('at-time'); if(t) t.textContent=left; if(Date.now()>=s.endTime) atEnd(); }, 100);
+}
+function atSpawn(){
+  const field=document.getElementById('at-field'); if(!field) return;
+  const old=field.querySelector('.at-target'); if(old) old.remove();
+  const fw=field.clientWidth||600, fh=field.clientHeight||320, sz=Math.max(34,Math.min(64,fw*0.08));
+  const t=document.createElement('div'); t.className='at-target'; t.style.width=t.style.height=sz+'px';
+  t.style.left=(Math.random()*(fw-sz))+'px'; t.style.top=(Math.random()*(fh-sz))+'px';
+  t.onpointerdown=function(e){ e.stopPropagation(); atHit(); };
+  field.appendChild(t);
+}
+function atHit(){ const s=atState; if(!s||!s.running) return; s.hits++; atUpdateHud(); atSpawn(); }
+function atMiss(){ const s=atState; if(!s||!s.running) return; s.misses++; atUpdateHud(); }
+function atUpdateHud(){ const s=atState; const set=(id,v)=>{const el=document.getElementById(id); if(el) el.textContent=v;}; set('at-hits',s.hits); const tot=s.hits+s.misses; set('at-acc',(tot?Math.round(s.hits/tot*100):100)+'%'); }
+function atEnd(){
+  const s=atState; s.running=false; if(s.timer){ clearInterval(s.timer); s.timer=null; }
+  const field=document.getElementById('at-field'); const tg=field&&field.querySelector('.at-target'); if(tg) tg.remove();
+  const caps=Math.floor(s.hits/2);
+  if(s.hits>(UC.aimBest||0)) UC.aimBest=s.hits;
+  if(caps>0){ UC.coins=(UC.coins||0)+caps; trackQuest('caps',caps); }
+  try{ dbUpdateUser(getU(),{coins:UC.coins, aimBest:UC.aimBest}); }catch(e){}
+  refreshCaps();
+  const bb=document.getElementById('at-best'); if(bb) bb.textContent=UC.aimBest||0;
+  const tot=s.hits+s.misses, acc=tot?Math.round(s.hits/tot*100):100;
+  const ov=document.getElementById('at-overlay'); if(ov){ ov.style.display='flex'; ov.innerHTML=`<div class="ts-card"><div class="ts-title">Time's up</div><div class="ts-sub">${s.hits} hits at ${acc}% accuracy.</div><div class="ts-reward">${Orbs>0?('<span class="orb-ic"></span> +'+caps+' Orbs'):'Hit a few more next time to earn caps.'}</div><button class="ts-btn" onclick="atStart()">Play again</button></div>`; }
+  if(caps>0) showToast('Aim Trainer: +'+caps+' Orbs!');
+}
+function atCleanup(){ if(atState){ if(atState.timer) clearInterval(atState.timer); atState.running=false; } atState=null; }
+
+// ============================================================
+//  DAILY WORD  (same five-letter word for everyone, by date)
+// ============================================================
+const DW_WORDS=['apple','brave','crane','dance','eagle','fable','ghost','happy','ivory','jolly','kneel','lemon','mango','noble','olive','pearl','queen','river','solar','tiger','vivid','witty','yacht','zebra','beach','cloud','dream','flame','grape','heart','light','money','north','ocean','plant','quilt','robot','stone','toast','unity','vapor','wagon','blaze','chess','drift','frost','glide','honey','input','joker','karma','laser','metal','ninja','orbit','pixel','quick','raven','sugar','torch','ultra','venom','whale','yield','zesty','amber','bloom','cabin','depth','ember','fairy','globe','hatch','jumbo','knife','lunar','medal','nudge','onion','prism','ridge','spice','trend','usher','valve','wheat','climb','exact','fudge','grasp','hover','index','mirth','party','realm','swirl','table','vouch','adept','brisk','cliff','dwell','flock','gnome','hunch','irony','lodge','mossy','plumb','scout','tonic','vixen','waltz'];
+let dwState=null, dwKeyHandler=null;
+function dailyWordIndex(){ const d=new Date(); const dayNum=Math.floor(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())/86400000); return ((dayNum % DW_WORDS.length)+DW_WORDS.length)%DW_WORDS.length; }
+const DW_REWARDS=[0,120,90,70,50,35,25]; // index by number of guesses used (1..6) on a win
+function dwEval(guess, word){
+  const res=new Array(5).fill('b'), warr=word.split('');
+  for(let i=0;i<5;i++){ if(guess[i]===word[i]){ res[i]='g'; warr[i]=null; } }
+  for(let i=0;i<5;i++){ if(res[i]==='g') continue; const j=warr.indexOf(guess[i]); if(j>=0){ res[i]='y'; warr[j]=null; } }
+  return res;
+}
+function renderDailyWord(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  const today=todayStr();
+  if(UC.dwDate!==today){ UC.dwDate=today; UC.dwRows=[]; UC.dwDone=null; UC.dwHints=[]; }
+  dwState={ word:DW_WORDS[dailyWordIndex()], rows:(UC.dwRows||[]).slice(), current:'', done:UC.dwDone||null, hints:(UC.dwHints||[]).slice() };
+  stage.innerHTML=`<div class="dw-wrap">
+    <div class="dw-head"><div class="dw-title">Daily Word</div><div class="dw-sub">One five-letter word for everyone today. Fewer guesses pay more Orbs.</div></div>
+    <div class="dw-board" id="dw-board"></div>
+    <div class="dw-msg" id="dw-msg"></div>
+    <div class="dw-hint" id="dw-hint"></div>
+    
+    <div class="dw-keys" id="dw-keys"></div>
+  </div>`;
+  dwBuildKeys(); dwDraw();
+  if(dwKeyHandler) document.removeEventListener('keydown', dwKeyHandler);
+  dwKeyHandler=function(e){ if(currentGameId!=='dailyword'||!dwState) return; const k=e.key;
+    if(k==='Enter'){ e.preventDefault(); dwSubmit(); } else if(k==='Backspace'){ e.preventDefault(); dwBack(); } else if(/^[a-zA-Z]$/.test(k)){ dwType(k.toLowerCase()); } };
+  document.addEventListener('keydown', dwKeyHandler);
+}
+function dwDraw(){
+  const s=dwState, board=document.getElementById('dw-board'); if(!board) return;
+  let html='';
+  for(let r=0;r<6;r++){
+    const guess = r<s.rows.length ? s.rows[r] : (r===s.rows.length && !s.done ? s.current : '');
+    const evald = r<s.rows.length ? dwEval(s.rows[r], s.word) : null;
+    html+='<div class="dw-row">';
+    for(let i=0;i<5;i++){ const ch=guess[i]||''; const cls = evald?('dw-'+evald[i]):(ch?'dw-filled':''); html+=`<div class="dw-tile ${cls}">${ch.toUpperCase()}</div>`; }
+    html+='</div>';
+  }
+  board.innerHTML=html;
+  const msg=document.getElementById('dw-msg');
+  if(msg){ if(s.done==='win'){ msg.textContent='Solved! Come back tomorrow for a new word.'; msg.className='dw-msg ok'; }
+    else if(s.done==='lose'){ msg.textContent='The word was '+s.word.toUpperCase()+'. New word tomorrow.'; msg.className='dw-msg bad'; }
+    else { msg.textContent=''; msg.className='dw-msg'; } }
+  const hint=document.getElementById('dw-hint');
+  if(hint){ hint.textContent = (s.hints&&s.hints.length) ? ('Hint: '+s.hints.slice().sort((a,b)=>a-b).map(i=>'letter '+(i+1)+' is '+s.word[i].toUpperCase()).join(', ')) : ''; }
+  dwColorKeys();
+}
+function dwType(ch){ const s=dwState; if(!s||s.done) return; if(s.current.length<5){ s.current+=ch; dwDraw(); } }
+function dwBack(){ const s=dwState; if(!s||s.done) return; s.current=s.current.slice(0,-1); dwDraw(); }
+async function dwSubmit(){
+  const s=dwState; if(!s||s.done) return;
+  if(s.current.length<5){ const m=document.getElementById('dw-msg'); if(m){ m.textContent='Needs 5 letters.'; m.className='dw-msg bad'; } return; }
+  const guess=s.current; s.rows.push(guess); s.current='';
+  UC.dwRows=s.rows.slice(); UC.dwDate=todayStr();
+  const win=guess===s.word; const save={dwRows:UC.dwRows, dwDate:UC.dwDate};
+  if(win){ s.done='win'; UC.dwDone='win'; save.dwDone='win';
+    const caps=DW_REWARDS[s.rows.length]||20; UC.coins=(UC.coins||0)+caps; save.coins=UC.coins;
+    showToast('Daily Word solved! +'+caps+' Orbs'); }
+  else if(s.rows.length>=6){ s.done='lose'; UC.dwDone='lose'; save.dwDone='lose'; }
+  try{ await dbUpdateUser(getU(), save); }catch(e){}
+  if(win) refreshCaps();
+  dwDraw();
+}
+function dwBuildKeys(){
+  const rows=['qwertyuiop','asdfghjkl','zxcvbnm'], k=document.getElementById('dw-keys'); if(!k) return;
+  let html='';
+  rows.forEach((row,ri)=>{ html+='<div class="dw-krow">';
+    if(ri===2) html+='<button class="dw-key dw-wide" onclick="dwSubmit()">Enter</button>';
+    for(const ch of row) html+=`<button class="dw-key" id="dwk-${ch}" onclick="dwType('${ch}')">${ch.toUpperCase()}</button>`;
+    if(ri===2) html+='<button class="dw-key dw-wide" onclick="dwBack()">Del</button>';
+    html+='</div>'; });
+  k.innerHTML=html;
+}
+function dwColorKeys(){
+  const s=dwState, best={}, rank={b:0,y:1,g:2};
+  s.rows.forEach(g=>{ const ev=dwEval(g,s.word); for(let i=0;i<5;i++){ const ch=g[i], v=ev[i]; if(best[ch]===undefined||rank[v]>rank[best[ch]]) best[ch]=v; } });
+  Object.keys(best).forEach(ch=>{ const el=document.getElementById('dwk-'+ch); if(el){ el.classList.remove('dw-g','dw-y','dw-b'); el.classList.add('dw-'+best[ch]); } });
+}
+function dwCleanup(){ if(dwKeyHandler){ document.removeEventListener('keydown', dwKeyHandler); dwKeyHandler=null; } dwState=null; }
+
+// ============================================================
+//  BLOCK BLAST  (falling blocks, clear lines)
+// ============================================================
+const BB_SHAPES={ I:['XXXX'], O:['XX','XX'], T:['.X.','XXX'], S:['.XX','XX.'], Z:['XX.','.XX'], J:['X..','XXX'], L:['..X','XXX'] };
+const BB_COLORS={ I:'#19c3ff', O:'#edc22e', T:'#b06bff', S:'#2faf4e', Z:'#e34b4b', J:'#3b6fe0', L:'#e0863b' };
+const BB_TYPES=['I','O','T','S','Z','J','L'];
+let bbState=null, bbKeyHandler=null;
+function bbMatrix(type){ return BB_SHAPES[type].map(r=>r.split('').map(ch=>ch==='X')); }
+function bbRotate(m){ const h=m.length, w=m[0].length, out=[]; for(let c=0;c<w;c++){ out.push([]); for(let r=h-1;r>=0;r--) out[c].push(m[r][c]); } return out; }
+function bbCollide(s,m,px,py){ for(let r=0;r<m.length;r++)for(let c=0;c<m[r].length;c++){ if(!m[r][c]) continue; const x=px+c,y=py+r; if(x<0||x>=s.cols||y>=s.rows) return true; if(y>=0&&s.grid[y][x]) return true; } return false; }
+function renderBlockBlast(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  stage.innerHTML=`<div class="bb-wrap">
+    <div class="bb-hud"><span>Lines <b id="bb-lines">0</b></span><span>Score <b id="bb-score">0</b></span><span>Best <b id="bb-best">${UC.blastBest||0}</b></span></div>
+    <div class="bb-stage"><canvas id="bb-canvas" class="bb-canvas"></canvas></div>
+    <div class="bb-controls"><button onclick="bbMove(-1)">◀</button><button onclick="bbRotateMove()">⟳</button><button onclick="bbMove(1)">▶</button><button onclick="bbSoft()">▼</button><button onclick="bbHard()">Drop</button></div>
+    <div class="bb-overlay ts-overlay" id="bb-overlay"><div class="ts-card"><div class="ts-title">Block Blast</div><div class="ts-sub">Stack the falling blocks and clear full rows. Use the arrow keys or the buttons. Up rotates, space hard-drops.</div><button class="ts-btn" onclick="bbStart()">Play</button></div></div>
+  </div>`;
+  bbInit();
+}
+function bbInit(){
+  const cv=document.getElementById('bb-canvas'); if(!cv) return;
+  const cols=10, rows=18, cell=Math.max(14,Math.min(22,Math.floor(340/rows)));
+  cv.width=cols*cell; cv.height=rows*cell;
+  bbState={ cv, ctx:cv.getContext('2d'), cols, rows, cell, grid:[], piece:null, next:null, score:0, lines:0, dropC:0, dropI:48, running:false, over:false, raf:0 };
+  for(let r=0;r<rows;r++) bbState.grid.push(new Array(cols).fill(null));
+  if(bbKeyHandler) document.removeEventListener('keydown', bbKeyHandler);
+  bbKeyHandler=function(e){ if(currentGameId!=='blockblast'||!bbState||!bbState.running) return; const k=e.key;
+    if(k==='ArrowLeft'){ e.preventDefault(); bbMove(-1); } else if(k==='ArrowRight'){ e.preventDefault(); bbMove(1); } else if(k==='ArrowDown'){ e.preventDefault(); bbSoft(); } else if(k==='ArrowUp'){ e.preventDefault(); bbRotateMove(); } else if(k===' '){ e.preventDefault(); bbHard(); } };
+  document.addEventListener('keydown', bbKeyHandler);
+  bbDraw();
+}
+function bbSpawn(){ const s=bbState; const type=s.next||BB_TYPES[Math.floor(Math.random()*7)]; s.next=BB_TYPES[Math.floor(Math.random()*7)];
+  const m=bbMatrix(type), px=Math.floor((s.cols-m[0].length)/2);
+  if(bbCollide(s,m,px,0)){ bbOver(); return; }
+  s.piece={type,m,x:px,y:-1}; }
+function bbStart(){
+  if(!bbState) bbInit(); const s=bbState;
+  const ov=document.getElementById('bb-overlay'); if(ov) ov.style.display='none';
+  for(let r=0;r<s.rows;r++)for(let c=0;c<s.cols;c++) s.grid[r][c]=null;
+  s.score=0; s.lines=0; s.dropC=0; s.dropI=48; s.over=false; s.running=true; s.next=null;
+  bbSpawn(); bbUpdateHud(); bbLoop();
+}
+function bbLoop(){
+  const s=bbState; if(!s||!s.running) return;
+  if(currentGameId!=='blockblast'||!document.body.contains(s.cv)){ bbCleanup(); return; }
+  s.dropC++; if(s.dropC>=s.dropI){ s.dropC=0; bbGravity(); }
+  bbDraw(); s.raf=requestAnimationFrame(bbLoop);
+}
+function bbGravity(){ const s=bbState; if(!s.piece) return; if(!bbCollide(s,s.piece.m,s.piece.x,s.piece.y+1)) s.piece.y++; else bbLock(); }
+function bbLock(){ const s=bbState, p=s.piece; if(!p) return;
+  for(let r=0;r<p.m.length;r++)for(let c=0;c<p.m[r].length;c++){ if(p.m[r][c]){ const y=p.y+r,x=p.x+c; if(y>=0) s.grid[y][x]=BB_COLORS[p.type]; } }
+  let cleared=0;
+  for(let r=s.rows-1;r>=0;r--){ if(s.grid[r].every(v=>v)){ s.grid.splice(r,1); s.grid.unshift(new Array(s.cols).fill(null)); cleared++; r++; } }
+  if(cleared){ s.lines+=cleared; s.score+=[0,100,300,500,800][cleared]||800; s.dropI=Math.max(8,48-Math.floor(s.lines/2)); }
+  bbUpdateHud(); bbSpawn();
+}
+function bbMove(dx){ const s=bbState; if(!s||!s.piece||!s.running) return; if(!bbCollide(s,s.piece.m,s.piece.x+dx,s.piece.y)) s.piece.x+=dx; bbDraw(); }
+function bbRotateMove(){ const s=bbState; if(!s||!s.piece||!s.running) return; const rm=bbRotate(s.piece.m); for(const k of [0,-1,1,-2,2]){ if(!bbCollide(s,rm,s.piece.x+k,s.piece.y)){ s.piece.m=rm; s.piece.x+=k; break; } } bbDraw(); }
+function bbSoft(){ const s=bbState; if(!s||!s.piece||!s.running) return; if(!bbCollide(s,s.piece.m,s.piece.x,s.piece.y+1)){ s.piece.y++; s.dropC=0; } bbDraw(); }
+function bbHard(){ const s=bbState; if(!s||!s.piece||!s.running) return; while(!bbCollide(s,s.piece.m,s.piece.x,s.piece.y+1)) s.piece.y++; bbLock(); bbDraw(); }
+function bbUpdateHud(){ const s=bbState; const set=(id,v)=>{const el=document.getElementById(id); if(el) el.textContent=v;}; set('bb-lines',s.lines); set('bb-score',s.score); }
+function bbDraw(){
+  const s=bbState; if(!s) return; const c=s.ctx, cell=s.cell;
+  c.fillStyle='#0d0f14'; c.fillRect(0,0,s.cv.width,s.cv.height);
+  c.strokeStyle='rgba(255,255,255,.05)'; c.lineWidth=1;
+  for(let x=0;x<=s.cols;x++){ c.beginPath(); c.moveTo(x*cell+.5,0); c.lineTo(x*cell+.5,s.cv.height); c.stroke(); }
+  for(let y=0;y<=s.rows;y++){ c.beginPath(); c.moveTo(0,y*cell+.5); c.lineTo(s.cv.width,y*cell+.5); c.stroke(); }
+  const dc=(x,y,col)=>{ c.fillStyle=col; c.fillRect(x*cell+1,y*cell+1,cell-2,cell-2); c.fillStyle='rgba(255,255,255,.2)'; c.fillRect(x*cell+1,y*cell+1,cell-2,3); };
+  for(let r=0;r<s.rows;r++)for(let cc=0;cc<s.cols;cc++){ if(s.grid[r][cc]) dc(cc,r,s.grid[r][cc]); }
+  if(s.piece){ const p=s.piece; for(let r=0;r<p.m.length;r++)for(let cc=0;cc<p.m[r].length;cc++){ if(p.m[r][cc]&&p.y+r>=0) dc(p.x+cc,p.y+r,BB_COLORS[p.type]); } }
+}
+function bbOver(){
+  const s=bbState; s.running=false; s.over=true; if(s.raf) cancelAnimationFrame(s.raf);
+  const caps=s.lines;
+  if(s.lines>(UC.blastBest||0)) UC.blastBest=s.lines;
+  if(caps>0){ UC.coins=(UC.coins||0)+caps; trackQuest('caps',caps); }
+  try{ dbUpdateUser(getU(),{coins:UC.coins, blastBest:UC.blastBest}); }catch(e){}
+  refreshCaps();
+  const bb=document.getElementById('bb-best'); if(bb) bb.textContent=UC.blastBest||0;
+  const ov=document.getElementById('bb-overlay'); if(ov){ ov.style.display='flex'; ov.innerHTML=`<div class="ts-card"><div class="ts-title">Game Over</div><div class="ts-sub">You cleared ${s.lines} line${s.lines===1?'':'s'} for ${s.score} points.</div><div class="ts-reward">${caps>0?('<span class="orb-ic"></span> +'+caps+' Orbs'):'Clear some lines to earn Orbs.'}</div><button class="ts-btn" onclick="bbStart()">Play again</button></div>`; }
+  if(caps>0) showToast('Block Blast: +'+caps+' Orbs!');
+}
+function bbCleanup(){ if(bbState){ if(bbState.raf) cancelAnimationFrame(bbState.raf); bbState.running=false; } if(bbKeyHandler){ document.removeEventListener('keydown', bbKeyHandler); bbKeyHandler=null; } bbState=null; }
+
+// ============================================================
+//  SUDOKU  (one daily puzzle for everyone)
+// ============================================================
+let suState=null, suKeyHandler=null;
+function suRng(seed){ let a=(seed>>>0)||1; return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function suShuffle(arr,rng){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(rng()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function suGen(seed){
+  const rng=suRng(seed);
+  let sol=[]; for(let r=0;r<9;r++){ sol.push([]); for(let c=0;c<9;c++) sol[r].push((3*(r%3)+Math.floor(r/3)+c)%9+1); }
+  const digs=suShuffle([1,2,3,4,5,6,7,8,9],rng); sol=sol.map(row=>row.map(v=>digs[v-1]));
+  let rowOrder=[]; suShuffle([0,1,2],rng).forEach(b=>{ suShuffle([0,1,2],rng).forEach(x=>rowOrder.push(b*3+x)); }); sol=rowOrder.map(r=>sol[r]);
+  let colOrder=[]; suShuffle([0,1,2],rng).forEach(st=>{ suShuffle([0,1,2],rng).forEach(x=>colOrder.push(st*3+x)); }); sol=sol.map(row=>colOrder.map(c=>row[c]));
+  if(rng()<0.5){ const t=[]; for(let c=0;c<9;c++){ t.push([]); for(let r=0;r<9;r++) t[c].push(sol[r][c]); } sol=t; }
+  const solution=sol.flat().join('');
+  const idx=suShuffle(Array.from({length:81},(_,i)=>i),rng), puz=solution.split('');
+  for(let i=0;i<44;i++) puz[idx[i]]='.';
+  return { puzzle:puz.join(''), solution };
+}
+function suValid(cells){
+  for(let i=0;i<81;i++) if(!cells[i]) return false;
+  const ok=group=>{ const seen={}; for(const v of group){ if(seen[v]) return false; seen[v]=1; } return true; };
+  for(let r=0;r<9;r++){ const row=[],col=[]; for(let c=0;c<9;c++){ row.push(cells[r*9+c]); col.push(cells[c*9+r]); } if(!ok(row)||!ok(col)) return false; }
+  for(let br=0;br<3;br++)for(let bc=0;bc<3;bc++){ const box=[]; for(let r=0;r<3;r++)for(let c=0;c<3;c++) box.push(cells[(br*3+r)*9+(bc*3+c)]); if(!ok(box)) return false; }
+  return true;
+}
+const SU_REWARD=150;
+function renderSudoku(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  const today=todayStr(); const d=new Date(); const seed=Math.floor(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())/86400000);
+  const gen=suGen(seed);
+  if(UC.suDate!==today){ UC.suDate=today; UC.suProgress=gen.puzzle; UC.suDone=null; }
+  const given=gen.puzzle.split('').map(ch=>ch==='.'?0:+ch);
+  const prog=(UC.suProgress||gen.puzzle).split('').map(ch=>ch==='.'?0:+ch);
+  suState={ given, cells:prog, solution:gen.solution, sel:-1, done:UC.suDone||null };
+  stage.innerHTML=`<div class="su-wrap">
+    <div class="su-head"><div class="su-title">Sudoku</div><div class="su-sub">Today's puzzle, the same for every player. Fill it so every row, column and box has 1 to 9.</div></div>
+    <div class="su-board" id="su-board"></div>
+    <div class="su-msg" id="su-msg"></div>
+    <div class="su-pad" id="su-pad"></div>
+    
+  </div>`;
+  suBuildPad(); suDraw();
+  if(suKeyHandler) document.removeEventListener('keydown', suKeyHandler);
+  suKeyHandler=function(e){ if(currentGameId!=='sudoku'||!suState||suState.done) return; const k=e.key;
+    if(/^[1-9]$/.test(k)){ e.preventDefault(); suInput(+k); } else if(k==='Backspace'||k==='Delete'||k==='0'){ e.preventDefault(); suErase(); }
+    else if(k==='ArrowLeft'&&suState.sel>0){ suState.sel--; suDraw(); } else if(k==='ArrowRight'&&suState.sel>=0&&suState.sel<80){ suState.sel++; suDraw(); }
+    else if(k==='ArrowUp'&&suState.sel>=9){ suState.sel-=9; suDraw(); } else if(k==='ArrowDown'&&suState.sel>=0&&suState.sel<72){ suState.sel+=9; suDraw(); } };
+  document.addEventListener('keydown', suKeyHandler);
+}
+function suConflict(cells,i){ const r=Math.floor(i/9),c=i%9,v=cells[i]; if(!v) return false;
+  for(let k=0;k<9;k++){ if(k!==c&&cells[r*9+k]===v) return true; if(k!==r&&cells[k*9+c]===v) return true; }
+  const br=Math.floor(r/3)*3,bc=Math.floor(c/3)*3;
+  for(let rr=0;rr<3;rr++)for(let cc=0;cc<3;cc++){ const j=(br+rr)*9+(bc+cc); if(j!==i&&cells[j]===v) return true; }
+  return false;
+}
+function suDraw(){
+  const s=suState, board=document.getElementById('su-board'); if(!board) return;
+  let html='';
+  for(let i=0;i<81;i++){ const r=Math.floor(i/9),c=i%9,v=s.cells[i],isGiven=s.given[i]!==0;
+    const cls='su-cell'+(isGiven?' su-given':'')+(i===s.sel?' su-sel':'')+(v&&!isGiven&&suConflict(s.cells,i)?' su-bad':'')+(c===2||c===5?' su-br':'')+(r===2||r===5?' su-bb':'');
+    html+=`<div class="${cls}" onclick="suSel(${i})">${v||''}</div>`; }
+  board.innerHTML=html;
+  const msg=document.getElementById('su-msg');
+  if(msg){ if(s.done==='win'){ msg.textContent='Solved! Come back tomorrow for a new puzzle.'; msg.className='su-msg ok'; } else { msg.textContent=''; msg.className='su-msg'; } }
+}
+function suSel(i){ const s=suState; if(!s||s.done) return; s.sel=i; suDraw(); }
+function suInput(n){ const s=suState; if(!s||s.done||s.sel<0||s.given[s.sel]) return; s.cells[s.sel]=n; suAfterInput(); }
+function suErase(){ const s=suState; if(!s||s.done||s.sel<0||s.given[s.sel]) return; s.cells[s.sel]=0; suAfterInput(); }
+function suAfterInput(){ const s=suState; UC.suProgress=s.cells.map(v=>v||'.').join('');
+  if(suValid(s.cells)){ s.done='win'; UC.suDone='win'; UC.coins=(UC.coins||0)+SU_REWARD; try{ dbUpdateUser(getU(),{coins:UC.coins,suDone:'win',suProgress:UC.suProgress,suDate:todayStr()}); }catch(e){} refreshCaps(); showToast('Sudoku solved! +'+SU_REWARD+' Orbs'); }
+  else { try{ dbUpdateUser(getU(),{suProgress:UC.suProgress,suDate:todayStr()}); }catch(e){} }
+  suDraw();
+}
+function suBuildPad(){ const pad=document.getElementById('su-pad'); if(!pad) return; let html=''; for(let n=1;n<=9;n++) html+=`<button class="su-key" onclick="suInput(${n})">${n}</button>`; html+='<button class="su-key su-erase" onclick="suErase()">Erase</button>'; pad.innerHTML=html; }
+function suCleanup(){ if(suKeyHandler){ document.removeEventListener('keydown', suKeyHandler); suKeyHandler=null; } if(suState&&UC&&getU()&&!suState.done){ try{ dbUpdateUser(getU(),{suProgress:suState.cells.map(v=>v||'.').join(''),suDate:todayStr()}); }catch(e){} } suState=null; }
+
+// ============================================================
+//  CONNECT FOUR vs REED
+// ============================================================
+let c4State=null;
+const C4_WIN_TAUNTS=["Too easy. Want to go again?","Four in a row. As expected.","Reed wins. Predictable.","Did you even try?"];
+const C4_LOSE_TAUNTS=["Lucky. Rematch?","Hmph. You got me that round.","Fine, you win this one.","Beginner's luck, surely."];
+function c4Make(){ const b=[]; for(let r=0;r<6;r++) b.push(new Array(7).fill(0)); return b; }
+function c4Drop(b,col,p){ for(let r=5;r>=0;r--){ if(!b[r][col]){ b[r][col]=p; return r; } } return -1; }
+function c4Cols(b){ const cs=[]; for(let c=0;c<7;c++) if(!b[0][c]) cs.push(c); return cs; }
+function c4Wins(b,p){
+  for(let r=0;r<6;r++)for(let c=0;c<7;c++){ if(b[r][c]!==p) continue;
+    if(c<=3&&b[r][c+1]===p&&b[r][c+2]===p&&b[r][c+3]===p) return true;
+    if(r<=2&&b[r+1][c]===p&&b[r+2][c]===p&&b[r+3][c]===p) return true;
+    if(r<=2&&c<=3&&b[r+1][c+1]===p&&b[r+2][c+2]===p&&b[r+3][c+3]===p) return true;
+    if(r<=2&&c>=3&&b[r+1][c-1]===p&&b[r+2][c-2]===p&&b[r+3][c-3]===p) return true; }
+  return false;
+}
+function c4Eval(b){
+  let score=0; const W=[];
+  for(let r=0;r<6;r++)for(let c=0;c<7;c++){
+    if(c<=3) W.push([b[r][c],b[r][c+1],b[r][c+2],b[r][c+3]]);
+    if(r<=2) W.push([b[r][c],b[r+1][c],b[r+2][c],b[r+3][c]]);
+    if(r<=2&&c<=3) W.push([b[r][c],b[r+1][c+1],b[r+2][c+2],b[r+3][c+3]]);
+    if(r<=2&&c>=3) W.push([b[r][c],b[r+1][c-1],b[r+2][c-2],b[r+3][c-3]]); }
+  for(const w of W){ const me=w.filter(x=>x===2).length, op=w.filter(x=>x===1).length, em=w.filter(x=>x===0).length;
+    if(me===3&&em===1) score+=50; else if(me===2&&em===2) score+=10;
+    if(op===3&&em===1) score-=80; else if(op===2&&em===2) score-=8; }
+  for(let r=0;r<6;r++){ if(b[r][3]===2) score+=6; else if(b[r][3]===1) score-=6; }
+  return score;
+}
+function c4Minimax(b,depth,alpha,beta,maxing){
+  if(c4Wins(b,2)) return [100000+depth,null];
+  if(c4Wins(b,1)) return [-100000-depth,null];
+  const cols=c4Cols(b);
+  if(depth===0||!cols.length) return [c4Eval(b),null];
+  cols.sort((a,c)=>Math.abs(3-a)-Math.abs(3-c));
+  let best=cols[0];
+  if(maxing){ let val=-Infinity; for(const col of cols){ const nb=b.map(row=>row.slice()); c4Drop(nb,col,2); const sc=c4Minimax(nb,depth-1,alpha,beta,false)[0]; if(sc>val){ val=sc; best=col; } alpha=Math.max(alpha,val); if(alpha>=beta) break; } return [val,best]; }
+  let val=Infinity; for(const col of cols){ const nb=b.map(row=>row.slice()); c4Drop(nb,col,1); const sc=c4Minimax(nb,depth-1,alpha,beta,true)[0]; if(sc<val){ val=sc; best=col; } beta=Math.min(beta,val); if(alpha>=beta) break; } return [val,best];
+}
+function renderConnect4(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  c4State={ board:c4Make(), turn:1, over:false, busy:false, history:[] };
+  stage.innerHTML=`<div class="c4-wrap">
+    <div class="c4-head"><div class="c4-ava">🧠</div><div style="flex:1;min-width:0"><div class="c4-name">Reed</div><div class="c4-status" id="c4-status">Your turn. You are red, Reed is yellow.</div></div></div>
+    <div class="c4-board" id="c4-board"></div>
+    <div class="c4-foot"><button class="mg-restart" onclick="c4Reset()">New Game</button></div>
+  </div>`;
+  c4Draw();
+}
+function c4Reset(){ const s=c4State; if(!s) return; s.board=c4Make(); s.turn=1; s.over=false; s.busy=false; s.history=[]; const st=document.getElementById('c4-status'); if(st) st.textContent='Your turn. You are red, Reed is yellow.'; c4Draw(); }
+function c4Draw(){
+  const s=c4State, board=document.getElementById('c4-board'); if(!board) return;
+  let html='';
+  const seen=s.drawn;   // discs that were not on the board at the last draw fall in from the top
+  for(let c=0;c<7;c++){ html+=`<div class="c4-col" onclick="c4Play(${c})">`;
+    for(let r=0;r<6;r++){ const v=s.board[r][c], fresh=v && seen && seen[r][c]!==v;
+      html+=`<div class="c4-slot"><div class="c4-disc ${v===1?'c4-p':v===2?'c4-r':''}${fresh?' c4-drop':''}"${fresh?` style="--fall:${r+1}"`:''}></div></div>`; }
+    html+='</div>'; }
+  board.innerHTML=html;
+  s.drawn=s.board.map(row=>row.slice());
+}
+function c4Play(col){
+  const s=c4State; if(!s||s.over||s.busy||s.turn!==1) return;
+  if(s.board[0][col]) return;
+  s.busy=true; s.history.push(s.board.map(row=>row.slice()));
+  c4Drop(s.board,col,1); c4Draw();
+  if(c4Wins(s.board,1)){ c4End('win'); s.busy=false; return; }
+  if(!c4Cols(s.board).length){ c4End('draw'); s.busy=false; return; }
+  s.turn=2; const st=document.getElementById('c4-status'); if(st) st.textContent='Reed is thinking...';
+  setTimeout(()=>{ if(!c4State||c4State.over){ if(c4State) c4State.busy=false; return; }
+    const mv=c4Minimax(s.board,5,-Infinity,Infinity,true)[1];
+    const col2=(mv==null? c4Cols(s.board)[0] : mv);
+    c4Drop(s.board,col2,2); c4Draw();
+    if(c4Wins(s.board,2)){ c4End('lose'); s.busy=false; return; }
+    if(!c4Cols(s.board).length){ c4End('draw'); s.busy=false; return; }
+    s.turn=1; const st2=document.getElementById('c4-status'); if(st2) st2.textContent='Your turn.'; s.busy=false;
+  }, 320);
+}
+function c4End(result){
+  const s=c4State; s.over=true; const st=document.getElementById('c4-status');
+  if(result==='win'){ const caps=50; UC.coins=(UC.coins||0)+caps; try{ dbUpdateUser(getU(),{coins:UC.coins}); }catch(e){} refreshCaps(); if(st) st.textContent=pick(C4_LOSE_TAUNTS)+'  You win, +'+caps+' Orbs!'; showToast('You beat Reed! +'+caps+' Orbs'); }
+  else if(result==='lose'){ if(st) st.textContent=pick(C4_WIN_TAUNTS); }
+  else { const caps=10; UC.coins=(UC.coins||0)+caps; try{ dbUpdateUser(getU(),{coins:UC.coins}); }catch(e){} refreshCaps(); if(st) st.textContent='A draw. +'+caps+' Orbs.'; }
+}
+function c4Cleanup(){ c4State=null; }
+
+// ============================================================
+//  STACK TOWER  (drop and align blocks)
+// ============================================================
+let stState=null, stKeyHandler=null;
+function stColors(){ const cs=gameStyle(); const hx=n=>{const v=(cs.getPropertyValue(n)||'').trim(); return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)?v:null;}; return { accent:hx('--accent')||'#e08a1e', a2:hx('--accent-2')||'#ffcc66', bg:boardSurface(hx('--card-bg')) }; }
+function renderStack(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  stage.innerHTML=`<div class="st-wrap">
+    <div class="st-hud"><span>Height <b id="st-h">0</b></span><span>Best <b id="st-best">${UC.stackBest||0}</b></span></div>
+    <canvas id="st-canvas" class="st-canvas"></canvas>
+    <div class="st-overlay ts-overlay" id="st-overlay"><div class="ts-card"><div class="ts-title">Stack Tower</div><div class="ts-sub">Tap, click or press Space to drop each block. Line it up with the one below. Whatever hangs over is sliced off. Build as high as you can.</div><button class="ts-btn" onclick="stStart()">Play</button></div></div>
+  </div>`;
+  stInit();
+}
+function stInit(){
+  const cv=document.getElementById('st-canvas'); if(!cv) return;
+  const W=Math.max(300,(cv.parentElement&&cv.parentElement.clientWidth)||640), H=380;
+  cv.width=W; cv.height=H;
+  stState={ cv, ctx:cv.getContext('2d'), W, H, blockH:26, blocks:[], cur:null, speed:3, dir:1, running:false, over:false, raf:0, colors:stColors() };
+  if(stKeyHandler) document.removeEventListener('keydown', stKeyHandler);
+  stKeyHandler=function(e){ if((e.code==='Space'||e.key===' ')&&currentGameId==='stack'){ e.preventDefault(); stDrop(); } };
+  document.addEventListener('keydown', stKeyHandler);
+  cv.onpointerdown=function(){ stDrop(); };
+  stDraw();
+}
+function stStart(){
+  if(!stState) stInit(); const s=stState;
+  const ov=document.getElementById('st-overlay'); if(ov) ov.style.display='none';
+  const baseW=Math.min(180, s.W*0.42);
+  s.blocks=[{x:(s.W-baseW)/2, w:baseW}]; s.speed=3; s.dir=1; s.over=false; s.running=true; s.colors=stColors();
+  s.cur={ x:0, w:baseW };
+  stUpdateHud(); stLoop();
+}
+function stLoop(){
+  const s=stState; if(!s||!s.running) return;
+  if(currentGameId!=='stack'||!document.body.contains(s.cv)){ stCleanup(); return; }
+  s.cur.x+=s.speed*s.dir;
+  if(s.cur.x<=0){ s.cur.x=0; s.dir=1; } else if(s.cur.x+s.cur.w>=s.W){ s.cur.x=s.W-s.cur.w; s.dir=-1; }
+  stDraw(); s.raf=requestAnimationFrame(stLoop);
+}
+function stDrop(){
+  const s=stState; if(!s||!s.running) return;
+  const top=s.blocks[s.blocks.length-1];
+  const left=Math.max(s.cur.x, top.x), right=Math.min(s.cur.x+s.cur.w, top.x+top.w), overlap=right-left;
+  if(overlap<=0){ stOver(); return; }
+  let nx=left, nw=overlap;
+  if(Math.abs(s.cur.x-top.x)<5){ nx=top.x; nw=top.w; }
+  s.blocks.push({x:nx, w:nw});
+  s.speed=Math.min(8, 3+s.blocks.length*0.18);
+  s.cur={ x:0, w:nw }; s.dir=1;
+  stUpdateHud(); stDraw();
+}
+function stUpdateHud(){ const s=stState; const h=document.getElementById('st-h'); if(h) h.textContent=s.blocks.length-1; }
+function stDraw(){
+  const s=stState; if(!s) return; const c=s.ctx, col=s.colors, bh=s.blockH;
+  const g=c.createLinearGradient(0,0,0,s.H); g.addColorStop(0,darken(col.bg,4)); g.addColorStop(1,darken(col.bg,16)); c.fillStyle=g; c.fillRect(0,0,s.W,s.H);
+  const curLevel=s.blocks.length, baseY=s.H*0.32, yOf=level=>baseY+(curLevel-level)*bh;
+  for(let i=0;i<s.blocks.length;i++){ const b=s.blocks[i], y=yOf(i); if(y>s.H) continue;
+    c.fillStyle = i%2? col.accent : col.a2; c.fillRect(b.x,y,b.w,bh-2); c.fillStyle='rgba(255,255,255,.14)'; c.fillRect(b.x,y,b.w,3); }
+  if(s.running&&s.cur){ c.fillStyle=col.accent; c.fillRect(s.cur.x,yOf(curLevel),s.cur.w,bh-2); c.fillStyle='rgba(255,255,255,.2)'; c.fillRect(s.cur.x,yOf(curLevel),s.cur.w,3); }
+}
+function stOver(){
+  const s=stState; s.running=false; s.over=true; if(s.raf) cancelAnimationFrame(s.raf);
+  const h=s.blocks.length-1, caps=h;
+  if(h>(UC.stackBest||0)) UC.stackBest=h;
+  if(caps>0){ UC.coins=(UC.coins||0)+caps; trackQuest('caps',caps); }
+  try{ dbUpdateUser(getU(),{coins:UC.coins, stackBest:UC.stackBest}); }catch(e){}
+  refreshCaps();
+  const bb=document.getElementById('st-best'); if(bb) bb.textContent=UC.stackBest||0;
+  const ov=document.getElementById('st-overlay'); if(ov){ ov.style.display='flex'; ov.innerHTML=`<div class="ts-card"><div class="ts-title">Toppled</div><div class="ts-sub">You stacked ${h} block${h===1?'':'s'} high.</div><div class="ts-reward">${caps>0?('<span class="orb-ic"></span> +'+caps+' Orbs'):'Stack a few to earn Orbs.'}</div><button class="ts-btn" onclick="stStart()">Play again</button></div>`; }
+  if(caps>0) showToast('Stack Tower: +'+caps+' Orbs!');
+}
+function stCleanup(){ if(stState){ if(stState.raf) cancelAnimationFrame(stState.raf); stState.running=false; } if(stKeyHandler){ document.removeEventListener('keydown', stKeyHandler); stKeyHandler=null; } stState=null; }
+
+// ============================================================
+//  MEMORY MATCH
+// ============================================================
+const MM_ICONS=['🍪','<span class="orb-ic"></span>','🐍','🔮','🧪','🌊','🤖','🎯','🧩','🔴','🗼','⚽','🎲','🚀','👑','🔥'];
+let mmState=null;
+function renderMemory(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  stage.innerHTML=`<div class="mm-wrap">
+    <div class="mm-hud"><span>Moves <b id="mm-moves">0</b></span><span>Best <b id="mm-best">${UC.memoryBest?UC.memoryBest+' moves':'-'}</b></span></div>
+    <div class="mm-board" id="mm-board"></div>
+    <div class="mm-msg" id="mm-msg"></div>
+  </div>`;
+  mmStart();
+}
+function mmStart(){
+  const picks=MM_ICONS.slice(0,8); let deck=picks.concat(picks);
+  for(let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=deck[i]; deck[i]=deck[j]; deck[j]=t; }
+  mmState={ cards:deck.map(v=>({val:v, flipped:false, matched:false})), first:-1, busy:false, moves:0, matched:0, done:false, peek:false };
+  const msg=document.getElementById('mm-msg'); if(msg){ msg.textContent=''; msg.className='mm-msg'; }
+  const mv=document.getElementById('mm-moves'); if(mv) mv.textContent='0';
+  mmDraw();
+}
+// The board is built once and cards are updated in place, so flipping is a real CSS
+// transition (rebuilding the cards on every flip is what made them snap before).
+function mmDraw(){
+  const s=mmState, board=document.getElementById('mm-board'); if(!board) return;
+  if(board.children.length!==s.cards.length){
+    board.classList.remove('win');
+    board.innerHTML=s.cards.map((c,i)=>`<div class="mm-card deal" style="--i:${i}" onclick="mmFlip(${i})"><div class="mm-inner"><div class="mm-front"></div><div class="mm-back">${c.val}</div></div></div>`).join('');
+    [...board.children].forEach(el=>el.addEventListener('animationend', e=>{ if(e.animationName==='mmDeal') el.classList.remove('deal'); }));
+  }
+  [...board.children].forEach((el,i)=>{ const c=s.cards[i], show=c.flipped||c.matched||s.peek;
+    el.querySelector('.mm-back').innerHTML!==c.val && (el.querySelector('.mm-back').innerHTML=c.val);
+    el.classList.toggle('flip', show);
+    if(!show) el.classList.remove('shake');
+    if(c.matched && !el.classList.contains('done')){ el.classList.add('done','pop'); setTimeout(()=>el.classList.remove('pop'), 900); }
+    if(!c.matched) el.classList.remove('done'); });
+}
+function mmFlip(i){
+  const s=mmState; if(!s||s.busy||s.done||s.peek) return; const card=s.cards[i];
+  if(card.flipped||card.matched) return;
+  card.flipped=true; mmDraw();
+  if(s.first===-1){ s.first=i; return; }
+  s.moves++; const mv=document.getElementById('mm-moves'); if(mv) mv.textContent=s.moves;
+  const a=s.cards[s.first], b=card;
+  if(a.val===b.val){ a.matched=b.matched=true; s.matched++; s.first=-1; mmDraw(); if(s.matched===8) mmWin(); }
+  else { s.busy=true; const fi=s.first; s.first=-1;
+    setTimeout(()=>{ const bd=document.getElementById('mm-board'); if(!mmState||!bd) return; [fi,i].forEach(k=>bd.children[k]&&bd.children[k].classList.add('shake')); }, 380);
+    setTimeout(()=>{ if(!mmState) return; s.cards[fi].flipped=false; b.flipped=false; s.busy=false; mmDraw(); }, 750); }
+}
+function mmWin(){
+  const s=mmState; s.done=true;
+  setTimeout(()=>{ const bd=document.getElementById('mm-board'); if(bd&&mmState===s) bd.classList.add('win'); }, 500);
+  const caps=Math.max(8, 60-Math.max(0,(s.moves-8))*2);
+  if(!UC.memoryBest || s.moves<UC.memoryBest) UC.memoryBest=s.moves;
+  UC.coins=(UC.coins||0)+caps;
+  try{ dbUpdateUser(getU(),{coins:UC.coins, memoryBest:UC.memoryBest}); }catch(e){}
+  refreshCaps();
+  const bb=document.getElementById('mm-best'); if(bb) bb.textContent=UC.memoryBest+' moves';
+  const msg=document.getElementById('mm-msg'); if(msg){ msg.innerHTML='Cleared in '+s.moves+' moves. <span class="orb-ic"></span> +'+caps+' Orbs. <button class="ts-btn" style="padding:6px 16px;margin-left:8px" onclick="mmStart()">Again</button>'; msg.className='mm-msg ok'; }
+  showToast('Memory Match: +'+caps+' Orbs!');
+}
+function mmCleanup(){ mmState=null; }
+
+// ============================================================
+//  ORB SWEEPER  (minesweeper)
+// ============================================================
+let csState=null;
+const CS_NUMCOL=['','#3b6fe0','#2faf4e','#e34b4b','#9b5cff','#e08a1e','#19c3ff','#e0457a','#888'];
+function renderSweeper(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  stage.innerHTML=`<div class="cs-wrap">
+    <div class="cs-hud"><span>Mines <b id="cs-mines">10</b></span><button class="cs-flagbtn" id="cs-flagbtn" onclick="csToggleFlag()">🚩 Flag: off</button></div>
+    <div class="cs-board" id="cs-board"></div>
+    <div class="cs-msg" id="cs-msg"></div>
+    <div class="cs-foot"><button class="mg-restart" onclick="csStart()">New Board</button></div>
+  </div>`;
+  csStart();
+}
+function csStart(){
+  const rows=9, cols=9, mines=10, grid=[];
+  for(let r=0;r<rows;r++){ grid.push([]); for(let c=0;c<cols;c++) grid[r].push({mine:false, rev:false, flag:false, n:0}); }
+  csState={ rows, cols, mines, grid, started:false, over:false, win:false, flagMode:false, revealed:0 };
+  const fb=document.getElementById('cs-flagbtn'); if(fb) fb.textContent='🚩 Flag: off';
+  const mn=document.getElementById('cs-mines'); if(mn) mn.textContent=mines;
+  const msg=document.getElementById('cs-msg'); if(msg){ msg.textContent=''; msg.className='cs-msg'; }
+  csDraw();
+}
+function csPlace(sr,sc){
+  const s=csState; let placed=0;
+  while(placed<s.mines){ const r=Math.floor(Math.random()*s.rows), c=Math.floor(Math.random()*s.cols);
+    if(s.grid[r][c].mine) continue; if(Math.abs(r-sr)<=1&&Math.abs(c-sc)<=1) continue;
+    s.grid[r][c].mine=true; placed++; }
+  for(let r=0;r<s.rows;r++)for(let c=0;c<s.cols;c++){ if(s.grid[r][c].mine) continue; let n=0;
+    for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){ const nr=r+dr,nc=c+dc; if(nr>=0&&nr<s.rows&&nc>=0&&nc<s.cols&&s.grid[nr][nc].mine) n++; }
+    s.grid[r][c].n=n; }
+}
+function csReveal(r,c){
+  const s=csState, cell=s.grid[r][c]; if(cell.rev||cell.flag) return;
+  cell.rev=true; s.revealed++;
+  if(cell.n===0&&!cell.mine){ for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){ const nr=r+dr,nc=c+dc; if(nr>=0&&nr<s.rows&&nc>=0&&nc<s.cols&&!s.grid[nr][nc].rev) csReveal(nr,nc); } }
+}
+function csClick(r,c){
+  const s=csState; if(!s||s.over) return; const cell=s.grid[r][c];
+  if(s.flagMode){ if(!cell.rev){ cell.flag=!cell.flag; csUpdateMines(); csDraw(); } return; }
+  if(cell.flag) return;
+  if(!s.started){ csPlace(r,c); s.started=true; }
+  if(cell.mine){ cell.rev=true; s.over=true; csLose(); csDraw(); return; }
+  csReveal(r,c);
+  if(s.revealed===s.rows*s.cols-s.mines){ s.over=true; s.win=true; csWin(); }
+  csDraw();
+}
+function csFlag(r,c){ const s=csState; if(!s||s.over) return; const cell=s.grid[r][c]; if(cell.rev) return; cell.flag=!cell.flag; csUpdateMines(); csDraw(); }
+function csUpdateMines(){ const s=csState; let f=0; for(let r=0;r<s.rows;r++)for(let c=0;c<s.cols;c++) if(s.grid[r][c].flag) f++; const mn=document.getElementById('cs-mines'); if(mn) mn.textContent=Math.max(0,s.mines-f); }
+function csToggleFlag(){ const s=csState; if(!s) return; s.flagMode=!s.flagMode; const fb=document.getElementById('cs-flagbtn'); if(fb) fb.textContent='🚩 Flag: '+(s.flagMode?'on':'off'); }
+function csDraw(){
+  const s=csState, board=document.getElementById('cs-board'); if(!board) return;
+  board.style.gridTemplateColumns='repeat('+s.cols+',1fr)';
+  let html='';
+  for(let r=0;r<s.rows;r++)for(let c=0;c<s.cols;c++){ const cell=s.grid[r][c]; let cls='cs-cell', txt='';
+    if(cell.rev){ if(cell.mine){ cls+=' cs-mine'; txt='💣'; } else { cls+=' cs-rev'; if(cell.n) txt='<span style="color:'+CS_NUMCOL[cell.n]+'">'+cell.n+'</span>'; } }
+    else if(cell.flag){ cls+=' cs-flag'; txt='🚩'; }
+    html+=`<div class="${cls}" oncontextmenu="event.preventDefault();csFlag(${r},${c});return false" onclick="csClick(${r},${c})">${txt}</div>`; }
+  board.innerHTML=html;
+}
+function csLose(){ const s=csState; for(let r=0;r<s.rows;r++)for(let c=0;c<s.cols;c++) if(s.grid[r][c].mine) s.grid[r][c].rev=true; const msg=document.getElementById('cs-msg'); if(msg){ msg.textContent='Boom! You hit a mine. Try a new board.'; msg.className='cs-msg bad'; } }
+function csWin(){
+  const caps=40; UC.coins=(UC.coins||0)+caps; try{ dbUpdateUser(getU(),{coins:UC.coins}); }catch(e){} refreshCaps();
+  const msg=document.getElementById('cs-msg'); if(msg){ msg.textContent='Swept! Every mine avoided. <span class="orb-ic"></span> +'+caps+' Orbs.'; msg.className='cs-msg ok'; }
+  showToast('Orb Sweeper: +'+caps+' Orbs!');
+}
+function csCleanup(){ csState=null; }
+
+// ============================================================
+//  ORB CRUSH  (match-3)
+// ============================================================
+const CR_COLORS=['#e34b4b','#19c3ff','#2faf4e','#edc22e','#b06bff','#e0863b'];
+const CR_N=8, CR_MOVES=20;
+let crState=null;
+function crRandColor(){ return Math.floor(Math.random()*CR_COLORS.length); }
+function crFindMatches(g){
+  const m=new Set();
+  for(let r=0;r<CR_N;r++)for(let c=0;c<CR_N-2;c++){ const v=g[r][c]; if(v!=null&&v===g[r][c+1]&&v===g[r][c+2]){ m.add(r+','+c); m.add(r+','+(c+1)); m.add(r+','+(c+2)); } }
+  for(let c=0;c<CR_N;c++)for(let r=0;r<CR_N-2;r++){ const v=g[r][c]; if(v!=null&&v===g[r+1][c]&&v===g[r+2][c]){ m.add(r+','+c); m.add((r+1)+','+c); m.add((r+2)+','+c); } }
+  return m;
+}
+function renderCrush(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  stage.innerHTML=`<div class="cr-wrap">
+    <div class="cr-hud"><span>Score <b id="cr-score">0</b></span><span>Moves <b id="cr-moves">20</b></span></div>
+    <div class="cr-board" id="cr-board"></div>
+    <div class="cr-msg" id="cr-msg">Swap two touching gems to line up three of a colour.</div>
+  </div>`;
+  crStart();
+}
+function crStart(){
+  crState={ grid:[], sel:-1, moves:CR_MOVES, score:0, busy:false, done:false, _t:null };
+  const g=[]; for(let r=0;r<CR_N;r++){ g.push([]); for(let c=0;c<CR_N;c++) g[r].push(crRandColor()); }
+  crState.grid=g;
+  let m, guard=0; while((m=crFindMatches(g)).size && guard++<200){ m.forEach(k=>{ const p=k.split(',').map(Number); g[p[0]][p[1]]=crRandColor(); }); }
+  const ms=document.getElementById('cr-msg'); if(ms){ ms.textContent='Swap two touching gems to line up three of a colour.'; ms.className='cr-msg'; }
+  crUpdateHud(); crDraw();
+}
+function crDraw(){
+  const s=crState, board=document.getElementById('cr-board'); if(!s||!board) return;
+  board.style.gridTemplateColumns='repeat('+CR_N+',1fr)';
+  let html='';
+  for(let r=0;r<CR_N;r++)for(let c=0;c<CR_N;c++){ const v=s.grid[r][c], i=r*CR_N+c;
+    html+=`<div class="cr-cell${s.sel===i?' cr-sel':''}" onclick="crClick(${r},${c})">${v==null?'':'<div class="cr-gem" style="background:'+CR_COLORS[v]+'"></div>'}</div>`; }
+  board.innerHTML=html;
+}
+function crUpdateHud(){ const s=crState; const sc=document.getElementById('cr-score'); if(sc) sc.textContent=s.score; const mv=document.getElementById('cr-moves'); if(mv) mv.textContent=s.moves; }
+function crClick(r,c){
+  const s=crState; if(!s||s.busy||s.done) return; const i=r*CR_N+c;
+  if(s.sel===-1){ s.sel=i; crDraw(); return; }
+  const sr=Math.floor(s.sel/CR_N), sc=s.sel%CR_N;
+  if(Math.abs(sr-r)+Math.abs(sc-c)===1){ s.sel=-1; crSwap(sr,sc,r,c); } else { s.sel=i; crDraw(); }
+}
+function crWait(ms){ return new Promise(res=>{ const t=setTimeout(res,ms); if(crState) crState._t=t; }); }
+async function crSwap(r1,c1,r2,c2){
+  const s=crState; s.busy=true; const g=s.grid;
+  const tmp=g[r1][c1]; g[r1][c1]=g[r2][c2]; g[r2][c2]=tmp; crDraw();
+  await crWait(140); if(!crState||currentGameId!=='crush') return;
+  if(!crFindMatches(g).size){ const t2=g[r1][c1]; g[r1][c1]=g[r2][c2]; g[r2][c2]=t2; crDraw(); s.busy=false; return; }
+  s.moves--; crUpdateHud();
+  await crResolve(); if(!crState||currentGameId!=='crush') return;
+  s.busy=false;
+  if(s.moves<=0) crEnd();
+}
+async function crResolve(){
+  const s=crState; let cascade=1;
+  while(true){ if(!crState||currentGameId!=='crush') return; const m=crFindMatches(s.grid); if(!m.size) break;
+    s.score+=m.size*10*cascade; crUpdateHud();
+    m.forEach(k=>{ const p=k.split(',').map(Number); s.grid[p[0]][p[1]]=null; });
+    crDraw(); await crWait(160); if(!crState) return;
+    for(let c=0;c<CR_N;c++){ const col=[]; for(let r=CR_N-1;r>=0;r--) if(s.grid[r][c]!=null) col.push(s.grid[r][c]); for(let r=CR_N-1;r>=0;r--) s.grid[r][c]=(CR_N-1-r)<col.length?col[CR_N-1-r]:crRandColor(); }
+    crDraw(); await crWait(140); if(!crState) return; cascade++;
+  }
+}
+function crEnd(){
+  const s=crState; s.done=true; const caps=Math.floor(s.score/100);
+  if(caps>0){ UC.coins=(UC.coins||0)+caps; trackQuest('caps',caps); } if(s.score>(UC.crushBest||0)) UC.crushBest=s.score;
+  try{ dbUpdateUser(getU(),{coins:UC.coins, crushBest:UC.crushBest}); }catch(e){}
+  refreshCaps();
+  const ms=document.getElementById('cr-msg'); if(ms){ ms.innerHTML='Out of moves. Score '+s.score+'. '+(caps>0?('<span class="orb-ic"></span> +'+caps+' Orbs. '):'')+'<button class="ts-btn" style="padding:6px 16px;margin-left:8px" onclick="crStart()">Again</button>'; ms.className='cr-msg ok'; }
+  if(caps>0) showToast('Orb Crush: +'+caps+' Orbs!');
+}
+function crCleanup(){ if(crState&&crState._t) clearTimeout(crState._t); crState=null; }
+
+// ============================================================
+//  BRICK BREAKER
+// ============================================================
+let bkState=null, bkKeyHandler=null;
+const BK_BRICKCOLS=['#e34b4b','#e0863b','#edc22e','#2faf4e','#19c3ff'];
+function bkColors(){ const cs=gameStyle(); const hx=n=>{const v=(cs.getPropertyValue(n)||'').trim(); return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)?v:null;}; return { accent:hx('--accent')||'#e0563b', bg:boardSurface(hx('--card-bg')) }; }
+function renderBrick(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  stage.innerHTML=`<div class="bk-wrap">
+    <div class="bk-hud"><span>Score <b id="bk-score">0</b></span><span id="bk-lives"></span><span>Best <b id="bk-best">${UC.brickBest||0}</b></span></div>
+    <canvas id="bk-canvas" class="bk-canvas"></canvas>
+    <div class="bk-overlay ts-overlay" id="bk-overlay"><div class="ts-card"><div class="ts-title">Brick Breaker</div><div class="ts-sub">Move the paddle with your mouse, touch or the arrow keys. Bounce the ball and break every brick without letting it fall.</div><button class="ts-btn" onclick="bkStart()">Play</button></div></div>
+  </div>`;
+  bkInit();
+}
+function bkInit(){
+  const cv=document.getElementById('bk-canvas'); if(!cv) return;
+  const W=Math.max(300,(cv.parentElement&&cv.parentElement.clientWidth)||640), H=380;
+  cv.width=W; cv.height=H;
+  bkState={ cv, ctx:cv.getContext('2d'), W, H, paddle:{x:W/2-45,w:90,h:12}, ball:null, bricks:[], lives:3, score:0, level:1, running:false, over:false, raf:0, colors:bkColors() };
+  if(bkKeyHandler) document.removeEventListener('keydown', bkKeyHandler);
+  bkKeyHandler=function(e){ if(currentGameId!=='brick'||!bkState) return; const p=bkState.paddle; if(e.key==='ArrowLeft'){ e.preventDefault(); p.x=Math.max(0,p.x-28); } else if(e.key==='ArrowRight'){ e.preventDefault(); p.x=Math.min(bkState.W-p.w,p.x+28); } };
+  document.addEventListener('keydown', bkKeyHandler);
+  cv.onpointermove=function(e){ if(!bkState) return; const rect=cv.getBoundingClientRect(); const mx=(e.clientX-rect.left)*(cv.width/rect.width); bkState.paddle.x=Math.max(0,Math.min(bkState.W-bkState.paddle.w, mx-bkState.paddle.w/2)); };
+  cv.onpointerdown=function(){ if(bkState&&!bkState.running&&!bkState.over) bkStart(); };
+  bkBuildBricks(); bkResetBall(); bkDraw();
+}
+function bkBuildBricks(){
+  const s=bkState; s.bricks=[]; const cols=8, rows=4+Math.min(3,s.level-1), gap=4, bw=(s.W-gap*(cols+1))/cols, bh=18;
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++) s.bricks.push({ x:gap+c*(bw+gap), y:40+r*(bh+gap), w:bw, h:bh, alive:true, color:BK_BRICKCOLS[r%BK_BRICKCOLS.length] });
+}
+function bkResetBall(){ const s=bkState; s.ball={ x:s.W/2, y:s.H-42, vx:(Math.random()<0.5?-1:1)*3, vy:-3.4, r:7 }; }
+function bkStart(){
+  if(!bkState) bkInit(); const s=bkState;
+  const ov=document.getElementById('bk-overlay'); if(ov) ov.style.display='none';
+  s.lives=3; s.score=0; s.level=1; s.over=false; s.running=true; s.colors=bkColors();
+  bkBuildBricks(); bkResetBall(); bkUpdateHud(); bkLoop();
+}
+function bkLoop(){
+  const s=bkState; if(!s||!s.running) return;
+  if(currentGameId!=='brick'||!document.body.contains(s.cv)){ bkCleanup(); return; }
+  const b=s.ball; b.x+=b.vx; b.y+=b.vy;
+  if(b.x-b.r<0){ b.x=b.r; b.vx=Math.abs(b.vx); } else if(b.x+b.r>s.W){ b.x=s.W-b.r; b.vx=-Math.abs(b.vx); }
+  if(b.y-b.r<0){ b.y=b.r; b.vy=Math.abs(b.vy); }
+  const p=s.paddle;
+  if(b.vy>0 && b.y+b.r>=s.H-22 && b.y+b.r<=s.H-6 && b.x>=p.x && b.x<=p.x+p.w){ b.vy=-Math.abs(b.vy); b.vx=((b.x-(p.x+p.w/2))/(p.w/2))*4.4; }
+  if(b.y-b.r>s.H){ s.lives--; bkUpdateHud(); if(s.lives<=0){ bkOver(); return; } bkResetBall(); }
+  for(const br of s.bricks){ if(!br.alive) continue; if(b.x>br.x-b.r && b.x<br.x+br.w+b.r && b.y>br.y-b.r && b.y<br.y+br.h+b.r){ br.alive=false; s.score+=10; b.vy=-b.vy; bkUpdateHud(); break; } }
+  if(s.bricks.every(br=>!br.alive)){ s.level++; bkBuildBricks(); bkResetBall(); s.ball.vx*=1.06; s.ball.vy*=1.06; }
+  bkDraw(); s.raf=requestAnimationFrame(bkLoop);
+}
+function bkUpdateHud(){ const s=bkState; const sc=document.getElementById('bk-score'); if(sc) sc.textContent=s.score; const lv=document.getElementById('bk-lives'); if(lv) lv.innerHTML='<span style="color:#e34b4b">'+'♥'.repeat(Math.max(0,s.lives))+'</span>'; }
+function bkDraw(){
+  const s=bkState; if(!s) return; const c=s.ctx, col=s.colors;
+  const g=c.createLinearGradient(0,0,0,s.H); g.addColorStop(0,darken(col.bg,4)); g.addColorStop(1,darken(col.bg,14)); c.fillStyle=g; c.fillRect(0,0,s.W,s.H);
+  for(const br of s.bricks){ if(!br.alive) continue; c.fillStyle=br.color; c.fillRect(br.x,br.y,br.w,br.h); c.fillStyle='rgba(255,255,255,.2)'; c.fillRect(br.x,br.y,br.w,3); }
+  const p=s.paddle; c.fillStyle=col.accent; c.fillRect(p.x,s.H-22,p.w,p.h);
+  if(s.ball){ c.fillStyle='#fff'; c.beginPath(); c.arc(s.ball.x,s.ball.y,s.ball.r,0,Math.PI*2); c.fill(); }
+}
+function bkOver(){
+  const s=bkState; s.running=false; s.over=true; if(s.raf) cancelAnimationFrame(s.raf);
+  const caps=Math.floor(s.score/30);
+  if(s.score>(UC.brickBest||0)) UC.brickBest=s.score;
+  if(caps>0){ UC.coins=(UC.coins||0)+caps; trackQuest('caps',caps); }
+  try{ dbUpdateUser(getU(),{coins:UC.coins, brickBest:UC.brickBest}); }catch(e){}
+  refreshCaps();
+  const bb=document.getElementById('bk-best'); if(bb) bb.textContent=UC.brickBest||0;
+  const ov=document.getElementById('bk-overlay'); if(ov){ ov.style.display='flex'; ov.innerHTML=`<div class="ts-card"><div class="ts-title">Game Over</div><div class="ts-sub">Score ${s.score}, reached level ${s.level}.</div><div class="ts-reward">${caps>0?('<span class="orb-ic"></span> +'+caps+' Orbs'):'Break more bricks to earn Orbs.'}</div><button class="ts-btn" onclick="bkStart()">Play again</button></div>`; }
+  if(caps>0) showToast('Brick Breaker: +'+caps+' Orbs!');
+}
+function bkCleanup(){ if(bkState){ if(bkState.raf) cancelAnimationFrame(bkState.raf); bkState.running=false; } if(bkKeyHandler){ document.removeEventListener('keydown', bkKeyHandler); bkKeyHandler=null; } bkState=null; }
+
+// ============================================================
+//  COLOR SIMON
+// ============================================================
+let smState=null, smTimer=null;
+const SM_PADS=[{id:0,color:'#2faf4e'},{id:1,color:'#e34b4b'},{id:2,color:'#edc22e'},{id:3,color:'#19c3ff'}];
+function renderSimon(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  stage.innerHTML=`<div class="sm-wrap">
+    <div class="sm-hud"><span>Round <b id="sm-round">0</b></span><span>Best <b id="sm-best">${UC.simonBest||0}</b></span></div>
+    <div class="sm-pads">${SM_PADS.map(p=>`<button class="sm-pad" data-pad="${p.id}" style="background:${p.color}" onclick="smPress(${p.id})"></button>`).join('')}</div>
+    <div class="sm-msg" id="sm-msg">Watch the sequence, then repeat it.</div>
+    <div style="text-align:center"><button class="ts-btn" id="sm-startbtn" onclick="smStart()">Start</button></div>
+  </div>`;
+  smState={ seq:[], step:0, round:0, showing:false, accepting:false, over:false };
+}
+function smStart(){ const s=smState; if(!s) return; s.seq=[]; s.round=0; s.over=false; const b=document.getElementById('sm-startbtn'); if(b) b.style.display='none'; smNext(); }
+function smNext(){ const s=smState; s.seq.push(Math.floor(Math.random()*4)); s.round=s.seq.length; const r=document.getElementById('sm-round'); if(r) r.textContent=s.round; smShow(); }
+function smFlash(id){ const el=document.querySelector('.sm-pad[data-pad="'+id+'"]'); if(el){ el.classList.add('lit'); setTimeout(()=>el.classList.remove('lit'),300); } }
+function smShow(){
+  const s=smState; s.showing=true; s.accepting=false; s.step=0;
+  const msg=document.getElementById('sm-msg'); if(msg) msg.textContent='Watch...';
+  let i=0; if(smTimer) clearInterval(smTimer);
+  smTimer=setInterval(()=>{ if(!smState||currentGameId!=='simon'){ clearInterval(smTimer); smTimer=null; return; }
+    if(i>=s.seq.length){ clearInterval(smTimer); smTimer=null; s.showing=false; s.accepting=true; const m=document.getElementById('sm-msg'); if(m) m.textContent='Your turn.'; return; }
+    smFlash(s.seq[i]); i++; }, 620);
+}
+function smPress(id){
+  const s=smState; if(!s||!s.accepting||s.over) return;
+  smFlash(id);
+  if(id!==s.seq[s.step]){ smOver(); return; }
+  s.step++;
+  if(s.step>=s.seq.length){ s.accepting=false; const m=document.getElementById('sm-msg'); if(m) m.textContent='Nice!'; setTimeout(()=>{ if(smState&&!smState.over) smNext(); }, 650); }
+}
+function smOver(){
+  const s=smState; s.over=true; s.accepting=false;
+  const rounds=Math.max(0,s.round-1), caps=rounds;
+  if(rounds>(UC.simonBest||0)) UC.simonBest=rounds;
+  if(caps>0){ UC.coins=(UC.coins||0)+caps; trackQuest('caps',caps); }
+  try{ dbUpdateUser(getU(),{coins:UC.coins, simonBest:UC.simonBest}); }catch(e){}
+  refreshCaps();
+  const bb=document.getElementById('sm-best'); if(bb) bb.textContent=UC.simonBest||0;
+  const msg=document.getElementById('sm-msg'); if(msg) msg.textContent='Wrong! You reached round '+rounds+'.'+(caps>0?(' +'+caps+' Orbs.'):'');
+  const b=document.getElementById('sm-startbtn'); if(b){ b.style.display=''; b.textContent='Play again'; }
+  if(caps>0) showToast('Color Simon: +'+caps+' Orbs!');
+}
+function smCleanup(){ if(smTimer){ clearInterval(smTimer); smTimer=null; } smState=null; }
+
+// ============================================================
+//  X-TRA MATH  (AI-generated problems for Orbs)
+// ============================================================
+const XTRA_LEVELS=[
+  {lv:1, name:'Arithmetic',       reward:5,  guide:'simple addition or subtraction of two whole numbers between 10 and 99'},
+  {lv:2, name:'Times Tables',     reward:10, guide:'a multiplication, or a clean whole-number division, of numbers up to 15'},
+  {lv:3, name:'Pre-Algebra',      reward:18, guide:'order of operations, or a percentage such as "what is 25% of 80", with a single whole-number answer'},
+  {lv:4, name:'Linear Algebra',   reward:30, guide:'solving a linear equation for x, for example 3x + 7 = 22, with an integer or simple fraction answer'},
+  {lv:5, name:'Advanced Algebra', reward:50, guide:'solving a quadratic equation x^2 + bx + c = 0 with whole-number roots and asking for the LARGER root; the answer must be a single exact integer'},
+  {lv:6, name:'Calculus',         reward:75, guide:'single-variable calculus: differentiating a polynomial and evaluating the derivative at an integer point, or evaluating a simple definite integral of a polynomial; the answer must be a single exact integer'}
+];
+let xtraState=null;
+function renderXtraMath(){
+  const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
+  xtraState={level:null, problem:null, next:null, streak:0, solved:0, earned:0};
+  stage.innerHTML=`<div class="xm-wrap">
+    <div class="xm-head"><div class="xm-title">X-tra Math</div><div class="xm-sub">Solve problems for Orbs. Harder levels pay more. Problems are written by AI.</div></div>
+    <div class="xm-stats"><span>Solved <b id="xm-solved">0</b></span><span>Streak <b id="xm-streak">0</b></span><span>Earned <b id="xm-earned">0</b> <span class="orb-ic"></span></span></div>
+    <div class="xm-levels" id="xm-levels">${XTRA_LEVELS.map(L=>`<button class="xm-lvl" onclick="xtraPick(${L.lv})"><span class="xm-lvl-n">Level ${L.lv}</span><span class="xm-lvl-name">${L.name}</span><span class="xm-lvl-rw"><span class="orb-ic"></span> ${L.reward}+</span></button>`).join('')}</div>
+    <div class="xm-play" id="xm-play" style="display:none"></div>
+  </div>`;
+}
+function xtraPick(lv){
+  if(!xtraState) return;
+  xtraState.level=XTRA_LEVELS.find(L=>L.lv===lv); xtraState.next=null;
+  document.getElementById('xm-levels').style.display='none';
+  const play=document.getElementById('xm-play'); play.style.display='block';
+  play.innerHTML=`<div class="xm-playhead"><button class="xm-back2" onclick="xtraMenu()">‹ Change level</button><span class="xm-lvltag">Level ${xtraState.level.lv} &middot; ${xtraState.level.name} &middot; <span class="orb-ic"></span> ${xtraState.level.reward}+</span></div>
+    <div class="xm-problem" id="xm-problem">Generating problem...</div>
+    <div class="xm-row"><input class="xm-input" id="xm-answer" placeholder="Your answer" autocomplete="off" onkeydown="if(event.key==='Enter')xtraSubmit()"><button class="xm-submit" onclick="xtraSubmit()">Submit</button></div>
+    <div class="xm-actions"><button class="xm-skip" onclick="xtraSkip()">Skip (no Orbs)</button><span class="xm-fb" id="xm-fb"></span></div>`;
+  xtraServe();
+}
+function xtraMenu(){
+  if(!xtraState) return; xtraState.problem=null; xtraState.next=null;
+  const play=document.getElementById('xm-play'); if(play) play.style.display='none';
+  const lv=document.getElementById('xm-levels'); if(lv) lv.style.display='';
+}
+async function xtraServe(){
+  const st=xtraState; if(!st||!st.level) return;
+  const pEl=document.getElementById('xm-problem'), aEl=document.getElementById('xm-answer');
+  if(st.next){ st.problem=st.next; st.next=null; }
+  else { if(pEl) pEl.textContent='Generating problem...'; st.problem=await xtraGen(st.level); }
+  if(currentGameId!=='xtramath'||!st.problem) return;
+  if(pEl) pEl.textContent=st.problem.q;
+  if(aEl){ aEl.value=''; aEl.focus(); }
+  st.hintShown=false;
+  const fb=document.getElementById('xm-fb'); if(fb){ fb.textContent=''; fb.className='xm-fb'; }
+  const lv=st.level;
+  xtraGen(lv).then(p=>{ if(xtraState&&xtraState.level&&xtraState.level.lv===lv.lv&&!xtraState.next) xtraState.next=p; }).catch(()=>{});
+}
+async function xtraGen(L){ const ai=await xtraGenAI(L); return ai||xtraGenLocal(L.lv); }
+async function xtraGenAI(L){
+  if(!aiOn()) return null;
+  try{
+    const prompt='Create ONE math problem about: '+L.guide+'. Solve it yourself carefully and put ONLY the final exact answer as a number (integer, decimal, or a simplified fraction like 3/4) in "answer", with no words or units. Output ONLY compact JSON like {"question":"...","answer":"..."}. Never put the answer inside the question.';
+    const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),14000);
+    let res; try{ res=await fetch(AI_CONFIG.endpoint,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:AI_CONFIG.model,messages:[{role:'user',content:prompt}],max_tokens:320}),signal:ctrl.signal}); } finally{ clearTimeout(to); }
+    if(!res.ok) return null;
+    const data=await res.json();
+    const content=(((data.choices||[])[0]||{}).message||{}).content||'';
+    const m=String(content).match(/\{[\s\S]*\}/); if(!m) return null;
+    const obj=JSON.parse(m[0]);
+    const q=String(obj.question||'').trim(); const num=parseNum(obj.answer);
+    if(!q||num===null) return null;
+    if(xtraRevealsAnswer(q, num, obj.answer)) return null; // never show a problem that gives away its own answer
+    return {q, a:num};
+  }catch(e){ return null; }
+}
+function xtraGenLocal(lv){
+  const ri=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
+  if(lv===1){ const a=ri(10,99),b=ri(10,99); if(Math.random()<0.5) return {q:`${a} + ${b} = ?`,a:a+b}; const x=Math.max(a,b),y=Math.min(a,b); return {q:`${x} - ${y} = ?`,a:x-y}; }
+  if(lv===2){ if(Math.random()<0.5){ const a=ri(2,15),b=ri(2,15); return {q:`${a} × ${b} = ?`,a:a*b}; } const b=ri(2,12),x=ri(2,12); return {q:`${b*x} ÷ ${b} = ?`,a:x}; }
+  if(lv===3){ if(Math.random()<0.5){ const p=[10,20,25,50][ri(0,3)], whole=ri(1,9)*20; return {q:`What is ${p}% of ${whole}?`,a:whole*p/100}; } const a=ri(2,9),b=ri(2,9),c=ri(2,9); return {q:`${a} + ${b} × ${c} = ?`,a:a+b*c}; }
+  if(lv===4){ const x=ri(-9,9),a=ri(2,9),b=ri(-9,9), c=a*x+b; const sign=b<0?`- ${-b}`:`+ ${b}`; return {q:`Solve for x:  ${a}x ${sign} = ${c}`,a:x}; }
+  if(lv===5){ const r1=ri(-7,7),r2=ri(-7,7), b=-(r1+r2), c=r1*r2;
+    const bs=b<0?`- ${-b}x`:(b>0?`+ ${b}x`:''), cs=c<0?`- ${-c}`:(c>0?`+ ${c}`:'');
+    return {q:`Solve x² ${bs} ${cs} = 0. Give the larger root.`, a:Math.max(r1,r2)}; }
+  // lv 6: calculus (derivatives and a definite integral, all integer answers)
+  const t=Math.random();
+  if(t<0.4){ const a=ri(1,5),b=ri(-6,6),cc=ri(-5,5),k=ri(-3,5); const bs=b<0?`- ${-b}x`:`+ ${b}x`, cs=cc<0?`- ${-cc}`:`+ ${cc}`;
+    return {q:`If f(x) = ${a}x² ${bs} ${cs}, find f'(${k}).`, a:2*a*k+b}; }
+  if(t<0.7){ const a=ri(1,4),k=ri(-3,4);
+    return {q:`If f(x) = ${a}x³, find f'(${k}).`, a:3*a*k*k}; }
+  const ia=ri(1,6), ib=ri(1,4)*2;
+  return {q:`Evaluate the definite integral of ${ia}x dx from 0 to ${ib}.`, a:ia*ib*ib/2};
+}
+function xtraRevealsAnswer(q, num, rawAns){
+  const ql=q.toLowerCase();
+  if(/answer|solution|equals/.test(ql)) return true;
+  const norm=q.replace(/\s+/g,'');
+  if(norm.indexOf('='+String(num))>=0) return true;
+  if(rawAns!=null && norm.indexOf('='+String(rawAns).replace(/\s+/g,''))>=0) return true;
+  return false;
+}
+function parseNum(s){
+  if(s===null||s===undefined) return null;
+  s=String(s).trim().replace(/^x\s*=\s*/i,'').replace(/[^0-9./+\-]/g,'');
+  if(s==='') return null;
+  if(/^[-+]?\d+\/\d+$/.test(s)){ const p=s.split('/').map(Number); if(p[1]===0) return null; return p[0]/p[1]; }
+  const n=Number(s); return isNaN(n)?null:n;
+}
+function xtraFmt(n){ return (Math.abs(n-Math.round(n))<1e-9)?String(Math.round(n)):String(Math.round(n*1000)/1000); }
+async function xtraSubmit(){
+  const st=xtraState; if(!st||!st.problem) return;
+  const aEl=document.getElementById('xm-answer'), fb=document.getElementById('xm-fb');
+  const guess=parseNum(aEl?aEl.value:'');
+  if(guess===null){ if(fb){ fb.textContent='Type a number (fractions like 3/4 are fine).'; fb.className='xm-fb warn'; } return; }
+  if(Math.abs(guess-st.problem.a)<1e-6){
+    let reward=st.level.reward; st.streak++; const bonus=Math.min(20,(st.streak-1)*2); reward+=bonus;
+    st.solved++; st.earned+=reward; UC.coins=(UC.coins||0)+reward;
+    try{ await dbUpdateUser(getU(),{coins:UC.coins}); }catch(e){}
+    refreshCaps();
+    const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+    set('xm-solved',st.solved); set('xm-streak',st.streak); set('xm-earned',st.earned);
+    if(fb){ fb.textContent='Correct! +'+reward+' Orbs'+(bonus?(' ('+bonus+' streak bonus)'):''); fb.className='xm-fb ok'; }
+    showToast('Correct! +'+reward+' Orbs');
+    setTimeout(()=>{ if(currentGameId==='xtramath') xtraServe(); }, 750);
+  } else {
+    st.streak=0; const sEl=document.getElementById('xm-streak'); if(sEl) sEl.textContent=0;
+    if(fb){ fb.textContent='Not quite. Answer was '+xtraFmt(st.problem.a)+'. Next problem coming...'; fb.className='xm-fb bad'; }
+    setTimeout(()=>{ if(currentGameId==='xtramath') xtraServe(); }, 1500);
+  }
+}
+function xtraSkip(){
+  const st=xtraState; if(!st) return; st.streak=0;
+  const sEl=document.getElementById('xm-streak'); if(sEl) sEl.textContent=0;
+  const fb=document.getElementById('xm-fb'); if(fb){ fb.textContent='Skipped.'; fb.className='xm-fb'; }
+  xtraServe();
+}
+function xtraMakeHint(num){
+  if(!Number.isInteger(num)){ return 'it is not a whole number. It rounds to about '+Math.round(num)+'.'; }
+  const w=Math.max(4, Math.round(Math.abs(num)*0.3)), off=1+Math.floor(Math.random()*(w-1));
+  const lo=num-off, hi=num+(w-off);
+  return 'it is a number between '+lo+' and '+hi+'.';
+}
+function xtraCleanup(){ xtraState=null; }
+
+
+// ============================================================
+// Games hub + window
+// ============================================================
+
+const GAME_TILES = [
+  { id: 'growgarden', title: 'Grow a Garden', ic: '🌱', c: '#3fae54', open: () => renderGrowGarden() },
+  { id: 'cookie',     title: 'Cookie Clicker', ic: '🍪', c: '#c8841e', open: stage => { stage.innerHTML = '<div class="cookie-game" id="cookie-game"></div>'; renderCookie(); } },
+  { id: 'geodash',    title: 'Liquid Dash', ic: '🌊', c: '#2aa7ff', open: () => renderGeoDash() },
+  { id: 'snake',      title: 'Snake', ic: '🐍', c: '#2faf4e', open: () => renderSnake() },
+  { id: 'merge',      title: 'Blox Merge', ic: '🔢', c: '#edc22e', open: () => renderMerge() },
+  { id: 'xtramath',   title: 'X-tra Math', ic: '🧮', c: '#1f9e57', open: () => renderXtraMath() },
+  { id: 'typing',     title: 'Typing Sprint', ic: '⌨️', c: '#3b6fe0', open: () => renderTyping() },
+  { id: 'aim',        title: 'Aim Trainer', ic: '🎯', c: '#e0563b', open: () => renderAim() },
+  { id: 'dailyword',  title: 'Daily Word', ic: '📅', c: '#15a05a', open: () => renderDailyWord() },
+  { id: 'blockblast', title: 'Block Blast', ic: '🧱', c: '#e0563b', open: () => renderBlockBlast() },
+  { id: 'sudoku',     title: 'Sudoku', ic: '🧩', c: '#3b6fe0', open: () => renderSudoku() },
+  { id: 'connect4',   title: 'Connect Four', ic: '🔴', c: '#e0b020', open: () => renderConnect4() },
+  { id: 'stack',      title: 'Stack Tower', ic: '🏗️', c: '#e08a1e', open: () => renderStack() },
+  { id: 'memory',     title: 'Memory Match', ic: '🃏', c: '#b06bff', open: () => renderMemory() },
+  { id: 'sweeper',    title: 'Orb Sweeper', ic: '💣', c: '#5b6b7a', open: () => renderSweeper() },
+  { id: 'crush',      title: 'Orb Crush', ic: '💎', c: '#19c3ff', open: () => renderCrush() },
+  { id: 'brick',      title: 'Brick Breaker', ic: '🏓', c: '#e0563b', open: () => renderBrick() },
+  { id: 'simon',      title: 'Color Simon', ic: '🎨', c: '#2faf4e', open: () => renderSimon() },
+];
+
+const GAME_CLEANUPS = () => [gdCleanup, xtraCleanup, snakeCleanup, mergeCleanup, tsCleanup, atCleanup, dwCleanup, bbCleanup,
+  suCleanup, c4Cleanup, stCleanup, mmCleanup, csCleanup, crCleanup, bkCleanup, smCleanup, ggCleanup];
+
+let gameWin = null;
+
+function ensureGameWindow() {
+  if (gameWin) return gameWin;
+  gameWin = document.createElement('div');
+  gameWin.className = 'fg-overlay';
+  gameWin.hidden = true;
+  gameWin.innerHTML =
+    '<div class="fg-window" role="dialog" aria-modal="true" aria-labelledby="fg-title">' +
+    '<header class="fg-bar"><h3 class="fg-title" id="fg-title"></h3>' +
+    '<span class="fg-chip"><span class="orb-ic"></span><b class="fg-orbs">0</b></span>' +
+    '<button class="fg-x" aria-label="Close game">✕</button></header>' +
+    '<div class="fg-stage" id="game-stage"></div></div>';
+  document.body.append(gameWin);
+  gameWin.querySelector('.fg-x').onclick = closeGame;
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !gameWin.hidden) closeGame(); });
+  return gameWin;
+}
+
+function openGame(id) {
+  const game = GAME_TILES.find(g => g.id === id);
+  if (!game || !myUid) return;
+  ensureGameWindow();
+  GAME_CLEANUPS().forEach(fn => fn());
+  const stage = gameWin.querySelector('#game-stage');
+  stage.innerHTML = '';
+  stage.scrollTop = 0;
+  gameWin.querySelector('.fg-title').textContent = game.title;
+  gameWin.hidden = false;
+  currentGameId = id;
+  refreshCaps();
+  game.open(stage);
+}
+
+function closeGame() {
+  GAME_CLEANUPS().forEach(fn => { try { fn(); } catch (e) {} });
+  currentGameId = null;
+  if (gameWin) { gameWin.hidden = true; gameWin.querySelector('#game-stage').innerHTML = ''; }
+}
+
+function mountGameHubs() {
+  document.querySelectorAll('.fg-mount').forEach(root => {
+    root.innerHTML =
+      '<div class="fg-head"><div><h3 class="fg-heading">Play games, earn Orbs</h3>' +
+      '<p class="fg-sub">Every game pays out in Orbs when a run ends. Spend them on Frixion Premium.</p></div>' +
+      '<span class="fg-chip"><span class="orb-ic"></span><b class="fg-orbs">0</b></span></div>' +
+      '<div class="fg-grid">' + GAME_TILES.map(g =>
+        `<button class="fg-tile" data-game="${g.id}"><span class="fg-thumb" style="background:linear-gradient(135deg,${g.c},${lighten(g.c, 45)})">` +
+        `<span class="fg-ic">${g.ic}</span></span><span class="fg-name">${g.title}</span></button>`).join('') + '</div>';
+    root.onclick = e => {
+      const tile = e.target.closest('.fg-tile');
+      if (tile) openGame(tile.dataset.game);
+    };
+  });
+  refreshCaps();
+}
