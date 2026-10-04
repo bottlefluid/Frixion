@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=55">
+<link rel="stylesheet" href="style.css?v=56">
 </head>
 <body>
 
@@ -72,6 +72,7 @@
     <div class="help-row"><kbd>Backspace</kbd> + <kbd>Click</kbd><span>Delete a message</span></div>
     <div class="help-row"><kbd>/tts text</kbd><span>Send a text-to-speech message</span></div>
     <div class="help-row"><kbd>/poll</kbd><span>Create a poll</span></div>
+    <div class="help-row ov-help-row"><span class="help-kbds" id="help-overlay-kbd"></span><span>Open the friends overlay</span></div>
   </div>
   <div class="help-foot">Frixion v3.0 — see what's new in Settings → Update Log.</div>
 </div>
@@ -808,6 +809,16 @@
           </div>
           <label class="toggle-switch"><input type="checkbox" id="quick-buttons-toggle"><span class="toggle-slider"></span></label>
         </div>
+        <div class="setting-row ov-setting" style="margin-top:20px;">
+          <div class="setting-row-text">
+            <div class="setting-row-title">Overlay shortcut</div>
+            <div class="setting-row-desc">Opens your friends and DMs on top of anything, including Quests games. Click the shortcut, then press the new keys. Default is Shift + ` (the ~ key).</div>
+          </div>
+          <div class="ov-bind-ctl">
+            <button type="button" class="ov-bind-btn" id="overlay-bind-btn" title="Change shortcut"></button>
+            <button type="button" class="btn-secondary slim hidden" id="overlay-bind-reset">Reset</button>
+          </div>
+        </div>
         <p class="desc" style="margin:6px 0 0;font-size:12px;">All keyboard settings are synced to your account.</p>
 
         <div class="field" style="margin-top:24px;">
@@ -1371,6 +1382,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
-<script src="script.js?v=55"></script>
+<script src="script.js?v=56"></script>
 </body>
 </html>

@@ -3316,3 +3316,101 @@ body.shop-theme-active .fg-window .fg-chip { background: rgba(0,0,0,.3); }
 .gag-item-mid small { color: var(--text-muted); font-size: 12px; }
 .gag-item-del { cursor: pointer; color: var(--text-muted); display: inline-flex; }
 .gag-item-del:hover { color: var(--danger, #ed4245); }
+
+
+/* ---- Friends overlay (desktop only; shortcut is set in Settings → Keyboard) ----
+   Everything is built from the theme variables, so it follows Light / Ash / Onyx
+   and shop themes automatically. Sits above the Quests game window (z 200) and
+   modals (z 100), below toasts. */
+#ov-root {
+  position: fixed; inset: 0; z-index: 450;
+  background: rgba(0,0,0,.5); backdrop-filter: blur(3px);
+  font-family: var(--font); color: var(--text-normal);
+  animation: ovFade .14s ease;
+}
+#ov-root[hidden] { display: none; }
+body.is-mobile #ov-root { display: none !important; }
+:where(#ov-root) button { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+#ov-root :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@keyframes ovFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ovSlide { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+
+.ov-panel {
+  position: absolute; top: 16px; right: 16px; bottom: 16px; width: 320px;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg-floating); border: 1px solid var(--divider); border-radius: 12px;
+  box-shadow: 0 12px 40px var(--shadow-color);
+  animation: ovSlide .18s cubic-bezier(.2,.9,.3,1.1);
+}
+.ov-tabs { display: flex; gap: 4px; padding: 10px 10px 0; }
+.ov-tab { flex: 1; padding: 8px 10px; border-radius: 6px; font-size: 14px; font-weight: 600; color: var(--text-muted); text-align: center !important; }
+.ov-tab:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
+.ov-tab.on { background: var(--bg-modifier-selected); color: var(--text-normal); }
+
+.ov-search-wrap { position: relative; padding: 10px; color: var(--text-muted); }
+.ov-search-wrap svg { position: absolute; left: 22px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.ov-search { width: 100%; padding: 8px 10px 8px 32px; border: 0; border-radius: 6px; background: var(--bg-input); color: var(--text-normal); font: 14px var(--font); }
+.ov-search::placeholder { color: var(--text-muted); }
+
+.ov-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 8px; }
+.ov-section { padding: 12px 8px 4px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.ov-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border-radius: 8px; }
+.ov-row:hover { background: var(--bg-modifier-hover); }
+.ov-row.off .avatar, .ov-row.off .ov-row-copy { opacity: .6; }
+.ov-row-copy { display: flex; flex-direction: column; min-width: 0; }
+.ov-row-name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-row-sub { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-empty { padding: 28px 16px; text-align: center; font-size: 14px; color: var(--text-muted); }
+.ov-foot { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--divider); font-size: 12px; color: var(--text-muted); }
+.ov-foot kbd, .ov-bind-btn kbd, .help-kbds kbd {
+  background: var(--bg-input); border: 1px solid var(--divider); border-radius: 4px;
+  padding: 2px 6px; font: 600 11px var(--font); color: var(--text-normal);
+}
+
+/* chat windows dock to the left of the panel, bottom-aligned, newest furthest left */
+.ov-chats { position: absolute; right: 348px; bottom: 16px; display: flex; flex-direction: row-reverse; align-items: flex-end; gap: 12px; }
+.ov-chat {
+  width: 340px; height: min(480px, calc(100vh - 32px));
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg-primary); border: 1px solid var(--divider); border-radius: 12px;
+  box-shadow: 0 12px 40px var(--shadow-color);
+  animation: ovSlide .18s cubic-bezier(.2,.9,.3,1.1);
+}
+.ov-chat-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--bg-secondary); border-bottom: 1px solid var(--divider); }
+.ov-chat-who { flex: 1; min-width: 0; }
+.ov-chat-name { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-chat-status { font-size: 12px; color: var(--text-muted); }
+.ov-x { width: 28px; height: 28px; border-radius: 6px; color: var(--text-muted); text-align: center !important; }
+.ov-x:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
+.ov-msgs { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0; }
+.ov-msg { display: flex; gap: 10px; padding: 2px 12px; }
+.ov-msg.first { margin-top: 10px; }
+.ov-gutter { width: 32px; flex: none; }
+.ov-msg-main { flex: 1; min-width: 0; }
+.ov-msg-meta { display: flex; align-items: baseline; gap: 8px; }
+.ov-msg-name { font-size: 14px; font-weight: 600; }
+.ov-msg-time { font-size: 11px; color: var(--text-muted); }
+.ov-text { font-size: 14px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ov-note { color: var(--text-muted); font-style: italic; }
+.ov-img { display: block; max-width: 100%; max-height: 200px; margin-top: 4px; border-radius: 8px; }
+.ov-file { display: inline-block; margin-top: 4px; color: var(--text-link); font-size: 14px; }
+.ov-compose { padding: 10px 12px 12px; }
+.ov-input { display: block; width: 100%; max-height: 96px; resize: none; border: 0; border-radius: 8px; padding: 10px 12px; background: var(--bg-input); color: var(--text-normal); font: 14px/1.35 var(--font); }
+.ov-input::placeholder { color: var(--text-muted); }
+
+@media (max-width: 900px) {
+  .ov-panel { width: 280px; }
+  .ov-chats { right: 308px; }
+  .ov-chat { width: 300px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #ov-root, .ov-panel, .ov-chat { animation: none; }
+}
+
+/* settings row + help popover */
+.ov-bind-ctl { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ov-bind-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--divider); border-radius: 6px; background: var(--bg-input); color: var(--text-normal); font-size: 13px; cursor: pointer; }
+.ov-bind-btn:hover { background: var(--bg-modifier-selected); }
+.ov-bind-btn.capturing { border-color: var(--accent); background: var(--accent-soft); }
+.help-kbds { display: inline-flex; align-items: center; gap: 6px; }
+body.is-mobile .ov-setting, body.is-mobile .ov-help-row { display: none; }

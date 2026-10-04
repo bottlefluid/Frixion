@@ -1961,6 +1961,7 @@ $('register-btn').onclick = async () => {
 };
 
 $('logout-btn').onclick = async () => {
+  ovReset();
   teardownPresence();
   try { if (myUid) await db.collection('users').doc(myUid).update({ status: 'offline' }); } catch (e) {}
   cleanupAllListeners();
@@ -2015,6 +2016,7 @@ function initAppForUser() {
     applyAdminVisibility();
     applyTheme(myProfile.theme || 'default');
     applyCustomKeyboardSetting();
+    ovRenderBindSetting();
     renderSelfPanel();
     updateFriendReqBadge();
     if (!$('settings-modal').classList.contains('hidden')) populateSettings();
@@ -2575,6 +2577,7 @@ function subscribeDMList() {
     window.__myDMs = dms;
     await Promise.all(dms.map(dm => getProfile(dm.participants.find(p => p !== myUid))));
     hydrateConversationPreviews('dms', dms);
+    ovRenderLists();
     if (currentView !== 'channel') renderDMRows();
   });
   let groupDmsFirstSync = true;
@@ -11829,4 +11832,360 @@ function mountGameHubs() {
     };
   });
   refreshCaps();
+}
+
+
+// ============================================================
+// FRIENDS OVERLAY (desktop only — there is deliberately no mobile version)
+// Opens on top of everything, including the Quests game window, so you can
+// keep talking to friends without leaving what you're playing. The shortcut
+// is synced to the account (users/{name}.overlayKeybind) and can be changed
+// in Settings → Keyboard. Default: Shift + ` (the ~ key).
+// ============================================================
+const OV_DEFAULT_BIND = { code: 'Backquote', shift: true, ctrl: false, alt: false, meta: false };
+let ovRoot = null, ovOpen = false, ovTab = 'friends', ovQuery = '';
+let ovPrevFocus = null, ovTimer = null, ovLastUid = null, ovCapturing = false;
+let ovChats = [];   // [{ id, uid, el, unsub, msgs, stick }]
+
+function ovMaxChats() { return window.innerWidth >= 1100 ? 2 : 1; }
+
+// ---------- shortcut: read, match, label ----------
+function ovGetBind() {
+  const b = myProfile && myProfile.overlayKeybind;
+  return (b && typeof b.code === 'string')
+    ? { code: b.code, shift: !!b.shift, ctrl: !!b.ctrl, alt: !!b.alt, meta: !!b.meta }
+    : OV_DEFAULT_BIND;
+}
+function ovMatches(e, b) {
+  return e.code === b.code && e.shiftKey === b.shift && e.ctrlKey === b.ctrl && e.altKey === b.alt && e.metaKey === b.meta;
+}
+function ovKeyLabel(code) {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit\d$/.test(code)) return code.slice(5);
+  const map = { Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\',
+    Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Space: 'Space',
+    ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→' };
+  return map[code] || code.replace(/^Numpad/, 'Num ');
+}
+function ovBindHTML(b) {
+  const mac = /Mac/i.test(navigator.platform || '');
+  const parts = [];
+  if (b.ctrl) parts.push('Ctrl');
+  if (b.alt) parts.push(mac ? 'Option' : 'Alt');
+  if (b.shift) parts.push('Shift');
+  if (b.meta) parts.push(mac ? 'Cmd' : 'Win');
+  parts.push(ovKeyLabel(b.code));
+  return parts.map(k => `<kbd>${esc(k)}</kbd>`).join(' + ');
+}
+// Keeps the Settings row, the Help popover and the overlay footer showing the live shortcut.
+function ovRenderBindSetting() {
+  const html = ovBindHTML(ovGetBind());
+  const btn = $('overlay-bind-btn');
+  if (btn && !ovCapturing) btn.innerHTML = html;
+  const help = $('help-overlay-kbd');
+  if (help) help.innerHTML = html;
+  const foot = $('ov-foot-kbd');
+  if (foot) foot.innerHTML = html;
+  const reset = $('overlay-bind-reset');
+  if (reset) reset.classList.toggle('hidden', !(myProfile && myProfile.overlayKeybind));
+}
+
+// ---------- settings: click the shortcut, press the new combo ----------
+async function ovSaveBind(b) {
+  try { await db.collection('users').doc(myUid).update({ overlayKeybind: b }); toast('Overlay shortcut saved.'); }
+  catch (err) { toast('Could not save that shortcut.', 'error'); }
+}
+function ovStartCapture() {
+  if (ovCapturing || !myUid) return;
+  ovCapturing = true;
+  const btn = $('overlay-bind-btn');
+  btn.classList.add('capturing');
+  btn.textContent = 'Press a shortcut…';
+  const finish = () => {
+    ovCapturing = false;
+    btn.classList.remove('capturing');
+    window.removeEventListener('keydown', onKey, true);
+    document.removeEventListener('mousedown', onAway, true);
+    ovRenderBindSetting();
+  };
+  const onKey = (e) => {
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (/^(Shift|Control|Alt|Meta)(Left|Right)$/.test(e.code)) return;   // wait for the real key
+    if (e.code === 'Escape') { finish(); return; }
+    const b = { code: e.code, shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey, meta: e.metaKey };
+    // A bare typing key would stop that key from working while you chat.
+    if (!b.ctrl && !b.alt && !b.meta && /^(Key[A-Z]|Digit\d|Numpad\d|Space|Enter|Tab|Backspace|Arrow\w+)$/.test(b.code)) {
+      toast('Add Ctrl or Alt to that key, or pick a function key.', 'error');
+      return;
+    }
+    finish();
+    ovSaveBind(b);
+  };
+  const onAway = (e) => { if (!btn.contains(e.target)) finish(); };
+  window.addEventListener('keydown', onKey, true);
+  document.addEventListener('mousedown', onAway, true);
+}
+$('overlay-bind-btn').addEventListener('click', ovStartCapture);
+$('overlay-bind-reset').addEventListener('click', async () => {
+  try { await db.collection('users').doc(myUid).update({ overlayKeybind: FieldValue.delete() }); toast('Overlay shortcut reset.'); }
+  catch (err) { toast('Could not reset the shortcut.', 'error'); }
+});
+
+// ---------- the shortcut itself ----------
+// Capture phase on window so it still works while a game is eating keys, and so
+// Esc closes the overlay before the game window's own Esc handler sees it.
+window.addEventListener('keydown', (e) => {
+  if (ovCapturing || !myUid || e.repeat) return;
+  if (ovOpen && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); ovClose(); return; }
+  const b = ovGetBind();
+  if (!ovMatches(e, b)) return;
+  // Don't hijack a character while typing in a normal message box. Inside games and
+  // inside the overlay itself the shortcut always works.
+  const t = document.activeElement;
+  const inGame = !!(gameWin && !gameWin.hidden);
+  const plain = !b.ctrl && !b.alt && !b.meta;
+  if (plain && isTypingTarget(t) && !(ovRoot && ovRoot.contains(t)) && !inGame) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  if (ovOpen) ovClose(); else ovShow();
+}, true);
+
+// ---------- show / hide ----------
+function ovShow() {
+  if (!myUid || !myProfile || isMobile()) return;
+  ovBuild();
+  ovPrevFocus = document.activeElement;
+  ovOpen = true;
+  ovRoot.hidden = false;
+  ovRenderBindSetting();
+  ovRenderLists();
+  ovTimer = setInterval(ovRenderLists, 5000);   // keeps online dots fresh
+  if (ovLastUid) ovOpenChat(ovLastUid);
+  else ovRoot.querySelector('.ov-search').focus();
+}
+function ovClose() {
+  if (!ovOpen) return;
+  ovOpen = false;
+  ovRoot.hidden = true;
+  clearInterval(ovTimer);
+  ovChats.slice().forEach(c => ovCloseChat(c, false));
+  if (ovPrevFocus && document.contains(ovPrevFocus) && ovPrevFocus.focus) ovPrevFocus.focus();
+  ovPrevFocus = null;
+}
+function ovReset() { ovClose(); ovLastUid = null; ovQuery = ''; ovTab = 'friends'; }
+
+function ovBuild() {
+  if (ovRoot) return;
+  ovRoot = document.createElement('div');
+  ovRoot.id = 'ov-root';
+  ovRoot.hidden = true;
+  ovRoot.setAttribute('role', 'dialog');
+  ovRoot.setAttribute('aria-label', 'Friends overlay');
+  ovRoot.innerHTML =
+    '<div class="ov-chats" id="ov-chats"></div>' +
+    '<aside class="ov-panel">' +
+      '<div class="ov-tabs" role="tablist">' +
+        '<button type="button" class="ov-tab on" data-ov-tab="friends" role="tab">Friends</button>' +
+        '<button type="button" class="ov-tab" data-ov-tab="messages" role="tab">Messages</button>' +
+      '</div>' +
+      '<div class="ov-search-wrap">' +
+        '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>' +
+        '<input class="ov-search" type="text" placeholder="Search friends" autocomplete="off" maxlength="24" aria-label="Search friends">' +
+      '</div>' +
+      '<div class="ov-list" id="ov-list"></div>' +
+      '<div class="ov-foot"><span id="ov-foot-kbd"></span><span>closes this</span></div>' +
+    '</aside>';
+  document.body.appendChild(ovRoot);
+
+  // Click on the dimmed area closes the overlay.
+  ovRoot.addEventListener('click', (e) => { if (e.target === ovRoot) ovClose(); });
+  // Nothing typed in here may reach the game or the page underneath.
+  ['keyup', 'keypress'].forEach(t => ovRoot.addEventListener(t, e => e.stopPropagation()));
+  ovRoot.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key !== 'Tab') return;
+    const f = [...ovRoot.querySelectorAll('button, input, textarea, a[href]')].filter(el => !el.disabled && el.offsetParent !== null);
+    if (!f.length) return;
+    if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+  });
+  ovRoot.querySelectorAll('.ov-tab').forEach(tab => tab.onclick = () => {
+    ovTab = tab.dataset.ovTab;
+    ovRoot.querySelectorAll('.ov-tab').forEach(t => t.classList.toggle('on', t === tab));
+    ovRoot.querySelector('.ov-search').placeholder = ovTab === 'friends' ? 'Search friends' : 'Search messages';
+    ovRenderLists();
+  });
+  const search = ovRoot.querySelector('.ov-search');
+  search.addEventListener('input', () => { ovQuery = search.value; ovRenderLists(); });
+  search.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const first = ovRoot.querySelector('.ov-row');
+    if (first) ovOpenChat(first.dataset.uid);
+  });
+  ovRoot.querySelector('#ov-list').addEventListener('click', (e) => {
+    const row = e.target.closest('.ov-row');
+    if (row) ovOpenChat(row.dataset.uid);
+  });
+}
+
+// ---------- friends / messages list ----------
+function ovStatusText(st) { return ({ online: 'Online', idle: 'Idle', dnd: 'Do not disturb' })[st] || 'Offline'; }
+function ovRowHTML(uid, sub) {
+  const p = profileCache[uid] || { username: uid, avatarColor: '#5865f2' };
+  const st = computeDisplayStatus(uid);
+  return `<button type="button" class="ov-row${st === 'offline' ? ' off' : ''}" data-uid="${esc(uid)}">` +
+    avatarHTML(36, p.avatarColor, initials(p.username), st, p.avatarUrl, p.equippedDecoration, uid, p.equippedMask) +
+    `<span class="ov-row-copy"><span class="ov-row-name">${esc(displayNameOf(p))}</span><span class="ov-row-sub">${esc(sub)}</span></span></button>`;
+}
+async function ovRenderLists() {
+  if (!ovRoot || !ovOpen || !myProfile) return;
+  const friends = myProfile.friends || [];
+  const dms = [...(window.__myDMs || [])].sort((a, b) => timeValue(b.updatedAt) - timeValue(a.updatedAt));
+  const dmUids = dms.map(d => d.participants.find(x => x !== myUid)).filter(Boolean);
+  await Promise.all([...friends, ...dmUids].map(getProfile));
+  if (!ovOpen) return;
+  const q = ovQuery.trim().toLowerCase();
+  const nameOf = u => displayNameOf(profileCache[u] || { username: u });
+  const match = u => !q || (nameOf(u) + ' ' + ((profileCache[u] || {}).username || u)).toLowerCase().includes(q);
+  let html = '';
+  if (ovTab === 'friends') {
+    const rank = u => ({ online: 0, idle: 1 })[computeDisplayStatus(u)] ?? 2;
+    const list = friends.filter(match).sort((a, b) => rank(a) - rank(b) || nameOf(a).localeCompare(nameOf(b)));
+    const on = list.filter(u => rank(u) < 2), off = list.filter(u => rank(u) === 2);
+    if (on.length) html += `<div class="ov-section">Online (${on.length})</div>` + on.map(u => ovRowHTML(u, ovStatusText(computeDisplayStatus(u)))).join('');
+    if (off.length) html += `<div class="ov-section">Offline (${off.length})</div>` + off.map(u => ovRowHTML(u, 'Offline')).join('');
+    if (!list.length) html = `<div class="ov-empty">${friends.length ? `No friends match “${esc(ovQuery.trim())}”.` : 'No friends yet. Add some from the Friends page.'}</div>`;
+  } else {
+    const rows = dms.filter(d => match(d.participants.find(x => x !== myUid)));
+    html = rows.map(d => {
+      const u = d.participants.find(x => x !== myUid);
+      const lm = d.lastMessage || conversationPreviewCache.get(`dms:${d.id}`);
+      const mine = lm && lm.username === myProfile.username;
+      return ovRowHTML(u, (mine ? 'You: ' : '') + previewForMessage(lm));
+    }).join('') || `<div class="ov-empty">${dms.length ? `No messages match “${esc(ovQuery.trim())}”.` : 'No conversations yet. Pick a friend to say hi.'}</div>`;
+  }
+  ovRoot.querySelector('#ov-list').innerHTML = html;
+  ovChats.forEach(c => {
+    const s = c.el.querySelector('.ov-chat-status');
+    if (s) s.textContent = ovStatusText(computeDisplayStatus(c.uid));
+  });
+}
+
+// ---------- chat windows ----------
+function ovAttr(s) { return esc(s).replace(/"/g, '&quot;'); }
+function ovSafeUrl(u) { return /^(https?:|data:image\/|blob:)/i.test(u || '') ? ovAttr(u) : ''; }
+function ovAutosize(ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 96) + 'px'; }
+
+async function ovOpenChat(uid) {
+  const existing = ovChats.find(c => c.uid === uid);
+  if (existing) { existing.el.querySelector('.ov-input').focus(); return; }
+  const p = await getProfile(uid);
+  const id = dmIdFor(myUid, uid);
+  try {
+    const ref = db.collection('dms').doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      await ref.set({ participants: [myUid, uid], autoDelete: true, createdAt: FieldValue.serverTimestamp() });
+      db.collection('users').doc(myUid).update({ 'stats.dmsStarted': FieldValue.increment(1) }).catch(() => {});
+    }
+  } catch (err) { toast('Could not open that chat.', 'error'); return; }
+  if (!ovOpen || ovChats.some(c => c.uid === uid)) return;   // closed or double-clicked while loading
+  while (ovChats.length >= ovMaxChats()) ovCloseChat(ovChats[0], false);
+
+  const chat = { id, uid, msgs: [], unsub: null, stick: true, el: document.createElement('section') };
+  chat.el.className = 'ov-chat';
+  chat.el.innerHTML =
+    '<header class="ov-chat-head">' +
+      avatarHTML(30, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration, uid, p.equippedMask) +
+      `<div class="ov-chat-who"><div class="ov-chat-name">${esc(displayNameOf(p))}</div>` +
+      `<div class="ov-chat-status">${ovStatusText(computeDisplayStatus(uid))}</div></div>` +
+      '<button type="button" class="ov-x" aria-label="Close chat">✕</button>' +
+    '</header>' +
+    '<div class="ov-msgs"></div>' +
+    '<div class="ov-compose">' +
+      `<textarea class="ov-input" rows="1" maxlength="${COMPOSER_MAX_LENGTH}" placeholder="Message @${esc(p.username)}" aria-label="Message ${esc(displayNameOf(p))}"></textarea>` +
+    '</div>';
+  ovChats.push(chat);
+  ovRoot.querySelector('#ov-chats').appendChild(chat.el);
+  ovLastUid = uid;
+
+  const box = chat.el.querySelector('.ov-msgs');
+  const input = chat.el.querySelector('.ov-input');
+  chat.el.querySelector('.ov-x').onclick = () => { ovCloseChat(chat, true); ovRoot.querySelector('.ov-search').focus(); };
+  input.addEventListener('input', () => ovAutosize(input));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ovSend(chat, input); }
+  });
+  // Images loading in late shouldn't leave the newest message out of view.
+  box.addEventListener('load', () => { if (chat.stick) box.scrollTop = box.scrollHeight; }, true);
+  box.addEventListener('scroll', () => { chat.stick = box.scrollHeight - box.scrollTop - box.clientHeight < 80; });
+
+  chat.unsub = db.collection('dms').doc(id).collection('messages').orderBy('createdAt', 'desc').limit(40)
+    .onSnapshot(snap => {
+      chat.msgs = snap.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) })).reverse();
+      ovRenderMsgs(chat);
+    });
+  input.focus();
+}
+function ovCloseChat(chat, forget) {
+  if (chat.unsub) chat.unsub();
+  chat.el.remove();
+  ovChats = ovChats.filter(c => c !== chat);
+  if (forget && ovLastUid === chat.uid) ovLastUid = null;
+}
+
+function ovMsgBody(m) {
+  let h = m.text ? `<div class="ov-text">${renderMessageText(m.text)}</div>` : '';
+  const atts = m.attachments || (m.attachment ? [m.attachment] : []);
+  atts.forEach(a => {
+    const url = ovSafeUrl(a.url);
+    if (!url) return;
+    h += a.type === 'image' ? `<img class="ov-img" src="${url}" alt="">`
+      : `<a class="ov-file" href="${url}" target="_blank" rel="noopener noreferrer">${esc(a.name || 'File')}</a>`;
+  });
+  const gif = ovSafeUrl(m.gifUrl);
+  if (gif) h += `<img class="ov-img" src="${gif}" alt="GIF">`;
+  return h || `<div class="ov-text ov-note">${esc(previewForMessage(m))}</div>`;
+}
+function ovRenderMsgs(chat) {
+  const box = chat.el.querySelector('.ov-msgs');
+  let html = '', prev = null;
+  chat.msgs.forEach(m => {
+    const p = profileCache[m.uid] || { username: m.username || m.uid, avatarColor: '#5865f2' };
+    const grouped = prev && prev.uid === m.uid && timeValue(m.createdAt) - timeValue(prev.createdAt) < 5 * 60 * 1000;
+    html += `<div class="ov-msg${grouped ? '' : ' first'}">` +
+      (grouped ? '<div class="ov-gutter"></div>'
+        : `<div class="ov-gutter">${avatarHTML(32, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration, m.uid, p.equippedMask)}</div>`) +
+      '<div class="ov-msg-main">' +
+      (grouped ? '' : `<div class="ov-msg-meta"><span class="ov-msg-name">${esc(displayNameOf(p))}</span><span class="ov-msg-time">${esc(timeStr(m.createdAt))}</span></div>`) +
+      ovMsgBody(m) + '</div></div>';
+    prev = m;
+  });
+  const name = displayNameOf(profileCache[chat.uid] || { username: chat.uid });
+  box.innerHTML = html || `<div class="ov-empty">Say hi to ${esc(name)}.</div>`;
+  if (chat.stick) box.scrollTop = box.scrollHeight;
+}
+
+async function ovSend(chat, input) {
+  const raw = input.value.trim();
+  if (!raw) return;
+  if (isSiteMuted()) { toast(siteMuteText(), 'error'); return; }
+  if (raw.length > COMPOSER_MAX_LENGTH) { toast(`Your message is ${raw.length - COMPOSER_MAX_LENGTH} characters over the limit.`, 'error'); return; }
+  input.value = '';
+  ovAutosize(input);
+  chat.stick = true;
+  const text = applyMessageFilter(raw);
+  const ref = db.collection('dms').doc(chat.id);
+  try {
+    await ref.collection('messages').add({ text, uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp() });
+    await ref.update({ updatedAt: FieldValue.serverTimestamp(), lastMessage: { text: previewForMessage({ text }), username: myProfile.username } });
+    db.collection('users').doc(myUid).update({
+      'dailyStats.dmsMessaged': FieldValue.increment(1),
+      'stats.messagesSent': FieldValue.increment(1),
+      'dailyStats.messagesSent': FieldValue.increment(1),
+    }).catch(() => {});
+  } catch (err) {
+    input.value = raw;
+    ovAutosize(input);
+    toast(err.message || 'Failed to send message.', 'error');
+  }
 }
