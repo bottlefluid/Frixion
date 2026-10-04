@@ -1962,6 +1962,7 @@ $('register-btn').onclick = async () => {
 
 $('logout-btn').onclick = async () => {
   ovReset();
+  ggRaccoonSeen = null;
   teardownPresence();
   try { if (myUid) await db.collection('users').doc(myUid).update({ status: 'offline' }); } catch (e) {}
   cleanupAllListeners();
@@ -2017,6 +2018,7 @@ function initAppForUser() {
     applyTheme(myProfile.theme || 'default');
     applyCustomKeyboardSetting();
     ovRenderBindSetting();
+    ggOnProfileUpdate();
     renderSelfPanel();
     updateFriendReqBadge();
     if (!$('settings-modal').classList.contains('hidden')) populateSettings();
@@ -9938,16 +9940,29 @@ function ggPlotSprs(p){ if(!p) return []; let ids=Array.isArray(p.sprinklers)?p.
 function ggPlotSpeed(p){ let b=0; ggPlotSprs(p).forEach(s=>b+=(s.speed||0)); return 1+b+ggPetBonus('growth'); }
 function ggPlotWeightMult(p){ let b=0; ggPlotSprs(p).forEach(s=>b+=(s.weight||0)); return 1+b; }   // percent boost: 0.25 = +25%
 // Pets: own a pet to collect its global sell bonus; bonuses stack across pets.
-function ggOwnsPet(id){ return !!(UC && Array.isArray(UC.ggPets) && UC.ggPets.indexOf(id)>=0); }
+// Admin grant: setting `raccoon: true` on a user's profile doc (Firebase) gives them the Raccoon, no requirements.
+// It is derived, not copied into ggPets, so setting it back to false takes it away again unless they earned it.
+let ggRaccoonSeen=null;
+function ggRaccoonGranted(){ return !!(myProfile && myProfile.raccoon===true); }
+function ggActivePets(){ const a=(UC&&Array.isArray(UC.ggPets))?UC.ggPets:[]; return (ggRaccoonGranted()&&a.indexOf('raccoon')<0)?a.concat('raccoon'):a; }
+function ggOwnsPet(id){ return ggActivePets().indexOf(id)>=0; }
+// Called on every profile update: toasts when the grant arrives and refreshes the garden if it is open.
+function ggOnProfileUpdate(){
+  const g=ggRaccoonGranted(), changed=ggRaccoonSeen!==null&&ggRaccoonSeen!==g;
+  ggRaccoonSeen=g;
+  if(!changed) return;
+  if(g) showToast('🦝 You were given the Raccoon in Grow a Garden!');
+  if(currentGameId==='growgarden'&&document.getElementById('gg-plots')){ renderGGShop(); renderGardenPets(); updateGGBank(); }
+}
 // A pet has one function: 'sell' (+% sell value, stacks), 'mult' (multiplies every Sheckle earned),
 // 'growth' (+% grow speed), 'mutation' (+% mutation chance) or 'discount' (-% seed prices).
 // Older pets only have a `sell` number, which still means a sell bonus.
 function ggPetFn(p){ return p.fn||'sell'; }
 function ggPetVal(p){ return p.fn ? (p.val||0) : (p.sell||0); }
-function ggPetBonus(fn){ let b=0; if(UC&&Array.isArray(UC.ggPets)) UC.ggPets.forEach(id=>{ const p=GG_PET_MAP[id]; if(p&&ggPetFn(p)===fn) b+=ggPetVal(p); }); return b; }
+function ggPetBonus(fn){ let b=0; ggActivePets().forEach(id=>{ const p=GG_PET_MAP[id]; if(p&&ggPetFn(p)===fn) b+=ggPetVal(p); }); return b; }
 function ggPetSellMult(){
   let add=0, mult=1;
-  if(UC&&Array.isArray(UC.ggPets)) UC.ggPets.forEach(id=>{ const p=GG_PET_MAP[id]; if(!p) return; const f=ggPetFn(p), v=ggPetVal(p); if(f==='sell') add+=v; else if(f==='mult') mult*=Math.max(1,v); });
+  ggActivePets().forEach(id=>{ const p=GG_PET_MAP[id]; if(!p) return; const f=ggPetFn(p), v=ggPetVal(p); if(f==='sell') add+=v; else if(f==='mult') mult*=Math.max(1,v); });
   return (1+add)*mult;
 }
 function ggPetAbility(p){
@@ -10105,7 +10120,7 @@ function ggPetShopHtml(){
     const afford=(UC.ggSheckles||0)>=s.cost;
     const priceStr=s.requiresAll?'Free':(SHK+' '+fmtNum(s.cost));
     const ability=ggPetAbility(s);
-    const meta=owned?'Owned':(locked?('Own everything to unlock ('+own.have+'/'+own.total+')'):priceStr);
+    const meta=owned?((UC.ggPets||[]).indexOf(s.id)<0?'Gifted':'Owned'):(locked?('Own everything to unlock ('+own.have+'/'+own.total+')'):priceStr);
     return `<div class="gg-seed gg-pet${owned?' owned':''}${locked?' locked':''}${(owned||afford||s.requiresAll)?'':' poor'}"${owned?'':` onclick="ggBuyPet('${s.id}')"`}>
       <span class="gg-seed-ic">${s.ic}</span>
       <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)}</span><span class="gg-seed-meta">${meta} · ${ability}</span></span>
@@ -10172,7 +10187,7 @@ async function ggBuyPet(id){
 // Owned pets wander around the garden: one emoji per pet that strolls to random spots.
 function renderGardenPets(){
   const layer=document.getElementById('gg-pets-layer'); if(!layer||!UC) return;
-  layer.innerHTML=(UC.ggPets||[]).map(id=>{ const p=GG_PET_MAP[id]; if(!p) return '';
+  layer.innerHTML=ggActivePets().map(id=>{ const p=GG_PET_MAP[id]; if(!p) return '';
     const l=(6+Math.random()*82).toFixed(1), t=(12+Math.random()*70).toFixed(1);
     return `<span class="gg-pet-walker" data-pet="${id}" title="${escapeHtml(p.name)}" style="left:${l}%;top:${t}%"><span class="gg-pet-body">${p.ic}</span></span>`;
   }).join('');
