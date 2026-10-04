@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=47">
+<link rel="stylesheet" href="style.css?v=55">
 </head>
 <body>
 
@@ -323,8 +323,9 @@
         <div id="composer-action-menu" class="composer-action-menu hidden">
           <button type="button" id="attach-file-menu"><span>↥</span>Upload a file</button>
           <button type="button" id="create-poll-menu"><span>☷</span>Create poll</button>
-          <button type="button" id="use-apps-menu" disabled title="Apps are coming later"><span>✦</span>Use apps <small>Soon</small></button>
+          <button type="button" id="use-apps-menu"><span>✦</span>Use apps</button>
         </div>
+        <div id="apps-panel" class="apps-panel hidden"></div>
         <div id="emoji-picker-panel" class="hidden">
           <div class="ep-search"><input type="text" id="emoji-search" placeholder="Search emoji"></div>
           <div id="ep-poll-clear" class="ep-poll-clear hidden"><button type="button" id="ep-poll-clear-btn">Remove emoji from this answer</button></div>
@@ -901,6 +902,7 @@
       <button class="admin-tab" data-admin-tab="codes">Codes</button>
       <button class="admin-tab" data-admin-tab="conversations">Conversations</button>
       <button class="admin-tab" data-admin-tab="shopmanage">Shop</button>
+      <button class="admin-tab" data-admin-tab="quests">Quests</button>
       <button class="admin-tab hidden" data-admin-tab="systemhub" id="admin-tab-systemhub">System Hub</button>
     </div>
 
@@ -933,6 +935,7 @@
     <div class="admin-pane hidden" id="admin-pane-shopmanage">
       <div class="shop-mgr-tabs">
         <button type="button" class="shop-mgr-tab on" data-shop-section="decorations">Decorations</button>
+        <button type="button" class="shop-mgr-tab" data-shop-section="masks">Avatar Masks</button>
         <button type="button" class="shop-mgr-tab" data-shop-section="themes">Themes</button>
         <button type="button" class="shop-mgr-tab" data-shop-section="banners">Banners</button>
         <button type="button" class="shop-mgr-tab" data-shop-section="nameplates">Nameplates</button>
@@ -940,8 +943,8 @@
         <button type="button" class="shop-mgr-tab" data-shop-section="frames">Profile Frames</button>
       </div>
       <small class="hint shop-mgr-hint">Click any item below (published or built-in) to edit it.</small>
-      <div class="admin-block shop-mgr-section" data-shop-section="decorations">
-        <div class="ab-title">Create an Avatar Decoration</div>
+      <div class="admin-block shop-mgr-section" data-shop-section="decorations masks">
+        <div class="ab-title" id="deco-creator-title">Create an Avatar Decoration</div>
         <div class="ab-row" style="margin-bottom:14px;">
           <button type="button" class="btn-secondary slim deco-mode-btn on" data-deco-mode="draw">✏️ Draw</button>
           <button type="button" class="btn-secondary slim deco-mode-btn" data-deco-mode="emoji">😀 Use an Emoji</button>
@@ -978,6 +981,10 @@
         <div class="field"><label class="fld-label">Description</label><input type="text" id="deco-desc-input" maxlength="80" placeholder="e.g. A pointy hat for the truly magical" class="fld-input"></div>
         <div class="field"><label class="fld-label">Price (Orbs)</label><input type="number" id="deco-price-input" min="0" placeholder="800" class="fld-input"></div>
         <button class="btn-accent-inline" id="deco-publish-btn">Publish to Shop</button>
+      </div>
+      <div class="admin-block shop-mgr-section hidden" data-shop-section="masks">
+        <div class="ab-title">Published Avatar Masks</div>
+        <div class="admin-emoji-list" id="admin-mask-list"></div>
       </div>
       <div class="admin-block shop-mgr-section" data-shop-section="decorations">
         <div class="ab-title">Published Decorations</div>
@@ -1182,6 +1189,75 @@
       <div id="admin-conversations-list" class="admin-user-list" style="max-height:420px;"></div>
     </div>
 
+    <div class="admin-pane hidden" id="admin-pane-quests">
+      <div class="shop-mgr-tabs">
+        <button type="button" class="shop-mgr-tab on" data-quest-section="gag">GAG</button>
+      </div>
+      <div class="quest-section" data-quest-section="gag">
+        <small class="hint shop-mgr-hint">Grow a Garden: create custom seeds, sprinklers and pets. Everything you publish shows up in the game's shop for every player.</small>
+        <div class="shop-mgr-tabs">
+          <button type="button" class="shop-mgr-tab on" data-gag-section="seeds">Seeds</button>
+          <button type="button" class="shop-mgr-tab" data-gag-section="sprinklers">Sprinklers</button>
+          <button type="button" class="shop-mgr-tab" data-gag-section="pets">Pets</button>
+        </div>
+
+        <div class="gag-section" data-gag-section="seeds">
+          <div class="admin-block">
+            <div class="ab-title">Create a Seed</div>
+            <div class="gag-form">
+              <div class="field"><label class="fld-label">Name</label><input class="fld-input" id="gag-seed-name" maxlength="24" placeholder="e.g. Moon Melon"></div>
+              <div class="field"><label class="fld-label">Emoji</label><input class="fld-input" id="gag-seed-ic" maxlength="8" placeholder="🍈"></div>
+              <div class="field"><label class="fld-label">Rarity</label><select class="fld-input" id="gag-seed-rarity"></select></div>
+              <div class="field"><label class="fld-label">Price (Sheckles)</label><input class="fld-input" id="gag-seed-cost" type="number" min="0" placeholder="5000"></div>
+              <div class="field"><label class="fld-label">Grow time (seconds)</label><input class="fld-input" id="gag-seed-grow" type="number" min="1" placeholder="60"></div>
+              <div class="field"><label class="fld-label">Sell value (Sheckles)</label><input class="fld-input" id="gag-seed-sell" type="number" min="1" placeholder="12000"></div>
+              <div class="field"><label class="fld-label">Base weight (kg)</label><input class="fld-input" id="gag-seed-weight" type="number" min="0.01" step="0.01" placeholder="1.5"></div>
+              <div class="field"><label class="fld-label">Function</label><select class="fld-input" id="gag-seed-fn"></select></div>
+              <div class="field"><label class="fld-label">Function value</label><input class="fld-input" id="gag-seed-fnval" type="number" min="0" placeholder="e.g. 50 (%) or 2 (crops)"></div>
+            </div>
+            <button class="btn-accent-inline" id="gag-seed-publish">Publish Seed</button>
+          </div>
+          <div class="admin-block"><div class="ab-title">Seeds</div><div class="gag-list" id="gag-list-seeds"></div></div>
+        </div>
+
+        <div class="gag-section hidden" data-gag-section="sprinklers">
+          <div class="admin-block">
+            <div class="ab-title">Create a Sprinkler</div>
+            <div class="gag-form">
+              <div class="field"><label class="fld-label">Name</label><input class="fld-input" id="gag-spr-name" maxlength="24" placeholder="e.g. Storm Sprinkler"></div>
+              <div class="field"><label class="fld-label">Emoji</label><input class="fld-input" id="gag-spr-ic" maxlength="8" placeholder="⛈️"></div>
+              <div class="field"><label class="fld-label">Rarity</label><select class="fld-input" id="gag-spr-rarity"></select></div>
+              <div class="field"><label class="fld-label">Price (Sheckles)</label><input class="fld-input" id="gag-spr-cost" type="number" min="0" placeholder="50000"></div>
+              <div class="field"><label class="fld-label">Grow speed (+%)</label><input class="fld-input" id="gag-spr-speed" type="number" min="0" placeholder="100"></div>
+              <div class="field"><label class="fld-label">Fruit weight (+%)</label><input class="fld-input" id="gag-spr-weight" type="number" min="0" placeholder="50"></div>
+              <div class="field"><label class="fld-label">Mutation chance (+%)</label><input class="fld-input" id="gag-spr-mut" type="number" min="0" placeholder="0"></div>
+              <div class="field"><label class="fld-label">Sell value (+%)</label><input class="fld-input" id="gag-spr-sell" type="number" min="0" placeholder="0"></div>
+            </div>
+            <small class="hint">A sprinkler can combine any of these boosts. Leave a boost at 0 to skip it.</small>
+            <button class="btn-accent-inline" id="gag-spr-publish">Publish Sprinkler</button>
+          </div>
+          <div class="admin-block"><div class="ab-title">Sprinklers</div><div class="gag-list" id="gag-list-sprinklers"></div></div>
+        </div>
+
+        <div class="gag-section hidden" data-gag-section="pets">
+          <div class="admin-block">
+            <div class="ab-title">Create a Pet</div>
+            <div class="gag-form">
+              <div class="field"><label class="fld-label">Name</label><input class="fld-input" id="gag-pet-name" maxlength="24" placeholder="e.g. Golden Frog"></div>
+              <div class="field"><label class="fld-label">Emoji</label><input class="fld-input" id="gag-pet-ic" maxlength="8" placeholder="🐸"></div>
+              <div class="field"><label class="fld-label">Rarity</label><select class="fld-input" id="gag-pet-rarity"></select></div>
+              <div class="field"><label class="fld-label">Price (Sheckles)</label><input class="fld-input" id="gag-pet-cost" type="number" min="0" placeholder="250000"></div>
+              <div class="field"><label class="fld-label">Function</label><select class="fld-input" id="gag-pet-fn"></select></div>
+              <div class="field"><label class="fld-label">Function value</label><input class="fld-input" id="gag-pet-val" type="number" min="0" step="any" placeholder="e.g. 25 (%) or 10 (×)"></div>
+            </div>
+            <small class="hint">For "Sheckle multiplier" the value is the multiplier (10 = ×10). For every other function it is a percentage.</small>
+            <button class="btn-accent-inline" id="gag-pet-publish">Publish Pet</button>
+          </div>
+          <div class="admin-block"><div class="ab-title">Pets</div><div class="gag-list" id="gag-list-pets"></div></div>
+        </div>
+      </div>
+    </div>
+
     <div class="admin-pane hidden" id="admin-pane-systemhub">
       <div class="admin-layout">
         <div class="admin-left">
@@ -1250,9 +1326,12 @@
 </div>
 
 <div class="modal-overlay hidden" id="image-preview-modal">
-  <div class="image-preview-box">
+  <div class="image-preview-box" id="image-preview-box">
     <span class="x image-preview-close" data-close="image-preview-modal">✕</span>
-    <img id="image-preview-img" src="" alt="Preview">
+    <div class="image-preview-scroller" id="image-preview-scroller">
+      <img id="image-preview-img" src="" alt="Preview" draggable="false">
+    </div>
+    <a class="image-preview-open" id="image-preview-open" href="#" target="_blank" rel="noopener">Open original</a>
   </div>
 </div>
 
@@ -1292,6 +1371,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
-<script src="script.js?v=47"></script>
+<script src="script.js?v=55"></script>
 </body>
 </html>

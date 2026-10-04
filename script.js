@@ -94,6 +94,9 @@
        match /shopProfileFrames/{id} { allow read, write: if true; }
        match /shopBanners/{id} { allow read, write: if true; }
        match /stickers/{id} { allow read, write: if true; }
+       match /gardenSeeds/{id} { allow read, write: if true; }
+       match /gardenSprinklers/{id} { allow read, write: if true; }
+       match /gardenPets/{id} { allow read, write: if true; }
        match /redeemCodes/{code} { allow read, write: if true; }
        match /servers/{sid} {
          allow read, write: if true;
@@ -447,9 +450,9 @@ function applyShopTheme(themeId) {
 // stay generic instead of four near-identical copies of the same logic.
 const SHOP_CATEGORY_DEFS = {
   decorations: { label: 'Avatar Decorations', get catalog() { return [...AVATAR_DECORATIONS, ...customDecorations.filter(d => !d.mask)]; }, ownedField: 'ownedDecorations', equipField: 'equippedDecoration' },
-  // Full avatar masks are decorations flagged `mask` in the admin editor. They share the
-  // decoration slot, so wearing a mask replaces whatever decoration was equipped.
-  masks: { label: 'Avatar Masks', get catalog() { return customDecorations.filter(d => d.mask); }, ownedField: 'ownedDecorations', equipField: 'equippedDecoration' },
+  // Full avatar masks are decorations flagged `mask` in the admin editor. They have their own
+  // equip slot (equippedMask), so a mask and a decoration can be worn at the same time.
+  masks: { label: 'Avatar Masks', get catalog() { return customDecorations.filter(d => d.mask); }, ownedField: 'ownedDecorations', equipField: 'equippedMask' },
   nameplates: { label: 'Nameplates', get catalog() { return [...NAMEPLATES, ...customNameplates]; }, ownedField: 'ownedNameplates', equipField: 'equippedNameplate' },
   profile_effects: { label: 'Profile Effects', get catalog() { return [...PROFILE_EFFECTS, ...customProfileEffects]; }, ownedField: 'ownedProfileEffects', equipField: 'equippedProfileEffect' },
   profile_frames: { label: 'Profile Frames', get catalog() { return [...PROFILE_FRAMES, ...customProfileFrames]; }, ownedField: 'ownedProfileFrames', equipField: 'equippedProfileFrame' },
@@ -480,6 +483,38 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      use today's date. Don't let this log fall behind reality.
 // ============================================================
 const UPDATES = [
+  { v: '4.0', date: '2026-10-04', title: 'Grow a Garden creator, Null rarity and the Raccoon',
+    notes: [
+      'Staff get a new Quests section in the admin panel. Its Grow a Garden tab lets them create custom seeds, sprinklers and pets, each with its own function and rarity.',
+      'New Null rarity, black and red and rarer than everything else in Grow a Garden.',
+      'The Raccoon is here. It\'s a Null pet that costs nothing, but you have to own everything in Grow a Garden to adopt it. It multiplies every Sheckle you earn by 490,050.',
+    ] },
+  { v: '3.9', date: '2026-10-04', title: 'Sapphire app',
+    notes: [
+      'Sapphire is now an app. Server owners can add it from the server menu to get /purge, /mute, /unmute, /ban, /unban and /kick for their own server. They only affect people in that server, and never Frixion staff.',
+      'Frixion staff can use Sapphire in any server, and /purge works for them everywhere. Their /mute, /ban and /kick also only apply to the server they are used in. Site-wide mutes and bans are in the Admin Panel.',
+    ] },
+  { v: '3.8', date: '2026-10-04', title: 'Apps and Wordle',
+    notes: [
+      'Frixion now has apps. The first one is Wordle: guess the secret five-letter word in six tries, right inside the chat.',
+      'Type /wordle, or open the + menu and pick Use apps, to post a game anyone in the chat can join. You can see who solved it without any spoilers.',
+      'Server owners get a new Add App button in the server menu to add Wordle to their server. In DMs and group chats Wordle is always there.',
+      'The Face Masks section is now called Avatar Masks everywhere.',
+    ] },
+  { v: '3.7', date: '2026-10-03', title: 'Smoother zoom and channel fixes',
+    notes: [
+      'Pictures now zoom like Discord: they pop open, glide bigger when you click, and fade away when you close them.',
+      'Fixed new categories not showing up. They now appear right away, even before you add a channel, with a + to add a channel inside and a button to delete the category.',
+      'Creating a channel or category now tells you if something went wrong, and Enter works to confirm.',
+    ] },
+  { v: '3.6', date: '2026-10-03', title: 'Zoom, masks and moderation',
+    notes: [
+      'Click any picture in chat to open it bigger. Click it again to zoom in further and scroll around, and click once more to zoom back out. Esc or a click outside closes it.',
+      'You can now wear a mask and a decoration at the same time. Masks have their own slot, so equipping one no longer replaces your decoration.',
+      'Staff get a separate Avatar Masks section when creating and managing shop items.',
+      'Emoji in avatar decorations can now be rotated, with a slider, quick turn buttons, or Shift + scroll.',
+      'New /mute and /ban commands for admins, plus /unmute and /unban. They have no timer and last until someone undoes them.',
+    ] },
   { v: '3.5', date: '2026-10-03', title: 'Slash commands',
     notes: [
       'Typing / now opens a command list with autofill, descriptions and the options each command takes. Pick one with a tap, Tab or Enter.',
@@ -841,7 +876,7 @@ function subscribeCustomDecorations() {
     snap.forEach(d => items.push({ id: d.id, animated: false, ...d.data() }));
     customDecorations = items;
     refreshOpenShopPanes();
-    if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminDecorationList();
+    if (!$('admin-panel-modal').classList.contains('hidden')) { renderAdminDecorationList(); renderAdminMaskList(); }
   });
 }
 function subscribeCustomThemes() {
@@ -1041,7 +1076,15 @@ const SAPPHIRE_BOT_PROFILE = {
   username: 'Sapphire', bio: 'A Frixion bot for admins.', bot: true,
   avatarColor: '#2b8de8', avatarUrl: SAPPHIRE_AVATAR_URL, pronouns: '', premiumUntil: null,
 };
-function seedBotProfiles() { profileCache[SAPPHIRE_BOT_UID] = SAPPHIRE_BOT_PROFILE; }
+// Wordle is a Frixion app. It posts its game cards as this bot, the same way Sapphire posts purge results.
+const WORDLE_BOT_UID = 'bot-wordle';
+const WORDLE_AVATAR_URL = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="#538d4e"/><g font-family="Arial,Helvetica,sans-serif" font-weight="800" font-size="40" fill="#fff" text-anchor="middle"><rect x="14" y="14" width="46" height="46" rx="6" fill="#3a3a3c"/><rect x="68" y="14" width="46" height="46" rx="6" fill="#b59f3b"/><rect x="14" y="68" width="46" height="46" rx="6" fill="#b59f3b"/><rect x="68" y="68" width="46" height="46" rx="6" fill="#3a3a3c"/><text x="37" y="48">W</text><text x="91" y="48">O</text><text x="37" y="102">R</text><text x="91" y="102">D</text></g></svg>');
+const WORDLE_BOT_PROFILE = {
+  username: 'Wordle', bio: 'Guess the five-letter word in six tries. A Frixion app.', bot: true,
+  avatarColor: '#538d4e', avatarUrl: WORDLE_AVATAR_URL, pronouns: '', premiumUntil: null,
+};
+const BOT_PROFILES = { [SAPPHIRE_BOT_UID]: SAPPHIRE_BOT_PROFILE, [WORDLE_BOT_UID]: WORDLE_BOT_PROFILE };
+function seedBotProfiles() { Object.entries(BOT_PROFILES).forEach(([uid, p]) => { profileCache[uid] = p; }); }
 seedBotProfiles();
 
 // ---------- helpers ----------
@@ -1081,12 +1124,27 @@ function toast(msg, type = '') {
 // Emoji decorations are a list of layers: { e: emoji, x, y: centre as a % of the
 // decoration box, s: size as a % of the box }. Older single-emoji decorations
 // (just `emoji`) become one layer at the spot they always sat.
+// Each emoji layer can carry a rotation `r` in degrees (clockwise). Layers saved before rotation
+// existed have no `r` and render upright, exactly as before.
+function emojiRotateStyle(l) {
+  const r = Number(l && l.r) || 0;
+  return r ? `transform:translate(-50%,-50%) rotate(${r}deg);` : '';
+}
 function decoEmojiLayers(deco) {
   if (deco && Array.isArray(deco.emojis) && deco.emojis.length) return deco.emojis;
   return deco && deco.emoji ? [{ e: deco.emoji, x: 50, y: 23, s: 42 }] : [];
 }
-function decorationOverlayHTML(decorationId, size, hole) {
-  return size >= 28 ? decorationBoxHTML(decorationById(decorationId), size, hole) : '';
+function decorationOverlayHTML(decorationId, size, hole, maskId) {
+  if (size < 28) return '';
+  const deco = decorationById(decorationId);
+  const mask = decorationById(maskId);
+  // Older accounts may still have a mask sitting in the decoration slot. If a separate mask is
+  // also equipped, the new mask wins and that old one is skipped so two masks never stack.
+  const decoLayer = deco && !(deco.mask && mask) ? deco : null;
+  // The mask is drawn first (inside the avatar circle) so a decoration — a hat, ears — sits on top of it.
+  const maskLayer = mask && mask.mask ? mask : null;
+  const maskFirst = maskLayer ? decorationBoxHTML(maskLayer, size, hole) : '';
+  return maskFirst + (decoLayer ? decorationBoxHTML(decoLayer, size, hole) : '');
 }
 function decorationBoxHTML(deco, size, hole) {
   if (!deco) return '';
@@ -1110,7 +1168,7 @@ function decorationBoxHTML(deco, size, hole) {
   // render as text layers placed wherever the editor left them.
   const layers = decoEmojiLayers(deco);
   const inner = layers.length
-    ? layers.map(l => `<span class="avatar-decoration-emoji" style="left:${l.x}%;top:${l.y}%;font-size:${(decoSize * l.s / 100).toFixed(1)}px;">${esc(l.e)}</span>`).join('')
+    ? layers.map(l => `<span class="avatar-decoration-emoji" style="left:${l.x}%;top:${l.y}%;font-size:${(decoSize * l.s / 100).toFixed(1)}px;${emojiRotateStyle(l)}">${esc(l.e)}</span>`).join('')
     : deco.imageUrl ? `<img src="${esc(deco.imageUrl)}" alt="" draggable="false">` : deco.svg(decoSize);
   return `<span class="avatar-decoration${deco.mask ? ' is-mask' : ''}" style="width:${decoSize}px;height:${decoSize}px;left:${-decoOffset}px;top:${-decoOffset}px;${maskStyle}">${inner}</span>`;
 }
@@ -1122,7 +1180,7 @@ function decorationBoxHTML(deco, size, hole) {
 function mobileStatusSVG(status, w, h) {
   return `<svg class="status-phone" viewBox="0 0 12 18" width="${w}" height="${h}" aria-hidden="true"><path class="phone-body" fill-rule="evenodd" d="M2.6 0h6.8A2.6 2.6 0 0 1 12 2.6v12.8A2.6 2.6 0 0 1 9.4 18H2.6A2.6 2.6 0 0 1 0 15.4V2.6A2.6 2.6 0 0 1 2.6 0zM2 2.4h8v10.4H2zM6 14.3a1 1 0 1 0 0 2a1 1 0 1 0 0-2z"/></svg>`;
 }
-function avatarHTML(size, color, letter, status, avatarUrl, decorationId, uid) {
+function avatarHTML(size, color, letter, status, avatarUrl, decorationId, uid, maskId) {
   let maskStyle = '';
   let dotHTML = '';
   let hole = null;
@@ -1159,7 +1217,7 @@ function avatarHTML(size, color, letter, status, avatarUrl, decorationId, uid) {
     }
   }
   const inner = `<img src="${esc(avatarUrl || DEFAULT_AVATAR_URL)}" alt="" loading="lazy" style="${maskStyle}">`;
-  return `<div class="avatar has-image" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.42)}px;background:transparent">${inner}${dotHTML}${decorationOverlayHTML(decorationId, size, hole)}</div>`;
+  return `<div class="avatar has-image" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.42)}px;background:transparent">${inner}${dotHTML}${decorationOverlayHTML(decorationId, size, hole, maskId)}</div>`;
 }
 function premiumStar(profile) { return isPremium(profile) ? icon('star', 'premium-star') : ''; }
 function opTag(profile) { return profile && profile.op ? '<span class="op-tag">Admin</span>' : ''; }
@@ -1397,6 +1455,7 @@ function isTimedOutHere() {
   return !!timeoutUntil(currentServerData, myUid);
 }
 function timeoutLeftText(until) {
+  if (until >= 8640000000000000) return 'an indefinite time';
   const s = Math.max(0, Math.ceil((until - Date.now()) / 1000));
   if (s >= 86400) return `${Math.ceil(s / 86400)}d`;
   if (s >= 3600) return `${Math.ceil(s / 3600)}h`;
@@ -1567,7 +1626,16 @@ function computeDisplayStatus(uid) {
 
 // ---------- modal wiring ----------
 function openModal(id) { $(id).classList.remove('hidden'); }
-function closeModal(id) { $(id).classList.add('hidden'); }
+function closeModal(id) {
+  const el = $(id);
+  // The image viewer fades and shrinks out instead of vanishing.
+  if (id === 'image-preview-modal' && !el.classList.contains('hidden') && !el.classList.contains('closing')) {
+    el.classList.add('closing');
+    setTimeout(() => { el.classList.add('hidden'); el.classList.remove('closing'); }, 160);
+    return;
+  }
+  el.classList.add('hidden');
+}
 // Discord-style confirmation dialog, replacing the browser's native
 // confirm() for anything destructive (delete server/channel/role, kick,
 // ban) — styled like the rest of the app instead of a jarring OS popup.
@@ -1699,14 +1767,18 @@ function banStatus(profile) {
 }
 
 // A muted account can still read and browse, but can't post, react or start polls anywhere.
+// /mute has no duration: it stores this far-future sentinel, so the mute lasts until someone
+// runs /unmute (or uses the admin panel's Unmute button).
+const INDEFINITE_MUTE_UNTIL = 8640000000000000;
 function muteStatus(profile) {
   if (!profile || !profile.mutedUntil || profile.mutedUntil <= Date.now()) return { muted: false };
-  return { muted: true, until: profile.mutedUntil, reason: profile.muteReason || 'No reason given' };
+  return { muted: true, until: profile.mutedUntil, indefinite: profile.mutedUntil >= INDEFINITE_MUTE_UNTIL, reason: profile.muteReason || 'No reason given' };
 }
+function muteLeftLabel(m) { return m.indefinite ? 'until an admin unmutes you' : `for ${timeoutLeftText(m.until)}`; }
 function isSiteMuted() { return muteStatus(myProfile).muted; }
 function siteMuteText() {
   const m = muteStatus(myProfile);
-  return `You are muted for ${timeoutLeftText(m.until)}. Reason: ${m.reason}`;
+  return `You are muted ${muteLeftLabel(m)}. Reason: ${m.reason}`;
 }
 
 // Backfills fields added in later updates onto accounts created earlier, so old accounts never crash on missing data.
@@ -1720,7 +1792,7 @@ function defaultProfileFields(existing) {
     bio: '', pronouns: '', bannerColor: (existing && existing.avatarColor) || '#5865f2',
     friends: [], incomingRequests: [], outgoingRequests: [],
     theme: 'dark',
-    ownedDecorations: [], equippedDecoration: null,
+    ownedDecorations: [], equippedDecoration: null, equippedMask: null,
     ownedNameplates: [], equippedNameplate: null,
     ownedProfileEffects: [], equippedProfileEffect: null,
     ownedProfileFrames: [], equippedProfileFrame: null,
@@ -2025,7 +2097,7 @@ function applyTheme(themeKey) {
 
 function renderSelfPanel() {
   if (!myProfile) return;
-  const inner = avatarHTML(32, myProfile.avatarColor, initials(myProfile.username), computeDisplayStatus(myUid), myProfile.avatarUrl, myProfile.equippedDecoration, myUid);
+  const inner = avatarHTML(32, myProfile.avatarColor, initials(myProfile.username), computeDisplayStatus(myUid), myProfile.avatarUrl, myProfile.equippedDecoration, myUid, myProfile.equippedMask);
   $('self-avatar').outerHTML = inner.replace('class="avatar', 'id="self-avatar" class="avatar');
   $('self-username').innerHTML = esc(displayNameOf(myProfile)) + premiumStar(myProfile) + roleTag(myProfile);
   const st = STATUSES.find(s => s.key === computeDisplayStatus(myUid));
@@ -2539,6 +2611,7 @@ function previewForMessage(message, includeAuthor = false) {
   if (!text && message.sticker) text = `Sent a sticker${message.sticker.name ? `: ${message.sticker.name}` : ''}`;
   if (!text && message.poll) text = `📊 Poll: ${message.poll.question}`;
   if (!text && message.purgeResult) text = `Deleted ${message.purgeResult.count} messages`;
+  if (!text && message.wordle) text = '🟩 Started a game of Wordle';
   if (!text) text = 'New message';
   return includeAuthor && message.username ? `${message.username}: ${text}` : text;
 }
@@ -2578,7 +2651,7 @@ function renderDMRows() {
     const nameplate = nameplateById(p.equippedNameplate);
     row.className = 'dm-row' + (currentDMId === dm.id ? ' active' : '') + (nameplate ? ' has-nameplate' : '');
     row.innerHTML = (nameplate ? `<div class="dm-row-nameplate-bg${nameplate.cssClass ? ' ' + nameplate.cssClass : ''}${(nameplate.animated && !nameplate.cssClass) ? ' nameplate-shimmer' : ''}" style="${nameplate.colors ? `background:linear-gradient(135deg, ${esc(nameplate.colors[0])}, ${esc(nameplate.colors[1])});` : ''}"></div>` : '') +
-      avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(otherUid), p.avatarUrl, p.equippedDecoration, otherUid) +
+      avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(otherUid), p.avatarUrl, p.equippedDecoration, otherUid, p.equippedMask) +
       `<div class="dm-copy"><span class="dm-name">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div>`;
     row.onclick = () => selectDM(dm.id, otherUid);
     wrap.appendChild(row);
@@ -2797,10 +2870,10 @@ function openGiftModal(username) {
 
 async function openProfileModal(username) {
   const isSelf = username === myUid;
-  const isBot = username === SAPPHIRE_BOT_UID;
+  const isBot = !!BOT_PROFILES[username];
   let p;
   if (isBot) {
-    p = SAPPHIRE_BOT_PROFILE;
+    p = BOT_PROFILES[username];
   } else {
     try {
       const snap = await db.collection('users').doc(username).get();
@@ -2815,7 +2888,7 @@ async function openProfileModal(username) {
   $('profile-banner').classList.toggle('banner-anim', !!(shopBanner && shopBanner.animated));
   $('profile-avatar').style.background = 'transparent';
   $('profile-avatar').classList.add('has-image');
-  $('profile-avatar').innerHTML = `<img src="${esc(p.avatarUrl || DEFAULT_AVATAR_URL)}" alt="">` + decorationOverlayHTML(p.equippedDecoration, 80);
+  $('profile-avatar').innerHTML = `<img src="${esc(p.avatarUrl || DEFAULT_AVATAR_URL)}" alt="">` + decorationOverlayHTML(p.equippedDecoration, 80, null, p.equippedMask);
   // Nameplate, profile effect, and profile frame are three independent
   // cosmetic slots. Built-in ones (none currently — the whole shop catalog
   // is user-generated now) use a cssClass; admin-created ones carry their
@@ -3007,12 +3080,87 @@ function clearDraftAttachments() {
   draftAttachments = [];
   renderAttachmentDraft();
 }
+// ---- image viewer (Discord-style): click an image to open it fitted to the
+// screen, click again to zoom bigger (pannable), click again to go back. ----
+let imageViewerZoom = 0;
+// Width (px) the picture takes when it is "fitted" to the screen.
+function imageViewerFitWidth(img) {
+  const nw = img.naturalWidth || 1, nh = img.naturalHeight || 1;
+  const maxW = window.innerWidth * 0.92, maxH = window.innerHeight * 0.84;
+  return Math.max(40, Math.round(nw * Math.min(maxW / nw, maxH / nh, 1)));
+}
+function imageViewerApplyWidths() {
+  const img = $('image-preview-img');
+  const fit = imageViewerFitWidth(img);
+  img.style.setProperty('--fit-w', fit + 'px');
+  // bigger = at least 2x the fitted size, or the natural size if that is larger
+  img.style.setProperty('--zoom-w', Math.round(Math.max(img.naturalWidth || 0, fit * 2)) + 'px');
+}
+function setImageViewerZoom(level, animate = true) {
+  imageViewerZoom = level;
+  const box = $('image-preview-box');
+  const scroller = $('image-preview-scroller');
+  box.classList.toggle('no-anim', !animate);
+  box.classList.toggle('zoom-1', level === 1);
+  // keep the picture centred in the scroll area while its width animates
+  const t0 = performance.now();
+  const centre = () => {
+    scroller.scrollLeft = (scroller.scrollWidth - scroller.clientWidth) / 2;
+    scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) / 2;
+    if (level === 1 && performance.now() - t0 < 320) requestAnimationFrame(centre);
+  };
+  if (level === 1) requestAnimationFrame(centre); else { scroller.scrollLeft = 0; scroller.scrollTop = 0; }
+}
+function openImageViewer(url, name) {
+  const img = $('image-preview-img');
+  const modal = $('image-preview-modal');
+  const box = $('image-preview-box');
+  modal.classList.remove('closing');
+  img.alt = name || 'Preview';
+  img.onload = () => {
+    imageViewerApplyWidths();
+    // pop in from slightly smaller, like Discord
+    box.classList.remove('opening'); void box.offsetWidth; box.classList.add('opening');
+  };
+  box.classList.remove('opening');
+  box.classList.add('no-anim');
+  box.classList.remove('zoom-1');
+  imageViewerZoom = 0;
+  img.src = url;
+  if (img.complete && img.naturalWidth) img.onload();
+  const open = $('image-preview-open');
+  if (open) open.href = /^blob:/.test(url) ? '#' : url;
+  if (open) open.style.display = /^blob:/.test(url) ? 'none' : '';
+  openModal('image-preview-modal');
+  requestAnimationFrame(() => requestAnimationFrame(() => box.classList.remove('no-anim')));
+}
+window.addEventListener('resize', () => {
+  if (!$('image-preview-modal').classList.contains('hidden')) { $('image-preview-box').classList.add('no-anim'); imageViewerApplyWidths(); }
+});
+$('image-preview-img').addEventListener('click', e => {
+  e.stopPropagation();
+  setImageViewerZoom(imageViewerZoom === 0 ? 1 : 0);
+});
+// clicking the dark backdrop closes the viewer
+$('image-preview-modal').addEventListener('click', e => {
+  if (e.target === $('image-preview-modal')) closeModal('image-preview-modal');
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('image-preview-modal').classList.contains('hidden')) closeModal('image-preview-modal');
+});
+// any image attached to a message (or a GIF) opens in the viewer
+document.addEventListener('click', e => {
+  const img = e.target.closest && e.target.closest('.msg-attachment img');
+  if (!img || img.classList.contains('custom-emoji')) return;
+  if (e.target.closest('.msg-att-del')) return;
+  e.preventDefault();
+  openImageViewer(img.currentSrc || img.src, img.alt);
+});
 function previewDraftAttachment(id) {
   const d = draftAttachments.find(x => x.id === id);
   if (!d) return;
   if (d.type === 'image') {
-    $('image-preview-img').src = d.previewUrl;
-    openModal('image-preview-modal');
+    openImageViewer(d.previewUrl, d.file && d.file.name);
   } else {
     window.open(URL.createObjectURL(d.file), '_blank');
   }
@@ -3045,6 +3193,7 @@ $('attach-btn').onclick = (e) => {
   $('sticker-picker-panel').classList.add('hidden');
   $('gif-picker-panel').classList.add('hidden');
   $('custom-keyboard').classList.add('hidden');
+  $('apps-panel').classList.add('hidden');
   $('composer-action-menu').classList.toggle('hidden');
 };
 $('attach-file-menu').onclick = () => { $('composer-action-menu').classList.add('hidden'); $('file-input').click(); };
@@ -3233,7 +3382,7 @@ function friendRowHTML(username, kind) {
     actions = `<span class="quest-locked">Pending</span><button class="btn-secondary slim" data-cancel="${esc(username)}">Cancel</button>`;
   }
   return `<div class="friend-row">
-    ${avatarHTML(36, p.avatarColor, initials(p.username), computeDisplayStatus(username), p.avatarUrl, p.equippedDecoration, username)}
+    ${avatarHTML(36, p.avatarColor, initials(p.username), computeDisplayStatus(username), p.avatarUrl, p.equippedDecoration, username, p.equippedMask)}
     <span class="friend-row-name" data-openprofile="${esc(username)}">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span>
     <span class="friend-row-actions">${actions}</span>
   </div>`;
@@ -3348,6 +3497,7 @@ const SM_ICONS = {
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   roles: '<path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-4z"/>',
   channel: '<path d="M12 5v14M5 12h14"/>',
+  app: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/>',
   category: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7zM12 11v5M9.5 13.5h5"/>',
   copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   leave: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
@@ -3384,6 +3534,7 @@ function buildServerMenuItems(server) {
       can('manageChannels') && { id: 'channel', icon: 'channel', label: 'Create Channel' },
       can('manageChannels') && { id: 'category', icon: 'category', label: 'Create Category' },
       can('manageChannels') && currentChannelId && { id: 'edit-channel', icon: 'settings', label: 'Edit Current Channel' },
+      canOpenAddApp(server) && { id: 'add-app', icon: 'app', label: 'Add App' },
     ],
     [
       can('changeNickname') && { id: 'nickname', icon: 'edit', label: 'Change Nickname' },
@@ -3417,6 +3568,7 @@ function runServerMenuAction(action, server) {
   else if (action === 'roles') openServerSettings('roles');
   else if (action === 'channel') $('channel-add-btn').click();
   else if (action === 'category') $('category-add-btn').click();
+  else if (action === 'add-app') openAddAppModal(server);
   else if (action === 'edit-channel') { const ch = currentChannelObj(); if (ch) openChannelSettings(ch); }
   else if (action === 'copy-id') copyText(server.id, 'Server ID copied.');
   else if (action === 'leave') {
@@ -4339,12 +4491,34 @@ function renderChannelRows(channels) {
 
   lastCategoriesList.forEach(cat => {
     const inCat = visible.filter(c => c.categoryId === cat.id);
-    if (!inCat.length) return;
+    // An empty category is hidden from regular members, but people who manage channels still see it
+    // (otherwise a brand-new category would vanish the moment it was created).
+    if (!inCat.length && !canManage) return;
     const header = document.createElement('div');
     const collapsed = !!collapsedCategories[cat.id];
     header.className = 'category-header';
-    header.innerHTML = `<svg class="cat-chevron${collapsed ? ' collapsed' : ''}" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg><span>${esc(cat.name)}</span>`;
+    header.innerHTML = `<svg class="cat-chevron${collapsed ? ' collapsed' : ''}" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg><span class="cat-name">${esc(cat.name)}</span>` +
+      (canManage ? `<span class="cat-actions"><span class="cat-add" title="Create channel in ${esc(cat.name)}">+</span><span class="cat-del" title="Delete category">${icon('trash')}</span></span>` : '');
     header.onclick = () => { collapsedCategories[cat.id] = !collapsedCategories[cat.id]; renderChannelRows(lastChannelsList); };
+    if (canManage) {
+      header.querySelector('.cat-add').onclick = (e) => { e.stopPropagation(); openCreateChannelModal(cat.id); };
+      header.querySelector('.cat-del').onclick = (e) => {
+        e.stopPropagation();
+        confirmAction({
+          title: 'Delete Category', body: `Delete the category "${cat.name}"? Its channels are kept and move out of the category.`, confirmLabel: 'Delete Category',
+          onConfirm: async () => {
+            try {
+              const sid = currentServerId;
+              const batch = db.batch();
+              channels.filter(ch => ch.categoryId === cat.id).forEach(ch => batch.update(db.collection('servers').doc(sid).collection('channels').doc(ch.id), { categoryId: null }));
+              batch.delete(db.collection('servers').doc(sid).collection('categories').doc(cat.id));
+              await batch.commit();
+              logAudit(sid, `deleted category ${cat.name}`);
+            } catch (err) { toast(err.message || 'Could not delete the category.', 'error'); }
+          },
+        });
+      };
+    }
     wrap.appendChild(header);
     if (!collapsed) inCat.forEach(c => wrap.appendChild(buildChannelRow(c)));
   });
@@ -4579,22 +4753,36 @@ function openChannelPermsModal(channel) {
   openModal('channel-perms-modal');
 }
 
-$('channel-add-btn').onclick = () => {
+function openCreateChannelModal(categoryId) {
   if (!currentServerId) return;
   if (!hasServerPerm(currentServerData, myUid, 'manageChannels')) { toast('You need Manage Channels permission to do that.'); return; }
   $('new-channel-name').value = '';
   populateCategorySelect();
+  $('new-channel-category').value = categoryId || '';
   openModal('create-channel-modal');
-};
+  setTimeout(() => $('new-channel-name').focus(), 30);
+}
+$('channel-add-btn').onclick = () => openCreateChannelModal(null);
 
-$('confirm-create-channel').onclick = async () => {
-  const name = sanitizeChannelName($('new-channel-name').value || '');
+async function createChannelFromModal() {
+  const rawName = ($('new-channel-name').value || '').trim();
+  if (!rawName) { toast('Enter a channel name.'); return; }
+  const name = sanitizeChannelName(rawName);
   const categoryId = $('new-channel-category').value || null;
   if (!currentServerId) return;
-  await db.collection('servers').doc(currentServerId).collection('channels').add({ name, categoryId, autoDelete: true, createdAt: FieldValue.serverTimestamp() });
-  logAudit(currentServerId, `created #${name}`);
-  closeModal('create-channel-modal');
-};
+  if (!hasServerPerm(currentServerData, myUid, 'manageChannels')) { toast('You need Manage Channels permission to do that.', 'error'); return; }
+  const btn = $('confirm-create-channel');
+  btn.disabled = true;
+  try {
+    await db.collection('servers').doc(currentServerId).collection('channels').add({ name, categoryId, autoDelete: true, createdAt: FieldValue.serverTimestamp() });
+    logAudit(currentServerId, `created #${name}`);
+    closeModal('create-channel-modal');
+    toast(`Created #${name}.`);
+  } catch (e) { toast(e.message || 'Could not create the channel.', 'error'); }
+  finally { btn.disabled = false; }
+}
+$('confirm-create-channel').onclick = createChannelFromModal;
+$('new-channel-name').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); createChannelFromModal(); } });
 
 $('category-add-btn').onclick = () => {
   if (!currentServerId) return;
@@ -4602,12 +4790,22 @@ $('category-add-btn').onclick = () => {
   $('new-category-name').value = '';
   openModal('create-category-modal');
 };
-$('confirm-create-category').onclick = async () => {
+async function createCategoryFromModal() {
   const name = ($('new-category-name').value || '').trim().toUpperCase().slice(0, 24);
   if (!name || !currentServerId) { toast('Enter a category name.'); return; }
-  await db.collection('servers').doc(currentServerId).collection('categories').add({ name, createdAt: FieldValue.serverTimestamp() });
-  closeModal('create-category-modal');
-};
+  if (!hasServerPerm(currentServerData, myUid, 'manageChannels')) { toast('You need Manage Channels permission to do that.', 'error'); return; }
+  const btn = $('confirm-create-category');
+  btn.disabled = true;
+  try {
+    await db.collection('servers').doc(currentServerId).collection('categories').add({ name, createdAt: FieldValue.serverTimestamp() });
+    logAudit(currentServerId, `created category ${name}`);
+    closeModal('create-category-modal');
+    toast(`Created category ${name}.`);
+  } catch (e) { toast(e.message || 'Could not create the category.', 'error'); }
+  finally { btn.disabled = false; }
+}
+$('confirm-create-category').onclick = createCategoryFromModal;
+$('new-category-name').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); createCategoryFromModal(); } });
 
 function selectChannel(channel) {
   if (!canViewChannel(channel, currentServerData, myUid)) { toast("You don't have access to that channel."); return; }
@@ -4691,7 +4889,7 @@ function renderPinnedList(pinned) {
   wrap.innerHTML = pinned.map(m => {
     const p = profileCache[m.uid] || { username: m.username || 'Unknown User', avatarColor: '#5865f2' };
     return `<div class="pinned-row" data-mid="${esc(m.id)}">
-      ${avatarHTML(34, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration)}
+      ${avatarHTML(34, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration, undefined, p.equippedMask)}
       <div class="pr-body">
         <div class="pr-head"><span class="pr-author">${esc(p.username)}</span><span class="pr-time">${timeStr(m.createdAt)}</span></div>
         <div class="pr-text">${m.poll ? `📊 ${esc(m.poll.question)}` : renderMessageText(m.text)}</div>
@@ -5004,7 +5202,7 @@ async function renderMemberPanel(members, ownerId, server) {
     const showGear = canManageMembers && uid !== myUid && uid !== ownerId;
     return `
     <div class="member-row" data-u="${esc(uid)}">
-      ${avatarHTML(32, p.avatarColor, initials(p.username), disp, p.avatarUrl, p.equippedDecoration, uid)}
+      ${avatarHTML(32, p.avatarColor, initials(p.username), disp, p.avatarUrl, p.equippedDecoration, uid, p.equippedMask)}
       <span class="mname${disp !== 'offline' ? ' online-name' : ''}"${roleColor ? ` style="color:${esc(roleColor)}"` : ''}>${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}</span>
       ${topRole && topRole.color ? roleChipHTML(topRole) : ''}
       ${showGear ? `<span class="member-manage-btn" title="Manage Member" data-manage-uid="${esc(uid)}">${icon('gear')}</span>` : ''}
@@ -5234,7 +5432,7 @@ function purgeResultHTML(m) {
 
 function buildMessageLineEl(m, canDelete) {
   const pinnable = canPin();
-  const canEditThis = m.uid === myUid && !m.sticker && !m.poll && !m.purgeResult;
+  const canEditThis = m.uid === myUid && !m.sticker && !m.poll && !m.purgeResult && !m.wordle;
   const line = document.createElement('div');
   line.className = 'msg-line' + (m.pinned ? ' is-pinned' : '');
   line.dataset.mid = m.id;
@@ -5271,6 +5469,8 @@ function buildMessageLineEl(m, canDelete) {
     ? pollHTML(m)
     : m.purgeResult
     ? purgeResultHTML(m)
+    : m.wordle
+    ? wordleCardHTML(m)
     : (m.text ? `<span class="msg-text">${renderMessageText(m.text)}</span>${m.edited ? `<span class="edited-tag">(edited)</span>` : ''}` : '') +
       attachmentHTML(m, canDelete));
 
@@ -5294,6 +5494,10 @@ function buildMessageLineEl(m, canDelete) {
     rowWrap.querySelectorAll('.poll-option').forEach(btn => {
       btn.onclick = () => togglePollVote(m.id, parseInt(btn.dataset.idx, 10));
     });
+  }
+  if (m.wordle) {
+    const playBtn = rowWrap.querySelector('.wc-play');
+    if (playBtn) playBtn.onclick = () => openWordleGame(m);
   }
   if (m.id === editingMessageId) buildEditBoxInto(rowWrap, m);
   line.appendChild(rowWrap);
@@ -5389,7 +5593,7 @@ async function renderMessages(rawMsgs) {
       meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}"${roleColor ? ` style="color:${esc(roleColor)}"` : ''}>${esc((currentView === 'channel' && serverNickFor(m.uid)) || displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
       body.appendChild(meta);
       body.appendChild(buildMessageLineEl(m, canDelete));
-      groupEl.innerHTML = avatarHTML(40, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration);
+      groupEl.innerHTML = avatarHTML(40, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration, undefined, p.equippedMask);
       groupEl.appendChild(body);
       wrap.appendChild(groupEl);
     }
@@ -5614,6 +5818,7 @@ function setReplyTarget(msgId) {
   const atts = m.attachments || (m.attachment ? [m.attachment] : []);
   const preview = m.sticker ? `Sent a sticker: ${m.sticker.name}` : m.gifUrl ? 'Sent a GIF' :
     m.poll ? `📊 Poll: ${m.poll.question}` :
+    m.wordle ? '🟩 Wordle game' :
     atts.length > 1 ? `Sent ${atts.length} files` : atts.length ? `Sent a file: ${atts[0].name || ''}` : (m.text || '');
   replyTarget = { id: m.id, uid: m.uid, username: uname, text: preview.slice(0, 150) };
   $('reply-bar-username').textContent = uname;
@@ -5818,7 +6023,7 @@ async function postBotMessage(payload) {
 const SAPPHIRE_PURGE_MAX = 1000; // safety ceiling when an explicit count is given
 const SAPPHIRE_PURGE_BATCH_SIZE = 450; // stay safely under Firestore's 500-op batch cap
 async function runPurgeCommand(rawCountText) {
-  if (!isAdmin && !isOwner) { toast('Only admins, co-owners and the owner can use /purge.', 'error'); return; }
+  if (!sapphireReady('purge')) return;
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
   const parsed = parseInt(rawCountText, 10);
   const n = Number.isFinite(parsed) && parsed > 0 ? Math.min(SAPPHIRE_PURGE_MAX, parsed) : null; // no count → delete everything
@@ -5851,6 +6056,75 @@ async function runPurgeCommand(rawCountText) {
   } catch (e) { toast(e.message || 'Could not purge messages.', 'error'); }
 }
 
+// Returns 'platform' (Frixion staff, anywhere) or 'server' (a server owner/mod using the Sapphire
+// app their server added), or null after telling the person why they can't.
+function sapphireReady(action) {
+  const mode = sapphireModeFor(action);
+  if (mode) return mode;
+  if (currentView === 'channel' && currentServerData && !serverHasApp(currentServerData, 'sapphire')) {
+    toast(canAddServerApps(currentServerData) ? 'Add the Sapphire app to this server first (server menu → Add App).' : 'This server has not added the Sapphire app.', 'error');
+  } else if (currentView !== 'channel' && action !== 'purge') toast(`/${action} only works inside a server.`, 'error');
+  else toast(`You do not have permission to use /${action} here.`, 'error');
+  return null;
+}
+// Server-scoped /mute /unmute /ban /unban: only touch people who are in this server, using the
+// same rank rules as the member manager (never the owner, never someone at or above your role).
+async function runServerModerationCommand(action, rawName, reason) {
+  const server = currentServerData;
+  const hasReason = action === 'mute' || action === 'ban' || action === 'kick';
+  if (!server || !rawName) { toast(`Usage: /${action} <username>${hasReason ? ' [reason]' : ''}`); return; }
+  const lower = rawName.toLowerCase();
+  const pool = (action === 'unban') ? (server.bannedUsers || []) : (server.members || []);
+  const uid = pool.find(u => u.toLowerCase() === lower);
+  if (!uid) { toast(action === 'unban' ? `${rawName} is not banned from this server.` : `${rawName} is not in this server.`, 'error'); return; }
+  if (action !== 'unban' && action !== 'unmute') {
+    if (uid === myUid) { toast(`You can't /${action} yourself.`, 'error'); return; }
+    if (server.ownerId === uid) { toast("You can't moderate the server owner.", 'error'); return; }
+    const tp = await getProfile(uid);
+    const targetIsStaff = !!(tp && (tp.owner || tp.coowner || tp.op));
+    if (isFrixionStaff()) {
+      // Frixion staff can moderate any member, except staff who outrank them.
+      if (targetIsStaff && !canManagePlatformUser(Object.assign({ username: uid }, tp))) { toast("You can't moderate someone who outranks you.", 'error'); return; }
+    } else {
+      if (topRoleOf(server, uid).position >= topRoleOf(server, myUid).position) { toast("You can't moderate someone who outranks you.", 'error'); return; }
+      // A server's Sapphire can't touch Frixion staff.
+      if (targetIsStaff) { toast("You can't moderate Frixion staff.", 'error'); return; }
+    }
+  }
+  const why = reason ? ` (${reason})` : '';
+  try {
+    const ref = db.collection('servers').doc(server.id);
+    if (action === 'mute') {
+      await ref.update({ [`timeouts.${uid}`]: INDEFINITE_MUTE_UNTIL });
+      logAudit(server.id, `muted ${uid} until unmuted${why}`);
+      toast(`Muted ${uid} in this server until you unmute them.`);
+    } else if (action === 'unmute') {
+      await ref.update({ [`timeouts.${uid}`]: FieldValue.delete() });
+      logAudit(server.id, `unmuted ${uid}`);
+      toast(`Unmuted ${uid}.`);
+    } else if (action === 'kick') {
+      await ref.update({ members: FieldValue.arrayRemove(uid) });
+      logAudit(server.id, `kicked ${uid}${why}`);
+      toast(`Kicked ${uid}. They can rejoin with an invite.`);
+    } else if (action === 'ban') {
+      await ref.update({ members: FieldValue.arrayRemove(uid), bannedUsers: FieldValue.arrayUnion(uid), [`banInfo.${uid}`]: { by: myUid, at: Date.now(), reason: reason || '' } });
+      logAudit(server.id, `banned ${uid}${why}`);
+      toast(`Banned ${uid} from this server.`);
+    } else {
+      await ref.update({ bannedUsers: FieldValue.arrayRemove(uid), [`banInfo.${uid}`]: FieldValue.delete() });
+      logAudit(server.id, `unbanned ${uid}`);
+      toast(`Unbanned ${uid}.`);
+    }
+  } catch (e) { toast(e.message || `Could not /${action}.`, 'error'); }
+}
+// /mute /unmute /ban /unban /kick only ever act inside the server they are used in. Frixion-wide mutes
+// and bans live in the Admin Panel.
+async function runModerationCommand(action, rawName, reason) {
+  const mode = sapphireReady(action);
+  if (!mode) return;
+  return runServerModerationCommand(action, rawName, reason);
+}
+
 async function sendMessage() {
   const input = $('composer-input');
   const sendChannel = currentView === 'channel' ? currentChannelObj() : null;
@@ -5875,7 +6149,7 @@ async function sendMessage() {
     toast('You do not have permission to attach files in this channel.', 'error');
     return;
   }
-  if (sendChannel && /^\/(poll|purge)\b/i.test(raw) && !canHere('useApplicationCommands')) {
+  if (sendChannel && /^\/(poll|purge|mute|unmute|ban|unban|kick|wordle)\b/i.test(raw) && !canHere('useApplicationCommands')) {
     toast('You do not have permission to use commands in this channel.', 'error');
     return;
   }
@@ -5913,6 +6187,28 @@ async function sendMessage() {
     clearMyTypingDoc();
     closeMentionPopup();
     runPurgeCommand(purgeMatch[1]);
+    return;
+  }
+  // "/wordle" starts a Wordle game card (the app has to be added to the server first).
+  if (!pendingAttachments.length && /^\/wordle$/i.test(raw)) {
+    input.value = '';
+    autoResize(input);
+    updateComposerCharCount();
+    clearMyTypingDoc();
+    closeMentionPopup();
+    startWordleGame();
+    return;
+  }
+  // "/mute <user> [reason]", "/ban <user> [reason]", "/unmute <user>", "/unban <user>" — admin
+  // only. No duration: mutes and bans last until they are undone.
+  const modMatch = !pendingAttachments.length ? /^\/(mute|unmute|ban|unban|kick)(?:\s+@?(\S+)(?:\s+([\s\S]+))?)?$/i.exec(raw) : null;
+  if (modMatch) {
+    input.value = '';
+    autoResize(input);
+    updateComposerCharCount();
+    clearMyTypingDoc();
+    closeMentionPopup();
+    runModerationCommand(modMatch[1].toLowerCase(), modMatch[2], (modMatch[3] || '').trim());
     return;
   }
   if (!raw && !pendingAttachments.length) return;
@@ -6082,6 +6378,271 @@ function currentContextUsernames() {
 }
 
 
+
+// ============================================================
+// APPS — small Frixion apps that post interactive cards in chat.
+// A server only offers an app once its owner has added it (Server menu →
+// Add App). In DMs and group DMs every app is available, like Discord's
+// user-installed apps. Right now there is one: Wordle.
+// ============================================================
+const FRIXION_APPS = [
+  { id: 'wordle', name: 'Wordle', command: 'wordle', desc: 'Guess the secret five-letter word in six tries. Anyone in the chat can play along.', avatar: WORDLE_AVATAR_URL },
+  // Sapphire adds moderation commands. Server owners can add it to their own server, where the
+  // commands only affect that server's members. Frixion staff (owner, co-owners, admins) can use
+  // Sapphire everywhere without adding it, and their commands act on the whole of Frixion.
+  { id: 'sapphire', name: 'Sapphire', command: 'purge', commands: ['purge', 'mute', 'unmute', 'ban', 'unban', 'kick'],
+    desc: 'Moderation commands for your server: /purge, /mute, /unmute, /ban, /unban and /kick. They only affect your server\'s members.', avatar: SAPPHIRE_AVATAR_URL },
+];
+const isFrixionStaff = () => !!(isAdmin || isOwner);
+function appById(id) { return FRIXION_APPS.find(a => a.id === id) || null; }
+function serverHasApp(server, appId) { return !!(server && Array.isArray(server.apps) && server.apps.includes(appId)); }
+// Is this app usable in the conversation that's open right now?
+function appInstalledHere(appId) {
+  if (currentView === 'channel') return serverHasApp(currentServerData, appId);
+  return true;
+}
+// Sapphire's commands: Frixion staff can use them anywhere (they act on all of Frixion). Everyone
+// else needs a server that added Sapphire plus the matching server permission, and then the
+// command only touches that server.
+const SAPPHIRE_SERVER_PERM = { purge: 'manageMessages', mute: 'timeoutMembers', unmute: 'timeoutMembers', ban: 'banMembers', unban: 'banMembers', kick: 'kickMembers' };
+function sapphireModeFor(action) {
+  // /purge works anywhere for Frixion staff. Mute, ban and kick only make sense inside a server.
+  if (action === 'purge' && isFrixionStaff()) return 'platform';
+  if (currentView !== 'channel' || !currentServerData) return null;
+  if (isFrixionStaff()) return 'server';   // staff can moderate any server they are in
+  if (serverHasApp(currentServerData, 'sapphire') && hasServerPerm(currentServerData, myUid, SAPPHIRE_SERVER_PERM[action])) return 'server';
+  return null;
+}
+function appsAvailableHere() {
+  return FRIXION_APPS.filter(a => a.id === 'sapphire'
+    ? (a.commands || []).some(c => sapphireModeFor(c))
+    : appInstalledHere(a.id));
+}
+function canAddServerApps(server) { return !!server && isServerOwnerLevel(server, myUid); }
+// Any server owner can add any app to their own server.
+function canAddApp(server, app) { return canAddServerApps(server); }
+function canOpenAddApp(server) { return !!server && FRIXION_APPS.some(a => canAddApp(server, a)); }
+
+// ---- Add App (server owners) ----
+function openAddAppModal(server) {
+  if (!canOpenAddApp(server)) { toast('Only the server owner can add apps.', 'error'); return; }
+  const { overlay, close } = openInfoModal('Add Apps to ' + server.name, '<div id="add-app-list" class="add-app-list"></div>');
+  const paint = () => {
+    const cur = (currentServerData && currentServerData.id === server.id) ? currentServerData : server;
+    overlay.querySelector('#add-app-list').innerHTML = FRIXION_APPS.filter(a => canAddApp(server, a)).map(a => {
+      const on = serverHasApp(cur, a.id);
+      return `<div class="add-app-row" data-app="${esc(a.id)}">
+        <img class="add-app-avatar" src="${esc(a.avatar)}" alt="">
+        <div class="add-app-info"><div class="add-app-name">${esc(a.name)} <span class="bot-tag"><span>APP</span></span></div>
+          <div class="add-app-desc">${esc(a.desc)}</div>
+          <div class="add-app-cmd">${a.commands ? `Adds ${a.commands.map(c => `<b>/${esc(c)}</b>`).join(', ')}` : `Adds <b>/${esc(a.command)}</b> and a spot in the + menu`}</div></div>
+        <button type="button" class="${on ? 'btn-secondary' : 'btn-accent-inline'} add-app-btn">${on ? 'Remove' : 'Add App'}</button>
+      </div>`;
+    }).join('');
+    overlay.querySelectorAll('.add-app-row').forEach(row => {
+      const id = row.dataset.app, app = appById(id);
+      row.querySelector('.add-app-btn').onclick = async () => {
+        const has = serverHasApp((currentServerData && currentServerData.id === server.id) ? currentServerData : server, id);
+        try {
+          await db.collection('servers').doc(server.id).update({ apps: has ? FieldValue.arrayRemove(id) : FieldValue.arrayUnion(id) });
+          // the live server listener updates currentServerData; mirror it locally so the button flips straight away
+          const base = (currentServerData && currentServerData.id === server.id) ? currentServerData : server;
+          const list = new Set(base.apps || []); has ? list.delete(id) : list.add(id);
+          base.apps = [...list];
+          logAudit(server.id, `${has ? 'removed' : 'added'} the ${app.name} app`);
+          toast(has ? `${app.name} removed from ${server.name}.` : `${app.name} added to ${server.name}. Try /${app.command}!`);
+          paint();
+        } catch (e) { toast(e.message || 'Could not update apps.', 'error'); }
+      };
+    });
+  };
+  paint();
+}
+
+// ---- "Use apps" panel in the + menu ----
+function renderAppsPanel() {
+  const panel = $('apps-panel');
+  const list = appsAvailableHere();
+  const server = currentView === 'channel' ? currentServerData : null;
+  panel.innerHTML = `<div class="apps-panel-head">Apps</div>` + (list.length
+    ? list.map(a => `<button type="button" class="apps-panel-item" data-app="${esc(a.id)}"><img src="${esc(a.avatar)}" alt=""><span class="apn-text"><b>${esc(a.name)}</b><small>${a.commands ? a.commands.map(c => '/' + esc(c)).join(' ') : '/' + esc(a.command)} — ${esc(a.desc)}</small></span></button>`).join('')
+    : `<div class="apps-panel-empty">No apps are available here yet.${canOpenAddApp(server) ? '' : ' Ask the server owner to add one.'}</div>`)
+    + (canOpenAddApp(server) ? `<button type="button" class="apps-panel-add" id="apps-panel-add-btn">＋ Add App</button>` : '');
+  panel.querySelectorAll('.apps-panel-item').forEach(btn => { btn.onclick = () => { panel.classList.add('hidden'); runAppCommand(btn.dataset.app); }; });
+  const add = $('apps-panel-add-btn');
+  if (add) add.onclick = () => { panel.classList.add('hidden'); openAddAppModal(server); };
+}
+$('use-apps-menu').onclick = (e) => {
+  e.stopPropagation();
+  $('composer-action-menu').classList.add('hidden');
+  const panel = $('apps-panel');
+  renderAppsPanel();
+  panel.classList.toggle('hidden');
+};
+document.addEventListener('click', (e) => {
+  const panel = $('apps-panel');
+  if (!panel.classList.contains('hidden') && !panel.contains(e.target) && !e.target.closest('#attach-btn')) panel.classList.add('hidden');
+});
+function runAppCommand(appId) {
+  if (appId === 'wordle') startWordleGame();
+  else if (appId === 'sapphire') {
+    // Sapphire has several commands, so picking it drops "/" into the composer to open the command list.
+    const input = $('composer-input');
+    input.value = '/';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    focusComposerForCommand(input);
+  }
+}
+
+// ---- Wordle ----
+const WORDLE_WORDS = "about above abuse actor acute admit adopt adult after again agent agree ahead alarm album alert alike alive allow alone along alter among anger angle angry apart apple apply arena argue arise armor array arrow aside asset avoid awake award aware badly baker bases basic basis beach began begin being below bench birth black blade blame blank blast blaze blend bless blind block blood bloom blown board boast boost booth bound brain brake brand brave bread break breed brick bride brief bring broad broke brown brush build built bunch burst buyer cabin cable candy carry carve catch cause chain chair chalk champ chaos charm chart chase cheap check cheek cheer chess chest chief child chill china chose chunk civil claim clash class clean clear clerk click cliff climb clock close cloth cloud coach coast could count court cover crack craft crash crazy cream crime crisp cross crowd crown crush curve cycle daily dance dated dealt death debut delay depth doing doubt dozen draft drain drama drank drawn dream dress dried drift drill drink drive drove dying eager early earth eight elite empty enemy enjoy enter entry equal error event every exact exist extra faith false fancy fault feast fence fever fiber field fifth fifty fight final first flame flash fleet flesh float flock flood floor flour fluid focus force forth forty forum found frame frank fraud fresh front frost fruit fully funny ghost giant given glass globe glory grace grade grain grand grant grape graph grasp grass grave great green greet grief grill gross group grown guard guess guest guide habit happy harsh heart heavy hello hence honey honor horse hotel house human humor ideal image imply index inner input irony issue ivory jelly jewel joint joker judge juice knife knock known label labor large laser later laugh layer learn lease least leave legal lemon level light limit linen liver lobby local logic loose lover lower loyal lucky lunch magic major maker march match maybe mayor meant media melon mercy merge merit metal meter might minor minus mixed model money month moral motor mount mouse mouth movie music naive nerve never newly night noble noise north novel nurse ocean offer often olive onion opera orbit order other ought outer owner paint panel panic paper party pasta patch pause peace pearl phase phone photo piano piece pilot pitch pizza place plain plane plant plate plaza point polar pound power press price pride prime print prior prize probe proof proud prove pulse punch pupil queen query quest quick quiet quite quote radar radio raise rally ranch range rapid ratio reach react ready realm rebel refer relax reply reset rider ridge rifle right rigid rival river robin robot rocky rough round route royal rural salad sauce scale scare scene scope score scout sense serve seven shade shake shall shape share shark sharp sheep sheet shelf shell shift shine shirt shock shoot shore short shown sight silly since sixth sixty skill skirt sleep slice slide slope small smart smile smoke snake solid solve sorry sound south space spare spark speak speed spell spend spice spike spill spine split spoke sport spray squad stack staff stage stain stair stake stamp stand stare start state steak steal steam steel steep steer stick stiff still stock stone stood store storm story stove strip stuck study stuff style sugar suite sunny super surge swamp swear sweat sweep sweet swept swift swing sword table taken taste teach teeth tempo tenth thank theme there these thick thief thing think third those three threw throw thumb tiger tight timer tired title toast today token tooth topic total touch tough towel tower toxic trace track trade trail train trait trash treat trend trial tribe trick tried troop truck truly trunk trust truth twice twist ultra uncle under union unity until upper upset urban usage usual valid value vapor vault venue verse video virus visit vital vivid vocal voice voter wagon waist waste watch water weary weave weigh weird whale wheat wheel where which while white whole whose widow width witch woman world worry worse worst worth would wound woven wrist write wrong wrote yacht young youth zebra amber angel anvil bacon badge banjo barge basil beard beast berry bible bingo bonus bugle camel cargo cedar chime cider cobra comet coral cough crane crate creek cried dairy daisy diner disco ditch diver dodge donor dough eagle elbow ember epoch fable fairy ferry finch flute foggy forge gamer gauge gecko giddy gland glide gloom glove goose gourd gravy grove gummy hatch haven hazel hedge heron hiker hobby hound hover hurry igloo inbox jolly kebab kiosk koala lance lilac llama lodge lotus lunar mango maple marsh mocha moose motel mural nacho nanny nasty niche ninja oasis oddly otter outdo oxide panda pansy paste peach pecan penny perch petal pixel plumb plush polka poppy porch prank prism quail quilt quirk raven razor relic rhino rinse roast rogue rumor rusty sassy scarf scone scoop shrub siren skate sloth smash snack snore sober solar sonic spoon stork sushi swirl tango tulip twirl unzip vegan vigor viola waltz whisk wispy yodel zesty zippy".split(' ');
+const WORDLE_ROWS = 6, WORDLE_LEN = 5;
+// Standard Wordle scoring: greens first, then yellows for letters left over.
+function wordleScore(guess, answer) {
+  const res = Array(WORDLE_LEN).fill('absent'), left = {};
+  for (let i = 0; i < WORDLE_LEN; i++) {
+    if (guess[i] === answer[i]) res[i] = 'correct'; else left[answer[i]] = (left[answer[i]] || 0) + 1;
+  }
+  for (let i = 0; i < WORDLE_LEN; i++) {
+    if (res[i] === 'correct') continue;
+    if (left[guess[i]] > 0) { res[i] = 'present'; left[guess[i]]--; }
+  }
+  return res;
+}
+const wordleAnswerOf = (w) => WORDLE_WORDS[w.puzzle % WORDLE_WORDS.length];
+function wordleStatusOf(guesses, answer) {
+  if (guesses.includes(answer)) return 'won';
+  return guesses.length >= WORDLE_ROWS ? 'lost' : 'playing';
+}
+const WORDLE_EMOJI = { correct: '🟩', present: '🟨', absent: '⬛' };
+
+async function startWordleGame() {
+  if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
+  if (!appInstalledHere('wordle')) {
+    toast(canOpenAddApp(currentServerData) ? 'Add the Wordle app first: open the server menu and choose Add App.' : 'The server owner has not added Wordle yet.', 'error');
+    return;
+  }
+  if (currentView === 'channel' && !canHere('useApplicationCommands')) { toast('You do not have permission to use commands in this channel.', 'error'); return; }
+  try {
+    const echoRef = await sendToCurrentConversation({ text: '/wordle', uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp() });
+    await postBotMessage({
+      uid: WORDLE_BOT_UID, username: WORDLE_BOT_PROFILE.username, createdAt: FieldValue.serverTimestamp(),
+      wordle: { puzzle: Math.floor(Math.random() * WORDLE_WORDS.length), startedBy: myUid, plays: {} },
+      replyTo: echoRef ? { id: echoRef.id, uid: myUid, username: myProfile.username, text: '/wordle' } : null,
+    });
+  } catch (e) { toast(e.message || 'Could not start Wordle.', 'error'); }
+}
+
+function wordleMiniGrid(guesses, answer) {
+  return `<div class="wc-mini">${guesses.map(g => `<div class="wc-mini-row">${wordleScore(g, answer).map(r => `<i class="wc-sq ${r}"></i>`).join('')}</div>`).join('')}</div>`;
+}
+function wordleCardHTML(m) {
+  const w = m.wordle, answer = wordleAnswerOf(w);
+  const starter = displayNameOf(profileCache[w.startedBy] || { username: w.startedBy });
+  const plays = w.plays || {};
+  const mine = plays[myUid];
+  const names = Object.keys(plays);
+  const rows = names.map(uid => {
+    const p = plays[uid], g = p.guesses || [], st = wordleStatusOf(g, answer);
+    const nm = esc(displayNameOf(profileCache[uid] || { username: uid }));
+    if (st === 'playing') return `<div class="wc-player"><b>${nm}</b><span class="wc-pstatus">is playing… (${g.length}/${WORDLE_ROWS})</span></div>`;
+    return `<div class="wc-player done"><div><b>${nm}</b><span class="wc-pstatus">${st === 'won' ? `solved it in ${g.length}/${WORDLE_ROWS}` : 'ran out of guesses'}</span></div>${wordleMiniGrid(g, answer)}</div>`;
+  }).join('');
+  const myGuesses = (mine && mine.guesses) || [];
+  const myStatus = wordleStatusOf(myGuesses, answer);
+  const label = !mine ? 'Play' : myStatus === 'playing' ? 'Continue' : 'View my game';
+  return `<div class="wordle-card">
+    <div class="wc-head"><img class="wc-logo" src="${esc(WORDLE_AVATAR_URL)}" alt=""><b>Wordle</b></div>
+    <div class="wc-sub"><b>${esc(starter)}</b> started a game of Wordle. Anyone here can play!</div>
+    ${rows ? `<div class="wc-players">${rows}</div>` : ''}
+    <button type="button" class="wc-play">${label}</button>
+  </div>`;
+}
+
+let wordleOpen = null;   // { close } while a game window is up
+function openWordleGame(m) {
+  if (wordleOpen) wordleOpen.close();
+  const answer = wordleAnswerOf(m.wordle);
+  const ref = msgCollectionRef().doc(m.id);
+  const saved = (m.wordle.plays || {})[myUid];
+  let guesses = (saved && saved.guesses) ? saved.guesses.slice() : [];
+  let current = '';
+  let busy = false;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay wordle-overlay';
+  overlay.innerHTML = `<div class="modal-box wordle-box" role="dialog" aria-modal="true" aria-label="Wordle">
+    <div class="modal-header-row"><h2>Wordle</h2><span class="x" role="button" tabindex="0" aria-label="Close">✕</span></div>
+    <div class="wordle-board" id="wordle-board"></div>
+    <div class="wordle-msg" id="wordle-msg" aria-live="polite"></div>
+    <div class="wordle-kb" id="wordle-kb"></div>
+  </div>`;
+  const board = overlay.querySelector('#wordle-board'), msgEl = overlay.querySelector('#wordle-msg'), kb = overlay.querySelector('#wordle-kb');
+  const status = () => wordleStatusOf(guesses, answer);
+  const flash = (t, ms = 1600) => { msgEl.textContent = t; msgEl.classList.add('show'); clearTimeout(flash._t); if (ms) flash._t = setTimeout(() => msgEl.classList.remove('show'), ms); };
+  const letterStates = () => {
+    const rank = { absent: 1, present: 2, correct: 3 }, best = {};
+    guesses.forEach(g => wordleScore(g, answer).forEach((r, i) => { if (!best[g[i]] || rank[r] > rank[best[g[i]]]) best[g[i]] = r; }));
+    return best;
+  };
+  let revealRow = -1;
+  const paint = () => {
+    let html = '';
+    for (let r = 0; r < WORDLE_ROWS; r++) {
+      const g = guesses[r];
+      const score = g ? wordleScore(g, answer) : null;
+      const word = g || (r === guesses.length ? current : '');
+      html += `<div class="wordle-row" data-r="${r}">` + Array.from({ length: WORDLE_LEN }, (_, i) => {
+        const ch = word[i] || '';
+        const cls = score ? ` ${score[i]}${r === revealRow ? ' flip' : ''}` : (ch ? ' filled' : '');
+        return `<div class="wordle-tile${cls}" style="${r === revealRow ? `animation-delay:${i * 0.28}s` : ''}">${esc(ch.toUpperCase())}</div>`;
+      }).join('') + `</div>`;
+    }
+    board.innerHTML = html;
+    const best = letterStates();
+    kb.innerHTML = ['qwertyuiop', 'asdfghjkl', '⏎zxcvbnm⌫'].map(row => `<div class="wordle-kb-row">${[...row].map(k =>
+      `<button type="button" class="wordle-key ${best[k] || ''}${k === '⏎' || k === '⌫' ? ' wide' : ''}" data-k="${k}">${k === '⏎' ? 'Enter' : k === '⌫' ? '⌫' : k.toUpperCase()}</button>`).join('')}</div>`).join('');
+    kb.querySelectorAll('[data-k]').forEach(b => { b.onclick = () => press(b.dataset.k); b.onmousedown = e => e.preventDefault(); });
+  };
+  const end = () => {
+    const st = status();
+    if (st === 'won') flash(['Genius!', 'Magnificent!', 'Impressive!', 'Splendid!', 'Great!', 'Phew!'][guesses.length - 1] || 'Nice!', 0);
+    else if (st === 'lost') flash(`The word was ${answer.toUpperCase()}.`, 0);
+  };
+  const submit = async () => {
+    if (busy || status() !== 'playing') return;
+    if (current.length < WORDLE_LEN) { flash('Not enough letters'); board.querySelector(`.wordle-row[data-r="${guesses.length}"]`).classList.add('shake'); return; }
+    busy = true;
+    guesses.push(current); current = '';
+    revealRow = guesses.length - 1;
+    paint();
+    const st = status();
+    try {
+      await ref.set({ wordle: { plays: { [myUid]: { guesses, status: st, at: Date.now() } } } }, { merge: true });
+    } catch (e) { toast(e.message || 'Could not save your guess.', 'error'); }
+    setTimeout(() => { revealRow = -1; paint(); busy = false; end(); }, WORDLE_LEN * 280 + 300);
+  };
+  function press(k) {
+    if (busy || status() !== 'playing') return;
+    if (k === '⏎' || k === 'Enter') submit();
+    else if (k === '⌫' || k === 'Backspace') { current = current.slice(0, -1); paint(); }
+    else if (/^[a-z]$/.test(k) && current.length < WORDLE_LEN) { current += k; paint(); }
+  }
+  const onKey = (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'Escape') { close(); return; }
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (k === 'Enter' || k === 'Backspace' || /^[a-z]$/.test(k)) { e.preventDefault(); press(k); }
+  };
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); wordleOpen = null; };
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('.x').onclick = close;
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(overlay);
+  wordleOpen = { close };
+  paint();
+  end();
+}
+
 // ============================================================
 // SLASH COMMANDS
 // Typing "/" opens a list of the commands you can use. Picking one (click, Tab or
@@ -6097,9 +6658,28 @@ const SLASH_COMMANDS = [
     { name: 'link', desc: 'The web address it opens, like https://example.com', required: true, type: 'link' },
   ] },
   { name: 'poll', desc: 'Create a poll for this conversation', appCmd: true, options: [] },
-  { name: 'purge', desc: 'A Frixion command for admins', appCmd: true, admin: true, options: [
+  { name: 'purge', desc: 'Sapphire: delete recent messages', appCmd: true, sapphire: true, options: [
     { name: 'count', desc: 'How many recent messages to delete. Leave empty to delete everything.', required: false, type: 'count' },
   ] },
+  { name: 'mute', desc: 'Mute someone in this server until you unmute them', appCmd: true, sapphire: true, options: [
+    { name: 'user', desc: 'The username to mute', required: true },
+    { name: 'reason', desc: 'Why they are being muted', required: false },
+  ] },
+  { name: 'unmute', desc: 'Lift a mute from someone in this server', appCmd: true, sapphire: true, options: [
+    { name: 'user', desc: 'The username to unmute', required: true },
+  ] },
+  { name: 'ban', desc: 'Ban someone from this server until you unban them', appCmd: true, sapphire: true, options: [
+    { name: 'user', desc: 'The username to ban', required: true },
+    { name: 'reason', desc: 'Why they are being banned', required: false },
+  ] },
+  { name: 'unban', desc: 'Lift a ban from someone in this server', appCmd: true, sapphire: true, options: [
+    { name: 'user', desc: 'The username to unban', required: true },
+  ] },
+  { name: 'kick', desc: 'Remove someone from this server (they can rejoin with an invite)', appCmd: true, sapphire: true, options: [
+    { name: 'user', desc: 'The username to kick', required: true },
+    { name: 'reason', desc: 'Why they are being kicked', required: false },
+  ] },
+  { name: 'wordle', desc: 'Start a game of Wordle', appCmd: true, app: 'wordle', options: [] },
   { name: 'tts', desc: 'Send a text-to-speech message', needs: 'sendTTS', options: [
     { name: 'message', desc: 'What should be read out loud', required: true },
   ] },
@@ -6111,7 +6691,7 @@ let cmdMode = null;          // { cmd, values: [], active, prevPlaceholder } whi
 
 function slashCommandsForMe() {
   return SLASH_COMMANDS.filter(cmd =>
-    (!cmd.admin || isAdmin || isOwner) && (!cmd.appCmd || canHere('useApplicationCommands')) && (!cmd.needs || canHere(cmd.needs)));
+    (!cmd.admin || isAdmin || isOwner) && (!cmd.sapphire || sapphireModeFor(cmd.name)) && (!cmd.appCmd || canHere('useApplicationCommands')) && (!cmd.needs || canHere(cmd.needs)) && (!cmd.app || appInstalledHere(cmd.app)));
 }
 function updateSlashState(el) {
   if (cmdMode) { closeSlashPopup(); return; }
@@ -6261,6 +6841,14 @@ function finishCommandMode() {
   } else if (cmd.name === 'purge') {
     if (vals[0] && !/^\d+$/.test(vals[0])) { switchCommandOption(0); toast('The count must be a whole number.', 'error'); return null; }
     text = vals[0] ? `/purge ${vals[0]}` : '/purge';
+  } else if (cmd.name === 'mute' || cmd.name === 'ban' || cmd.name === 'kick') {
+    const who = vals[0].replace(/^@/, '');
+    if (/\s/.test(who)) { switchCommandOption(0); toast('Usernames do not contain spaces.', 'error'); return null; }
+    text = `/${cmd.name} ${who}${vals[1] ? ' ' + vals[1] : ''}`;
+  } else if (cmd.name === 'unmute' || cmd.name === 'unban') {
+    const who = vals[0].replace(/^@/, '');
+    if (/\s/.test(who)) { switchCommandOption(0); toast('Usernames do not contain spaces.', 'error'); return null; }
+    text = `/${cmd.name} ${who}`;
   } else if (cmd.name === 'tts') text = `/tts ${vals[0]}`;
   else text = `/${cmd.name}`;
   exitCommandMode(false);
@@ -7384,7 +7972,8 @@ function openPremiumModal() {
 function orbIconSVG(size) { return `<svg viewBox="0 0 24 24" width="${size}" height="${size}"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg>`; }
 
 function shopItemPreviewHTML(key, item) {
-  if (key === 'decorations' || key === 'masks') return `<div class="sic-deco-stage">${avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, item.id)}</div>`;
+  if (key === 'decorations') return `<div class="sic-deco-stage">${avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, item.id)}</div>`;
+  if (key === 'masks') return `<div class="sic-deco-stage">${avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, null, undefined, item.id)}</div>`;
   if (key === 'banners') return `<div class="sic-banner-preview">
     <div class="sic-banner-strip${item.animated ? ' banner-anim' : ''}" style="background:${esc(bannerGradientCSS(item))};"></div>
     <div class="sic-banner-avatar">${avatarHTML(44, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl)}</div>
@@ -7647,16 +8236,131 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
     if (tab.dataset.adminTab === 'codes') renderAdminCodesList();
     if (tab.dataset.adminTab === 'conversations') renderAdminConversationsList();
     if (tab.dataset.adminTab === 'shopmanage') {
-      renderAdminDecorationList(); initDecorationEditor();
+      renderAdminDecorationList(); renderAdminMaskList(); initDecorationEditor();
       renderAdminThemeList(); initThemeEditor();
       renderAdminNameplateList(); initNameplateEditor();
       renderAdminProfileEffectList(); initEffectEditor();
       renderAdminProfileFrameList(); initFrameEditor();
       renderAdminBannerList(); initBannerEditor();
     }
+    if (tab.dataset.adminTab === 'quests') initGagAdmin();
     if (tab.dataset.adminTab === 'systemhub') { adminSelectedUser = null; renderAdminList(); }
   };
 });
+
+
+// ---------- Quests (admin/owner/co-owner): Grow a Garden creator ----------
+const GAG_SEED_FNS = { none: 'No special ability', gold: 'Mutation chance (+%)', multi: 'Extra crops per harvest (+N)', weight: 'Heavier fruit (+%)' };
+const GAG_PET_FNS = { sell: 'Sell value (+%)', mult: 'Sheckle multiplier (×N)', growth: 'Grow speed (+%)', mutation: 'Mutation chance (+%)', discount: 'Seed discount (-%)' };
+const GAG_KINDS = {
+  seeds: { coll: 'gardenSeeds', label: 'seed', list: () => ggCustomSeeds },
+  sprinklers: { coll: 'gardenSprinklers', label: 'sprinkler', list: () => ggCustomSprinklers },
+  pets: { coll: 'gardenPets', label: 'pet', list: () => ggCustomPets },
+};
+let gagAdminInit = false;
+const gagNum = (id, d = 0) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : d; };
+function initGagAdmin() {
+  if (!gagAdminInit) {
+    gagAdminInit = true;
+    const rarOpts = Object.keys(GG_RARITY).map(k => `<option value="${k}">${esc(GG_RARITY[k].n)}</option>`).join('');
+    ['gag-seed-rarity', 'gag-spr-rarity', 'gag-pet-rarity'].forEach(id => { $(id).innerHTML = rarOpts; });
+    $('gag-seed-fn').innerHTML = Object.entries(GAG_SEED_FNS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+    $('gag-pet-fn').innerHTML = Object.entries(GAG_PET_FNS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+    document.querySelectorAll('[data-quest-section]').forEach(tab => {
+      tab.onclick = () => {
+        document.querySelectorAll('[data-quest-section]').forEach(t => t.classList.toggle('on', t === tab));
+        document.querySelectorAll('.quest-section').forEach(sec => sec.classList.toggle('hidden', sec.dataset.questSection !== tab.dataset.questSection));
+      };
+    });
+    document.querySelectorAll('[data-gag-section]').forEach(tab => {
+      tab.onclick = () => {
+        document.querySelectorAll('[data-gag-section]').forEach(t => t.classList.toggle('on', t === tab));
+        document.querySelectorAll('.gag-section').forEach(sec => sec.classList.toggle('hidden', sec.dataset.gagSection !== tab.dataset.gagSection));
+      };
+    });
+    $('gag-seed-publish').onclick = () => gagPublish('seeds');
+    $('gag-spr-publish').onclick = () => gagPublish('sprinklers');
+    $('gag-pet-publish').onclick = () => gagPublish('pets');
+  }
+  loadGardenContent().then(renderGagLists);
+}
+function gagCommon(prefix) {
+  const name = ($(prefix + '-name').value || '').trim();
+  const ic = ($(prefix + '-ic').value || '').trim();
+  return { name, ic, rarity: $(prefix + '-rarity').value, cost: Math.max(0, Math.floor(gagNum(prefix + '-cost', 0))) };
+}
+async function gagPublish(kind) {
+  if (!isAdmin && !isOwner) { toast('Admins only.', 'error'); return; }
+  let item;
+  if (kind === 'seeds') {
+    item = gagCommon('gag-seed');
+    item.grow = Math.max(1, gagNum('gag-seed-grow', 10)) * 1000;
+    item.sell = Math.max(1, Math.floor(gagNum('gag-seed-sell', 10)));
+    item.baseWeight = Math.max(0.01, gagNum('gag-seed-weight', 0.5));
+    item.fn = $('gag-seed-fn').value;
+    const fv = gagNum('gag-seed-fnval', 0);
+    item.fnVal = item.fn === 'multi' ? Math.max(0, Math.floor(fv)) : Math.max(0, fv) / 100;
+    if (item.fn === 'none') { item.fnVal = 0; }
+  } else if (kind === 'sprinklers') {
+    item = gagCommon('gag-spr');
+    item.speed = Math.max(0, gagNum('gag-spr-speed', 0)) / 100;
+    item.weight = Math.max(0, gagNum('gag-spr-weight', 0)) / 100;
+    item.mutation = Math.max(0, gagNum('gag-spr-mut', 0)) / 100;
+    item.sellBoost = Math.max(0, gagNum('gag-spr-sell', 0)) / 100;
+    if (!(item.speed || item.weight || item.mutation || item.sellBoost)) { toast('Give the sprinkler at least one boost.'); return; }
+  } else {
+    item = gagCommon('gag-pet');
+    item.fn = $('gag-pet-fn').value;
+    const v = gagNum('gag-pet-val', 0);
+    item.val = item.fn === 'mult' ? Math.max(1, v) : Math.max(0, v) / 100;
+    if (!item.val) { toast('Enter a value for the pet\'s function.'); return; }
+    if (item.fn === 'discount') item.val = Math.min(0.9, item.val);
+  }
+  if (!item.name) { toast('Enter a name.'); return; }
+  if (!item.ic) { toast('Enter an emoji.'); return; }
+  const def = GAG_KINDS[kind];
+  item.id = 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  item.createdBy = myUid;
+  try {
+    await db.collection(def.coll).doc(item.id).set(item);
+    await loadGardenContent();
+    renderGagLists();
+    toast(`Published the ${item.name} ${def.label}.`);
+  } catch (e) { toast(e.message || 'Could not publish.', 'error'); }
+}
+function gagItemInfo(kind, it) {
+  const pc = v => Math.round((v || 0) * 100) + '%';
+  if (kind === 'seeds') return `${fmtNum(it.cost)} · ${ggGrowLabel(it.grow)} · sells ${fmtNum(it.sell)}${ggSeedFnText(it) ? ' · ' + ggSeedFnText(it) : ''}`;
+  if (kind === 'sprinklers') return `${fmtNum(it.cost)} · +${pc(it.speed)} speed · +${pc(it.weight)} weight${it.mutation ? ' · +' + pc(it.mutation) + ' mutation' : ''}${it.sellBoost ? ' · +' + pc(it.sellBoost) + ' sell' : ''}`;
+  return `${fmtNum(it.cost)} · ${ggPetAbility(it)}`;
+}
+function renderGagLists() {
+  const builtin = { seeds: GG_BASE_SEEDS, sprinklers: GG_BASE_SPRINKLERS, pets: GG_BASE_PETS };
+  Object.entries(GAG_KINDS).forEach(([kind, def]) => {
+    const wrap = $('gag-list-' + kind);
+    if (!wrap) return;
+    const custom = ggSortByRarity(def.list());
+    wrap.innerHTML = (custom.length ? custom.map(it => `<div class="gag-item" data-id="${esc(it.id)}">
+        <span class="gag-item-ic">${esc(it.ic)}</span>
+        <span class="gag-item-mid"><b>${esc(it.name)}</b> ${rarBadge(it.rarity)}<small>${esc(gagItemInfo(kind, it))}</small></span>
+        <span class="gag-item-del" title="Delete">${icon('trash')}</span></div>`).join('')
+      : `<div class="empty">No custom ${def.label}s yet.</div>`)
+      + `<div class="admin-builtin-label">Built-in</div>` + builtin[kind].map(it => `<div class="gag-item builtin"><span class="gag-item-ic">${esc(it.ic)}</span><span class="gag-item-mid"><b>${esc(it.name)}</b> ${rarBadge(it.rarity)}<small>${esc(gagItemInfo(kind, it))}${it.requiresAll ? ' · needs everything in GAG' : ''}</small></span></div>`).join('');
+    wrap.querySelectorAll('.gag-item-del').forEach(btn => {
+      btn.onclick = () => {
+        const id = btn.closest('.gag-item').dataset.id;
+        const it = def.list().find(x => x.id === id);
+        confirmAction({
+          title: `Delete ${def.label}`, body: `Delete "${it ? it.name : 'this ' + def.label}"? Players who own it keep nothing from it.`, confirmLabel: 'Delete',
+          onConfirm: async () => {
+            try { await db.collection(def.coll).doc(id).delete(); await loadGardenContent(); renderGagLists(); }
+            catch (e) { toast(e.message || 'Could not delete.', 'error'); }
+          },
+        });
+      };
+    });
+  });
+}
 
 $('gen-code-btn').onclick = async () => {
   const type = $('gen-code-type').value;
@@ -7824,7 +8528,7 @@ const EMOJI_DEFAULT = { hat: { e: '🎩', x: 50, y: 23, s: 42 }, mask: { e: '�
 function createEmojiLayoutEditor(host, initial, opts = {}) {
   let mask = !!opts.mask;
   let pristine = !(initial && initial.length);   // still the untouched starter emoji
-  let layers = (initial && initial.length ? initial : [mask ? EMOJI_DEFAULT.mask : EMOJI_DEFAULT.hat]).map(l => ({ e: l.e, x: l.x, y: l.y, s: l.s }));
+  let layers = (initial && initial.length ? initial : [mask ? EMOJI_DEFAULT.mask : EMOJI_DEFAULT.hat]).map(l => ({ e: l.e, x: l.x, y: l.y, s: l.s, r: Number(l.r) || 0 }));
   let sel = 0, drag = null;
   host.innerHTML = `
     <div class="deco-editor">
@@ -7833,6 +8537,14 @@ function createEmojiLayoutEditor(host, initial, opts = {}) {
         <div class="deco-preview-block"><label class="fld-label">Preview</label><div class="deco-preview-avatar eml-preview"></div></div>
         <div class="field"><label class="fld-label">Emoji</label><input type="text" class="fld-input eml-input" maxlength="8" placeholder="🎩"></div>
         <div class="field"><label class="fld-label">Size <span class="eml-size-val"></span></label><input type="range" class="eml-size" min="${EMOJI_MIN}" max="${EMOJI_MAX}" step="1"></div>
+        <div class="field"><label class="fld-label">Rotation <span class="eml-rot-val"></span></label>
+          <input type="range" class="eml-rot" min="-180" max="180" step="1" value="0">
+          <div class="eml-rot-btns">
+            <button type="button" class="btn-secondary slim eml-rot-left" title="Rotate 15° counter-clockwise">⟲ 15°</button>
+            <button type="button" class="btn-secondary slim eml-rot-right" title="Rotate 15° clockwise">⟳ 15°</button>
+            <button type="button" class="btn-secondary slim eml-rot-reset" title="Reset rotation">Reset</button>
+          </div>
+        </div>
         <div class="ab-row">
           <button type="button" class="btn-secondary slim eml-add">+ Add emoji</button>
           <button type="button" class="btn-secondary slim eml-remove">Remove</button>
@@ -7841,12 +8553,12 @@ function createEmojiLayoutEditor(host, initial, opts = {}) {
       </div>
     </div>`;
   const stage = host.querySelector('.eml-stage'), layerBox = host.querySelector('.eml-layers');
-  const input = host.querySelector('.eml-input'), size = host.querySelector('.eml-size');
+  const input = host.querySelector('.eml-input'), size = host.querySelector('.eml-size'), rot = host.querySelector('.eml-rot');
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
   function paintLayers() {
     layerBox.innerHTML = layers.map((l, i) =>
-      `<span class="eml-layer${i === sel ? ' sel' : ''}" data-i="${i}" style="left:${l.x}%;top:${l.y}%;font-size:${(EMOJI_BOX * l.s / 100).toFixed(1)}px;">${esc(l.e)}</span>`).join('');
+      `<span class="eml-layer${i === sel ? ' sel' : ''}" data-i="${i}" style="left:${l.x}%;top:${l.y}%;font-size:${(EMOJI_BOX * l.s / 100).toFixed(1)}px;${emojiRotateStyle(l)}">${esc(l.e)}</span>`).join('');
   }
   function paintPreview() {
     const wrap = host.querySelector('.eml-preview');
@@ -7859,12 +8571,14 @@ function createEmojiLayoutEditor(host, initial, opts = {}) {
     if (document.activeElement !== input) input.value = l.e;
     size.value = l.s;
     host.querySelector('.eml-size-val').textContent = Math.round(l.s) + '%';
+    rot.value = l.r || 0;
+    host.querySelector('.eml-rot-val').textContent = Math.round(l.r || 0) + '°';
     host.querySelector('.eml-remove').disabled = layers.length < 2;
   }
   const paintHint = () => {
     host.querySelector('.eml-hint').textContent = (mask
       ? 'The circle is the whole avatar and this mask covers it. '
-      : 'The dashed circle is where the avatar sits. ') + 'Drag an emoji to move it, tap one to select it, then change its size with the slider (or scroll over the box).';
+      : 'The dashed circle is where the avatar sits. ') + 'Drag an emoji to move it, tap one to select it, then change its size with the slider (or scroll over the box) and spin it with the rotation slider (or Shift + scroll).';
   };
   const repaint = () => { paintLayers(); paintControls(); paintPreview(); paintHint(); };
   const touched = () => { pristine = false; };
@@ -7897,11 +8611,18 @@ function createEmojiLayoutEditor(host, initial, opts = {}) {
   }, { passive: false });
 
   size.addEventListener('input', () => { touched(); layers[sel].s = Number(size.value); repaint(); });
+  const setRot = deg => { touched(); let r = Math.round(deg); while (r > 180) r -= 360; while (r < -180) r += 360; layers[sel].r = r; repaint(); };
+  rot.addEventListener('input', () => setRot(Number(rot.value)));
+  host.querySelector('.eml-rot-left').onclick = () => setRot((layers[sel].r || 0) - 15);
+  host.querySelector('.eml-rot-right').onclick = () => setRot((layers[sel].r || 0) + 15);
+  host.querySelector('.eml-rot-reset').onclick = () => setRot(0);
+  // Shift + scroll over the box rotates the selected emoji (plain scroll still resizes it)
+  stage.addEventListener('wheel', e => { if (!e.shiftKey) return; e.stopImmediatePropagation(); e.preventDefault(); setRot((layers[sel].r || 0) + Math.sign(e.deltaY || e.deltaX) * 5); }, { passive: false, capture: true });
   input.addEventListener('input', () => { touched(); layers[sel].e = input.value.trim() || layers[sel].e; paintLayers(); paintPreview(); });
   host.querySelector('.eml-add').onclick = () => {
     if (layers.length >= EMOJI_LIMIT) { toast(`You can place up to ${EMOJI_LIMIT} emoji.`); return; }
     touched();
-    layers.push({ e: '⭐', x: 50, y: 50, s: 30 });
+    layers.push({ e: '⭐', x: 50, y: 50, s: 30, r: 0 });
     sel = layers.length - 1;
     repaint();
     input.focus(); input.select();
@@ -7915,7 +8636,7 @@ function createEmojiLayoutEditor(host, initial, opts = {}) {
   };
   repaint();
   return {
-    getLayers: () => layers.filter(l => l.e).map(l => ({ e: l.e, x: l.x, y: l.y, s: Math.round(l.s) })),
+    getLayers: () => layers.filter(l => l.e).map(l => { const o = { e: l.e, x: l.x, y: l.y, s: Math.round(l.s) }; if (l.r) o.r = Math.round(l.r); return o; }),
     refreshPreview: paintPreview,
     // Switching between hat and mask: an untouched starter emoji follows along to the matching default.
     setMask(on) {
@@ -7945,6 +8666,17 @@ function decorationEditorCanvasIsBlank(canvas) {
   return true;
 }
 
+// The decoration creator is shared by two admin tabs. On the Avatar Masks tab it is locked to
+// "full avatar mask" mode (published to the Avatar Masks shop section); on Decorations it is off.
+function setDecoCreatorKind(isMask) {
+  const box = $('deco-mask-input');
+  if (!box) return;
+  if (box.checked !== isMask) { box.checked = isMask; box.dispatchEvent(new Event('change')); }
+  const opt = box.closest('.deco-mask-opt');
+  if (opt) opt.classList.add('hidden');
+  const title = $('deco-creator-title'); if (title) title.textContent = isMask ? 'Create an Avatar Mask' : 'Create an Avatar Decoration';
+  const btn = $('deco-publish-btn'); if (btn) btn.textContent = isMask ? 'Publish Mask to Shop' : 'Publish to Shop';
+}
 const decoMaskOn = () => !!($('deco-mask-input') && $('deco-mask-input').checked);
 function updateDecorationPreview() {
   const canvas = $('deco-draw-canvas');
@@ -8045,6 +8777,7 @@ function initDecorationEditor() {
     updateDecorationPreview();
   };
   updateDecorationPreview();
+  setDecoCreatorKind(!!document.querySelector('.shop-mgr-tab.on[data-shop-section="masks"]'));
 }
 
 $('deco-publish-btn').onclick = async () => {
@@ -8073,16 +8806,30 @@ $('deco-publish-btn').onclick = async () => {
   } catch (e) { toast(e.message || 'Failed to publish.', 'error'); }
 };
 
-function renderAdminDecorationList() {
-  const wrap = $('admin-decoration-list');
-  if (!wrap) return;
-  wrap.innerHTML = customDecorations.length
-    ? customDecorations.map(d => `<div class="admin-emoji-chip editable" data-id="${esc(d.id)}">${decoEmojiLayers(d).length ? `<span class="admin-chip-emoji">${esc(decoEmojiLayers(d).map(l => l.e).join(''))}</span>` : `<img src="${esc(d.imageUrl || '')}" alt="">`}<span>${esc(d.name)}</span>${d.mask ? '<span class="admin-chip-tag">Mask</span>' : ''}<span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
-    : '<div class="empty">No custom decorations yet.</div>';
+function adminDecoChipHTML(d) {
+  return `<div class="admin-emoji-chip editable" data-id="${esc(d.id)}">${decoEmojiLayers(d).length ? `<span class="admin-chip-emoji">${esc(decoEmojiLayers(d).map(l => l.e).join(''))}</span>` : `<img src="${esc(d.imageUrl || '')}" alt="">`}<span>${esc(d.name)}</span><span class="rm" title="Delete">${icon('trash')}</span></div>`;
+}
+function wireAdminDecoChipDeletes(wrap) {
   wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
     btn.onclick = async () => { await db.collection('shopDecorations').doc(btn.closest('.admin-emoji-chip').dataset.id).delete(); };
   });
+}
+// Decorations and avatar masks live in the same collection but are managed in separate admin sections.
+function renderAdminDecorationList() {
+  const wrap = $('admin-decoration-list');
+  if (!wrap) return;
+  const list = customDecorations.filter(d => !d.mask);
+  wrap.innerHTML = list.length ? list.map(adminDecoChipHTML).join('') : '<div class="empty">No custom decorations yet.</div>';
+  wireAdminDecoChipDeletes(wrap);
   finishAdminShopList(wrap, 'decorations');
+}
+function renderAdminMaskList() {
+  const wrap = $('admin-mask-list');
+  if (!wrap) return;
+  const list = customDecorations.filter(d => d.mask);
+  wrap.innerHTML = list.length ? list.map(adminDecoChipHTML).join('') : '<div class="empty">No avatar masks yet.</div>';
+  wireAdminDecoChipDeletes(wrap);
+  finishAdminShopList(wrap, 'masks');
 }
 
 // ---------- Theme (gradient) creator (admin/owner only) ----------
@@ -8386,7 +9133,8 @@ function renderAdminProfileFrameList() {
 // can't be rewritten in code, so their edits are stored as overrides in
 // config/shopOverrides and merged onto the built-in objects at runtime.
 const SHOP_EDIT_TYPES = {
-  decorations: { label: 'Avatar Decoration', collection: 'shopDecorations', builtins: AVATAR_DECORATIONS, custom: () => customDecorations, render: () => renderAdminDecorationList() },
+  decorations: { label: 'Avatar Decoration', collection: 'shopDecorations', builtins: AVATAR_DECORATIONS, custom: () => customDecorations.filter(d => !d.mask), render: () => renderAdminDecorationList() },
+  masks: { label: 'Avatar Mask', collection: 'shopDecorations', builtins: [], custom: () => customDecorations.filter(d => d.mask), render: () => renderAdminMaskList() },
   themes: { label: 'Theme', collection: 'shopThemes', builtins: SHOP_THEMES, custom: () => customThemes, render: () => renderAdminThemeList() },
   banners: { label: 'Banner', collection: 'shopBanners', builtins: [], custom: () => customBanners, render: () => renderAdminBannerList() },
   nameplates: { label: 'Nameplate', collection: 'shopNameplates', builtins: NAMEPLATES, custom: () => customNameplates, render: () => renderAdminNameplateList() },
@@ -8397,7 +9145,11 @@ const colorField = (path, label) => ({ path, label, type: 'color' });
 const SHOP_EDIT_EXTRA_FIELDS = {
   decorations: item => [
     ...(decoEmojiLayers(item).length ? [{ path: 'emojis', label: 'Emoji layout', type: 'emoji-layout', full: true }] : []),
-    { path: 'mask', label: 'Full avatar mask (sold in the Avatar Masks section)', type: 'checkbox' },
+    { path: 'mask', label: 'Full avatar mask (moves it to the Avatar Masks section)', type: 'checkbox' },
+  ],
+  masks: item => [
+    ...(decoEmojiLayers(item).length ? [{ path: 'emojis', label: 'Emoji layout', type: 'emoji-layout', full: true }] : []),
+    { path: 'mask', label: 'Full avatar mask (untick to move it back to Decorations)', type: 'checkbox' },
   ],
   themes: () => [colorField('bg.0', 'Color 1'), colorField('bg.1', 'Color 2'), colorField('bg.2', 'Color 3'), colorField('accent', 'Accent'), colorField('accent2', 'Accent 2')],
   banners: () => [colorField('colors.0', 'Color 1'), colorField('colors.1', 'Color 2'), colorField('colors.2', 'Color 3'), { path: 'angle', label: 'Angle', type: 'number' }, { path: 'animated', label: 'Animated', type: 'checkbox' }],
@@ -8506,7 +9258,7 @@ $('shop-edit-save-btn').onclick = async () => {
         } else update[root] = val;
       });
       if (type === 'profile_frames') update.animated = !!update.glow;
-      if (type === 'decorations' && 'emojis' in update) {
+      if ((type === 'decorations' || type === 'masks') && 'emojis' in update) {
         if (!update.emojis.length) { toast('Add at least one emoji.'); return; }
         update.emoji = update.emojis[0].e;
       }
@@ -8543,7 +9295,9 @@ $('shop-edit-delete-btn').onclick = () => {
 document.querySelectorAll('.shop-mgr-tab').forEach(tab => {
   tab.onclick = () => {
     document.querySelectorAll('.shop-mgr-tab').forEach(t => t.classList.toggle('on', t === tab));
-    document.querySelectorAll('.shop-mgr-section').forEach(sec => sec.classList.toggle('hidden', sec.dataset.shopSection !== tab.dataset.shopSection));
+    const section = tab.dataset.shopSection;
+    document.querySelectorAll('.shop-mgr-section').forEach(sec => sec.classList.toggle('hidden', !sec.dataset.shopSection.split(' ').includes(section)));
+    if (section === 'masks' || section === 'decorations') setDecoCreatorKind(section === 'masks');
   };
 });
 
@@ -8636,7 +9390,7 @@ async function renderAdminActions() {
       </div>
     </div>
     <div class="admin-block">
-      <div class="ab-title">Mute${muteStatus(u).muted ? ' — muted for ' + esc(timeoutLeftText(muteStatus(u).until)) : ''}</div>
+      <div class="ab-title">Mute${muteStatus(u).muted ? (muteStatus(u).indefinite ? ' — muted until unmuted' : ' — muted for ' + esc(timeoutLeftText(muteStatus(u).until))) : ''}</div>
       <div class="ab-row">
         <input id="admin-mute-dur" type="number" min="1" placeholder="Duration" class="fld-input">
         <select id="admin-mute-unit" class="fld-input">
@@ -8869,7 +9623,7 @@ let gameStateOwner = null;
 
 const gameDefaults = () => ({
   cookies: 0, cookiesAllTime: 0, cookiesRun: null, cookieRunSecs: 0, cookieBuildings: {}, cookieLastSave: null,
-  ggSheckles: 50, ggShecklesAllTime: 0, ggPlots: [], ggUnlocked: 4, ggInventory: [], ggPets: [],
+  ggSheckles: 50, ggShecklesAllTime: 0, ggPlots: [], ggUnlocked: 4, ggInventory: [], ggPets: [], ggOwnedSeeds: [], ggOwnedSprinklers: [],
   gamePlay: {}, typingBest: 0, aimBest: 0, dwDate: null, dwRows: [], dwDone: null, dwHints: [],
   blastBest: 0, suDate: null, suProgress: null, suDone: null, stackBest: 0, memoryBest: 0, crushBest: 0, brickBest: 0, simonBest: 0,
 });
@@ -9102,7 +9856,8 @@ const SHK='<span class="gg-shk">S</span>';   // styled Sheckles token (no emoji,
 // Rarity ladder (low to high). Colors live in CSS as .r-<id>; the top three are animated gradients.
 const GG_RARITY={
   common:{n:'Common'}, uncommon:{n:'Uncommon'}, rare:{n:'Rare'}, epic:{n:'Epic'},
-  legendary:{n:'Legendary'}, divine:{n:'Divine'}, super:{n:'Super'}, prismatic:{n:'Prismatic'}, transcendent:{n:'Transcendent'}
+  legendary:{n:'Legendary'}, divine:{n:'Divine'}, super:{n:'Super'}, prismatic:{n:'Prismatic'}, transcendent:{n:'Transcendent'},
+  null:{n:'Null'}   // the rarest of all: black and red
 };
 function ggRar(r){ return GG_RARITY[r]?r:'common'; }
 function rarBadge(r){ r=ggRar(r); return `<span class="gg-rar r-${r}">${GG_RARITY[r].n}</span>`; }
@@ -9138,26 +9893,23 @@ const GG_BASE_PETS=[
   {id:'cat',       name:'Cat',     ic:'🐱', rarity:'rare',        cost:100000,  sell:0.10},
   {id:'dog',       name:'Dog',     ic:'🐶', rarity:'epic',        cost:400000,  sell:0.15},
   {id:'fox',       name:'Fox',     ic:'🦊', rarity:'legendary',   cost:1500000,  sell:0.25},
+  // Raccoon is free, but only for someone who owns everything in Grow a Garden. It multiplies every Sheckle you earn.
+  {id:'raccoon',   name:'Raccoon', ic:'🦝', rarity:'null',        cost:0,        fn:'mult', val:490050, requiresAll:true},
 ];
 let GG_SEEDS=ggSortByRarity(GG_BASE_SEEDS), GG_SEED_MAP={};
 let GG_SPRINKLERS=ggSortByRarity(GG_BASE_SPRINKLERS), GG_SPRINKLER_MAP={};
 let GG_PETS=ggSortByRarity(GG_BASE_PETS), GG_PET_MAP={};
 function ggRebuildMaps(){ GG_SEED_MAP={}; GG_SEEDS.forEach(s=>GG_SEED_MAP[s.id]=s); GG_SPRINKLER_MAP={}; GG_SPRINKLERS.forEach(s=>GG_SPRINKLER_MAP[s.id]=s); GG_PET_MAP={}; GG_PETS.forEach(s=>GG_PET_MAP[s.id]=s); }
 ggRebuildMaps();
-let ggCustomSeeds=[], ggCustomSprinklers=[];
-// Custom seeds + sprinklers published from the admin panel, merged on top of the built-ins.
+let ggCustomSeeds=[], ggCustomSprinklers=[], ggCustomPets=[];
+// Custom seeds, sprinklers and pets published from the admin panel (Quests → GAG), merged on top of the built-ins.
 async function loadGardenContent(){
-  let seeds=[], spr=[];
-  if(FB_READY){
-    try{ const s=await db.collection('gardenSeeds').get(); seeds=s.docs.map(d=>d.data()); }catch(e){}
-    try{ const p=await db.collection('gardenSprinklers').get(); spr=p.docs.map(d=>d.data()); }catch(e){}
-  } else {
-    seeds=JSON.parse(localStorage.getItem('tb_customseeds')||'[]');
-    spr=JSON.parse(localStorage.getItem('tb_customsprinklers')||'[]');
-  }
-  ggCustomSeeds=seeds||[]; ggCustomSprinklers=spr||[];
+  const get=async coll=>{ try{ const s=await db.collection(coll).get(); return s.docs.map(d=>({ ...d.data(), id:d.id })); }catch(e){ return []; } };
+  const [seeds,spr,pets]=await Promise.all([get('gardenSeeds'),get('gardenSprinklers'),get('gardenPets')]);
+  ggCustomSeeds=seeds; ggCustomSprinklers=spr; ggCustomPets=pets;
   GG_SEEDS=ggSortByRarity(GG_BASE_SEEDS.concat(ggCustomSeeds));
   GG_SPRINKLERS=ggSortByRarity(GG_BASE_SPRINKLERS.concat(ggCustomSprinklers));
+  GG_PETS=ggSortByRarity(GG_BASE_PETS.concat(ggCustomPets));
   ggRebuildMaps();
 }
 let ggSel='carrot', ggSprSel='basic', ggPetSel='snail', ggEngine=null, _ggSaveAt=0, ggShopTab='seeds', ggShovel=false;
@@ -9169,30 +9921,65 @@ function ggInitState(){
   if(!Array.isArray(UC.ggPlots)) UC.ggPlots=[];
   if(!Array.isArray(UC.ggInventory)) UC.ggInventory=[];
   if(!Array.isArray(UC.ggPets)) UC.ggPets=[];
+  if(!Array.isArray(UC.ggOwnedSeeds)) UC.ggOwnedSeeds=[];
+  if(!Array.isArray(UC.ggOwnedSprinklers)) UC.ggOwnedSprinklers=[];
   if(typeof UC.ggUnlocked!=='number') UC.ggUnlocked=GG_START_PLOTS;
   // migrate old single-sprinkler plots to the new multi-sprinkler array
   UC.ggPlots.forEach(p=>{ if(p){ if(!Array.isArray(p.sprinklers)) p.sprinklers = p.sprinkler ? [p.sprinkler] : []; if('sprinkler' in p) delete p.sprinkler; } });
   while(UC.ggPlots.length<GG_MAX_PLOTS) UC.ggPlots.push(null);
+  // anything already planted or sprinkled counts as owned (for accounts from before ownership was tracked)
+  UC.ggPlots.forEach(p=>{ if(!p) return; if(p.seed&&UC.ggOwnedSeeds.indexOf(p.seed)<0) UC.ggOwnedSeeds.push(p.seed); (p.sprinklers||[]).forEach(id=>{ if(UC.ggOwnedSprinklers.indexOf(id)<0) UC.ggOwnedSprinklers.push(id); }); });
 }
 // A plant can hold several different sprinklers; their speed and weight boosts stack. Works for any owner.
 function ggPlotSprs(p){ if(!p) return []; let ids=Array.isArray(p.sprinklers)?p.sprinklers:(p.sprinkler?[p.sprinkler]:[]); return ids.map(id=>GG_SPRINKLER_MAP[id]).filter(Boolean); }
-function ggPlotSpeed(p){ let b=0; ggPlotSprs(p).forEach(s=>b+=(s.speed||0)); return 1+b; }
+function ggPlotSpeed(p){ let b=0; ggPlotSprs(p).forEach(s=>b+=(s.speed||0)); return 1+b+ggPetBonus('growth'); }
 function ggPlotWeightMult(p){ let b=0; ggPlotSprs(p).forEach(s=>b+=(s.weight||0)); return 1+b; }   // percent boost: 0.25 = +25%
 // Pets: own a pet to collect its global sell bonus; bonuses stack across pets.
 function ggOwnsPet(id){ return !!(UC && Array.isArray(UC.ggPets) && UC.ggPets.indexOf(id)>=0); }
-function ggPetSellMult(){ let b=0; if(UC&&Array.isArray(UC.ggPets)) UC.ggPets.forEach(id=>{ const p=GG_PET_MAP[id]; if(p) b+=(p.sell||0); }); return 1+b; }
+// A pet has one function: 'sell' (+% sell value, stacks), 'mult' (multiplies every Sheckle earned),
+// 'growth' (+% grow speed), 'mutation' (+% mutation chance) or 'discount' (-% seed prices).
+// Older pets only have a `sell` number, which still means a sell bonus.
+function ggPetFn(p){ return p.fn||'sell'; }
+function ggPetVal(p){ return p.fn ? (p.val||0) : (p.sell||0); }
+function ggPetBonus(fn){ let b=0; if(UC&&Array.isArray(UC.ggPets)) UC.ggPets.forEach(id=>{ const p=GG_PET_MAP[id]; if(p&&ggPetFn(p)===fn) b+=ggPetVal(p); }); return b; }
+function ggPetSellMult(){
+  let add=0, mult=1;
+  if(UC&&Array.isArray(UC.ggPets)) UC.ggPets.forEach(id=>{ const p=GG_PET_MAP[id]; if(!p) return; const f=ggPetFn(p), v=ggPetVal(p); if(f==='sell') add+=v; else if(f==='mult') mult*=Math.max(1,v); });
+  return (1+add)*mult;
+}
+function ggPetAbility(p){
+  const f=ggPetFn(p), v=ggPetVal(p), pc=Math.round(v*100);
+  if(f==='mult') return '×'+fmtNum(v)+' Sheckles';
+  if(f==='growth') return '+'+pc+'% grow speed';
+  if(f==='mutation') return '+'+pc+'% mutation chance';
+  if(f==='discount') return '-'+pc+'% seed prices';
+  return '+'+pc+'% sell value';
+}
+function ggSeedCost(s){ return Math.max(1, Math.ceil(s.cost*(1-Math.min(0.9, ggPetBonus('discount'))))); }
+function ggMutBonus(p,s){ let b=ggPetBonus('mutation'); ggPlotSprs(p).forEach(x=>b+=(x.mutation||0)); if(s&&s.fn==='gold') b+=(s.fnVal||0); return b; }
+// "Own everything": every seed and sprinkler bought at least once, every other pet adopted, and every plot unlocked.
+function ggOwnAllStatus(){
+  const seeds=(UC&&UC.ggOwnedSeeds)||[], sprs=(UC&&UC.ggOwnedSprinklers)||[], pets=(UC&&UC.ggPets)||[];
+  const needSeeds=GG_SEEDS.filter(x=>seeds.indexOf(x.id)<0), needSprs=GG_SPRINKLERS.filter(x=>sprs.indexOf(x.id)<0);
+  const needPets=GG_PETS.filter(x=>!x.requiresAll&&pets.indexOf(x.id)<0);
+  const needPlots=Math.max(0,GG_MAX_PLOTS-((UC&&UC.ggUnlocked)||GG_START_PLOTS));
+  const total=GG_SEEDS.length+GG_SPRINKLERS.length+GG_PETS.filter(x=>!x.requiresAll).length+1;
+  const missing=needSeeds.length+needSprs.length+needPets.length+(needPlots?1:0);
+  const parts=[]; if(needSeeds.length) parts.push(needSeeds.length+' seed'+(needSeeds.length>1?'s':'')); if(needSprs.length) parts.push(needSprs.length+' sprinkler'+(needSprs.length>1?'s':'')); if(needPets.length) parts.push(needPets.length+' pet'+(needPets.length>1?'s':'')); if(needPlots) parts.push(needPlots+' plot'+(needPlots>1?'s':''));
+  return { ok:!missing, have:total-missing, total, summary:parts.join(', ') };
+}
 function ggGrowMs(s,p){ return Math.max(50, ((s&&s.grow)||8000)/ggPlotSpeed(p)); }
 function ggRollW(){ return +(0.8+Math.random()*0.5).toFixed(3); }
 function ggPlotReady(p){ if(!p) return false; const s=GG_SEED_MAP[p.seed]; return s?Date.now()-p.at>=ggGrowMs(s,p):false; }
 function ggPlotProgress(p){ if(!p) return 0; const s=GG_SEED_MAP[p.seed]; return s?Math.min(1,(Date.now()-p.at)/ggGrowMs(s,p)):1; }
-function ggPlotFactor(p){ return (p&&typeof p.w==='number'?p.w:1)*ggPlotWeightMult(p); }     // weight/value multiplier
+function ggPlotFactor(p){ const s=p&&GG_SEED_MAP[p.seed]; return (p&&typeof p.w==='number'?p.w:1)*ggPlotWeightMult(p)*((s&&s.fn==='weight')?(1+(s.fnVal||0)):1); }     // weight/value multiplier
 function ggPlotWeight(p){ const s=GG_SEED_MAP[p.seed]; return (s?(s.baseWeight||0.5):0.5)*ggPlotFactor(p); }  // kilograms
-function ggPlotValue(p){ const s=GG_SEED_MAP[p.seed]; if(!s) return 0; return Math.max(1, Math.floor(s.sell*ggPlotFactor(p))); }
+function ggPlotValue(p){ const s=GG_SEED_MAP[p.seed]; if(!s) return 0; let sb=0; ggPlotSprs(p).forEach(x=>sb+=(x.sellBoost||0)); return Math.max(1, Math.floor(s.sell*ggPlotFactor(p)*(1+sb))); }
 function fmtWeight(kg){ return (kg<10?kg.toFixed(2):kg.toFixed(1))+' kg'; }
 function ggExpandCost(){ const extra=(UC.ggUnlocked||GG_START_PLOTS)-GG_START_PLOTS; return Math.floor(150*Math.pow(2.4, extra)); }
 function ggGrowLabel(ms){ const s=Math.round(ms/1000); if(s<60) return s+'s'; const m=Math.floor(s/60), r=s%60; return m+'m'+(r?(' '+r+'s'):''); }
-function ggRollMut(){ const r=Math.random(); if(r<0.02) return {id:'rainbow',name:'Rainbow',badge:'🌈',mult:5}; if(r<0.12) return {id:'gold',name:'Gold',badge:'✨',mult:2}; return null; }
-async function saveGarden(){ if(!UC) return; _ggSaveAt=Date.now(); try{ await dbUpdateUser(getU(), {ggSheckles:UC.ggSheckles, ggShecklesAllTime:UC.ggShecklesAllTime, ggPlots:UC.ggPlots, ggUnlocked:UC.ggUnlocked, ggInventory:UC.ggInventory, ggPets:UC.ggPets}); }catch(e){} }
+function ggRollMut(bonus){ const k=1+(bonus||0), r=Math.random(); if(r<0.02*k) return {id:'rainbow',name:'Rainbow',badge:'🌈',mult:5}; if(r<0.12*k) return {id:'gold',name:'Gold',badge:'✨',mult:2}; return null; }
+async function saveGarden(){ if(!UC) return; _ggSaveAt=Date.now(); try{ await dbUpdateUser(getU(), {ggSheckles:UC.ggSheckles, ggShecklesAllTime:UC.ggShecklesAllTime, ggPlots:UC.ggPlots, ggUnlocked:UC.ggUnlocked, ggInventory:UC.ggInventory, ggPets:UC.ggPets, ggOwnedSeeds:UC.ggOwnedSeeds||[], ggOwnedSprinklers:UC.ggOwnedSprinklers||[]}); }catch(e){} }
 function renderGrowGarden(){
   const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
   ggInitState();
@@ -9276,14 +10063,21 @@ function renderGGShop(){
   if(ggShopTab==='sell'){ body.innerHTML=ggSellShopHtml(); return; }
     const rows=GG_SEEDS.map(s=>{
     const sel=ggSel===s.id;
-    const afford=(UC.ggSheckles||0)>=s.cost;
-    const priceStr=SHK+' '+fmtNum(s.cost);
+    const afford=(UC.ggSheckles||0)>=ggSeedCost(s);
+    const priceStr=SHK+' '+fmtNum(ggSeedCost(s));
     return `<div class="gg-seed${sel?' sel':''}${afford?'':' poor'}" onclick="ggSelect('${s.id}')">
       <span class="gg-seed-ic">${s.ic}</span>
-      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)}</span><span class="gg-seed-meta">${priceStr} · ${ggGrowLabel(s.grow)} · sells ${SHK} ${fmtNum(s.sell)}</span></span>
+      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)}</span><span class="gg-seed-meta">${priceStr} · ${ggGrowLabel(s.grow)} · sells ${SHK} ${fmtNum(s.sell)}${ggSeedFnText(s)?' · '+ggSeedFnText(s):''}</span></span>
       ${sel?'<span class="gg-seed-sel">✓</span>':''}</div>`;
   }).join('');
   body.innerHTML=`<div class="gg-seedlist">${rows}</div>`;
+}
+function ggSeedFnText(s){
+  const v=s.fnVal||0;
+  if(s.fn==='gold') return '+'+Math.round(v*100)+'% mutation chance';
+  if(s.fn==='multi') return '+'+Math.floor(v)+' extra crop'+(Math.floor(v)>1?'s':'')+' per harvest';
+  if(s.fn==='weight') return '+'+Math.round(v*100)+'% heavier';
+  return '';
 }
 function ggSprinklerShopHtml(){
     const note=`<div class="gg-spr-note">Pick a sprinkler, then tap one of your plants to place it. You can stack several different sprinklers on the same plant and their boosts add up. They stay until you dig the plant up.</div>`;
@@ -9293,22 +10087,25 @@ function ggSprinklerShopHtml(){
     const priceStr=SHK+' '+fmtNum(s.cost||0);
     return `<div class="gg-seed gg-spr${sel?' sel':''}${afford?'':' poor'}" onclick="ggSelectSpr('${s.id}')">
       <span class="gg-seed-ic">${s.ic}</span>
-      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)}</span><span class="gg-seed-meta">${priceStr} · +${Math.round((s.speed||0)*100)}% speed · +${Math.round((s.weight||0)*100)}% weight</span></span>
+      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)}</span><span class="gg-seed-meta">${priceStr} · +${Math.round((s.speed||0)*100)}% speed · +${Math.round((s.weight||0)*100)}% weight${s.mutation?(' · +'+Math.round(s.mutation*100)+'% mutation'):''}${s.sellBoost?(' · +'+Math.round(s.sellBoost*100)+'% sell'):''}</span></span>
       ${sel?'<span class="gg-seed-sel">✓</span>':''}</div>`;
   }).join('');
   return note+`<div class="gg-seedlist">${rows}</div>`;
 }
 function ggPetShopHtml(){
-    const bonus=Math.round((ggPetSellMult()-1)*100);
-  const note=`<div class="gg-spr-note">Pets give a global sell bonus that stacks${bonus?(' (yours: +'+bonus+'%)'):''}.</div>`;
+  const bonus=Math.round((ggPetSellMult()-1)*100);
+  const note=`<div class="gg-spr-note">Pets each have a special function. Sell bonuses stack${bonus>0?(' (yours: +'+fmtNum(bonus)+'%)'):''}.</div>`;
+  const own=ggOwnAllStatus();
   const rows=GG_PETS.map(s=>{
     const owned=ggOwnsPet(s.id);
+    const locked=!!s.requiresAll&&!owned&&!own.ok;
     const afford=(UC.ggSheckles||0)>=s.cost;
-    const priceStr=SHK+' '+fmtNum(s.cost);
-    const ability='+'+Math.round((s.sell||0)*100)+'% sell value';
-    return `<div class="gg-seed gg-pet${owned?' owned':''}${(owned||afford)?'':' poor'}"${owned?'':` onclick="ggBuyPet('${s.id}')"`}>
+    const priceStr=s.requiresAll?'Free':(SHK+' '+fmtNum(s.cost));
+    const ability=ggPetAbility(s);
+    const meta=owned?'Owned':(locked?('Own everything to unlock ('+own.have+'/'+own.total+')'):priceStr);
+    return `<div class="gg-seed gg-pet${owned?' owned':''}${locked?' locked':''}${(owned||afford||s.requiresAll)?'':' poor'}"${owned?'':` onclick="ggBuyPet('${s.id}')"`}>
       <span class="gg-seed-ic">${s.ic}</span>
-      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)}</span><span class="gg-seed-meta">${owned?'Owned':priceStr} · ${ability}</span></span>
+      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)}</span><span class="gg-seed-meta">${meta} · ${ability}</span></span>
       ${owned?'<span class="gg-seed-sel">✓</span>':''}</div>`;
   }).join('');
   return note+`<div class="gg-seedlist">${rows}</div>`;
@@ -9336,8 +10133,10 @@ function ggSelectSpr(id){ if(!GG_SPRINKLER_MAP[id]) return; ggSprSel=id; renderG
 async function ggPlant(i){
   if(!UC||i>=UC.ggUnlocked||UC.ggPlots[i]) return;
   const s=GG_SEED_MAP[ggSel]; if(!s){ showToast('Pick a seed first.'); return; }
-  if((UC.ggSheckles||0)<s.cost){ showToast('Not enough Sheckles for a '+s.name+' seed.'); return; }
-  UC.ggSheckles-=s.cost;
+  const seedCost=ggSeedCost(s);
+  if((UC.ggSheckles||0)<seedCost){ showToast('Not enough Sheckles for a '+s.name+' seed.'); return; }
+  UC.ggSheckles-=seedCost;
+  UC.ggOwnedSeeds=UC.ggOwnedSeeds||[]; if(UC.ggOwnedSeeds.indexOf(s.id)<0) UC.ggOwnedSeeds.push(s.id);
   UC.ggPlots[i]={seed:s.id, at:Date.now(), w:ggRollW(), sprinklers:[]};
   renderGGPlots(); renderGGShop(); updateGGBank(); saveGarden();
 }
@@ -9348,6 +10147,7 @@ async function ggPlaceSprinkler(i){
   if(p.sprinklers.indexOf(s.id)>=0){ showToast('This plant already has a '+s.name+'. Add a different one for more boost.'); return; }
   if((UC.ggSheckles||0)<(s.cost||0)){ showToast('Not enough Sheckles for '+s.name+'.'); return; }
   UC.ggSheckles-=(s.cost||0);
+  UC.ggOwnedSprinklers=UC.ggOwnedSprinklers||[]; if(UC.ggOwnedSprinklers.indexOf(s.id)<0) UC.ggOwnedSprinklers.push(s.id);
   p.sprinklers.push(s.id);
   renderGGPlots(); renderGGShop(); updateGGBank(); saveGarden();
   showToast('Placed a '+s.name+' on this plant ('+p.sprinklers.length+' sprinkler'+(p.sprinklers.length>1?'s':'')+' now).');
@@ -9356,6 +10156,10 @@ function ggSelectPet(id){ if(!GG_PET_MAP[id]) return; ggPetSel=id; renderGGShop(
 async function ggBuyPet(id){
   const s=GG_PET_MAP[id]; if(!s||!UC) return;
   if(ggOwnsPet(id)){ showToast('You already own the '+s.name+'.'); return; }
+  if(s.requiresAll){
+    const own=ggOwnAllStatus();
+    if(!own.ok){ showToast('The '+s.name+' needs you to own everything in Grow a Garden. Still missing: '+own.summary+'.'); return; }
+  }
   if((UC.ggSheckles||0)<s.cost){ showToast('Not enough Sheckles for the '+s.name+'.'); return; }
   UC.ggSheckles-=s.cost;
   UC.ggPets=UC.ggPets||[]; UC.ggPets.push(id);
@@ -9389,13 +10193,24 @@ function ggDig(i){
   renderGGPlots(); renderGGShop(); updateGGBank(); saveGarden();
   showToast('Dug up the '+(s?s.name:'plant')+(nspr?(' and its '+nspr+' sprinkler'+(nspr>1?'s':'')+'.'):'.'));
 }
+// One harvest of a plant: usually 1 crop, more for 'multi' seeds. Returns the basket entries and the best mutation.
+function ggDoHarvest(p,s){
+  const n=1+((s.fn==='multi')?Math.max(0,Math.floor(s.fnVal||0)):0), entries=[]; let best=null, weight=0;
+  for(let k=0;k<n;k++){
+    const mut=ggRollMut(ggMutBonus(p,s)); weight=ggPlotWeight(p);
+    const value=Math.max(1, Math.floor(ggPlotValue(p)*(mut?mut.mult:1)*ggPetSellMult()));
+    entries.push({seed:s.id, weight:+weight.toFixed(3), value, mut:mut?mut.id:null});
+    if(mut&&(!best||mut.mult>best.mult)) best=mut;
+  }
+  return { entries, mut:best, weight };
+}
 function ggHarvest(i){
   if(!UC) return;
   const p=UC.ggPlots[i]; if(!p) return;
   if(!ggPlotReady(p)){ showToast('Still growing.'); return; }
   const s=GG_SEED_MAP[p.seed]; if(!s){ UC.ggPlots[i]=null; renderGGPlots(); return; }
-  const mut=ggRollMut(), weight=ggPlotWeight(p), value=Math.max(1, Math.floor(ggPlotValue(p)*(mut?mut.mult:1)*ggPetSellMult()));
-  UC.ggInventory=UC.ggInventory||[]; UC.ggInventory.push({seed:s.id, weight:+weight.toFixed(3), value, mut:mut?mut.id:null});
+  const h=ggDoHarvest(p,s), mut=h.mut, weight=h.weight;
+  UC.ggInventory=UC.ggInventory||[]; h.entries.forEach(e=>UC.ggInventory.push(e));
   trackQuest('harvest',1);
   ggFloat(i, fmtWeight(weight)+(mut?(' '+mut.badge):'')+' picked', mut);
   p.at=Date.now(); p.w=ggRollW();   // multigrow: the plant stays and regrows
@@ -9409,9 +10224,9 @@ function ggHarvestAll(){
   for(let i=0;i<UC.ggPlots.length;i++){
     const p=UC.ggPlots[i]; if(!p||!ggPlotReady(p)) continue;
     const s=GG_SEED_MAP[p.seed]; if(!s) continue;
-    const mut=ggRollMut(), weight=ggPlotWeight(p), value=Math.max(1, Math.floor(ggPlotValue(p)*(mut?mut.mult:1)*ggPetSellMult()));
-    UC.ggInventory.push({seed:s.id, weight:+weight.toFixed(3), value, mut:mut?mut.id:null});
-    count++; if(mut) best=mut.name;
+    const h=ggDoHarvest(p,s);
+    h.entries.forEach(e=>UC.ggInventory.push(e));
+    count+=h.entries.length; if(h.mut) best=h.mut.name;
     p.at=Date.now(); p.w=ggRollW();
   }
   if(!count){ showToast('Nothing ready to harvest yet.'); return; }
