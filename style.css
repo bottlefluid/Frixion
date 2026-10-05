@@ -3196,6 +3196,7 @@ body.shop-theme-active .fg-window .fg-chip { background: rgba(0,0,0,.3); }
 .slash-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
 .slash-row.selected, .slash-row:hover { background: var(--bg-modifier-selected); }
 .slash-ico { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; font-size: 18px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 8px; }
+.slash-ico.has-img, .cmd-ico.has-img { background: none; object-fit: cover; box-shadow: 0 1px 3px rgba(0,0,0,.35); }
 .slash-main { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .slash-name { font-size: 15px; font-weight: 700; color: var(--text-normal); }
 .slash-opt { padding: 1px 7px; font-size: 12px; color: var(--text-muted); background: rgba(0,0,0,.25); border-radius: 4px; }
@@ -3336,7 +3337,7 @@ body.is-mobile #ov-root { display: none !important; }
 @keyframes ovSlide { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
 
 .ov-panel {
-  position: absolute; top: 16px; right: 16px; bottom: 16px; width: 320px;
+  position: absolute; top: 16px; right: 16px; width: 320px; height: calc(100vh - 32px);   /* fallback; JS sets left/top/width/height */
   display: flex; flex-direction: column; overflow: hidden;
   background: var(--bg-floating); border: 1px solid var(--divider); border-radius: 12px;
   box-shadow: 0 12px 40px var(--shadow-color);
@@ -3368,9 +3369,10 @@ body.is-mobile #ov-root { display: none !important; }
 }
 
 /* chat windows dock to the left of the panel, bottom-aligned, newest furthest left */
-.ov-chats { position: absolute; right: 348px; bottom: 16px; display: flex; flex-direction: row-reverse; align-items: flex-end; gap: 12px; }
+/* chat windows float freely; JS gives each one its left/top/width/height */
+.ov-chats { position: absolute; inset: 0; pointer-events: none; }
 .ov-chat {
-  width: 340px; height: min(480px, calc(100vh - 32px));
+  position: absolute; pointer-events: auto; right: 364px; bottom: 16px; width: 340px; height: min(480px, calc(100vh - 32px));
   display: flex; flex-direction: column; overflow: hidden;
   background: var(--bg-primary); border: 1px solid var(--divider); border-radius: 12px;
   box-shadow: 0 12px 40px var(--shadow-color);
@@ -3400,9 +3402,39 @@ body.is-mobile #ov-root { display: none !important; }
 
 @media (max-width: 900px) {
   .ov-panel { width: 280px; }
-  .ov-chats { right: 308px; }
-  .ov-chat { width: 300px; }
+  .ov-chat { width: 300px; right: 324px; }
 }
+
+/* drag grip on the panel, window header as the chat's drag handle */
+.ov-grip { flex: none; height: 16px; display: flex; align-items: center; justify-content: center; cursor: grab; touch-action: none; }
+.ov-grip-dots { width: 36px; height: 4px; border-radius: 2px; background: var(--text-faint, var(--text-muted)); opacity: .55; }
+.ov-grip:hover .ov-grip-dots { opacity: .9; }
+.ov-chat-head { cursor: grab; touch-action: none; user-select: none; }
+.ov-win.ov-dragging { user-select: none; box-shadow: 0 18px 54px var(--shadow-color); }
+.ov-win.ov-dragging, .ov-win.ov-dragging * { cursor: grabbing; }
+.ov-win.ov-dragging[class] { transition: none; }
+.ov-win .ov-msgs, .ov-win .ov-list { margin-right: 5px; }   /* keep the scrollbar clear of the resize edge */
+
+/* resize handles: thin strips on every edge plus the four corners */
+.ov-rz { position: absolute; z-index: 5; touch-action: none; }
+.ov-rz-n, .ov-rz-s { left: 12px; right: 12px; height: 6px; cursor: ns-resize; }
+.ov-rz-e, .ov-rz-w { top: 12px; bottom: 12px; width: 5px; cursor: ew-resize; }
+.ov-rz-n { top: 0; } .ov-rz-s { bottom: 0; } .ov-rz-e { right: 0; } .ov-rz-w { left: 0; }
+.ov-rz-ne, .ov-rz-nw, .ov-rz-se, .ov-rz-sw { width: 12px; height: 12px; }
+.ov-rz-ne { top: 0; right: 0; cursor: nesw-resize; } .ov-rz-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.ov-rz-nw { top: 0; left: 0; cursor: nwse-resize; } .ov-rz-se { bottom: 0; right: 0; cursor: nwse-resize; }
+
+/* Servers tab */
+.ov-srv-ico { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 12px; background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; letter-spacing: .02em; }
+.ov-srv-ico.small { width: 30px; height: 30px; border-radius: 10px; font-size: 11px; }
+.ov-hash { flex: none; width: 24px; text-align: center; font-size: 20px; font-weight: 500; color: var(--text-muted); }
+.ov-chan { padding-top: 5px; padding-bottom: 5px; }
+.ov-back { margin-bottom: 4px; border-bottom: 1px solid var(--divider); border-radius: 8px 8px 0 0; }
+.ov-back-arrow { flex: none; width: 24px; text-align: center; font-size: 26px; line-height: 1; color: var(--text-muted); }
+.ov-reset { margin-left: auto; padding: 3px 8px; border-radius: 6px; font-size: 12px; color: var(--text-muted); }
+.ov-reset:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
+.ov-input:disabled { opacity: .6; cursor: not-allowed; }
+.ov-tab { padding-left: 6px; padding-right: 6px; }
 @media (prefers-reduced-motion: reduce) {
   #ov-root, .ov-panel, .ov-chat { animation: none; }
 }
@@ -3414,3 +3446,11 @@ body.is-mobile #ov-root { display: none !important; }
 .ov-bind-btn.capturing { border-color: var(--accent); background: var(--accent-soft); }
 .help-kbds { display: inline-flex; align-items: center; gap: 6px; }
 body.is-mobile .ov-setting, body.is-mobile .ov-help-row { display: none; }
+
+/* ---- Cookie Clicker: upgrades and items ---- */
+.fg-window .ck-sec { display: flex; flex-direction: column; gap: 8px; }
+.fg-window .ck-sec + .ck-sec { margin-top: 10px; }
+.fg-window .ck-head { font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim); margin: 2px 2px 0; }
+.fg-window .ck-upg-list { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; padding-right: 2px; overscroll-behavior: contain; }
+.fg-window .ck-bought { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: .76rem; color: var(--text-dim); }
+.fg-window .ck-chip { font-size: 1.2rem; line-height: 1; cursor: help; }

@@ -72,7 +72,7 @@
     <div class="help-row"><kbd>Backspace</kbd> + <kbd>Click</kbd><span>Delete a message</span></div>
     <div class="help-row"><kbd>/tts text</kbd><span>Send a text-to-speech message</span></div>
     <div class="help-row"><kbd>/poll</kbd><span>Create a poll</span></div>
-    <div class="help-row ov-help-row"><span class="help-kbds" id="help-overlay-kbd"></span><span>Open the friends overlay</span></div>
+    <div class="help-row ov-help-row"><span class="help-kbds" id="help-overlay-kbd"></span><span>Open the overlay (friends, DMs, servers)</span></div>
   </div>
   <div class="help-foot">Frixion v3.0 — see what's new in Settings → Update Log.</div>
 </div>
@@ -812,7 +812,7 @@
         <div class="setting-row ov-setting" style="margin-top:20px;">
           <div class="setting-row-text">
             <div class="setting-row-title">Overlay shortcut</div>
-            <div class="setting-row-desc">Opens your friends and DMs on top of anything, including Quests games. Click the shortcut, then press the new keys. Default is Shift + ` (the ~ key).</div>
+            <div class="setting-row-desc">Opens your friends, DMs and servers on top of anything, including Quests games. Drag a window's top bar to move it and drag its edges to resize it. Click the shortcut, then press the new keys. Default is Shift + ` (the ~ key).</div>
           </div>
           <div class="ov-bind-ctl">
             <button type="button" class="ov-bind-btn" id="overlay-bind-btn" title="Change shortcut"></button>
@@ -1203,6 +1203,7 @@
     <div class="admin-pane hidden" id="admin-pane-quests">
       <div class="shop-mgr-tabs">
         <button type="button" class="shop-mgr-tab on" data-quest-section="gag">GAG</button>
+        <button type="button" class="shop-mgr-tab" data-quest-section="cc">CC</button>
       </div>
       <div class="quest-section" data-quest-section="gag">
         <small class="hint shop-mgr-hint">Grow a Garden: create custom seeds, sprinklers and pets. Everything you publish shows up in the game's shop for every player.</small>
@@ -1265,6 +1266,49 @@
             <button class="btn-accent-inline" id="gag-pet-publish">Publish Pet</button>
           </div>
           <div class="admin-block"><div class="ab-title">Pets</div><div class="gag-list" id="gag-list-pets"></div></div>
+        </div>
+      </div>
+
+      <div class="quest-section hidden" data-quest-section="cc">
+        <small class="hint shop-mgr-hint">Cookie Clicker: create upgrades and items. Everything you publish shows up in the game's shop for every player, right away.</small>
+        <div class="shop-mgr-tabs">
+          <button type="button" class="shop-mgr-tab on" data-cc-section="upgrades">Upgrades</button>
+          <button type="button" class="shop-mgr-tab" data-cc-section="items">Items</button>
+        </div>
+
+        <div class="cc-section" data-cc-section="upgrades">
+          <div class="admin-block">
+            <div class="ab-title">Create an Upgrade</div>
+            <div class="gag-form">
+              <div class="field"><label class="fld-label">Name</label><input class="fld-input" id="cc-up-name" maxlength="24" placeholder="e.g. Sugar Gloves"></div>
+              <div class="field"><label class="fld-label">Emoji</label><input class="fld-input" id="cc-up-ic" maxlength="8" placeholder="🧤"></div>
+              <div class="field"><label class="fld-label">Price (cookies)</label><input class="fld-input" id="cc-up-cost" type="number" min="0" step="any" placeholder="5000"></div>
+              <div class="field"><label class="fld-label">Effect</label><select class="fld-input" id="cc-up-fn"></select></div>
+              <div class="field"><label class="fld-label">Effect value</label><input class="fld-input" id="cc-up-val" type="number" min="0" step="any" placeholder="2"></div>
+              <div class="field hidden" id="cc-up-target-field"><label class="fld-label">Boosts this building / item</label><select class="fld-input" id="cc-up-target"></select></div>
+              <div class="field"><label class="fld-label">Unlocks after owning (optional)</label><select class="fld-input" id="cc-up-req"></select></div>
+              <div class="field"><label class="fld-label">How many to own</label><input class="fld-input" id="cc-up-reqn" type="number" min="1" step="1" placeholder="10"></div>
+            </div>
+            <small class="hint" id="cc-up-hint"></small>
+            <button class="btn-accent-inline" id="cc-up-publish">Publish Upgrade</button>
+          </div>
+          <div class="admin-block"><div class="ab-title">Upgrades</div><div class="gag-list" id="cc-list-upgrades"></div></div>
+        </div>
+
+        <div class="cc-section hidden" data-cc-section="items">
+          <div class="admin-block">
+            <div class="ab-title">Create an Item</div>
+            <div class="gag-form">
+              <div class="field"><label class="fld-label">Name</label><input class="fld-input" id="cc-it-name" maxlength="24" placeholder="e.g. Cookie Dragon"></div>
+              <div class="field"><label class="fld-label">Emoji</label><input class="fld-input" id="cc-it-ic" maxlength="8" placeholder="🐉"></div>
+              <div class="field"><label class="fld-label">Starting price (cookies)</label><input class="fld-input" id="cc-it-cost" type="number" min="1" step="any" placeholder="250000"></div>
+              <div class="field"><label class="fld-label">Cookies per second (each)</label><input class="fld-input" id="cc-it-cps" type="number" min="0" step="any" placeholder="120"></div>
+              <div class="field"><label class="fld-label">Price rise per one owned (%)</label><input class="fld-input" id="cc-it-growth" type="number" min="1" max="100" step="any" placeholder="15"></div>
+            </div>
+            <small class="hint">Items sit in the shop under the buildings and can be bought again and again. Like buildings, owning 10, 25, 50, 100, 150 and 200 doubles their output. 15% is what the built-in buildings use.</small>
+            <button class="btn-accent-inline" id="cc-it-publish">Publish Item</button>
+          </div>
+          <div class="admin-block"><div class="ab-title">Items</div><div class="gag-list" id="cc-list-items"></div></div>
         </div>
       </div>
     </div>

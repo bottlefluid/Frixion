@@ -2030,6 +2030,8 @@ function initAppForUser() {
   unsub.servers = db.collection('servers').where('members', 'array-contains', myUid).onSnapshot(snap => {
     const servers = [];
     snap.forEach(d => servers.push({ id: d.id, ...d.data() }));
+    window.__myServers = servers;
+    if (typeof ovOnServersChanged === 'function') ovOnServersChanged();
     renderServerRail(servers);
     if (currentServerId) {
       const cur = servers.find(s => s.id === currentServerId);
@@ -4319,14 +4321,9 @@ function openManageMemberModal(uid, server) {
         </div>
       </div>` : ''}
     ${canTimeout ? `
-      <div class="field"><label for="mm-timeout-select">Timeout${tUntil ? ` <span class="mm-timeout-left">(${timeoutLeftText(tUntil)} left)</span>` : ''}</label>
+      <div class="field"><label>Mute${tUntil ? ' <span class="mm-timeout-left">(muted)</span>' : ''}</label>
         <div class="mm-inline-row">
-          <select id="mm-timeout-select">
-            <option value="60">60 seconds</option><option value="300">5 minutes</option><option value="600">10 minutes</option>
-            <option value="3600">1 hour</option><option value="86400">1 day</option><option value="604800">1 week</option>
-          </select>
-          <button class="btn-secondary" id="mm-timeout-btn">Timeout</button>
-          ${tUntil ? '<button class="btn-secondary" id="mm-untimeout-btn">Remove</button>' : ''}
+          <button class="btn-secondary" id="mm-timeout-btn">${tUntil ? 'Unmute' : 'Mute'}</button>
         </div>
       </div>` : ''}
     <div class="modal-actions">
@@ -4389,22 +4386,20 @@ function openManageMemberModal(uid, server) {
   }
   if (canNick) $('mm-nick-btn').onclick = () => { closeModal('manage-member-modal'); openNicknameEditor(server, uid); };
   if (canTimeout) {
+    // Mute / Unmute with no timer, the same as /mute and /unmute.
     $('mm-timeout-btn').onclick = async () => {
-      const secs = +$('mm-timeout-select').value;
       try {
-        await db.collection('servers').doc(server.id).update({ [`timeouts.${uid}`]: Date.now() + secs * 1000 });
-        logAudit(server.id, `timed out ${p.username || uid} for ${timeoutLeftText(Date.now() + secs * 1000)}`);
-        toast(`${displayNameOf(p)} is timed out.`);
+        if (tUntil) {
+          await db.collection('servers').doc(server.id).update({ [`timeouts.${uid}`]: FieldValue.delete() });
+          logAudit(server.id, `unmuted ${p.username || uid}`);
+          toast(`${displayNameOf(p)} is unmuted.`);
+        } else {
+          await db.collection('servers').doc(server.id).update({ [`timeouts.${uid}`]: INDEFINITE_MUTE_UNTIL });
+          logAudit(server.id, `muted ${p.username || uid} until unmuted`);
+          toast(`${displayNameOf(p)} is muted.`);
+        }
         closeModal('manage-member-modal');
-      } catch (e) { toast(e.message || 'Could not time out member.', 'error'); }
-    };
-    if (tUntil) $('mm-untimeout-btn').onclick = async () => {
-      try {
-        await db.collection('servers').doc(server.id).update({ [`timeouts.${uid}`]: FieldValue.delete() });
-        logAudit(server.id, `removed the timeout on ${p.username || uid}`);
-        toast('Timeout removed.');
-        closeModal('manage-member-modal');
-      } catch (e) { toast(e.message || 'Could not remove timeout.', 'error'); }
+      } catch (e) { toast(e.message || 'Could not update the mute.', 'error'); }
     };
   }
   openModal('manage-member-modal');
@@ -6068,7 +6063,7 @@ function sapphireReady(action) {
   if (mode) return mode;
   if (currentView === 'channel' && currentServerData && !serverHasApp(currentServerData, 'sapphire')) {
     toast(canAddServerApps(currentServerData) ? 'Add the Sapphire app to this server first (server menu → Add App).' : 'This server has not added the Sapphire app.', 'error');
-  } else if (currentView !== 'channel' && action !== 'purge') toast(`/${action} only works inside a server.`, 'error');
+  } else if (currentView !== 'channel' && action !== 'purge') { /* DMs: do nothing, no message */ }
   else toast(`You do not have permission to use /${action} here.`, 'error');
   return null;
 }
@@ -6213,6 +6208,9 @@ async function sendMessage() {
     updateComposerCharCount();
     clearMyTypingDoc();
     closeMentionPopup();
+    // Moderation commands only mean something inside a server. In a DM or group DM they
+    // do nothing at all: no message, no error.
+    if (currentView !== 'channel') return;
     runModerationCommand(modMatch[1].toLowerCase(), modMatch[2], (modMatch[3] || '').trim());
     return;
   }
@@ -6689,6 +6687,29 @@ const SLASH_COMMANDS = [
     { name: 'message', desc: 'What should be read out loud', required: true },
   ] },
 ];
+// Every command gets a picture (cmd.img: any image URL or data URI). The built-in ones are small
+// SVG tiles; /wordle uses the Wordle app's own icon.
+function slashTile(bg, shapes) {
+  return 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="' + bg + '"/><g fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">' + shapes + '</g></svg>');
+}
+const SLASH_IMAGES = {
+  hyperlink: slashTile('#4f7cff', '<path d="M27 37a9 9 0 0 0 13 0l8-8a9 9 0 0 0-13-13l-3 3"/><path d="M37 27a9 9 0 0 0-13 0l-8 8a9 9 0 0 0 13 13l3-3"/>'),
+  poll:      slashTile('#8b5cf6', '<path d="M19 47V33M32 47V17M45 47V26"/>'),
+  purge:     slashTile('#2b8de8', '<path d="M18 22h28M27 22v-5h10v5M22 22l2 26h16l2-26M29 30v11M35 30v11"/>'),
+  mute:      slashTile('#e8912b', '<rect x="26" y="13" width="12" height="22" rx="6"/><path d="M20 30a12 12 0 0 0 24 0M32 42v7M24 49h16M15 13l34 38"/>'),
+  unmute:    slashTile('#3ba55d', '<rect x="26" y="13" width="12" height="22" rx="6"/><path d="M20 30a12 12 0 0 0 24 0M32 42v7M24 49h16"/>'),
+  ban:       slashTile('#ed4245', '<circle cx="32" cy="32" r="15"/><path d="M21.5 21.5l21 21"/>'),
+  unban:     slashTile('#3ba55d', '<circle cx="32" cy="32" r="15"/><path d="M24 32.5l6 6 10-12"/>'),
+  kick:      slashTile('#f0883e', '<path d="M28 17h-9v30h9M36 24l8 8-8 8M44 32H27"/>'),
+  wordle:    typeof WORDLE_AVATAR_URL === 'string' ? WORDLE_AVATAR_URL : '',
+  tts:       slashTile('#f59e0b', '<path d="M15 26h8l10-8v28l-10-8h-8z" fill="#fff"/><path d="M41 26a9 9 0 0 1 0 12M46 20a17 17 0 0 1 0 24"/>'),
+};
+SLASH_COMMANDS.forEach(c => { if (!c.img) c.img = SLASH_IMAGES[c.name] || ''; });
+function slashIconHTML(cmd, cls) {
+  return cmd.img
+    ? `<img class="${cls} has-img" src="${esc(cmd.img)}" alt="" draggable="false">`
+    : `<span class="${cls}">/</span>`;
+}
 let slashState = null;       // { query } while the command list is open
 let slashCandidates = [];
 let slashIndex = 0;
@@ -6726,7 +6747,7 @@ function renderSlashPopup() {
     `<div class="slash-head"><span>${slashState.query ? `Commands matching <b>/${esc(slashState.query)}</b>` : 'Commands'}</span><span class="slash-app">Frixion</span></div>` +
     slashCandidates.map((cmd, i) => `
       <div class="slash-row${i === slashIndex ? ' selected' : ''}" data-i="${i}">
-        <span class="slash-ico">/</span>
+        ${slashIconHTML(cmd, 'slash-ico')}
         <span class="slash-main">
           <span class="slash-name">/${esc(cmd.name)}</span>
           ${cmd.options.map(o => `<span class="slash-opt${o.required ? '' : ' optional'}">${esc(o.name)}</span>`).join('')}
@@ -6775,7 +6796,7 @@ function renderCommandBar() {
   const opt = cmd.options[active];
   bar.innerHTML = `
     <div class="cmd-top">
-      <span class="cmd-ico">/</span>
+      ${slashIconHTML(cmd, 'cmd-ico')}
       <span class="cmd-name">${esc(cmd.name)}</span>
       ${cmd.options.map((o, i) => `<button type="button" class="cmd-chip${i === active ? ' active' : ''}${o.required && !values[i].trim() ? ' need' : ''}" data-i="${i}"><span class="cmd-chip-name">${esc(o.name)}</span><span class="cmd-chip-val">${esc(values[i])}</span></button>`).join('')}
       <button type="button" class="cmd-close" aria-label="Cancel command">✕</button>
@@ -8248,7 +8269,7 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
       renderAdminProfileFrameList(); initFrameEditor();
       renderAdminBannerList(); initBannerEditor();
     }
-    if (tab.dataset.adminTab === 'quests') initGagAdmin();
+    if (tab.dataset.adminTab === 'quests') { initGagAdmin(); initCcAdmin(); }
     if (tab.dataset.adminTab === 'systemhub') { adminSelectedUser = null; renderAdminList(); }
   };
 });
@@ -8271,15 +8292,15 @@ function initGagAdmin() {
     ['gag-seed-rarity', 'gag-spr-rarity', 'gag-pet-rarity'].forEach(id => { $(id).innerHTML = rarOpts; });
     $('gag-seed-fn').innerHTML = Object.entries(GAG_SEED_FNS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
     $('gag-pet-fn').innerHTML = Object.entries(GAG_PET_FNS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
-    document.querySelectorAll('[data-quest-section]').forEach(tab => {
+    document.querySelectorAll('button[data-quest-section]').forEach(tab => {
       tab.onclick = () => {
-        document.querySelectorAll('[data-quest-section]').forEach(t => t.classList.toggle('on', t === tab));
+        document.querySelectorAll('button[data-quest-section]').forEach(t => t.classList.toggle('on', t === tab));
         document.querySelectorAll('.quest-section').forEach(sec => sec.classList.toggle('hidden', sec.dataset.questSection !== tab.dataset.questSection));
       };
     });
-    document.querySelectorAll('[data-gag-section]').forEach(tab => {
+    document.querySelectorAll('button[data-gag-section]').forEach(tab => {
       tab.onclick = () => {
-        document.querySelectorAll('[data-gag-section]').forEach(t => t.classList.toggle('on', t === tab));
+        document.querySelectorAll('button[data-gag-section]').forEach(t => t.classList.toggle('on', t === tab));
         document.querySelectorAll('.gag-section').forEach(sec => sec.classList.toggle('hidden', sec.dataset.gagSection !== tab.dataset.gagSection));
       };
     });
@@ -8364,6 +8385,126 @@ function renderGagLists() {
         });
       };
     });
+  });
+}
+
+// ---------- Quests (admin/owner/co-owner): Cookie Clicker (CC) creator ----------
+const CC_UP_FNS = {
+  click: 'Click power (x N)',
+  clickcps: 'Click bonus from cps (+N%)',
+  building: 'One building/item (x N)',
+  global: 'All production (+N%)',
+  flat: 'Flat cookies/sec (+N)',
+};
+const CC_UP_HINTS = {
+  click: 'Value is a multiplier above 1. 2 makes every click twice as strong.',
+  clickcps: 'Value is a percentage. 1 means each click also gives +1% of your cookies per second.',
+  building: 'Pick the building or item below. Value is a multiplier above 1. 2 doubles what that one makes.',
+  global: 'Value is a percentage. 10 means every building and item makes 10% more.',
+  flat: 'Value is cookies per second, added on top of your buildings.',
+};
+let ccAdminInit = false;
+const ccNumField = id => { const raw = ($(id).value || '').trim(); return raw === '' ? NaN : parseFloat(raw); };
+function initCcAdmin() {
+  if (!ccAdminInit) {
+    ccAdminInit = true;
+    $('cc-up-fn').innerHTML = Object.entries(CC_UP_FNS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+    $('cc-up-fn').onchange = ccUpFormSync;
+    document.querySelectorAll('[data-cc-section]').forEach(tab => {
+      if (tab.tagName !== 'BUTTON') return;
+      tab.onclick = () => {
+        document.querySelectorAll('button[data-cc-section]').forEach(t => t.classList.toggle('on', t === tab));
+        document.querySelectorAll('.cc-section').forEach(sec => sec.classList.toggle('hidden', sec.dataset.ccSection !== tab.dataset.ccSection));
+      };
+    });
+    $('cc-up-publish').onclick = () => ccPublish('upgrades');
+    $('cc-it-publish').onclick = () => ccPublish('items');
+    ['upgrades', 'items'].forEach(kind => {
+      $('cc-list-' + kind).addEventListener('click', (e) => {
+        const btn = e.target.closest('.gag-item-del');
+        if (btn) ccDelete(kind, btn.closest('.gag-item').dataset.id);
+      });
+    });
+    ccUpFormSync();
+  }
+  ccAdminRefresh();
+}
+function ccUpFormSync() {
+  const fn = $('cc-up-fn').value;
+  $('cc-up-target-field').classList.toggle('hidden', fn !== 'building');
+  $('cc-up-hint').textContent = CC_UP_HINTS[fn] || '';
+  $('cc-up-val').placeholder = fn === 'flat' ? '50' : (fn === 'click' || fn === 'building') ? '2' : '10';
+}
+// Rebuild the building pickers (they include staff-made items) and the two lists.
+function ccAdminRefresh() {
+  if (!ccAdminInit) return;
+  const opts = ccProd.map(b => `<option value="${esc(b.id)}">${esc(b.ic)} ${esc(b.name)}${b.custom ? ' (item)' : ''}</option>`).join('');
+  [['cc-up-target', ''], ['cc-up-req', '<option value="">Always available</option>']].forEach(([id, first]) => {
+    const sel = $(id), keep = sel.value;
+    sel.innerHTML = first + opts;
+    if (keep && [...sel.options].some(o => o.value === keep)) sel.value = keep;
+  });
+  const row = (it, ic, mid, info, deletable) => `<div class="gag-item${deletable ? '' : ' builtin'}" data-id="${esc(it.id)}">
+      <span class="gag-item-ic">${esc(ic)}</span>
+      <span class="gag-item-mid"><b>${esc(mid)}</b><small>${esc(info)}</small></span>
+      ${deletable ? `<span class="gag-item-del" title="Delete">${icon('trash')}</span>` : ''}</div>`;
+  $('cc-list-upgrades').innerHTML = ccUpgrades.length
+    ? ccUpgrades.map(u => row(u, u.ic, u.name, `${fmtNum(u.cost)} cookies · ${ccEffectText(u)}${ccReqText(u) ? ' · ' + ccReqText(u) : ''}`, true)).join('')
+    : '<div class="empty">No upgrades yet.</div>';
+  $('cc-list-items').innerHTML = (ccItems.length
+    ? ccItems.map(it => row(it, it.ic, it.name, `${fmtNum(it.cost)} cookies · ${ckNum(it.cps)}/s each · price +${Math.round((it.growth - 1) * 100)}% per one owned`, true)).join('')
+    : '<div class="empty">No custom items yet.</div>')
+    + '<div class="admin-builtin-label">Built-in buildings</div>'
+    + COOKIE_BUILDINGS.map(b => row(b, b.ic, b.name, `${fmtNum(b.base)} cookies · ${ckNum(b.cps)}/s each`, false)).join('');
+}
+async function ccPublish(kind) {
+  if (!isAdmin && !isOwner) { toast('Admins only.', 'error'); return; }
+  const p = kind === 'upgrades' ? 'cc-up' : 'cc-it';
+  const name = ($(p + '-name').value || '').trim(), ic = ($(p + '-ic').value || '').trim();
+  if (!name) { toast('Enter a name.'); return; }
+  if (!ic) { toast('Enter an emoji.'); return; }
+  const cost = ccNumField(p + '-cost');
+  let item, clean;
+  if (kind === 'upgrades') {
+    const fn = $('cc-up-fn').value, val = ccNumField('cc-up-val');
+    if (!(cost >= 0)) { toast('Enter a price (0 or more).'); return; }
+    if (!(val > 0)) { toast('Enter an effect value above 0.'); return; }
+    if ((fn === 'click' || fn === 'building') && !(val > 1)) { toast('For a multiplier the value has to be above 1. 2 means twice as strong.'); return; }
+    const reqId = $('cc-up-req').value, reqN = reqId ? Math.max(1, Math.floor(ccNumField('cc-up-reqn') || 1)) : 1;
+    item = { name, ic, cost, fn, val, target: fn === 'building' ? $('cc-up-target').value : '', reqId, reqN };
+    item.id = 'cu_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    clean = ccCleanUpgrade(item);
+  } else {
+    const cps = ccNumField('cc-it-cps');
+    let growth = ccNumField('cc-it-growth'); if (!(growth >= 1)) growth = 15; growth = Math.min(100, growth);
+    if (!(cost >= 1)) { toast('Enter a starting price of at least 1 cookie.'); return; }
+    if (!(cps > 0)) { toast('Enter cookies per second above 0.'); return; }
+    item = { name, ic, cost, cps, growth: 1 + growth / 100 };
+    item.id = 'ci_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    clean = ccCleanItem(item);
+  }
+  if (!clean) { toast('One of those numbers is out of range. Try something smaller.', 'error'); return; }
+  clean.createdBy = myUid;
+  const btn = $(p + '-publish'); btn.disabled = true;
+  try {
+    await CC_DOC().set({ [kind]: { [clean.id]: clean } }, { merge: true });
+    toast(`Published ${clean.name}.`);
+    $(p + '-name').value = ''; $(p + '-ic').value = '';
+  } catch (e) { toast(e.message || 'Could not publish.', 'error'); }
+  finally { btn.disabled = false; }
+}
+function ccDelete(kind, id) {
+  if (!isAdmin && !isOwner) return;
+  const it = (kind === 'upgrades' ? ccUpgrades : ccItems).find(x => x.id === id);
+  const noun = kind === 'upgrades' ? 'upgrade' : 'item';
+  confirmAction({
+    title: `Delete ${noun}`,
+    body: `Delete "${it ? it.name : 'this ' + noun}"? Players who own it lose it.${kind === 'items' ? ' Upgrades that point at it stop showing up.' : ''}`,
+    confirmLabel: 'Delete',
+    onConfirm: async () => {
+      try { await CC_DOC().update({ [kind + '.' + id]: FieldValue.delete() }); }
+      catch (e) { toast(e.message || 'Could not delete.', 'error'); }
+    },
   });
 }
 
@@ -9395,36 +9536,26 @@ async function renderAdminActions() {
       </div>
     </div>
     <div class="admin-block">
-      <div class="ab-title">Mute${muteStatus(u).muted ? (muteStatus(u).indefinite ? ' — muted until unmuted' : ' — muted for ' + esc(timeoutLeftText(muteStatus(u).until))) : ''}</div>
+      <div class="ab-title">Mute${muteStatus(u).muted ? ' — muted' : ''}</div>
+      ${muteStatus(u).muted ? `
       <div class="ab-row">
-        <input id="admin-mute-dur" type="number" min="1" placeholder="Duration" class="fld-input">
-        <select id="admin-mute-unit" class="fld-input">
-          <option value="60000">Minutes</option>
-          <option value="3600000" selected>Hours</option>
-          <option value="86400000">Days</option>
-        </select>
-      </div>
-      <input id="admin-mute-reason" type="text" placeholder="Reason" class="fld-input" style="margin-top:8px" maxlength="120">
+        <button class="btn-secondary slim" id="admin-unmute-btn">Unmute</button>
+      </div>` : `
+      <input id="admin-mute-reason" type="text" placeholder="Reason (optional)" class="fld-input" maxlength="120">
       <div class="ab-row" style="margin-top:8px">
         <button class="btn-accent-inline slim" id="admin-mute-btn">Mute</button>
-        ${muteStatus(u).muted ? '<button class="btn-secondary slim" id="admin-unmute-btn">Unmute</button>' : ''}
-      </div>
+      </div>`}
     </div>
     <div class="admin-block">
-      <div class="ab-title">Temporary Ban</div>
+      <div class="ab-title">Ban${ban.banned ? ' — banned' : ''}</div>
+      ${ban.banned ? `
       <div class="ab-row">
-        <input id="admin-ban-dur" type="number" min="1" placeholder="Duration" class="fld-input">
-        <select id="admin-ban-unit" class="fld-input">
-          <option value="60000">Minutes</option>
-          <option value="3600000" selected>Hours</option>
-          <option value="86400000">Days</option>
-        </select>
-      </div>
-      <input id="admin-ban-reason" type="text" placeholder="Reason" class="fld-input" style="margin-top:8px" maxlength="120">
+        <button class="btn-secondary slim" id="admin-unban-btn">Unban</button>
+      </div>` : `
+      <input id="admin-ban-reason" type="text" placeholder="Reason (optional)" class="fld-input" maxlength="120">
       <div class="ab-row" style="margin-top:8px">
         <button class="btn-danger slim" id="admin-ban-btn">Ban</button>
-        ${ban.banned ? '<button class="btn-secondary slim" id="admin-unban-btn">Unban</button>' : ''}
-      </div>
+      </div>`}
     </div>
     ${isOwner ? `
     <div class="admin-block">
@@ -9452,10 +9583,10 @@ async function renderAdminActions() {
   $('admin-orbs-remove').onclick = () => adminAdjustOrbs(u.username, -1);
   $('admin-premium-grant').onclick = () => adminAdjustPremium(u.username, 1);
   $('admin-premium-remove').onclick = () => adminAdjustPremium(u.username, -1);
-  $('admin-ban-btn').onclick = adminBan;
   if (ban.banned) $('admin-unban-btn').onclick = adminUnban;
-  $('admin-mute-btn').onclick = adminMute;
+  else $('admin-ban-btn').onclick = adminBan;
   if (muteStatus(u).muted) $('admin-unmute-btn').onclick = adminUnmute;
+  else $('admin-mute-btn').onclick = adminMute;
   if (isOwner) {
     if (u.op) $('admin-deop-btn').onclick = () => adminSetOp(u.username, false);
     else $('admin-op-btn').onclick = () => adminSetOp(u.username, true);
@@ -9528,13 +9659,11 @@ async function adminSetOp(username, val) {
 }
 
 async function adminBan() {
-  const dur = parseInt($('admin-ban-dur').value || '0', 10);
-  const unit = parseInt($('admin-ban-unit').value, 10);
   const reason = ($('admin-ban-reason').value || '').trim() || 'No reason given';
-  if (!adminSelectedUser || !dur || dur < 1) { toast('Enter a duration.'); return; }
+  if (!adminSelectedUser) return;
   if (!guardPlatformTarget(adminSelectedUser)) return;
-  const until = Date.now() + dur * unit;
-  await db.collection('users').doc(adminSelectedUser).update({ banned: true, banReason: reason, bannedUntil: until });
+  // No timer: the ban lasts until someone presses Unban.
+  await db.collection('users').doc(adminSelectedUser).update({ banned: true, banReason: reason, bannedUntil: null });
   toast(`Banned ${adminSelectedUser}.`);
   renderAdminList(); renderAdminActions();
 }
@@ -9547,12 +9676,11 @@ async function mayManage(username) {
   return true;
 }
 async function adminMute() {
-  const dur = parseInt($('admin-mute-dur').value || '0', 10);
-  const unit = parseInt($('admin-mute-unit').value, 10);
   const reason = ($('admin-mute-reason').value || '').trim() || 'No reason given';
-  if (!adminSelectedUser || !dur || dur < 1) { toast('Enter a duration.'); return; }
+  if (!adminSelectedUser) return;
   if (!(await mayManage(adminSelectedUser))) return;
-  await db.collection('users').doc(adminSelectedUser).update({ mutedUntil: Date.now() + dur * unit, muteReason: reason });
+  // No timer: the mute lasts until someone presses Unmute.
+  await db.collection('users').doc(adminSelectedUser).update({ mutedUntil: INDEFINITE_MUTE_UNTIL, muteReason: reason });
   toast(`Muted ${adminSelectedUser}.`);
   renderAdminList(); renderAdminActions();
 }
@@ -9627,7 +9755,7 @@ let settledOrbs = 0;      // the Orb balance as of the last write this layer mad
 let gameStateOwner = null;
 
 const gameDefaults = () => ({
-  cookies: 0, cookiesAllTime: 0, cookiesRun: null, cookieRunSecs: 0, cookieBuildings: {}, cookieLastSave: null,
+  cookies: 0, cookiesAllTime: 0, cookiesRun: null, cookieRunSecs: 0, cookieBuildings: {}, cookieUpgrades: [], cookieLastSave: null,
   ggSheckles: 50, ggShecklesAllTime: 0, ggPlots: [], ggUnlocked: 4, ggInventory: [], ggPets: [], ggOwnedSeeds: [], ggOwnedSprinklers: [],
   gamePlay: {}, typingBest: 0, aimBest: 0, dwDate: null, dwRows: [], dwDone: null, dwHints: [],
   blastBest: 0, suDate: null, suProgress: null, suDone: null, stackBest: 0, memoryBest: 0, crushBest: 0, brickBest: 0, simonBest: 0,
@@ -9737,12 +9865,100 @@ function fmtOrbs(n){
   n=Math.floor(n||0);
   return n<1e6 ? n.toLocaleString() : fmtNum(n);
 }
-function cookieBuildingPrice(b, owned){ return Math.floor(b.base*Math.pow(1.15, owned)); }
+// ---- Staff-made Cookie Clicker content (Admin Panel -> Quests -> CC) ----
+// Upgrades are one-time buys that boost the run. Items are extra shop entries you can buy again
+// and again, like buildings. Both live in one Firestore doc, config/cookieClicker, as maps keyed by
+// id ({ upgrades: {id: {...}}, items: {id: {...}} }), so no new Firestore rules are needed.
+// Everything read back is validated: a bad value must never be able to turn a player's cookie
+// count into NaN and save that.
+const CC_DOC = () => db.collection('config').doc('cookieClicker');
+const CC_FNS = ['click', 'clickcps', 'building', 'global', 'flat'];
+const CC_MAX = { cost: 1e30, mult: 1e6, flat: 1e15, cps: 1e15 };
+let ccUpgrades = [], ccItems = [], ccUnsub = null;
+let ccProd = COOKIE_BUILDINGS.slice();    // every producer: built-in buildings, then staff-made items
+const ccId = s => typeof s === 'string' && /^[A-Za-z0-9_]{1,40}$/.test(s);
+const ccTxt = (s, n) => String(s == null ? '' : s).slice(0, n).trim();
+function ccCleanItem(x) {
+  if (!x || !ccId(x.id)) return null;
+  const cost = +x.cost, cps = +x.cps; let g = +x.growth;
+  if (!isFinite(cost) || cost < 1 || cost > CC_MAX.cost || !isFinite(cps) || cps <= 0 || cps > CC_MAX.cps) return null;
+  if (!isFinite(g) || g < 1.01 || g > 2) g = 1.15;
+  const name = ccTxt(x.name, 24), ic = ccTxt(x.ic, 8);
+  return name && ic ? { id: x.id, name, ic, cost, cps, growth: g } : null;
+}
+function ccCleanUpgrade(x) {
+  if (!x || !ccId(x.id) || !CC_FNS.includes(x.fn)) return null;
+  const cost = +x.cost, val = +x.val;
+  if (!isFinite(cost) || cost < 0 || cost > CC_MAX.cost || !isFinite(val) || val <= 0) return null;
+  if ((x.fn === 'click' || x.fn === 'building') && val <= 1) return null;
+  if (val > (x.fn === 'flat' ? CC_MAX.flat : CC_MAX.mult)) return null;
+  if (x.fn === 'building' && !ccId(x.target)) return null;
+  const name = ccTxt(x.name, 24), ic = ccTxt(x.ic, 8);
+  if (!name || !ic) return null;
+  return { id: x.id, name, ic, cost, fn: x.fn, val, target: x.fn === 'building' ? x.target : '',
+           reqId: ccId(x.reqId) ? x.reqId : '', reqN: Math.max(1, Math.floor(+x.reqN || 1)) };
+}
+function ccApplyContent(data) {
+  const clean = (map, fn) => Object.values(map || {}).map(fn).filter(Boolean).sort((a, b) => a.cost - b.cost || a.name.localeCompare(b.name));
+  ccUpgrades = clean(data.upgrades, ccCleanUpgrade);
+  ccItems = clean(data.items, ccCleanItem);
+  ccProd = COOKIE_BUILDINGS.concat(ccItems.map(it => ({ id: it.id, name: it.name, base: it.cost, cps: it.cps, ic: it.ic, growth: it.growth, custom: true })));
+  if (currentGameId === 'cookie') { renderCookieShop(); updateCookieView(); }
+  if (typeof ccAdminRefresh === 'function') ccAdminRefresh();
+}
+function ccStartContent() {
+  ccStopContent();
+  try { ccUnsub = CC_DOC().onSnapshot(s => ccApplyContent(s.exists ? s.data() : {}), () => {}); } catch (e) {}
+}
+function ccStopContent() { if (ccUnsub) { try { ccUnsub(); } catch (e) {} ccUnsub = null; } }
+// What the upgrades the player owns add up to.
+function ccFx() {
+  const fx = { click: 1, clickShare: 0, global: 1, flat: 0, bld: {} };
+  const own = new Set((UC && UC.cookieUpgrades) || []);
+  ccUpgrades.forEach(u => {
+    if (!own.has(u.id)) return;
+    if (u.fn === 'click') fx.click *= u.val;
+    else if (u.fn === 'clickcps') fx.clickShare += u.val / 100;
+    else if (u.fn === 'global') fx.global *= 1 + u.val / 100;
+    else if (u.fn === 'flat') fx.flat += u.val;
+    else if (u.fn === 'building') fx.bld[u.target] = (fx.bld[u.target] || 1) * u.val;
+  });
+  return fx;
+}
+const ccFmt = v => String(Math.round(v * 100) / 100);
+function ccEffectText(u) {
+  const p = ccProd.find(b => b.id === u.target);
+  switch (u.fn) {
+    case 'click': return 'Clicks are x' + ccFmt(u.val) + ' stronger';
+    case 'clickcps': return 'Each click also gives +' + ccFmt(u.val) + '% of your cookies/sec';
+    case 'building': return (p ? p.name : 'A building') + ' makes x' + ccFmt(u.val) + ' cookies';
+    case 'global': return 'All production +' + ccFmt(u.val) + '%';
+    default: return '+' + ckNum(u.val) + ' cookies per second';
+  }
+}
+function ccReqText(u) {
+  const p = u.reqId && ccProd.find(b => b.id === u.reqId);
+  return p ? 'Unlocks at ' + u.reqN + ' x ' + p.name : '';
+}
+// Not bought yet, aimed at something that still exists, and its unlock requirement (if any) is met.
+function ccUpgradeAvailable(u) {
+  if (((UC && UC.cookieUpgrades) || []).includes(u.id)) return false;
+  if (u.fn === 'building' && !ccProd.some(b => b.id === u.target)) return false;
+  if (u.reqId && ccProd.some(b => b.id === u.reqId) && ((UC.cookieBuildings || {})[u.reqId] || 0) < u.reqN) return false;
+  return true;
+}
+
+function cookieBuildingPrice(b, owned){ return Math.floor(b.base*Math.pow(b.growth||1.15, owned)); }
 // Owning 10, 25, 50, 100, 150 and 200 of a building doubles its output each time.
 const COOKIE_MILESTONES=[10,25,50,100,150,200];
 const cookieBuildingMult=n=>Math.pow(2, COOKIE_MILESTONES.filter(m=>n>=m).length);
-function cookieCPS(){ if(!UC) return 0; const bld=UC.cookieBuildings||{}; let c=0; COOKIE_BUILDINGS.forEach(b=>{ const n=bld[b.id]||0; c+=b.cps*n*cookieBuildingMult(n); }); return c; }
-function cookieClickPower(){ return 1 + cookieCPS()*0.02; }
+function cookieCPS(){
+  if(!UC) return 0;
+  const bld=UC.cookieBuildings||{}, fx=ccFx(); let c=0;
+  ccProd.forEach(b=>{ const n=bld[b.id]||0; if(n) c+=b.cps*n*cookieBuildingMult(n)*(fx.bld[b.id]||1); });
+  return (c+fx.flat)*fx.global;
+}
+function cookieClickPower(){ const fx=ccFx(); return (1 + cookieCPS()*(0.02+fx.clickShare)) * fx.click; }
 // A run starts at a quarter speed, which makes the first few minutes a grind,
 // then picks up pace the longer you keep baking (slowly at first, then faster).
 // Cashing out ends the run, which resets momentum along with everything else.
@@ -9759,6 +9975,7 @@ function startCookieEngine(){
   if(!UC) return;
   // No offline earnings: cookies only accrue while Toblox is open.
   UC.cookieLastSave=Date.now();
+  ccStartContent();
   if(cookieEngine) clearInterval(cookieEngine);
   cookieEngine=setInterval(()=>{
     const cps=cookieCPS(); if(cps>0){ const add=cps*0.2*cookieMult(); UC.cookies=(UC.cookies||0)+add; UC.cookiesAllTime=(UC.cookiesAllTime||0)+add; UC.cookiesRun=cookieBaked()+add; }
@@ -9767,10 +9984,10 @@ function startCookieEngine(){
     if(Date.now()-_cookieSaveAt>20000) saveCookies();
   }, 200);
 }
-function stopCookieEngine(){ if(cookieEngine){ clearInterval(cookieEngine); cookieEngine=null; } }
+function stopCookieEngine(){ if(cookieEngine){ clearInterval(cookieEngine); cookieEngine=null; } ccStopContent(); }
 async function saveCookies(){
   if(!UC) return; _cookieSaveAt=Date.now(); UC.cookieLastSave=Date.now();
-  try{ await dbUpdateUser(getU(), {cookies:UC.cookies, cookiesAllTime:UC.cookiesAllTime, cookiesRun:cookieBaked(), cookieRunSecs:UC.cookieRunSecs||0, cookieBuildings:UC.cookieBuildings, cookieLastSave:UC.cookieLastSave}); }catch(e){}
+  try{ await dbUpdateUser(getU(), {cookies:UC.cookies, cookiesAllTime:UC.cookiesAllTime, cookiesRun:cookieBaked(), cookieRunSecs:UC.cookieRunSecs||0, cookieBuildings:UC.cookieBuildings, cookieUpgrades:UC.cookieUpgrades||[], cookieLastSave:UC.cookieLastSave}); }catch(e){}
 }
 function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
 function renderCookie(){
@@ -9786,23 +10003,45 @@ function renderCookie(){
         <div><span>Baked this run</span><b id="ck-baked">0</b></div>
       </div>
       <button class="ck-cashout" id="ck-cashout" onclick="cashOutCookies()">Cash out</button>
-      <div class="ck-note">Cashing out pays Orbs for everything baked this run, then resets your cookies, buildings and momentum.</div>
+      <div class="ck-note">Cashing out pays Orbs for everything baked this run, then resets your cookies, buildings, upgrades and momentum.</div>
     </div>
     <div class="ck-shop" id="ck-shop"></div>`;
   renderCookieShop(); updateCookieView();
 }
-function renderCookieShop(){
-  const shop=document.getElementById('ck-shop'); if(!shop) return;
-  const bld=UC.cookieBuildings||{};
-  shop.innerHTML=COOKIE_BUILDINGS.map(b=>{
-    const owned=bld[b.id]||0, price=cookieBuildingPrice(b,owned), afford=(UC.cookies||0)>=price;
-    const next=COOKIE_MILESTONES.find(m=>m>owned);
-    return `<button class="ck-item ${afford?'':'no'}" onclick="buyCookieBuilding('${b.id}')" ${afford?'':'disabled'}>
-      <span class="cki-ic">${b.ic}</span>
-      <span class="cki-mid"><span class="cki-name">${b.name}</span><span class="cki-price">🍪 ${fmtNum(price)} &middot; ${ckNum(b.cps*cookieBuildingMult(owned))}/s each${next?' &middot; x2 at '+next:''}</span></span>
+function ckRow(b, bld, fx){
+  const owned=bld[b.id]||0, price=cookieBuildingPrice(b,owned), afford=(UC.cookies||0)>=price;
+  const next=COOKIE_MILESTONES.find(m=>m>owned);
+  const each=b.cps*cookieBuildingMult(owned)*(fx.bld[b.id]||1)*fx.global;
+  return `<button class="ck-item ${afford?'':'no'}" data-bid="${esc(b.id)}" onclick="buyCookieBuilding('${esc(b.id)}')" ${afford?'':'disabled'}>
+      <span class="cki-ic">${esc(b.ic)}</span>
+      <span class="cki-mid"><span class="cki-name">${esc(b.name)}</span><span class="cki-price">🍪 ${fmtNum(price)} &middot; ${ckNum(each)}/s each${next?' &middot; x2 at '+next:''}</span></span>
       <span class="cki-owned">${owned}</span>
     </button>`;
-  }).join('');
+}
+function renderCookieShop(){
+  const shop=document.getElementById('ck-shop'); if(!shop) return;
+  const bld=UC.cookieBuildings||{}, fx=ccFx(), own=new Set(UC.cookieUpgrades||[]);
+  const avail=ccUpgrades.filter(ccUpgradeAvailable);
+  const bought=ccUpgrades.filter(u=>own.has(u.id));
+  let html='';
+  if(avail.length||bought.length){
+    html+='<div class="ck-sec"><div class="ck-head">Upgrades</div>';
+    if(avail.length) html+='<div class="ck-upg-list">'+avail.map(u=>{
+      const afford=(UC.cookies||0)>=u.cost, req=ccReqText(u);
+      return `<button class="ck-item ${afford?'':'no'}" data-uid="${esc(u.id)}" onclick="buyCookieUpgrade('${esc(u.id)}')" ${afford?'':'disabled'}>
+        <span class="cki-ic">${esc(u.ic)}</span>
+        <span class="cki-mid"><span class="cki-name">${esc(u.name)}</span><span class="cki-price">🍪 ${fmtNum(u.cost)} &middot; ${esc(ccEffectText(u))}</span></span>
+      </button>`; }).join('')+'</div>';
+    else html+='<div class="ck-sub">No new upgrades right now. Buy more buildings to unlock them.</div>';
+    if(bought.length) html+='<div class="ck-bought"><span>Bought:</span>'+bought.map(u=>`<span class="ck-chip" title="${esc(u.name)}: ${esc(ccEffectText(u))}">${esc(u.ic)}</span>`).join('')+'</div>';
+    html+='</div>';
+  }
+  html+='<div class="ck-sec"><div class="ck-head">Buildings</div>'+COOKIE_BUILDINGS.map(b=>ckRow(b,bld,fx)).join('')+'</div>';
+  const items=ccProd.filter(b=>b.custom);
+  if(items.length) html+='<div class="ck-sec"><div class="ck-head">Items</div>'+items.map(b=>ckRow(b,bld,fx)).join('')+'</div>';
+  const keep=shop.querySelector('.ck-upg-list'), top=keep?keep.scrollTop:0;   // keep the upgrade list where it was scrolled
+  shop.innerHTML=html;
+  const again=shop.querySelector('.ck-upg-list'); if(again) again.scrollTop=top;
 }
 function updateCookieView(){
   const c=document.getElementById('ck-cookies'); if(c) c.textContent=fmtNum(UC.cookies||0);
@@ -9814,7 +10053,10 @@ function updateCookieView(){
   const co=document.getElementById('ck-cashout');
   if(co){ const orbs=Math.floor(cookieBaked()/COOKIE_CASH_RATE); co.disabled=orbs<1; co.textContent = orbs<1 ? 'Bake '+fmtNum(COOKIE_CASH_RATE)+' cookies to cash out' : 'Cash out for '+fmtOrbs(orbs)+' Orbs'; }
   const shop=document.getElementById('ck-shop');
-  if(shop){ COOKIE_BUILDINGS.forEach((b,i)=>{ const el=shop.children[i]; if(!el)return; const owned=(UC.cookieBuildings||{})[b.id]||0; const afford=(UC.cookies||0)>=cookieBuildingPrice(b,owned); el.classList.toggle('no',!afford); el.disabled=!afford; }); }
+  if(shop){
+    shop.querySelectorAll('[data-bid]').forEach(el=>{ const b=ccProd.find(x=>x.id===el.dataset.bid); if(!b)return; const afford=(UC.cookies||0)>=cookieBuildingPrice(b,(UC.cookieBuildings||{})[b.id]||0); el.classList.toggle('no',!afford); el.disabled=!afford; });
+    shop.querySelectorAll('[data-uid]').forEach(el=>{ const u=ccUpgrades.find(x=>x.id===el.dataset.uid); if(!u)return; const afford=(UC.cookies||0)>=u.cost; el.classList.toggle('no',!afford); el.disabled=!afford; });
+  }
 }
 function clickCookie(e){
   if(!UC) return;
@@ -9825,10 +10067,17 @@ function clickCookie(e){
   try{ const f=document.createElement('div'); f.className='ck-float'; f.textContent='+'+ckNum(p); f.style.left=e.clientX+'px'; f.style.top=e.clientY+'px'; document.body.appendChild(f); setTimeout(()=>f.remove(),900); }catch(_){}
 }
 function buyCookieBuilding(id){
-  const b=COOKIE_BUILDINGS.find(x=>x.id===id); if(!b||!UC) return;
+  const b=ccProd.find(x=>x.id===id); if(!b||!UC) return;
   const owned=(UC.cookieBuildings||{})[id]||0, price=cookieBuildingPrice(b,owned);
   if((UC.cookies||0)<price){ showToast('Not enough cookies.'); return; }
   UC.cookies-=price; UC.cookieBuildings=UC.cookieBuildings||{}; UC.cookieBuildings[id]=owned+1;
+  renderCookieShop(); updateCookieView(); saveCookies();
+}
+function buyCookieUpgrade(id){
+  const u=ccUpgrades.find(x=>x.id===id); if(!u||!UC) return;
+  if(!ccUpgradeAvailable(u)){ showToast('That upgrade is not available.'); renderCookieShop(); return; }
+  if((UC.cookies||0)<u.cost){ showToast('Not enough cookies.'); return; }
+  UC.cookies-=u.cost; UC.cookieUpgrades=(UC.cookieUpgrades||[]).concat(u.id);
   renderCookieShop(); updateCookieView(); saveCookies();
 }
 function cashOutCookies(){
@@ -9837,14 +10086,14 @@ function cashOutCookies(){
   if(orbs<1){ showToast('Bake at least '+fmtNum(COOKIE_CASH_RATE)+' cookies this run to cash out.'); return; }
   confirmAction({
     title:'Cash out and start over?',
-    body:'You baked '+fmtNum(baked)+' cookies this run. Cashing out pays '+fmtOrbs(orbs)+' Orbs and resets your cookies, buildings and momentum.',
+    body:'You baked '+fmtNum(baked)+' cookies this run. Cashing out pays '+fmtOrbs(orbs)+' Orbs and resets your cookies, buildings, upgrades and momentum.',
     confirmLabel:'Cash out', danger:false,
     onConfirm: async ()=>{
       const paid=Math.floor(cookieBaked()/COOKIE_CASH_RATE);
       if(paid<1) return;
-      UC.cookies=0; UC.cookiesRun=0; UC.cookieRunSecs=0; UC.cookieBuildings={};
+      UC.cookies=0; UC.cookiesRun=0; UC.cookieRunSecs=0; UC.cookieBuildings={}; UC.cookieUpgrades=[];
       UC.coins=(UC.coins||0)+paid;
-      await dbUpdateUser(getU(), {coins:UC.coins, cookies:0, cookiesRun:0, cookieRunSecs:0, cookieBuildings:{}});
+      await dbUpdateUser(getU(), {coins:UC.coins, cookies:0, cookiesRun:0, cookieRunSecs:0, cookieBuildings:{}, cookieUpgrades:[]});
       refreshCaps();
       if(currentGameId==='cookie'){ renderCookieShop(); updateCookieView(); }
       showToast('Cashed out '+fmtOrbs(paid)+' Orbs. Fresh run started.');
@@ -11851,18 +12100,20 @@ function mountGameHubs() {
 
 
 // ============================================================
-// FRIENDS OVERLAY (desktop only — there is deliberately no mobile version)
+// OVERLAY (desktop only — there is deliberately no mobile version)
 // Opens on top of everything, including the Quests game window, so you can
-// keep talking to friends without leaving what you're playing. The shortcut
+// keep talking to friends and servers without leaving what you're playing.
+// Friends, Messages and Servers tabs; every window can be dragged and resized. The shortcut
 // is synced to the account (users/{name}.overlayKeybind) and can be changed
 // in Settings → Keyboard. Default: Shift + ` (the ~ key).
 // ============================================================
 const OV_DEFAULT_BIND = { code: 'Backquote', shift: true, ctrl: false, alt: false, meta: false };
-let ovRoot = null, ovOpen = false, ovTab = 'friends', ovQuery = '';
-let ovPrevFocus = null, ovTimer = null, ovLastUid = null, ovCapturing = false;
-let ovChats = [];   // [{ id, uid, el, unsub, msgs, stick }]
+let ovRoot = null, ovOpen = false, ovTab = 'friends', ovQuery = '';   // ovTab: friends | messages | servers
+let ovPrevFocus = null, ovTimer = null, ovLastChat = null, ovCapturing = false;
+let ovChats = [];   // [{ key, kind: 'dm'|'channel', slot, el, unsub, msgs, stick, ... }]
+let ovBrowseSid = null, ovChannels = [], ovCats = [], ovBrowseUnsubs = [];   // Servers tab drill-down
 
-function ovMaxChats() { return window.innerWidth >= 1100 ? 2 : 1; }
+function ovMaxChats() { return window.innerWidth >= 1500 ? 3 : window.innerWidth >= 1100 ? 2 : 1; }
 
 // ---------- shortcut: read, match, label ----------
 function ovGetBind() {
@@ -11971,10 +12222,14 @@ function ovShow() {
   ovPrevFocus = document.activeElement;
   ovOpen = true;
   ovRoot.hidden = false;
+  ovPlaceWindow(ovPanel, 'panel', OV_PANEL_MIN, ovDefaultPanelRect);
+  ovRoot.querySelectorAll('.ov-tab').forEach(t => t.classList.toggle('on', t.dataset.ovTab === ovTab));
+  ovRoot.querySelector('.ov-search').value = ovQuery;
+  ovUpdateSearchPlaceholder();
   ovRenderBindSetting();
   ovRenderLists();
   ovTimer = setInterval(ovRenderLists, 5000);   // keeps online dots fresh
-  if (ovLastUid) ovOpenChat(ovLastUid);
+  if (ovLastChat) ovOpenChat(ovLastChat);
   else ovRoot.querySelector('.ov-search').focus();
 }
 function ovClose() {
@@ -11983,10 +12238,127 @@ function ovClose() {
   ovRoot.hidden = true;
   clearInterval(ovTimer);
   ovChats.slice().forEach(c => ovCloseChat(c, false));
+  ovStopBrowsing();
   if (ovPrevFocus && document.contains(ovPrevFocus) && ovPrevFocus.focus) ovPrevFocus.focus();
   ovPrevFocus = null;
 }
-function ovReset() { ovClose(); ovLastUid = null; ovQuery = ''; ovTab = 'friends'; }
+function ovReset() { ovClose(); ovLastChat = null; ovQuery = ''; ovTab = 'friends'; ovBrowseSid = null; }
+
+// ---------- movable / resizable windows ----------
+// The side panel and every chat window can be dragged by their header and resized from any edge
+// or corner. Positions are remembered in this browser (localStorage) and clamped to the screen.
+const OV_LAYOUT_KEY = 'frixion.overlayLayout.v1';
+const OV_PANEL_MIN = { w: 240, h: 260 };
+const OV_CHAT_MIN = { w: 260, h: 220 };
+let ovLayout = (() => { try { return JSON.parse(localStorage.getItem(OV_LAYOUT_KEY) || '{}') || {}; } catch (e) { return {}; } })();
+let ovPanel = null, ovZ = 1;
+function ovSaveLayout() { try { localStorage.setItem(OV_LAYOUT_KEY, JSON.stringify(ovLayout)); } catch (e) {} }
+function ovClampRect(r, min) {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  r.w = Math.round(Math.max(Math.min(min.w, vw), Math.min(r.w, vw)));
+  r.h = Math.round(Math.max(Math.min(min.h, vh), Math.min(r.h, vh)));
+  r.x = Math.round(Math.max(0, Math.min(r.x, vw - r.w)));
+  r.y = Math.round(Math.max(0, Math.min(r.y, vh - r.h)));
+  return r;
+}
+function ovApplyRect(el, r) {
+  el._ovRect = r;
+  el.style.left = r.x + 'px'; el.style.top = r.y + 'px';
+  el.style.width = r.w + 'px'; el.style.height = r.h + 'px';
+}
+function ovRaise(el) { el.style.zIndex = String(++ovZ); }
+function ovDefaultPanelRect() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const w = vw <= 900 ? 280 : 320;
+  return { x: vw - 16 - w, y: 16, w, h: vh - 32 };
+}
+function ovDefaultChatRect(slot) {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const w = vw <= 900 ? 300 : 340, h = Math.min(480, vh - 32);
+  const pr = ovPanel && ovPanel._ovRect ? ovPanel._ovRect : ovDefaultPanelRect();
+  let x = pr.x - 12 - w - slot * (w + 12);
+  if (x < 8) x = 16 + slot * 32;           // no room beside the panel: cascade instead
+  return { x, y: vh - 16 - h, w, h };
+}
+// Gives a window its rectangle (saved one if there is one, else the default) and keeps it on screen.
+function ovPlaceWindow(el, key, min, defaultFn) {
+  const saved = ovLayout[key];
+  el._ovCustom = !!saved;
+  ovApplyRect(el, ovClampRect(Object.assign({}, saved || defaultFn()), min));
+}
+function ovMakeWindow(el, key, handle, min) {
+  el.classList.add('ov-win');
+  el._ovKey = key; el._ovMin = min;
+  ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].forEach(d => {
+    const h = document.createElement('div');
+    h.className = 'ov-rz ov-rz-' + d; h.dataset.dir = d;
+    el.appendChild(h);
+  });
+  el.addEventListener('pointerdown', (e) => {
+    ovRaise(el);
+    if (e.button !== 0) return;
+    let mode = null;
+    const rz = e.target.closest('.ov-rz');
+    if (rz && rz.parentNode === el) mode = rz.dataset.dir;
+    else if (handle && handle.contains(e.target) && !e.target.closest('button, input, textarea, a, select')) mode = 'move';
+    if (!mode) return;
+    e.preventDefault();
+    const start = { x: e.clientX, y: e.clientY, r: Object.assign({}, el._ovRect) };
+    const vw = window.innerWidth, vh = window.innerHeight;
+    el.setPointerCapture(e.pointerId);
+    el.classList.add('ov-dragging');
+    const onMove = (ev) => {
+      const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+      const r = Object.assign({}, start.r);
+      if (mode === 'move') {
+        r.x += dx; r.y += dy;
+        ovApplyRect(el, ovClampRect(r, min));
+        return;
+      }
+      if (mode.includes('e')) r.w = start.r.w + dx;
+      if (mode.includes('s')) r.h = start.r.h + dy;
+      if (mode.includes('w')) { r.w = start.r.w - dx; r.x = start.r.x + dx; }
+      if (mode.includes('n')) { r.h = start.r.h - dy; r.y = start.r.y + dy; }
+      // never smaller than the minimum; the edge opposite the one you are dragging stays put
+      if (r.w < min.w) { if (mode.includes('w')) r.x = start.r.x + start.r.w - min.w; r.w = min.w; }
+      if (r.h < min.h) { if (mode.includes('n')) r.y = start.r.y + start.r.h - min.h; r.h = min.h; }
+      // never past the screen edges
+      if (r.x < 0) { r.w += r.x; r.x = 0; }
+      if (r.y < 0) { r.h += r.y; r.y = 0; }
+      if (r.x + r.w > vw) r.w = vw - r.x;
+      if (r.y + r.h > vh) r.h = vh - r.y;
+      ovApplyRect(el, r);
+    };
+    const onUp = () => {
+      el.classList.remove('ov-dragging');
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
+      ovLayout[key] = Object.assign({}, el._ovRect);
+      el._ovCustom = true;
+      ovSaveLayout();
+    };
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+  });
+}
+function ovResetLayout() {
+  ovLayout = {};
+  ovSaveLayout();
+  if (ovPanel) ovPlaceWindow(ovPanel, 'panel', OV_PANEL_MIN, ovDefaultPanelRect);
+  ovChats.forEach(c => ovPlaceWindow(c.el, 'chat' + c.slot, OV_CHAT_MIN, () => ovDefaultChatRect(c.slot)));
+  toast('Overlay layout reset.');
+}
+window.addEventListener('resize', () => {
+  if (!ovOpen || !ovPanel) return;
+  if (ovPanel._ovCustom) ovApplyRect(ovPanel, ovClampRect(Object.assign({}, ovPanel._ovRect), OV_PANEL_MIN));
+  else ovApplyRect(ovPanel, ovClampRect(ovDefaultPanelRect(), OV_PANEL_MIN));
+  ovChats.forEach(c => {
+    if (c.el._ovCustom) ovApplyRect(c.el, ovClampRect(Object.assign({}, c.el._ovRect), OV_CHAT_MIN));
+    else ovApplyRect(c.el, ovClampRect(ovDefaultChatRect(c.slot), OV_CHAT_MIN));
+  });
+});
 
 function ovBuild() {
   if (ovRoot) return;
@@ -11994,25 +12366,33 @@ function ovBuild() {
   ovRoot.id = 'ov-root';
   ovRoot.hidden = true;
   ovRoot.setAttribute('role', 'dialog');
-  ovRoot.setAttribute('aria-label', 'Friends overlay');
+  ovRoot.setAttribute('aria-label', 'Overlay');
   ovRoot.innerHTML =
     '<div class="ov-chats" id="ov-chats"></div>' +
     '<aside class="ov-panel">' +
+      '<div class="ov-grip" title="Drag to move"><span class="ov-grip-dots"></span></div>' +
       '<div class="ov-tabs" role="tablist">' +
         '<button type="button" class="ov-tab on" data-ov-tab="friends" role="tab">Friends</button>' +
         '<button type="button" class="ov-tab" data-ov-tab="messages" role="tab">Messages</button>' +
+        '<button type="button" class="ov-tab" data-ov-tab="servers" role="tab">Servers</button>' +
       '</div>' +
       '<div class="ov-search-wrap">' +
         '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>' +
-        '<input class="ov-search" type="text" placeholder="Search friends" autocomplete="off" maxlength="24" aria-label="Search friends">' +
+        '<input class="ov-search" type="text" placeholder="Search friends" autocomplete="off" maxlength="24" aria-label="Search">' +
       '</div>' +
       '<div class="ov-list" id="ov-list"></div>' +
-      '<div class="ov-foot"><span id="ov-foot-kbd"></span><span>closes this</span></div>' +
+      '<div class="ov-foot"><span id="ov-foot-kbd"></span><span>closes this</span><button type="button" class="ov-reset" id="ov-reset-layout" title="Put the windows back where they started">Reset layout</button></div>' +
     '</aside>';
   document.body.appendChild(ovRoot);
+  ovPanel = ovRoot.querySelector('.ov-panel');
+  ovMakeWindow(ovPanel, 'panel', ovPanel.querySelector('.ov-grip'), OV_PANEL_MIN);
+  ovRoot.querySelector('#ov-reset-layout').onclick = ovResetLayout;
 
-  // Click on the dimmed area closes the overlay.
-  ovRoot.addEventListener('click', (e) => { if (e.target === ovRoot) ovClose(); });
+  // A click on the dimmed area closes the overlay, but only when the press also started there,
+  // so letting go of a window you were dragging doesn't close everything.
+  let downOnBackdrop = false;
+  ovRoot.addEventListener('pointerdown', (e) => { downOnBackdrop = e.target === ovRoot || e.target.id === 'ov-chats'; }, true);
+  ovRoot.addEventListener('click', (e) => { if (downOnBackdrop && (e.target === ovRoot || e.target.id === 'ov-chats')) ovClose(); downOnBackdrop = false; });
   // Nothing typed in here may reach the game or the page underneath.
   ['keyup', 'keypress'].forEach(t => ovRoot.addEventListener(t, e => e.stopPropagation()));
   ovRoot.addEventListener('keydown', (e) => {
@@ -12026,20 +12406,88 @@ function ovBuild() {
   ovRoot.querySelectorAll('.ov-tab').forEach(tab => tab.onclick = () => {
     ovTab = tab.dataset.ovTab;
     ovRoot.querySelectorAll('.ov-tab').forEach(t => t.classList.toggle('on', t === tab));
-    ovRoot.querySelector('.ov-search').placeholder = ovTab === 'friends' ? 'Search friends' : 'Search messages';
+    if (ovTab !== 'servers') ovStopBrowsing();
+    const search = ovRoot.querySelector('.ov-search');
+    search.value = ''; ovQuery = '';
+    ovUpdateSearchPlaceholder();
     ovRenderLists();
   });
   const search = ovRoot.querySelector('.ov-search');
   search.addEventListener('input', () => { ovQuery = search.value; ovRenderLists(); });
   search.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
-    const first = ovRoot.querySelector('.ov-row');
-    if (first) ovOpenChat(first.dataset.uid);
+    const first = ovRoot.querySelector('.ov-list .ov-row:not(.ov-back)');
+    if (first) first.click();
   });
   ovRoot.querySelector('#ov-list').addEventListener('click', (e) => {
     const row = e.target.closest('.ov-row');
-    if (row) ovOpenChat(row.dataset.uid);
+    if (!row) return;
+    if (row.dataset.back) { ovStopBrowsing(); ovQuery = ''; search.value = ''; ovUpdateSearchPlaceholder(); ovRenderLists(); }
+    else if (row.dataset.cid) ovOpenChat({ kind: 'channel', sid: row.dataset.sid, cid: row.dataset.cid });
+    else if (row.dataset.sid) { ovBrowse(row.dataset.sid); ovQuery = ''; search.value = ''; ovUpdateSearchPlaceholder(); }
+    else if (row.dataset.uid) ovOpenChat({ kind: 'dm', uid: row.dataset.uid });
   });
+}
+function ovUpdateSearchPlaceholder() {
+  const s = ovRoot && ovRoot.querySelector('.ov-search');
+  if (!s) return;
+  s.placeholder = ovTab === 'friends' ? 'Search friends' : ovTab === 'messages' ? 'Search messages' : (ovBrowseSid ? 'Search channels' : 'Search servers');
+}
+
+// ---------- servers (browse a server's channels from inside the overlay) ----------
+function ovServerById(id) { return (window.__myServers || []).find(s => s.id === id) || null; }
+function ovBrowse(sid) {
+  ovStopBrowsing();
+  ovBrowseSid = sid; ovChannels = []; ovCats = [];
+  const sref = db.collection('servers').doc(sid);
+  ovBrowseUnsubs.push(sref.collection('channels').orderBy('createdAt', 'asc').onSnapshot(snap => {
+    ovChannels = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    ovRenderLists();
+  }, () => { ovStopBrowsing(); ovRenderLists(); }));
+  ovBrowseUnsubs.push(sref.collection('categories').orderBy('createdAt', 'asc').onSnapshot(snap => {
+    ovCats = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    ovRenderLists();
+  }, () => {}));
+  ovRenderLists();
+}
+function ovStopBrowsing() {
+  ovBrowseUnsubs.forEach(u => { try { u(); } catch (e) {} });
+  ovBrowseUnsubs = [];
+  ovBrowseSid = null; ovChannels = []; ovCats = [];
+}
+// The server list changed (joined, left, kicked, renamed, roles edited).
+function ovOnServersChanged() {
+  if (!ovOpen) return;
+  if (ovBrowseSid && !ovServerById(ovBrowseSid)) ovStopBrowsing();
+  ovChats.filter(c => c.kind === 'channel' && !ovServerById(c.sid)).forEach(c => ovCloseChat(c, true));
+  ovRenderLists();
+  ovChats.forEach(ovRefreshComposer);
+}
+function ovServersListHTML() {
+  const q = ovQuery.trim().toLowerCase();
+  const servers = [...(window.__myServers || [])].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  if (!ovBrowseSid) {
+    const list = servers.filter(s => !q || (s.name || '').toLowerCase().includes(q));
+    if (!list.length) return `<div class="ov-empty">${servers.length ? `No servers match “${esc(ovQuery.trim())}”.` : 'You are not in any servers yet.'}</div>`;
+    return list.map(s => {
+      const n = (s.members || []).length;
+      return `<button type="button" class="ov-row" data-sid="${esc(s.id)}"><span class="ov-srv-ico">${esc(serverInitials(s.name))}</span>` +
+        `<span class="ov-row-copy"><span class="ov-row-name">${esc(s.name)}</span><span class="ov-row-sub">${n} member${n === 1 ? '' : 's'}</span></span></button>`;
+    }).join('');
+  }
+  const server = ovServerById(ovBrowseSid);
+  if (!server) return '';
+  const visible = ovChannels.filter(c => canViewChannel(c, server, myUid) && (!q || (c.name || '').toLowerCase().includes(q)));
+  const chanRow = (c) => `<button type="button" class="ov-row ov-chan" data-sid="${esc(server.id)}" data-cid="${esc(c.id)}"><span class="ov-hash">#</span><span class="ov-row-copy"><span class="ov-row-name">${esc(c.name)}</span></span></button>`;
+  let html = `<button type="button" class="ov-row ov-back" data-back="1"><span class="ov-back-arrow">‹</span><span class="ov-row-copy"><span class="ov-row-name">${esc(server.name)}</span><span class="ov-row-sub">All servers</span></span></button>`;
+  const loose = visible.filter(c => !c.categoryId || !ovCats.some(k => k.id === c.categoryId));
+  html += loose.map(chanRow).join('');
+  ovCats.forEach(cat => {
+    const inCat = visible.filter(c => c.categoryId === cat.id);
+    if (inCat.length) html += `<div class="ov-section">${esc(cat.name || 'Category')}</div>` + inCat.map(chanRow).join('');
+  });
+  if (!visible.length) html += `<div class="ov-empty">${ovChannels.length ? `No channels match “${esc(ovQuery.trim())}”.` : 'No channels you can see here.'}</div>`;
+  return html;
 }
 
 // ---------- friends / messages list ----------
@@ -12053,11 +12501,20 @@ function ovRowHTML(uid, sub) {
 }
 async function ovRenderLists() {
   if (!ovRoot || !ovOpen || !myProfile) return;
+  const listEl = ovRoot.querySelector('#ov-list');
+  if (ovTab === 'servers') {
+    // keep scroll position when a snapshot refreshes the list
+    const top = listEl.scrollTop;
+    listEl.innerHTML = ovServersListHTML();
+    listEl.scrollTop = top;
+    ovChats.forEach(ovRefreshComposer);
+    return;
+  }
   const friends = myProfile.friends || [];
   const dms = [...(window.__myDMs || [])].sort((a, b) => timeValue(b.updatedAt) - timeValue(a.updatedAt));
   const dmUids = dms.map(d => d.participants.find(x => x !== myUid)).filter(Boolean);
   await Promise.all([...friends, ...dmUids].map(getProfile));
-  if (!ovOpen) return;
+  if (!ovOpen || ovTab === 'servers') return;
   const q = ovQuery.trim().toLowerCase();
   const nameOf = u => displayNameOf(profileCache[u] || { username: u });
   const match = u => !q || (nameOf(u) + ' ' + ((profileCache[u] || {}).username || u)).toLowerCase().includes(q);
@@ -12078,50 +12535,99 @@ async function ovRenderLists() {
       return ovRowHTML(u, (mine ? 'You: ' : '') + previewForMessage(lm));
     }).join('') || `<div class="ov-empty">${dms.length ? `No messages match “${esc(ovQuery.trim())}”.` : 'No conversations yet. Pick a friend to say hi.'}</div>`;
   }
-  ovRoot.querySelector('#ov-list').innerHTML = html;
+  listEl.innerHTML = html;
   ovChats.forEach(c => {
+    if (c.kind !== 'dm') return;
     const s = c.el.querySelector('.ov-chat-status');
     if (s) s.textContent = ovStatusText(computeDisplayStatus(c.uid));
   });
 }
 
-// ---------- chat windows ----------
+// ---------- chat windows (a DM or a server channel) ----------
 function ovAttr(s) { return esc(s).replace(/"/g, '&quot;'); }
 function ovSafeUrl(u) { return /^(https?:|data:image\/|blob:)/i.test(u || '') ? ovAttr(u) : ''; }
 function ovAutosize(ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 96) + 'px'; }
+function ovKeyOf(t) { return t.kind === 'dm' ? 'dm:' + t.uid : `ch:${t.sid}:${t.cid}`; }
+function ovCommandText(raw) { return /^\/(mute|unmute|ban|unban|kick)\b/i.test(raw); }
 
-async function ovOpenChat(uid) {
-  const existing = ovChats.find(c => c.uid === uid);
-  if (existing) { existing.el.querySelector('.ov-input').focus(); return; }
-  const p = await getProfile(uid);
-  const id = dmIdFor(myUid, uid);
-  try {
-    const ref = db.collection('dms').doc(id);
-    const snap = await ref.get();
-    if (!snap.exists) {
-      await ref.set({ participants: [myUid, uid], autoDelete: true, createdAt: FieldValue.serverTimestamp() });
-      db.collection('users').doc(myUid).update({ 'stats.dmsStarted': FieldValue.increment(1) }).catch(() => {});
-    }
-  } catch (err) { toast('Could not open that chat.', 'error'); return; }
-  if (!ovOpen || ovChats.some(c => c.uid === uid)) return;   // closed or double-clicked while loading
+// Why can't I type in this channel right now? '' means I can.
+function ovChannelBlockReason(chat) {
+  const server = ovServerById(chat.sid), ch = chat.channel;
+  if (!server || !ch) return '';
+  if (isSiteMuted()) return siteMuteText();
+  if (!(isServerOwnerLevel(server, myUid) || hasServerPerm(server, myUid, 'administrator')) && timeoutUntil(server, myUid)) {
+    return `You are timed out for ${timeoutLeftText(timeoutUntil(server, myUid))}.`;
+  }
+  if (!hasChannelPerm(ch, server, myUid, 'sendMessages')) return 'You do not have permission to send messages in this channel.';
+  return '';
+}
+function ovRefreshComposer(chat) {
+  if (chat.kind !== 'channel') return;
+  const input = chat.el.querySelector('.ov-input');
+  const why = ovChannelBlockReason(chat);
+  input.disabled = !!why;
+  input.placeholder = why || `Message #${chat.channel ? chat.channel.name : 'channel'}`;
+}
+
+async function ovOpenChat(target) {
+  if (typeof target === 'string') target = { kind: 'dm', uid: target };
+  const key = ovKeyOf(target);
+  const existing = ovChats.find(c => c.key === key);
+  if (existing) {
+    ovRaise(existing.el);
+    const inp = existing.el.querySelector('.ov-input');
+    if (!inp.disabled) inp.focus();
+    return;
+  }
+  const chat = { key, kind: target.kind, id: null, uid: target.uid, sid: target.sid, cid: target.cid, msgs: [], unsub: null, unsubChan: null, stick: true, channel: null, el: document.createElement('section') };
+  let headHTML, placeholder, label;
+
+  if (target.kind === 'dm') {
+    const p = await getProfile(target.uid);
+    chat.id = dmIdFor(myUid, target.uid);
+    try {
+      const ref = db.collection('dms').doc(chat.id);
+      const snap = await ref.get();
+      if (!snap.exists) {
+        await ref.set({ participants: [myUid, target.uid], autoDelete: true, createdAt: FieldValue.serverTimestamp() });
+        db.collection('users').doc(myUid).update({ 'stats.dmsStarted': FieldValue.increment(1) }).catch(() => {});
+      }
+    } catch (err) { toast('Could not open that chat.', 'error'); return; }
+    headHTML = avatarHTML(30, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration, target.uid, p.equippedMask) +
+      `<div class="ov-chat-who"><div class="ov-chat-name">${esc(displayNameOf(p))}</div>` +
+      `<div class="ov-chat-status">${ovStatusText(computeDisplayStatus(target.uid))}</div></div>`;
+    placeholder = `Message @${esc(p.username)}`;
+    label = `Message ${esc(displayNameOf(p))}`;
+  } else {
+    const server = ovServerById(target.sid);
+    if (!server) { toast('You are not in that server.', 'error'); return; }
+    chat.id = target.cid;
+    headHTML = `<span class="ov-srv-ico small">${esc(serverInitials(server.name))}</span>` +
+      `<div class="ov-chat-who"><div class="ov-chat-name">#<span class="ov-chan-name">…</span></div>` +
+      `<div class="ov-chat-status">${esc(server.name)}</div></div>`;
+    placeholder = 'Message #channel';
+    label = 'Message channel';
+  }
+  if (!ovOpen || ovChats.some(c => c.key === key)) return;   // closed or double-clicked while loading
   while (ovChats.length >= ovMaxChats()) ovCloseChat(ovChats[0], false);
 
-  const chat = { id, uid, msgs: [], unsub: null, stick: true, el: document.createElement('section') };
+  const used = new Set(ovChats.map(c => c.slot));
+  chat.slot = 0; while (used.has(chat.slot)) chat.slot++;
   chat.el.className = 'ov-chat';
   chat.el.innerHTML =
-    '<header class="ov-chat-head">' +
-      avatarHTML(30, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration, uid, p.equippedMask) +
-      `<div class="ov-chat-who"><div class="ov-chat-name">${esc(displayNameOf(p))}</div>` +
-      `<div class="ov-chat-status">${ovStatusText(computeDisplayStatus(uid))}</div></div>` +
+    '<header class="ov-chat-head" title="Drag to move">' + headHTML +
       '<button type="button" class="ov-x" aria-label="Close chat">✕</button>' +
     '</header>' +
     '<div class="ov-msgs"></div>' +
     '<div class="ov-compose">' +
-      `<textarea class="ov-input" rows="1" maxlength="${COMPOSER_MAX_LENGTH}" placeholder="Message @${esc(p.username)}" aria-label="Message ${esc(displayNameOf(p))}"></textarea>` +
+      `<textarea class="ov-input" rows="1" maxlength="${COMPOSER_MAX_LENGTH}" placeholder="${placeholder}" aria-label="${label}"></textarea>` +
     '</div>';
   ovChats.push(chat);
   ovRoot.querySelector('#ov-chats').appendChild(chat.el);
-  ovLastUid = uid;
+  ovMakeWindow(chat.el, 'chat' + chat.slot, chat.el.querySelector('.ov-chat-head'), OV_CHAT_MIN);
+  ovPlaceWindow(chat.el, 'chat' + chat.slot, OV_CHAT_MIN, () => ovDefaultChatRect(chat.slot));
+  ovRaise(chat.el);
+  ovLastChat = target;
 
   const box = chat.el.querySelector('.ov-msgs');
   const input = chat.el.querySelector('.ov-input');
@@ -12134,18 +12640,43 @@ async function ovOpenChat(uid) {
   box.addEventListener('load', () => { if (chat.stick) box.scrollTop = box.scrollHeight; }, true);
   box.addEventListener('scroll', () => { chat.stick = box.scrollHeight - box.scrollTop - box.clientHeight < 80; });
 
-  chat.unsub = db.collection('dms').doc(id).collection('messages').orderBy('createdAt', 'desc').limit(40)
-    .onSnapshot(snap => {
+  let msgsRef;
+  if (chat.kind === 'dm') {
+    msgsRef = db.collection('dms').doc(chat.id).collection('messages');
+  } else {
+    const chRef = db.collection('servers').doc(chat.sid).collection('channels').doc(chat.cid);
+    msgsRef = chRef.collection('messages');
+    let first = true;
+    chat.unsubChan = chRef.onSnapshot(snap => {
+      const server = ovServerById(chat.sid);
+      if (!snap.exists || !server) { ovCloseChat(chat, true); return; }
+      chat.channel = { id: snap.id, ...snap.data() };
+      if (first) {
+        first = false;
+        if (!canViewChannel(chat.channel, server, myUid)) { toast("You don't have access to that channel.", 'error'); ovCloseChat(chat, true); return; }
+      } else if (!canViewChannel(chat.channel, server, myUid)) { ovCloseChat(chat, true); return; }
+      const nm = chat.el.querySelector('.ov-chan-name');
+      if (nm) nm.textContent = chat.channel.name;
+      input.setAttribute('aria-label', `Message #${chat.channel.name}`);
+      ovRefreshComposer(chat);
+    }, () => ovCloseChat(chat, true));
+  }
+  chat.unsub = msgsRef.orderBy('createdAt', 'desc').limit(40)
+    .onSnapshot(async snap => {
       chat.msgs = snap.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) })).reverse();
-      ovRenderMsgs(chat);
-    });
-  input.focus();
+      // channels have many authors; make sure we know who they are before drawing
+      const missing = [...new Set(chat.msgs.map(m => m.uid))].filter(u => u && !profileCache[u]);
+      if (missing.length) await Promise.all(missing.map(getProfile));
+      if (ovChats.includes(chat)) ovRenderMsgs(chat);
+    }, () => { if (ovChats.includes(chat)) ovCloseChat(chat, true); });
+  if (!input.disabled) input.focus();
 }
 function ovCloseChat(chat, forget) {
   if (chat.unsub) chat.unsub();
+  if (chat.unsubChan) chat.unsubChan();
   chat.el.remove();
   ovChats = ovChats.filter(c => c !== chat);
-  if (forget && ovLastUid === chat.uid) ovLastUid = null;
+  if (forget && ovLastChat && ovKeyOf(ovLastChat) === chat.key) ovLastChat = null;
 }
 
 function ovMsgBody(m) {
@@ -12175,29 +12706,57 @@ function ovRenderMsgs(chat) {
       ovMsgBody(m) + '</div></div>';
     prev = m;
   });
-  const name = displayNameOf(profileCache[chat.uid] || { username: chat.uid });
-  box.innerHTML = html || `<div class="ov-empty">Say hi to ${esc(name)}.</div>`;
+  const empty = chat.kind === 'dm'
+    ? `Say hi to ${esc(displayNameOf(profileCache[chat.uid] || { username: chat.uid }))}.`
+    : `No messages in #${esc(chat.channel ? chat.channel.name : 'this channel')} yet.`;
+  box.innerHTML = html || `<div class="ov-empty">${empty}</div>`;
   if (chat.stick) box.scrollTop = box.scrollHeight;
 }
 
 async function ovSend(chat, input) {
   const raw = input.value.trim();
   if (!raw) return;
+  // Moderation commands only work in the main window, inside a server. Here they do nothing.
+  if (ovCommandText(raw)) { input.value = ''; ovAutosize(input); return; }
   if (isSiteMuted()) { toast(siteMuteText(), 'error'); return; }
   if (raw.length > COMPOSER_MAX_LENGTH) { toast(`Your message is ${raw.length - COMPOSER_MAX_LENGTH} characters over the limit.`, 'error'); return; }
+  let server = null, ch = null;
+  if (chat.kind === 'channel') {
+    server = ovServerById(chat.sid); ch = chat.channel;
+    if (!server || !ch) return;
+    const why = ovChannelBlockReason(chat);
+    if (why) { toast(why, 'error'); return; }
+    const bypass = ['bypassSlowmode', 'manageChannels', 'manageMessages'].some(p => hasChannelPerm(ch, server, myUid, p));
+    if (ch.slowmode && !bypass) {
+      const left = Math.max(0, Math.ceil(((lastChannelSendAt[ch.id] || 0) + ch.slowmode * 1000 - Date.now()) / 1000));
+      if (left > 0) { toast(`Slowmode is on. You can send another message in ${left}s.`); return; }
+    }
+  }
   input.value = '';
   ovAutosize(input);
   chat.stick = true;
   const text = applyMessageFilter(raw);
-  const ref = db.collection('dms').doc(chat.id);
+  const payload = { text, uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp() };
   try {
-    await ref.collection('messages').add({ text, uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp() });
-    await ref.update({ updatedAt: FieldValue.serverTimestamp(), lastMessage: { text: previewForMessage({ text }), username: myProfile.username } });
-    db.collection('users').doc(myUid).update({
-      'dailyStats.dmsMessaged': FieldValue.increment(1),
-      'stats.messagesSent': FieldValue.increment(1),
-      'dailyStats.messagesSent': FieldValue.increment(1),
-    }).catch(() => {});
+    if (chat.kind === 'dm') {
+      const ref = db.collection('dms').doc(chat.id);
+      await ref.collection('messages').add(payload);
+      await ref.update({ updatedAt: FieldValue.serverTimestamp(), lastMessage: { text: previewForMessage({ text }), username: myProfile.username } });
+      db.collection('users').doc(myUid).update({
+        'dailyStats.dmsMessaged': FieldValue.increment(1),
+        'stats.messagesSent': FieldValue.increment(1),
+        'dailyStats.messagesSent': FieldValue.increment(1),
+      }).catch(() => {});
+    } else {
+      if (/(^|[\s(>])@(everyone|here)\b/i.test(text) && !hasChannelPerm(ch, server, myUid, 'mentionEveryone')) payload.everyoneBlocked = true;
+      if (ch.slowmode) lastChannelSendAt[ch.id] = Date.now();
+      await db.collection('servers').doc(chat.sid).collection('channels').doc(chat.cid).collection('messages').add(payload);
+      db.collection('users').doc(myUid).update({
+        'dailyStats.channelsMessaged': FieldValue.increment(1),
+        'stats.messagesSent': FieldValue.increment(1),
+        'dailyStats.messagesSent': FieldValue.increment(1),
+      }).catch(() => {});
+    }
   } catch (err) {
     input.value = raw;
     ovAutosize(input);
