@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=57">
+<link rel="stylesheet" href="style.css?v=59">
 </head>
 <body>
 
@@ -915,6 +915,7 @@
       <button class="admin-tab" data-admin-tab="shopmanage">Shop</button>
       <button class="admin-tab" data-admin-tab="quests">Quests</button>
       <button class="admin-tab hidden" data-admin-tab="systemhub" id="admin-tab-systemhub">System Hub</button>
+      <button class="admin-tab hidden" data-admin-tab="devices" id="admin-tab-devices">Devices</button>
     </div>
 
     <div class="admin-pane" id="admin-pane-players">
@@ -1322,6 +1323,16 @@
         <div class="admin-right" id="system-hub-actions"><div class="empty">Select a user to manage.</div></div>
       </div>
     </div>
+
+    <div class="admin-pane hidden" id="admin-pane-devices">
+      <div class="admin-layout">
+        <div class="admin-left">
+          <input class="fld-input" id="devices-search" placeholder="Search devices or accounts" autocomplete="off">
+          <div class="admin-user-list" id="devices-list"></div>
+        </div>
+        <div class="admin-right" id="devices-detail"><div class="empty">Select a device to manage.</div></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1426,6 +1437,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
-<script src="script.js?v=57"></script>
+<script src="script.js?v=59"></script>
 </body>
 </html>
