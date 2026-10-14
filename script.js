@@ -458,6 +458,7 @@ const SHOP_CATEGORY_DEFS = {
   profile_frames: { label: 'Profile Frames', get catalog() { return [...PROFILE_FRAMES, ...customProfileFrames]; }, ownedField: 'ownedProfileFrames', equipField: 'equippedProfileFrame' },
   themes: { label: 'Themes', get catalog() { return [...SHOP_THEMES, ...customThemes].map(t => ({ ...t, animated: !!t.anim })); }, ownedField: 'ownedThemes', equipField: 'equippedTheme' },
   banners: { label: 'Banners', get catalog() { return customBanners; }, ownedField: 'ownedBanners', equipField: 'equippedBanner' },
+  music: { label: 'Music', get catalog() { return MUSIC_TRACKS; }, ownedField: 'ownedMusic', equipField: 'equippedMusic' },
 };
 const PREMIUM_DURATION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 function isPremium(p) { return !!(p && p.premiumUntil && p.premiumUntil > Date.now()); }
@@ -481,8 +482,43 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //   3. Add a new entry every single time you ship a change here, however
 //      small, even if the person didn't ask for one — bump the version,
 //      use today's date. Don't let this log fall behind reality.
+//   4. Any screen shake, tilt, rumble or violent-motion effect you add MUST
+//      obey the "Reduce screen shake" accessibility setting. See the
+//      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.8', date: '2026-10-14', title: 'Owner panel: take items away',
+    notes: [
+      'The Owner Panel can now remove Shop items from a player. The item is taken off their account and unequipped.',
+    ] },
+  { v: '4.7', date: '2026-10-14', title: 'EQUINOX glow',
+    notes: [
+      'EQUINOX has a new look. The name glows while little words pulse out from behind it.',
+    ] },
+  { v: '4.6', date: '2026-10-14', title: 'Cutscene on phones',
+    notes: [
+      'On a phone held upright, the EQUINOX cutscene now turns sideways so it fills the screen and is much easier to see. Turn your phone to match.',
+    ] },
+  { v: '4.5', date: '2026-10-14', title: 'Music in the Shop',
+    notes: [
+      'The Shop has a new Music tab. Equip a track and it plays on a loop while you use Frixion. Unequip it whenever you like.',
+      'First up is 『 EQUILIBRIUM INCARNATE, EQUINOX 』 for 1,000,000 Orbs. Buying it plays a cutscene, and your whole screen shakes to the beat while it plays.',
+      'Featured is now split into sections, with Music at the very top. Banners moved into Browse.',
+      'Equipped items now have an Unequip button instead of just saying Equipped.',
+      'New Accessibility page in Settings with a Reduce screen shake switch. It turns off all shaking and tilting.',
+    ] },
+  { v: '4.4', date: '2026-10-13', title: 'Device list fixes',
+    notes: [
+      'Opening Frixion in two tabs at the same time no longer shows up as two devices.',
+      'Device names are checked against several details now, and anything that looks faked is flagged in the Devices tab.',
+      'The owner can remove an old entry from the Devices list.',
+    ] },
+  { v: '4.3', date: '2026-10-13', title: 'Filter switch',
+    notes: [
+      'The message filter now has a master switch, so the Owner or a Co-Owner can turn it on or off for everyone.',
+      'Filtered words can no longer be deleted. Each word is a switch you can turn off and on instead.',
+      'Owners and Co-Owners are never filtered.',
+    ] },
   { v: '4.2', date: '2026-10-13', title: 'Device bans',
     notes: [
       'The owner can now ban a whole device, not just an account. A banned device can\'t use Frixion at all, whichever account is tried on it.',
@@ -1023,10 +1059,17 @@ function linkifyText(html) {
 // won't flag normal words that merely contain a filtered word as a substring
 // (e.g. filtering "ass" will not touch "class" or "assist").
 const LEET_CLASSES = { a: 'a4@', b: 'b8', e: 'e3', g: 'g9', i: 'i1!|', l: 'l1', o: 'o0', s: 's5$', t: 't7', z: 'z2' };
+// Words are never deleted, only switched off (`disabledWords`), and the whole
+// filter has a master switch (`enabled`, on unless it says false).
 let filteredWords = [];
+let disabledFilterWords = [];
+let filterEnabled = true;
 function subscribeMessageFilter() {
   db.collection('config').doc('filter').onSnapshot(snap => {
-    filteredWords = (snap.exists && Array.isArray(snap.data().words)) ? snap.data().words : [];
+    const d = snap.exists ? snap.data() : {};
+    filteredWords = Array.isArray(d.words) ? d.words : [];
+    disabledFilterWords = Array.isArray(d.disabledWords) ? d.disabledWords : [];
+    filterEnabled = d.enabled !== false;
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminFilterList();
   });
 }
@@ -1038,8 +1081,10 @@ function buildFilterRegex(word) {
   try { return new RegExp(`(?<![a-z0-9])${body}(?![a-z0-9])`, 'gi'); } catch (e) { return null; }
 }
 function applyMessageFilter(text) {
+  if (!filterEnabled || isOwner) return text;      // master switch off, or the sender is an Owner / Co-Owner
   let out = text;
   for (const w of filteredWords) {
+    if (disabledFilterWords.includes(w)) continue;
     const re = buildFilterRegex(w);
     if (re) out = out.replace(re, '[CENSORED]');
   }
@@ -1808,6 +1853,7 @@ function defaultProfileFields(existing) {
     ownedProfileEffects: [], equippedProfileEffect: null,
     ownedProfileFrames: [], equippedProfileFrame: null,
     ownedThemes: [], equippedTheme: null,
+    ownedMusic: [], equippedMusic: null,
   };
 }
 async function normalizeProfile(username, data) {
@@ -1832,6 +1878,7 @@ function banLeftText(ms) {
 }
 function showBanScreen(ban, signedIn) {
   if (deviceBan.banned) return;                           // a device ban outranks an account ban notice
+  musicStop();
   let el = $('ban-screen');
   if (!el) { el = document.createElement('div'); el.id = 'ban-screen'; document.body.append(el); }
   const ends = ban.until ? new Date(ban.until).toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' }) : null;
@@ -1905,41 +1952,67 @@ async function devIdbSet(v) {
   } catch (e) {}
 }
 async function ensureDeviceId() {
-  const found = [devLsGet(), devCookieGet(), await devIdbGet()].find(v => v && DEVICE_ID_RE.test(v));
-  const id = found || 'dev_' + Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
-  devLsSet(id); devCookieSet(id); await devIdbSet(id);     // put the ID back anywhere it was wiped
-  return id;
+  const run = async () => {
+    const found = [devLsGet(), devCookieGet(), await devIdbGet()].find(v => v && DEVICE_ID_RE.test(v));
+    const id = found || 'dev_' + Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+    devLsSet(id); devCookieSet(id); await devIdbSet(id);     // put the ID back anywhere it was wiped
+    return id;
+  };
+  // Two tabs opening together must not both invent an ID, so one waits for the other.
+  if (navigator.locks && navigator.locks.request) { try { return await navigator.locks.request('frixion-device-id', run); } catch (e) {} }
+  return run();
 }
 
 // Browsers never reveal a device's real name ("Sam's laptop"), so this is the
 // best readable label available: the kind of device (or the phone model when
-// the browser shares it), the OS and the browser.
+// the browser shares it), the OS and the browser. It all comes from what the
+// browser says about itself, so it can be wrong or faked. Several signals are
+// compared, and a mismatch is flagged instead of being trusted.
+const devFamily = t => /^Win|Windows/i.test(t) ? 'windows' : /^Mac|macOS|Macintosh/i.test(t) ? 'mac' : /^iP|iOS/i.test(t) ? 'ios' : /Android/i.test(t) ? 'android' : /CrOS|Chrom(e|ium) OS/i.test(t) ? 'chromeos' : /Linux|X11/i.test(t) ? 'linux' : '';
 async function describeThisDevice() {
   const ua = navigator.userAgent || '', uad = navigator.userAgentData;
   let hi = {};
-  try { if (uad && uad.getHighEntropyValues) hi = await uad.getHighEntropyValues(['model', 'platformVersion']); } catch (e) {}
+  try { if (uad && uad.getHighEntropyValues) hi = await uad.getHighEntropyValues(['model', 'platformVersion', 'fullVersionList']); } catch (e) {}
   const touchy = (navigator.maxTouchPoints || 0) > 1;
+  const uaFam = /iPhone|iPod|iPad/.test(ua) ? 'ios' : /Android/.test(ua) ? 'android' : devFamily(ua);
+  const platFam = devFamily(navigator.platform || '');
+  const uadFam = uad && uad.platform ? devFamily(uad.platform) : '';
+  const family = uadFam || uaFam || platFam;
+  // Android and ChromeOS report a Linux platform, so Linux only conflicts with Windows/Mac/iOS.
+  const compat = (a, b) => !a || !b || a === b || (a === 'linux' && (b === 'android' || b === 'chromeos')) || (b === 'linux' && (a === 'android' || a === 'chromeos')) || (a === 'mac' && b === 'ios') || (a === 'ios' && b === 'mac');
+  const suspect = !(compat(uaFam, platFam) && compat(uaFam, uadFam) && compat(uadFam, platFam));
+
   let name, os = '';
-  if (/iPhone|iPod/.test(ua)) { name = 'iPhone'; os = 'iOS'; }
-  else if (/iPad/.test(ua) || (/Macintosh/.test(ua) && touchy)) { name = 'iPad'; os = 'iPadOS'; }
-  else if (/Android/.test(ua)) {
+  const pv = parseInt(String(hi.platformVersion || '').split('.')[0], 10);
+  if (family === 'ios' || (family === 'mac' && /iPad/.test(ua)) || (family === 'mac' && touchy && /Macintosh/.test(ua))) {
+    name = /iPad/.test(ua) || (touchy && /Macintosh/.test(ua)) ? 'iPad' : 'iPhone'; os = name === 'iPad' ? 'iPadOS' : 'iOS';
+  } else if (family === 'android') {
     const model = String(hi.model || (ua.match(/Android[^;)]*;\s*([^;)]+)/) || [])[1] || '').trim();
     name = model && model !== 'K' ? model : (/Mobile/.test(ua) ? 'Android phone' : 'Android tablet'); os = 'Android';
-  }
-  else if (/Windows/.test(ua)) { name = 'Windows PC'; const major = parseInt(String(hi.platformVersion || '').split('.')[0], 10); os = major >= 13 ? 'Windows 11' : major ? 'Windows 10' : 'Windows'; }
-  else if (/Mac OS X|Macintosh/.test(ua)) { name = 'Mac'; os = 'macOS'; }
-  else if (/CrOS/.test(ua)) { name = 'Chromebook'; os = 'ChromeOS'; }
-  else if (/Linux/.test(ua)) { name = 'Linux PC'; os = 'Linux'; }
+  } else if (family === 'windows') { name = 'Windows PC'; os = pv >= 13 ? 'Windows 11' : pv ? 'Windows 10' : 'Windows'; }
+  else if (family === 'mac') { name = 'Mac'; os = pv ? 'macOS ' + pv : 'macOS'; }
+  else if (family === 'chromeos') { name = 'Chromebook'; os = 'ChromeOS'; }
+  else if (family === 'linux') { name = 'Linux PC'; os = 'Linux'; }
   else name = 'Unknown device';
-  let browser = 'Unknown browser', m;
-  if ((m = ua.match(/Edg(?:e|A|iOS)?\/(\d+)/))) browser = 'Edge ' + m[1];
-  else if ((m = ua.match(/OPR\/(\d+)/))) browser = 'Opera ' + m[1];
-  else if ((m = ua.match(/(?:Firefox|FxiOS)\/(\d+)/))) browser = 'Firefox ' + m[1];
-  else if ((m = ua.match(/SamsungBrowser\/(\d+)/))) browser = 'Samsung Internet ' + m[1];
-  else if ((m = ua.match(/(?:Chrome|CriOS)\/(\d+)/))) browser = 'Chrome ' + m[1];
-  else if ((m = ua.match(/Version\/(\d+)[^]*Safari/))) browser = 'Safari ' + m[1];
+
+  // Browser: prefer the brand list Chromium browsers expose, then the user-agent text.
+  let browser = '', m;
+  const brands = (hi.fullVersionList && hi.fullVersionList.length ? hi.fullVersionList : (uad && uad.brands)) || [];
+  for (const b of ['Microsoft Edge', 'Opera', 'Samsung Internet', 'Brave', 'Google Chrome']) {
+    const hit = brands.find(x => x.brand === b);
+    if (hit) { browser = b.replace('Google ', '').replace('Microsoft ', '') + ' ' + String(hit.version).split('.')[0]; break; }
+  }
+  if (!browser) {
+    if ((m = ua.match(/Edg(?:e|A|iOS)?\/(\d+)/))) browser = 'Edge ' + m[1];
+    else if ((m = ua.match(/OPR\/(\d+)/))) browser = 'Opera ' + m[1];
+    else if ((m = ua.match(/(?:Firefox|FxiOS)\/(\d+)/))) browser = 'Firefox ' + m[1];
+    else if ((m = ua.match(/SamsungBrowser\/(\d+)/))) browser = 'Samsung Internet ' + m[1];
+    else if ((m = ua.match(/(?:Chrome|CriOS)\/(\d+)/))) browser = (brands.length ? 'Chromium-based ' : 'Chrome ') + m[1];
+    else if ((m = ua.match(/Version\/(\d+)[^]*Safari/))) browser = 'Safari ' + m[1];
+    else browser = 'Unknown browser';
+  }
   let tz = ''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
-  return { name, os, browser, screen: `${screen.width}×${screen.height}`, tz };
+  return { name, os, browser, screen: `${screen.width}×${screen.height}`, tz, suspect };
 }
 
 // Called every time someone signs in or the app opens with a saved session.
@@ -2051,6 +2124,7 @@ async function renderDeviceDetail(d, bannedAccounts) {
         <dt>Name</dt><dd>${esc(d.name || 'Unknown')}</dd>
         <dt>System</dt><dd>${esc(d.os || 'Unknown')}</dd>
         <dt>Browser</dt><dd>${esc(d.browser || 'Unknown')}</dd>
+        ${d.suspect ? '<dt>Heads up</dt><dd>This browser reports details that don\'t match each other (for example Windows and Mac at once). The name and browser above may be faked.</dd>' : ''}
         <dt>Screen</dt><dd>${esc(d.screen || 'Unknown')}</dd>
         <dt>Time zone</dt><dd>${esc(d.tz || 'Unknown')}</dd>
         <dt>First seen</dt><dd>${esc(fmtDeviceTime(d.firstSeen))}</dd>
@@ -2068,12 +2142,20 @@ async function renderDeviceDetail(d, bannedAccounts) {
         ? `<div class="ab-row"><span class="ab-note">Banned ${esc(fmtDeviceTime(d.bannedAt))}${d.bannedBy ? ' by ' + esc(d.bannedBy) : ''}.</span><button class="btn-secondary slim" id="device-unban-btn">Unban Device</button></div>`
         : `<div class="ab-row"><span class="ab-note">${mine ? "You can't ban the device you're using." : 'Blocks this device from Frixion, whatever account is used. The accounts themselves are not banned.'}</span>
            <button class="btn-danger slim" id="device-ban-btn" ${mine ? 'disabled' : ''}>Ban Device</button></div>`}
-    </div>`;
+    </div>
+    ${d.banned ? '' : `<div class="admin-block">
+      <div class="ab-title">Clean up</div>
+      <div class="ab-row"><span class="ab-note">Removes this entry from the list. If the browser is still in use, it comes back the next time someone signs in.</span>
+      <button class="btn-secondary slim" id="device-remove-btn" ${mine ? 'disabled' : ''}>Remove Entry</button></div>
+    </div>`}`;
   wrap.querySelectorAll('.dev-chip[data-u]').forEach(b => {
     b.onclick = () => { adminSelectedUser = b.dataset.u; document.querySelector('.admin-tab[data-admin-tab="systemhub"]').click(); renderAdminList(); };
   });
   if (d.banned) $('device-unban-btn').onclick = () => adminUnbanDevice(d);
-  else if (!mine) $('device-ban-btn').onclick = () => adminBanDevice(d, profiles);
+  else {
+    if (!mine) $('device-ban-btn').onclick = () => adminBanDevice(d, profiles);
+    if (!mine) $('device-remove-btn').onclick = () => adminRemoveDeviceEntry(d);
+  }
 }
 
 function adminBanDevice(d, profiles) {
@@ -2090,6 +2172,19 @@ function adminBanDevice(d, profiles) {
         await db.collection('devices').doc(d.id).update({ banned: true, banReason: typed || 'No reason given', bannedBy: myUid, bannedAt: Date.now() });
         toast('Device banned.');
       } catch (e) { toast(e.message || 'Could not ban device.', 'error'); }
+      renderDevicesPane();
+    },
+  });
+}
+function adminRemoveDeviceEntry(d) {
+  if (!isOwner) { toast('Only the owner can remove devices.', 'error'); return; }
+  if (d.banned) { toast('Unban the device before removing its entry.', 'error'); return; }
+  confirmAction({
+    title: 'Remove Entry', body: `Remove ${d.name || 'this device'} (${d.browser || 'unknown browser'}) from the list? Nobody is banned or signed out. If that browser is still in use, it is added back the next time someone signs in.`,
+    confirmLabel: 'Remove Entry',
+    onConfirm: async () => {
+      try { await db.collection('devices').doc(d.id).delete(); toast('Entry removed.'); adminSelectedDevice = null; }
+      catch (e) { toast(e.message || 'Could not remove entry.', 'error'); }
       renderDevicesPane();
     },
   });
@@ -2232,6 +2327,7 @@ $('register-btn').onclick = async () => {
 
 $('logout-btn').onclick = async () => {
   ovReset();
+  musicStop();
   ggRaccoonSeen = null;
   teardownPresence();
   try { if (myUid) await db.collection('users').doc(myUid).update({ status: 'offline' }); } catch (e) {}
@@ -2354,9 +2450,10 @@ function terminationSound() {
 async function startTermination(info) {
   if (terminationActive) return;
   terminationActive = true;
+  musicStop();
   const mode = info && info.mode === 'fake' ? 'fake' : 'real';
   const uid = myUid;
-  const calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const calm = !shakeAllowed();                       // Settings > Accessibility > Reduce screen shake (or the browser's reduce-motion setting)
 
   // Nothing else should be clickable or typeable while this plays.
   document.querySelectorAll('.modal-overlay').forEach(el => el.classList.add('hidden'));
@@ -2479,6 +2576,8 @@ function initAppForUser() {
     const liveBan = banStatus(myProfile);
     if (liveBan.banned) showBanScreen(liveBan, true);   // banned while signed in
     applyShopTheme(myProfile.equippedTheme);
+    syncShakeFromProfile(myProfile);
+    musicSync(myProfile.equippedMusic || null);
     // Admin-triggered redirect: fires once per nonce, then best-effort
     // clears the field so a later reconnect doesn't replay it.
     if (myProfile.redirectUrl && myProfile.redirectNonce && myProfile.redirectNonce !== lastHandledRedirectNonce) {
@@ -8468,6 +8567,168 @@ function openPremiumModal() {
 }
 
 // ============================================================
+// ACCESSIBILITY — SCREEN SHAKE
+//
+// >>> RULE FOR EVERY AI MODEL AND DEVELOPER WORKING ON THIS PROJECT <<<
+// Settings > Accessibility has a "Reduce screen shake" switch. It must turn off
+// EVERY shake, rumble, tilt, camera-shake and violent-motion effect in Frixion:
+// the ones that exist today AND anything you add later (shop items, games,
+// events, error bars, animations, all of it). Whenever you add one:
+//   - Motion driven by JavaScript: call shakeAllowed() first and skip the
+//     motion when it returns false.
+//   - Motion driven by a CSS animation: add a rule like
+//       html[data-no-shake] .your-class { animation: none !important; }
+//     to the "screen shake" block at the very bottom of style.css.
+// Never ship a new shake that ignores this switch. The setting is saved on
+// the device, and mirrored onto the account (a11yNoShake) so it follows the
+// person to other devices. With no choice made it defaults to the browser's
+// "reduce motion" preference.
+// ============================================================
+const SHAKE_KEY = 'frixion_no_shake';
+function screenShakeOff() {
+  let v = null; try { v = localStorage.getItem(SHAKE_KEY); } catch (e) {}
+  if (v === '1') return true;
+  if (v === '0') return false;
+  return !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+function shakeAllowed() { return !screenShakeOff(); }
+function applyShakeSetting() {
+  const off = screenShakeOff();
+  document.documentElement.toggleAttribute('data-no-shake', off);
+  const t = $('a11y-no-shake-toggle'); if (t) t.checked = off;
+  if (off) resetScreenShake();
+}
+function setScreenShakeOff(off) {
+  try { localStorage.setItem(SHAKE_KEY, off ? '1' : '0'); } catch (e) {}
+  applyShakeSetting();
+  if (myUid) db.collection('users').doc(myUid).update({ a11yNoShake: off }).catch(() => {});
+}
+function syncShakeFromProfile(p) {
+  if (!p || typeof p.a11yNoShake !== 'boolean') return;
+  let v = null; try { v = localStorage.getItem(SHAKE_KEY); } catch (e) {}
+  if (v !== (p.a11yNoShake ? '1' : '0')) { try { localStorage.setItem(SHAKE_KEY, p.a11yNoShake ? '1' : '0'); } catch (e) {} applyShakeSetting(); }
+}
+function resetScreenShake() {
+  document.body.style.transform = '';
+  document.documentElement.classList.remove('is-shaking');
+}
+
+// ============================================================
+// SHOP MUSIC
+// A track is an ordinary shop item (category "music", profile fields
+// ownedMusic / equippedMusic). The equipped track loops for as long as the
+// person is signed in. To add one: put the audio file next to index.html,
+// add an entry here and, if it should shake the screen, a loudness envelope
+// in MUSIC_SHAKE_ENVELOPES (one byte per 1/30 s, 0-255, base64).
+//   cutscene: optional video that plays once, on the first purchase.
+//   shake:    the screen tilts and shakes to the beat (up to 40 degrees).
+//   Any new shake must respect shakeAllowed() — see the accessibility rule above.
+// ============================================================
+const MUSIC_TRACKS = [
+  { id: 'equinox', name: '『 EQUILIBRIUM INCARNATE, EQUINOX 』', price: 1000000, featured: true, hero: true, fx: 'equinox',
+    desc: 'Plays on a loop and shakes your screen to the beat. Buying it plays a cutscene. You can turn the shaking off in Settings > Accessibility.',
+    src: 'equinox-music.mp3', cutscene: 'equinox-cutscene.mp4', shake: true },
+];
+const MUSIC_SHAKE_ENVELOPES = {
+  equinox: 'FaCOgXRpZl+PgHeOfW9kW1dPVU5HQz5LSENhV09KReDGrpmGg3RmX3FnX1ZRSkhBT0hTpJGCdWhcU7qkkpKCem5jXVN7bGC2oIx7bWNZloR0Z11VT0hYUbKfko9/c2hfYVd2al9hV1RPR2hcVE5M0rqjj359bmJcWlJNSERAal9ZUmzDrJeHd25jmIZ3dmpnXVdTSkhBPFBIQDo1Pjp+b2RZUU9JRFRNdWtvlIR2bGJhWVZPR0U/S0dAWU9KRETLs5+Le3ZoXFZPSUI9OjeBdG1ig8+3oZCAdmuYh3h2a2FZU25hWE9HcWVZUEdKRH1waFxUTUdCUUl7b2d1aF5WT01GTEU/PDg1M1RfVU5IROnMtZ6Lg3NmYVtaVlFNS8qxnoyEhHRpYVhRSXVoYF5UUUhCZVp+cGNhVlNORlhPaWJaVEtPR0A6NTMwL3duZl9ZUUlfVEtKQpeJem9iWVGau6SQf3BkWVBLR3pwa2JeV09JQmOSgHRrYVdNTUVASkI/OTQ0L0tEQpmGdmteVE1iWlFbUWZbUUxEWFJohnxzbGZfVmpeVFBIYFpRT0dDPqL727+nk4p5a2VeXlhUTkpEPjw2UbagjoJ7bWFfVU5QSFhPRz85TERNgHBkXFJKREpDPFtTY1hOSUJCPE+klYh+dW9iXlRMSkKjlYV4a2JaffHSuKGNfm9jXViFe3JpYFxTT0huiHhsZVpRSVNKRE5GRT44OjUwLG+Vg3NpXVhQXlxSWE5IQTs1MVJKapOIfHJqX1ZSSkNBOmhjWlRMRkH18tO4oo6BcWVeWXNqY11XVk5KQ0ijj391amFYbmNbWVBYTkZAOltRXIJyZV1TSkafi35vZGFXTkZAOjYycGVbVE5LRUtDPTg0ZWFWT0lFQOvfxayXhXhqXldTrZyMg3lrX1dOSmdbVFJLRkBKQz5QTEQ+OWxgVUxLi3psY1hQSXFkWVtVVEtDPThbVUxvaGNeWlNLSUI8R0B/eGtjWFBLiPHSuKGOfW5iXFipmo5/c2ZbUkpOcmVbVk1JQUE6OExEPjg4TkY/OWF/cGNaUEhEWVBLWE9uYldNRkJVTWhhXVlXT0hTSkNHQK2gjX9xZl2lwKiUgnNmWlFMS6GShn90aFxTS0ppXVVRS0Q+SEA8TUVDPTdZT0dAb3dpXVZNRUGCc2hnW1hPRj86PTs3bWZgW1hQR4ByZWFYV1FJRT45N66vmod3aWNYT0xLVlJgWlRLQz86RYp5cm5oZ2JdWVijkoR4anxvYlhd4c6zrKOgmJKSkY+ZlpKMf29iV0xDPDUvLIJyY1ZLQjp0bF5RRz42MU9FPDQtTEI6MiwmIh4aGE1DOjMsJyKekH9uYFZLRaOPe2tdUEZPSkE4MSwnIltQUEg+Wk5EOzQtJ4Z6alxQRTw3d2dZTkM7M1dPRTw1LigmVUpAODFdUUY9NS8qJSQgHBkZFhQSECkyPjgxKyk5MjcwK0ZAODIsKzs0Lirq28/KwL+3sK6ppJSCcmRgk5XCu7Gkj35uZpmZs6yhjnxtYF2WnZiOhXtsZFhOkouEenBkWU5GRJaQwLuwmYZ2Z1uWkPPZwaiThn13l5GMgnZsYF1TSpeRqJqMemtnWlGXkYyCd2xfVEtHl5L///fWuqWQkJalnpGKemtjV06WkId+c2hfX1RKlo6dlIl4aV1SSZa1rJ6PfW6nn5eXj4qBdWteXFFJlo+LgHNlWU9GQpeQioB1al1US0eXkZCGgXFjWU9NlrqxopaId3BiV5aRi4J3aV5TSkeVkP/34sSrlYJylpTbxa+Zhnpua5eRjYJ3al6JeGqXkK2fjn1ta15Vl5KKgHRnXlNJRpeR///93L+rloiVmqqck4Z2a15TlY+JgXtsX1RKQpWPop+VgnJpXGmVq9nEr5iFeXNtlpCKgXZnW1VMRJaQjIF0ZlpQR0eWkYqBd2hcUUhIlpGmmYt6a2VZq6ihnJCEfG1kWE6Wj4qAdGZaT0ZylpGSjIh3aVxRTZaQsqKRf29qY2CXkI6Dd2xfX1RLlo+ekIFxY2JXUZaPi4F4al1TSVKWkv/14MOpmYbJwravoZSFdGlcUpWOiH5yaFtaT0uVj4qDfW5gVUtelZCLgHRmWmFsa5WQjYN3a15aUEeRi4h9c2VZT0ZhnZWLgXZrXlNKSJaQjoN6a15TSszRw7KilId3bF9WlY+LgXZqXVVLkM2/sKGVg3NlWVKWkL2smod2bGB0lo+HfnNlWVlPRpaOlId7bF9ZT06Wko2Hfm9iVkxXlpfEwrmmkYNzh5uZl5WRiHZqXVd+fn5+fKeRfm5gVEqAdWZZTkQ8OT02MColIR40LismIh4cGRcVFBPIubGrnpaQhH59eGyWlZKOhX14dXRqhLutoZSOhoD////p08Gxm4h+xKubjH1vaV1TS4h4b2hgVVRMRT6tmI1/cW1gVk1FhHRsY1hOR0BsYFdPTUdAQD04My8zLz48OThbUUhCQTs6OTYxLjUzM/zcybijlJB/cGidin5xZVxZT0dAdmhjW1NKR0I8N1RLT01GS0Q9OjVrX1pRSUE8N2VaV05OSkI9OTQvLCkmREE/Pj44MzBORkOFd2ldWFFL6cy7qZeKiXlrY66Yin1vZVlQS0NhVlNOSkI8NzIuiXl0cGVcU0pEPVNKSUM9NzIuXlNRSVNTSkI9ODMxOjRPTEhERD04Mz44NWNZT0dGQT7dwbGikoaBcmVftZ6PgXNoX1VMRFtRTkpFPzo2MS1sYF1YT0tDPTg0Mi4qJyUiICA9N0Q/VHFkWVBIQDo5NE5MRkNCPDc0ZlpXaF1WTUpFQtO4rJ+PhYR0Z1+Zh3pxZlxSSUI8cWRfWlNKRkA6NWZbWlRMSEE7NTF4amVaUEhBO1RLSUJRS0M/Rj85NTUwREI/PnJlWlNRSEVBPDYyMS8t+trGtKCTkH5wZ6uWiXxvY15US0Onkod8bmFbU0pDgXJtZlxYT0Y/OYh3cWRZT0pDQTtkWVdRSEE7NTEuLSoxMS4tUUlFPjw3NlxSSkI/PTrOtKaYiX95a19ZppGEeGpgWE5GP2NYVVJLSEE+ODN1aGRcU3VnXFNKc2VfV01FSEFPR0I+XVtRSkhBPDo3M1hbWmRjWldVXVZqfnZtZmdlZf////Hczbejj4qNgHBpXFdMRGpd1Ligi3pqXVJPRUM7NWxecWNXUEa9pJKFdKOOfu7QzLOwrZ+WkIF5dKaSkIyDfHluZ2L/++fTvKyZjoB0//rl1r+uoo59csGpm45+cmtfWE//7tbDrpmHemxg/+zWxKuZiHhsYNu/sJ+Me21hX1T/9d7RtqKSgHZq1Lqpmol7dGdeVP/33sqxnIl9b2T/9+DNtaedinlywamZjHxxb2NYT//33sa1not9cGP/9t7Ksp+NfPHW8dLCsJuJg3ONfP/24Mivmot6/+Tfw6+ei32DdGZc//fdxrGciXxuYv/33sWvnpWDdGvGraCSg3t5a2BW//fdxq+ah3twY//238+1oI18//j62sexnImCc3Fk//XfzLOgkX//9+/RvKmVhYN0Zlz/997HrpqIfHRp//vlzrv///L/5+DEua2gmbelmpGJgn3////r2c2/2//+69zOvab44My4oIt5alxRRz6zpY98bF5SRz42MDUuKCODe2pcUExIPjYwKi4pJB8bGBUTEQ8ODAsKiIBvZ2V2bF5RRz45Miwmj4Z9bF5YVElAODE6X19ft7Glm5KNgnFiVZuOiIJ9hHVmWE1LSD83MImCe3ZxopaBcGFXUkg+Ni8pJCAcGBYTEQ+Eh391aF9XS0E5Mz01LimJeW1iVVxYTUM6OGZkYmGWkoqCfHJqX1NIjX95dHCDc2NWS1lYTEI5fHRuaWW3po98a2NaTkQ7MywmIh0aFxQSEHx5c21pkoBuX1JLQjkyLIF3cWxoz7yijHlyjIR6bZuVi4N1ZWBTSD+Hf3lzb7qgi3hoXlZKQDh4dG1oZL+pkn5tZ1pORDszLCYhHRkWFBEPd3JkV0t0ZFZKQEA4MSolc2RWS0GAdmZYTUM6My0oIx8cGhcVFBMREca8tdPDurKinZqwqaeml5GKfXp5qJ6YwqqflIJ5dbyroaWViHxtZF5zaGJoX1VMRD47qpeKin5wZFlRS7Ccj41/cGRZUE91amOGem5kXFROenFpeW1iWE9IRHhrZGdfVUxFPjp8bmeMgXJnW1JNpZKFjIBxZVlRS3JmX3JqX1VMRUGVhnuhjn9xZFpUpJGFhXxvZFlRTH1waIp6bWNhWlJSTkphW1JKQz47q5eJgnNlWlBIRHZqYXZtYVZNRkPoy7WolYV3aV5Wb2Vda2VbUUlCP6eUhn9yZlxSS0eYh3x3b2NYTkdDinxzbWNaU05KRltYVG5nXVVMR0WqmY2Fdm1jWFJPo5WNq5iLf3BoZNS/saaWi4FyamZdVUtDPOPv1rysl4RzZVjP1L2mmIV0ZllP0s65opWDc2VZTuXfyLOlxLWono2EfG1oY1xXVVFJUlFIS0pPSUmqmI2BcnBmXlVRg3RsYVZOSEI8PJiKfHBjW1JLREBhWlNMREE+a19ZiXpwZlqSgXhqYWFWT0lCPjk1MDOwn45+cGdfVk1ISkNBPDYzMV1TTbCejn9xfXBnW1SFdWpeVE1HRT89lod7bmFaU01FQYR0aV9UTkl4amKKfXFlWpODe21ihHRqX1ROSElCP4R5cGRZZVtbUU1nW1NMREA8XFJMmol8b2JfVlJJRE1FQzw3NDJUS0eCd21jWFZPXlRNS0NBPDc0M3ZpYKyXiHhqZ1xbUUttYFpRSEM/Pzo9rpuOgnOEenpwbWxiYmBWZHGOhoXy1Mm8pqSgo5uXlouRjoGIiIWBccWrlYFxtp6Jd2haT0U8NS8pJCAdGhcVE6aokn9uYLaejX1tZlmLf4aso5mRiIeKwK6sq6CUjoJ9epKFle3gzregkoe3oJmUhXtvYllTsZuRkIJ6a19WTtS5qZuLfW5hWE+Zhn3qzbWei31vu6OWiXluYldPR3RnY7afjX1uZl3w0ryplYN0Zl5XloR7iHpsYFVNSf/s08Cok4JzZ1/+3cfBqpaEdGph9dXAsZuIeGpfVsqwodC2n4x7bmqVg3xwY1hPTUpFWlBRsZuOfW5iWKSQhXttYFZNRT90Z2OzoJiFdmhd/97It6GPfm9jWLKckIqAdWdcUky7pJiMfW5iV09IspyR/+jPtZ6NfMqxoZiHd2ldVUx5a2a3oI18bmtj3sKunYp6a19YU8KpnbKejXxtZF7/6NG/qpiFdmxmX2BcVU5GPjhfVLmxopKDc2VZZ1utppiKe2xgVVNKm5eLgHJlWU9dU//eysavmYh4bWNgVVNRS0Q/OTc2hnZwoJOIeGphWHttZmRaUklCPTpmW1m+qZiGdmlfqJOGe25jWE5IQ6+ZjePIsZyJfG1yZV9bUkxEPj03bGBb4saumYZ/c7mikoZ3aV5UUEy5opTAqZSCc2df0LammYZ2aV1UTaCMgMWtmIZ2dGp/cGlkWU9HQDo4v6eYz7Wei3pwZGZaWFFJQTw3NDE5NFfZvqaUgoB0wamZiX1uYlhVT3JlYKOPfnBjfnJ5a2VkWU9HQDw6jXx24cStmYaFeL+nl4h4al9VTUi3oZPKsJqJeHVpqpWKhHRnW1FNSXVnYOzNtJ2KhXa/p5WJeGpeVFBKoIyAtKCNfG1hVti9qp+Me21gVk/Cqp+Wh4h4duHHwamelIqjj4qCdrSelYyB0bas/+HPta2ilJKAfpaEdW1j/+/czbaunJiKeW9jWVFIQTo1RE9HPzk1UEdAOlFWT0pCO0VAPDs7RGddWFdPS0dAPDZ+dW9oXFJMREF0aWNdVpWIgHpylYl/dm2TiH98hYSBend0bmZmYlZMQzs1L2dhWVxSSJOAb2Gv1L+vnId1ZqSVgXBhqZOAbw==',
+};
+
+let musicAudio = null, musicTrack = null, musicEnv = null, musicShakeRaf = 0, musicGestureFn = null, cutsceneActive = false;
+function musicVolume() {
+  let v = NaN; try { v = parseFloat(localStorage.getItem('frixion_music_volume')); } catch (e) {}
+  return isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.6;
+}
+function setMusicVolume(v) {
+  try { localStorage.setItem('frixion_music_volume', String(v)); } catch (e) {}
+  if (musicAudio) musicAudio.volume = v;
+}
+function musicStop() {
+  if (musicGestureFn) { ['pointerdown', 'keydown', 'touchstart'].forEach(t => window.removeEventListener(t, musicGestureFn, true)); musicGestureFn = null; }
+  if (musicAudio) { try { musicAudio.pause(); musicAudio.removeAttribute('src'); musicAudio.load(); } catch (e) {} }
+  musicAudio = null; musicTrack = null; musicEnv = null;
+  cancelAnimationFrame(musicShakeRaf); musicShakeRaf = 0;
+  resetScreenShake();
+}
+// Call with the equipped track id (or null). Starts, switches or stops the music to match.
+function musicSync(id) {
+  if (cutsceneActive) return;
+  if (!id) { if (musicAudio) musicStop(); return; }
+  if (musicTrack && musicTrack.id === id) return;
+  const track = MUSIC_TRACKS.find(t => t.id === id);
+  musicStop();
+  if (!track) return;
+  musicTrack = track;
+  const a = new Audio(track.src);
+  a.loop = true; a.preload = 'auto'; a.volume = musicVolume();
+  musicAudio = a;
+  const b64 = MUSIC_SHAKE_ENVELOPES[track.id];
+  try { musicEnv = track.shake && b64 ? Uint8Array.from(atob(b64), c => c.charCodeAt(0)) : null; } catch (e) { musicEnv = null; }
+  // Browsers only allow sound after the person has clicked or tapped the page; if it's blocked, start on the first one.
+  a.play().catch(() => {
+    const go = () => { ['pointerdown', 'keydown', 'touchstart'].forEach(t => window.removeEventListener(t, go, true)); if (musicGestureFn === go) musicGestureFn = null; if (musicAudio === a) a.play().catch(() => {}); };
+    musicGestureFn = go;
+    ['pointerdown', 'keydown', 'touchstart'].forEach(t => window.addEventListener(t, go, true));
+  });
+  if (musicEnv) musicShakeRaf = requestAnimationFrame(musicShakeTick);
+}
+// Shakes the whole page in time with the music. The loudness envelope was measured from the
+// track ahead of time, so it stays in sync with audio.currentTime and works from any hosting.
+function musicShakeTick(now) {
+  musicShakeRaf = requestAnimationFrame(musicShakeTick);
+  const a = musicAudio;
+  if (!a || !musicEnv) return;
+  if (!shakeAllowed() || a.paused || document.hidden || cutsceneActive) { if (document.body.style.transform) resetScreenShake(); return; }
+  const pos = (a.currentTime * 30) % musicEnv.length, i = Math.floor(pos), f = pos - i;
+  const e = (musicEnv[i] * (1 - f) + musicEnv[(i + 1) % musicEnv.length] * f) / 255;
+  const s = Math.pow(e, 1.5);                         // quiet stretches barely move; the loudest hits reach the maximum
+  const t = now / 1000;
+  const wobble = 0.6 * Math.sin(t * 31) + 0.4 * Math.sin(t * 17 + 1.3);     // always between -1 and 1
+  const MAX_TILT = 40;                                // degrees
+  document.documentElement.classList.add('is-shaking');
+  document.body.style.transform = `translate(${(26 * s * Math.sin(t * 43 + 2)).toFixed(1)}px, ${(20 * s * Math.sin(t * 37)).toFixed(1)}px) rotate(${(MAX_TILT * s * wobble).toFixed(2)}deg) scale(${(1 + 0.04 * s).toFixed(3)})`;
+}
+
+// The video that plays the first time a track with a cutscene is bought.
+function playCutscene(src) {
+  return new Promise(resolve => {
+    const el = document.createElement('div');
+    el.id = 'cutscene-screen';
+    // The stage turns sideways on a phone held upright (see style.css), so the wide video fills the screen.
+    el.innerHTML = '<div class="cut-stage"><video playsinline preload="auto"></video><button type="button" class="cut-skip hidden">Skip</button></div>';
+    document.body.append(el);
+    const v = el.querySelector('video'), skip = el.querySelector('.cut-skip');
+    let done = false;
+    const finish = () => {
+      if (done) return; done = true;
+      el.classList.add('is-out');
+      setTimeout(() => el.remove(), 400);
+      try { v.pause(); } catch (e) {}
+      resolve();
+    };
+    v.onended = finish; v.onerror = finish; skip.onclick = finish;
+    setTimeout(() => skip.classList.remove('hidden'), 2000);
+    setTimeout(finish, 120000);                        // never trap anyone behind a stuck video
+    v.src = src;
+    v.play().catch(() => { v.muted = true; v.play().catch(finish); });   // blocked with sound: play it silent rather than skip it
+  });
+}
+
+// Animated name text (used by shop items that set `fx`). The name is rendered letter by letter, and a ring of
+// little words (taken from the name) is placed behind it; CSS sends them drifting outward and fading, over and over.
+function fxTextHTML(text, fx) {
+  let i = 0;
+  const words = String(text).split(' ').map(w => '<span class="fx-w">' + Array.from(w).map(c => `<span class="fx-ch" style="--i:${i++}">${esc(c)}</span>`).join('') + '</span>').join(' ');
+  const bits = String(text).replace(/[『』,]/g, '').split(' ').filter(Boolean);
+  const N = 10;
+  const echoes = bits.length ? Array.from({ length: N }, (_, n) => {
+    const ang = (n / N) * Math.PI * 2 + (n % 2) * 0.35;
+    const dx = Math.round(Math.cos(ang) * (92 + (n % 3) * 22)), dy = Math.round(Math.sin(ang) * (40 + (n % 2) * 16));
+    return `<span class="fx-echo" aria-hidden="true" style="--dx:${dx}px;--dy:${dy}px;--d:${(-n * 0.44).toFixed(2)}s">${esc(bits[n % bits.length])}</span>`;
+  }).join('') : '';
+  return `<span class="fx-text fx-${esc(fx || 'plain')}" role="text" aria-label="${esc(text)}">${echoes}<span class="fx-letters" aria-hidden="true">${words}</span></span>`;
+}
+
+// ============================================================
 // SHOP — Featured, Avatar Decorations, Nameplates, Profile Effects, and
 // Profile Frames are all functional.
 // ============================================================
@@ -8476,6 +8737,7 @@ function orbIconSVG(size) { return `<svg viewBox="0 0 24 24" width="${size}" hei
 function shopItemPreviewHTML(key, item) {
   if (key === 'decorations') return `<div class="sic-deco-stage">${avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, item.id)}</div>`;
   if (key === 'masks') return `<div class="sic-deco-stage">${avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, null, undefined, item.id)}</div>`;
+  if (key === 'music') return `<div class="sic-music-preview${item.fx ? ' fx-bg-' + esc(item.fx) : ''}${myProfile.equippedMusic === item.id ? ' is-playing' : ''}"><div class="smp-eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>${item.fx ? fxTextHTML(item.name, item.fx) : `<span class="smp-title">${esc(item.name)}</span>`}</div>`;
   if (key === 'banners') return `<div class="sic-banner-preview">
     <div class="sic-banner-strip${item.animated ? ' banner-anim' : ''}" style="background:${esc(bannerGradientCSS(item))};"></div>
     <div class="sic-banner-avatar">${avatarHTML(44, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl)}</div>
@@ -8514,10 +8776,10 @@ function shopItemCardHTML(key, item) {
   const owned = (myProfile[def.ownedField] || []).includes(item.id);
   const equipped = myProfile[def.equipField] === item.id;
   const action = equipped ? 'unequip' : owned ? 'equip' : 'buy';
-  const label = equipped ? 'Equipped' : owned ? 'Equip' : `${orbIconSVG(13)}<span>${item.price}</span>`;
-  return `<div class="shop-item-card${key === 'themes' ? ' is-theme-card' : ''}" data-item="${esc(item.id)}" data-cat="${key}">
+  const label = equipped ? 'Unequip' : owned ? 'Equip' : `${orbIconSVG(13)}<span>${Number(item.price).toLocaleString()}</span>`;
+  return `<div class="shop-item-card${key === 'themes' ? ' is-theme-card' : ''}${key === 'music' ? ' is-music-card' : ''}${item.hero ? ' is-hero' : ''}" data-item="${esc(item.id)}" data-cat="${key}">
     <div class="sic-preview">${shopItemPreviewHTML(key, item)}</div>
-    ${key === 'themes' ? '' : `<div class="sic-name">${esc(item.name)}${item.animated ? '<span class="sic-animated-tag">Animated</span>' : ''}</div>`}
+    ${(key === 'themes' || key === 'music') ? '' : `<div class="sic-name">${esc(item.name)}${item.animated ? '<span class="sic-animated-tag">Animated</span>' : ''}</div>`}
     ${item.desc ? `<div class="sic-desc">${esc(item.desc)}</div>` : ''}
     <button class="sic-btn${equipped ? ' is-equipped' : owned ? ' is-owned' : ''}" data-action="${action}">${label}</button>
   </div>`;
@@ -8536,13 +8798,23 @@ function wireShopCardButtons(wrap) {
   });
 }
 
+// Featured is split into one section per kind of item. Music comes first, so the newest tracks sit at the very top.
+const SHOP_FEATURED_ORDER = ['music', 'themes', 'banners', 'decorations', 'masks', 'nameplates', 'profile_effects', 'profile_frames'];
+function shopGridClass(key) {
+  return 'shop-grid' + (key === 'music' ? ' music-shop-grid' : (key === 'themes' || key === 'banners') ? ' theme-shop-grid' : '');
+}
 function renderShopFeatured() {
   const wrap = $('shop-pane-featured');
-  const items = [];
-  Object.keys(SHOP_CATEGORY_DEFS).forEach(key => {
-    SHOP_CATEGORY_DEFS[key].catalog.forEach(item => { if (item.featured) items.push(shopItemCardHTML(key, item)); });
+  const keys = SHOP_FEATURED_ORDER.concat(Object.keys(SHOP_CATEGORY_DEFS).filter(k => !SHOP_FEATURED_ORDER.includes(k)));
+  const sections = [];
+  keys.forEach(key => {
+    const def = SHOP_CATEGORY_DEFS[key];
+    if (!def) return;
+    const items = def.catalog.filter(item => item.featured);
+    if (!items.length) return;
+    sections.push(`<div class="shop-section-label">${esc(def.label)}</div><div class="${shopGridClass(key)}">${items.map(item => shopItemCardHTML(key, item)).join('')}</div>`);
   });
-  wrap.innerHTML = `<div class="shop-section-label">Featured</div><div class="shop-grid">${items.join('')}</div>`;
+  wrap.innerHTML = sections.join('') || '<div class="shop-empty-state"><b>Nothing featured right now</b><span>Check the other tabs.</span></div>';
   wireShopCardButtons(wrap);
 }
 
@@ -8561,6 +8833,20 @@ function renderShopCategoryPane(key) {
       ? `<div class="shop-grid">${list.map(i => shopItemCardHTML(key, i)).join('')}</div>`
       : `<div class="shop-empty-state"><b>${q ? 'No masks found' : 'No masks yet'}</b><span>${q ? 'Try a different search.' : 'Full avatar masks published by Frixion staff will show up here.'}</span></div>`);
     wireShopCardButtons(wrap);
+    return;
+  }
+  if (key === 'music') {
+    const list = def.catalog.filter(matches);
+    const now = def.catalog.find(t => t.id === myProfile.equippedMusic);
+    wrap.innerHTML = `<div class="shop-section-label">Music</div>
+      <div class="music-toolbar">
+        <div class="mt-now">${now ? `<span class="mt-label">Now playing</span> ${esc(now.name)}` : 'Nothing equipped.'}</div>
+        <label class="mt-vol"><span>Volume</span><input type="range" id="music-volume" min="0" max="100" value="${Math.round(musicVolume() * 100)}" aria-label="Music volume"></label>
+      </div>` + (list.length
+        ? `<div class="${shopGridClass(key)}">${list.map(i => shopItemCardHTML(key, i)).join('')}</div>`
+        : `<div class="shop-empty-state"><b>${q ? 'No music found' : 'No music yet'}</b><span>${q ? 'Try a different search.' : 'New tracks will show up here.'}</span></div>`);
+    wireShopCardButtons(wrap);
+    $('music-volume').oninput = e => setMusicVolume(e.target.value / 100);
     return;
   }
   if (key === 'banners' && !def.catalog.length) {
@@ -8590,6 +8876,8 @@ async function buyShopItem(key, id) {
     const fresh = (await db.collection('users').doc(myUid).get()).data();
     if ((fresh[def.ownedField] || []).includes(id)) { toast('You already own this.'); return; }
     if ((fresh.orbs || 0) < item.price) { toast('Not enough Orbs. Play games to earn more.'); return; }
+    // The first purchase of a track with a cutscene plays it, so hold the music back until it ends.
+    if (item.cutscene) cutsceneActive = true;
     // Equip it immediately on purchase, matching how Discord's own shop works.
     await db.collection('users').doc(myUid).update({
       orbs: FieldValue.increment(-item.price),
@@ -8598,7 +8886,12 @@ async function buyShopItem(key, id) {
     });
     toast(`Purchased ${item.name}!`);
     refreshOpenShopPanes();
-  } catch (e) { toast('Purchase failed.', 'error'); }
+    if (item.cutscene) {
+      await playCutscene(item.cutscene);
+      cutsceneActive = false;
+      musicSync(myProfile && myProfile[def.equipField] === id ? id : (myProfile && myProfile.equippedMusic) || null);
+    }
+  } catch (e) { cutsceneActive = false; toast('Purchase failed.', 'error'); }
 }
 
 async function equipShopItem(key, id) {
@@ -8606,7 +8899,7 @@ async function equipShopItem(key, id) {
   if (!def) return;
   try {
     await db.collection('users').doc(myUid).update({ [def.equipField]: id || null });
-    toast(id ? 'Equipped.' : 'Removed.');
+    toast(id ? 'Equipped.' : 'Unequipped.');
     refreshOpenShopPanes();
   } catch (e) { toast('Could not update.', 'error'); }
 }
@@ -9940,16 +10233,39 @@ $('admin-filter-word').addEventListener('keydown', (e) => { if (e.key === 'Enter
 
 function renderAdminFilterList() {
   const wrap = $('admin-filter-list');
+  const master = $('filter-master-toggle');
+  master.checked = filterEnabled;
+  master.disabled = !isOwner;                       // only Owner / Co-Owner can flip the master switch
+  $('filter-master-title').textContent = filterEnabled ? 'Filter is on' : 'Filter is off';
+  $('filter-master-note').textContent = isOwner
+    ? 'Turn this off to stop filtering for everyone. Your words are kept.'
+    : 'Only the Owner and Co-Owners can turn the whole filter on or off.';
+  wrap.classList.toggle('filter-all-off', !filterEnabled);
   wrap.innerHTML = filteredWords.length
-    ? filteredWords.slice().sort().map(w => `<div class="admin-emoji-chip" data-w="${esc(w)}"><span>${esc(w)}</span><span class="rm" title="Remove">${icon('trash')}</span></div>`).join('')
+    ? filteredWords.slice().sort().map(w => {
+        const off = disabledFilterWords.includes(w);
+        return `<div class="admin-emoji-chip editable filter-chip ${off ? 'off' : ''}" data-w="${esc(w)}" role="switch" aria-checked="${!off}" tabindex="0" title="${off ? 'Off. Click to turn on' : 'On. Click to turn off'}"><span class="fc-dot"></span><span class="fc-word">${esc(w)}</span><span class="fc-state">${off ? 'Off' : 'On'}</span></div>`;
+      }).join('')
     : '<div class="empty">No filtered words yet.</div>';
-  wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
-    btn.onclick = async () => {
-      const w = btn.closest('.admin-emoji-chip').dataset.w;
-      await db.collection('config').doc('filter').set({ words: FieldValue.arrayRemove(w) }, { merge: true });
+  wrap.querySelectorAll('.filter-chip').forEach(chip => {
+    const flip = async () => {
+      const w = chip.dataset.w, off = disabledFilterWords.includes(w);
+      try {
+        await db.collection('config').doc('filter').set({ disabledWords: off ? FieldValue.arrayRemove(w) : FieldValue.arrayUnion(w) }, { merge: true });
+      } catch (e) { toast('Could not change that word.', 'error'); }
     };
+    chip.onclick = flip;
+    chip.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } };
   });
 }
+$('filter-master-toggle').onchange = async e => {
+  const want = e.target.checked;
+  if (!isOwner) { e.target.checked = filterEnabled; toast('Only the Owner and Co-Owners can do that.', 'error'); return; }
+  try {
+    await db.collection('config').doc('filter').set({ enabled: want }, { merge: true });
+    toast(want ? 'Filter turned on.' : 'Filter turned off.');
+  } catch (err) { e.target.checked = filterEnabled; toast('Could not change the filter.', 'error'); }
+};
 
 // The owner's "System Hub" tab and a regular admin's "Players" tab are
 // mutually exclusive (only one is ever visible to a given person), so they
@@ -10054,6 +10370,7 @@ async function renderAdminActions() {
         <button class="btn-accent-inline slim" id="admin-redirect-btn">Redirect</button>
       </div>
     </div>
+    ${adminItemsBlockHTML(u)}
     <div id="admin-user-devices"></div>
     <div class="admin-block">
       <div class="ab-title">Danger Zone</div>
@@ -10076,6 +10393,7 @@ async function renderAdminActions() {
     $('admin-redirect-btn').onclick = () => adminRedirect(u.username);
     $('admin-delete-btn').onclick = adminDelete;
     $('admin-fake-delete-btn').onclick = adminFakeDelete;
+    wrap.querySelectorAll('[data-rm-item]').forEach(b => { b.onclick = () => adminRemoveItem(u.username, b.dataset.field, b.dataset.id); });
     loadUserDevicesBlock(u.username);
   }
 }
@@ -10196,6 +10514,49 @@ async function adminRedirect(username) {
     $('admin-redirect-url').value = '';
   } catch (e) { toast(e.message || 'Could not redirect user.', 'error'); }
 }
+// Everything a person owns from the Shop, one row per item. Masks share a list with decorations, so rows are
+// matched to a category by looking the id up in each catalog that uses that field.
+function ownedShopRows(u) {
+  const byField = {};
+  Object.values(SHOP_CATEGORY_DEFS).forEach(def => { (byField[def.ownedField] = byField[def.ownedField] || []).push(def); });
+  const rows = [];
+  Object.entries(byField).forEach(([field, defs]) => {
+    (u[field] || []).forEach(id => {
+      const def = defs.find(d => d.catalog.some(i => i.id === id));
+      const item = def && def.catalog.find(i => i.id === id);
+      rows.push({ field, id, name: item ? item.name : id, label: def ? def.label : 'Removed item', equipped: defs.some(d => u[d.equipField] === id) });
+    });
+  });
+  return rows;
+}
+function adminItemsBlockHTML(u) {
+  const rows = ownedShopRows(u);
+  return `<div class="admin-block">
+      <div class="ab-title">Shop items (${rows.length})</div>
+      ${rows.length ? `<div class="admin-items-list">${rows.map(r => `<div class="admin-item-row"><span class="ai-name" title="${esc(r.name)}">${esc(r.name)}</span><span class="ai-cat">${esc(r.label)}</span>${r.equipped ? '<span class="ban-tag mute-tag">Equipped</span>' : ''}<button type="button" class="btn-secondary slim" data-rm-item data-field="${esc(r.field)}" data-id="${esc(r.id)}">Remove</button></div>`).join('')}</div>` : '<span class="ab-note">No Shop items.</span>'}
+    </div>`;
+}
+async function adminRemoveItem(username, field, id) {
+  if (!isOwner) { toast('Only the owner can remove items.', 'error'); return; }
+  if (!guardPlatformTarget(username)) return;
+  const defs = Object.values(SHOP_CATEGORY_DEFS).filter(d => d.ownedField === field);
+  const hit = defs.map(d => d.catalog.find(i => i.id === id)).find(Boolean);
+  const name = hit ? hit.name : id;
+  confirmAction({
+    title: 'Remove Item', body: `Remove ${name} from ${username}? It is taken off their account and unequipped. No Orbs are refunded.`, confirmLabel: 'Remove Item',
+    onConfirm: async () => {
+      try {
+        const fresh = (await db.collection('users').doc(username).get()).data() || {};
+        const patch = { [field]: FieldValue.arrayRemove(id) };
+        defs.forEach(d => { if (fresh[d.equipField] === id) patch[d.equipField] = null; });
+        await db.collection('users').doc(username).update(patch);
+        toast(`Removed ${name} from ${username}.`);
+      } catch (e) { toast(e.message || 'Could not remove that item.', 'error'); }
+      renderAdminActions();
+    },
+  });
+}
+
 async function adminDelete() {
   if (!isOwner) { toast('Only the owner can delete accounts.', 'error'); return; }
   if (!adminSelectedUser || !guardPlatformTarget(adminSelectedUser)) return;
@@ -10239,6 +10600,9 @@ async function adminFakeDelete() {
 window.addEventListener('beforeunload', () => {
   if (myUid) { try { db.collection('users').doc(myUid).update({ status: 'offline' }); } catch (e) {} }
 });
+
+$('a11y-no-shake-toggle').onchange = e => setScreenShakeOff(e.target.checked);
+applyShakeSetting();
 
 boot();
 

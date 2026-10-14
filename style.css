@@ -1113,8 +1113,8 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 .sic-btn:hover { background: var(--accent-hover); }
 .sic-btn.is-owned { background: var(--bg-modifier-hover); color: var(--text-normal); }
 .sic-btn.is-owned:hover { background: var(--accent); color: #fff; }
-.sic-btn.is-equipped { background: rgba(59,165,93,.18); color: #3ba55d; cursor: default; }
-.sic-btn.is-equipped:hover { background: rgba(59,165,93,.18); }
+.sic-btn.is-equipped { background: var(--bg-modifier-hover); color: var(--text-normal); }
+.sic-btn.is-equipped:hover { background: rgba(237,66,69,.2); color: #ed4245; }
 .sic-btn svg { color: #f0b232; width: 13px; height: 13px; }
 .sic-btn.is-owned svg, .sic-btn.is-equipped svg { color: inherit; }
 .premium-hero {
@@ -3507,3 +3507,92 @@ button.dev-chip:hover { background: var(--bg-modifier-hover); }
 .dev-chip.gone { opacity: .55; cursor: default; }
 .dev-line { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; }
 .dev-line .dl-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Message filter: words are switches, not deletable */
+.filter-chip { user-select: none; }
+.filter-chip .fc-dot { width: 8px; height: 8px; border-radius: 50%; background: #3ba55d; flex-shrink: 0; }
+.filter-chip .fc-state { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); }
+.filter-chip.off .fc-dot { background: var(--text-faint); }
+.filter-chip.off .fc-word { text-decoration: line-through; opacity: .55; }
+.filter-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.filter-all-off .filter-chip { opacity: .5; }
+
+/* ---------- Shop: Music ---------- */
+.music-shop-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.music-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 0 0 14px; padding: 10px 14px; border-radius: 8px; background: var(--bg-secondary); font-size: 13px; color: var(--text-muted); }
+.music-toolbar .mt-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--accent); margin-right: 6px; }
+.music-toolbar .mt-now { color: var(--text-normal); flex: 1; min-width: 180px; }
+.music-toolbar .mt-vol { display: inline-flex; align-items: center; gap: 8px; }
+.music-toolbar .mt-vol input { width: 120px; accent-color: var(--accent); }
+.shop-item-card.is-music-card { padding: 12px 12px 12px; }
+.shop-item-card.is-music-card .sic-desc { padding: 0 4px; }
+.sic-music-preview { position: relative; width: 100%; min-height: 150px; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 18px 14px; text-align: center; background: #05050a; border: 1px solid rgba(255,255,255,.1); }
+.sic-music-preview.fx-bg-equinox { background: radial-gradient(ellipse at 50% 45%, #1c2238 0%, #0a0c16 55%, #000 100%); box-shadow: inset 0 0 40px rgba(140,170,255,.12); }
+.sic-music-preview .smp-title { font-weight: 700; color: #fff; position: relative; z-index: 1; }
+/* little equalizer along the bottom; it only moves while the track is the equipped one */
+.smp-eq { position: absolute; left: 0; right: 0; bottom: 0; height: 26px; display: flex; align-items: flex-end; justify-content: center; gap: 5px; opacity: .45; }
+.smp-eq i { display: block; width: 5px; height: 4px; border-radius: 2px 2px 0 0; background: rgba(255,255,255,.8); }
+.sic-music-preview.is-playing .smp-eq { opacity: .9; }
+.sic-music-preview.is-playing .smp-eq i { animation: smp-eq .9s ease-in-out infinite; }
+.smp-eq i:nth-child(2) { animation-delay: -.15s !important; } .smp-eq i:nth-child(3) { animation-delay: -.45s !important; }
+.smp-eq i:nth-child(4) { animation-delay: -.3s !important; } .smp-eq i:nth-child(5) { animation-delay: -.6s !important; }
+.smp-eq i:nth-child(6) { animation-delay: -.2s !important; } .smp-eq i:nth-child(7) { animation-delay: -.5s !important; }
+@keyframes smp-eq { 0%, 100% { height: 4px; } 50% { height: 22px; } }
+
+/* ---------- Animated aura name text (EQUINOX) ----------
+   The name itself stays steady and glows. Little words (.fx-echo) keep slipping out from behind it,
+   drifting outward in every direction and fading away, like pulses leaving the title. */
+.fx-text { position: relative; display: inline-block; max-width: 100%; z-index: 1; }
+.fx-text .fx-letters { position: relative; z-index: 1; display: block; }
+.fx-text .fx-w { display: inline-block; white-space: nowrap; }
+.fx-text .fx-ch { display: inline-block; }
+.fx-equinox { font-family: 'Times New Roman', Georgia, 'Noto Serif', serif; font-style: italic; font-weight: 700; font-size: 22px; line-height: 1.25; letter-spacing: .08em; color: #fff; }
+.fx-equinox .fx-letters { text-shadow: 0 0 5px rgba(255,255,255,.9), 0 0 16px rgba(130,165,255,.65), 0 0 32px rgba(90,120,255,.35); animation: fx-eq-glow 3s ease-in-out infinite; }
+.fx-echo { position: absolute; left: 50%; top: 50%; z-index: 0; pointer-events: none; white-space: nowrap; opacity: 0;
+  font-family: 'Times New Roman', Georgia, 'Noto Serif', serif; font-style: italic; font-weight: 600; font-size: 9px; letter-spacing: .22em; text-transform: uppercase;
+  color: rgba(200,220,255,.95); text-shadow: 0 0 6px rgba(130,165,255,.85);
+  transform: translate(-50%, -50%) scale(.5); animation: fx-echo-out 4.4s ease-out infinite; animation-delay: var(--d); }
+@keyframes fx-eq-glow {
+  0%, 100% { text-shadow: 0 0 4px rgba(255,255,255,.85), 0 0 12px rgba(130,165,255,.5), 0 0 24px rgba(90,120,255,.25); }
+  50% { text-shadow: 0 0 7px rgba(255,255,255,1), 0 0 22px rgba(150,180,255,.85), 0 0 44px rgba(90,120,255,.5); }
+}
+@keyframes fx-echo-out {
+  0% { transform: translate(-50%, -50%) scale(.5); opacity: 0; }
+  14% { opacity: .9; }
+  100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.05); opacity: 0; }
+}
+.shop-item-card.is-hero .fx-equinox { font-size: 24px; }
+
+/* ---------- Purchase cutscene ---------- */
+#cutscene-screen { position: fixed; inset: 0; z-index: 150000; background: #000; display: flex; align-items: center; justify-content: center; transition: opacity .4s ease; }
+#cutscene-screen.is-out { opacity: 0; pointer-events: none; }
+#cutscene-screen .cut-stage { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+#cutscene-screen video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+/* A phone held upright: the video is wide, so turn the whole stage (video and Skip button) a quarter turn
+   and swap its width and height. It then fills the screen; the person just turns their phone to match.
+   Held sideways (landscape) it plays normally. */
+@media (orientation: portrait) and (pointer: coarse) {
+  #cutscene-screen .cut-stage { position: absolute; top: 50%; left: 50%; width: 100vh; width: 100dvh; height: 100vw; height: 100dvw; transform: translate(-50%, -50%) rotate(90deg); }
+}
+#cutscene-screen .cut-skip { position: absolute; right: 20px; bottom: 20px; padding: 8px 16px; border-radius: 6px; border: 1px solid rgba(255,255,255,.35); background: rgba(0,0,0,.55); color: #fff; font-weight: 600; cursor: pointer; }
+#cutscene-screen .cut-skip:hover { background: rgba(255,255,255,.18); }
+#cutscene-screen .cut-skip.hidden { display: none; }
+
+/* ---------- Screen shake (see ACCESSIBILITY — SCREEN SHAKE in script.js) ----------
+   RULE FOR ANY AI MODEL / DEVELOPER: Settings > Accessibility > "Reduce screen shake" sets
+   html[data-no-shake]. EVERY shake or violent-motion animation, today and in the future, must have
+   a rule here that switches it off. Add yours to the list below. */
+html.is-shaking { overflow: hidden; background: #000; }
+html[data-no-shake] .ds-unsaved.shake,
+html[data-no-shake] .fg-window .mm-card.shake,
+html[data-no-shake] .wordle-row.shake { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .fx-equinox .fx-letters, .fx-echo { animation: none; }
+  .fx-echo { display: none; }
+}
+
+/* Owner panel: a player's Shop items */
+.admin-items-list { max-height: 230px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px; }
+.admin-item-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.admin-item-row .ai-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-item-row .ai-cat { font-size: 11px; color: var(--text-muted); white-space: nowrap; }

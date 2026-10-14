@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=59">
+<link rel="stylesheet" href="style.css?v=63">
 </head>
 <body>
 
@@ -282,10 +282,11 @@
         <div class="shop-tabs">
           <button class="shop-tab on" data-shop-tab="featured">Featured</button>
           <button class="shop-tab" data-shop-tab="themes">Themes</button>
-          <button class="shop-tab" data-shop-tab="banners">Banners</button>
+          <button class="shop-tab" data-shop-tab="music">Music</button>
           <div class="shop-browse-wrap">
             <button class="shop-tab" id="shop-browse-toggle">Browse <span class="caret">▾</span></button>
             <div class="shop-browse-menu hidden" id="shop-browse-menu">
+              <div class="shop-browse-opt" data-shop-tab="banners">Banners</div>
               <div class="shop-browse-opt" data-shop-tab="decorations">Avatar Decorations</div>
               <div class="shop-browse-opt" data-shop-tab="masks">Avatar Masks</div>
               <div class="shop-browse-opt" data-shop-tab="nameplates">Nameplates</div>
@@ -303,6 +304,7 @@
       <div class="shop-body">
         <div class="shop-pane" id="shop-pane-featured"></div>
         <div class="shop-pane hidden" id="shop-pane-themes"></div>
+        <div class="shop-pane hidden" id="shop-pane-music"></div>
         <div class="shop-pane hidden" id="shop-pane-banners"></div>
         <div class="shop-pane hidden" id="shop-pane-decorations"></div>
         <div class="shop-pane hidden" id="shop-pane-masks"></div>
@@ -763,6 +765,7 @@
       <div class="nav-item" data-pane="pane-premium">Frixion Premium</div>
       <div class="nav-item" data-pane="pane-quests">Quests</div>
       <div class="nav-item" data-pane="pane-themes">Themes</div>
+      <div class="nav-item" data-pane="pane-accessibility">Accessibility</div>
       <div class="nav-label">App</div>
       <div class="nav-item" data-pane="pane-updates">Update Log</div>
       <div class="nav-label">&nbsp;</div>
@@ -857,6 +860,22 @@
         <h2>Themes</h2>
         <p class="desc">Frixion Premium unlocks the Ash and Onyx themes.</p>
         <div class="theme-grid" id="theme-grid"></div>
+      </div>
+
+      <div class="settings-pane hidden" id="pane-accessibility">
+        <h2>Accessibility</h2>
+        <p class="desc">Options that make Frixion more comfortable to use.</p>
+        <!-- NOTE FOR ANY AI MODEL / DEVELOPER: this switch must disable EVERY screen shake, tilt, rumble and
+             violent-motion effect in the app, including ones added in the future. Check shakeAllowed() in
+             script.js (see "ACCESSIBILITY — SCREEN SHAKE") and add html[data-no-shake] rules in style.css
+             for any new CSS shake animation. Never ship a shake that ignores it. -->
+        <div class="setting-row">
+          <div class="setting-row-text">
+            <div class="setting-row-title">Reduce screen shake</div>
+            <div class="setting-row-desc">Turns off every screen shake and tilt effect in Frixion, including music in the Shop. It also applies to anything new we add later.</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="a11y-no-shake-toggle"><span class="toggle-slider"></span></label>
+        </div>
       </div>
 
       <div class="settings-pane hidden" id="pane-updates">
@@ -1160,14 +1179,16 @@
     <div class="admin-pane hidden" id="admin-pane-filter">
       <div class="admin-block">
         <div class="ab-title">Message Filter</div>
+        <div class="setting-row compact" style="margin-bottom:12px"><div class="setting-row-text"><div class="setting-row-title" id="filter-master-title">Filter is on</div><small class="hint" id="filter-master-note"></small></div><label class="toggle-switch"><input type="checkbox" id="filter-master-toggle"><span class="toggle-slider"></span></label></div>
         <div class="ab-row">
           <input class="fld-input" id="admin-filter-word" placeholder="Add a word to filter" maxlength="30">
           <button class="btn-accent-inline slim" id="admin-filter-add">Add</button>
         </div>
-        <small class="hint">Catches leetspeak, repeated letters, and spaced-out bypasses of these words — matched as whole words, so it won't touch normal words that merely contain one as a substring. Tagged words show as [CENSORED].</small>
+        <small class="hint">Catches leetspeak, repeated letters, and spaced-out bypasses of these words — matched as whole words, so it won't touch normal words that merely contain one as a substring. Tagged words show as [CENSORED]. Owners and Co-Owners are never filtered.</small>
       </div>
       <div class="admin-block">
         <div class="ab-title">Filtered Words</div>
+        <small class="hint" style="display:block;margin-bottom:8px">Words can't be deleted. Click a word to turn it off or on.</small>
         <div class="admin-emoji-list" id="admin-filter-list"></div>
       </div>
     </div>
@@ -1437,6 +1458,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
-<script src="script.js?v=59"></script>
+<script src="script.js?v=63"></script>
 </body>
 </html>
