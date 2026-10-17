@@ -453,7 +453,7 @@ const SHOP_CATEGORY_DEFS = {
   profile_frames: { label: 'Profile Frames', get catalog() { return [...PROFILE_FRAMES, ...customProfileFrames]; }, ownedField: 'ownedProfileFrames', equipField: 'equippedProfileFrame' },
   themes: { label: 'Themes', get catalog() { return [...SHOP_THEMES, ...customThemes].map(t => ({ ...t, animated: !!t.anim })); }, ownedField: 'ownedThemes', equipField: 'equippedTheme' },
   banners: { label: 'Banners', get catalog() { return customBanners; }, ownedField: 'ownedBanners', equipField: 'equippedBanner' },
-  music: { label: 'Music', get catalog() { return MUSIC_TRACKS; }, ownedField: 'ownedMusic', equipField: 'equippedMusic' },
+  music: { label: 'Music', get catalog() { return allMusicTracks(); }, ownedField: 'ownedMusic', equipField: 'equippedMusic' },
 };
 const PREMIUM_DURATION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 function isPremium(p) { return !!(p && p.premiumUntil && p.premiumUntil > Date.now()); }
@@ -482,6 +482,13 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.22', date: '2026-10-17', title: 'Files, players and staff songs',
+    notes: [
+      'You can send any kind of file now, not just pictures. Everyone who can see a file can download it with the new download button.',
+      'Audio and video files play right in the chat. Press play and carry on chatting. Only one thing plays at a time, and your Shop song pauses while it does.',
+      'The message toolbar is easier to spot and sits at the right edge of the chat.',
+      'Staff can add their own songs in the Shop tab of the Admin and Owner panels, with a banner and up to 3 animations like Animation or Aftermath.',
+    ] },
   { v: '4.21', date: '2026-10-16', title: 'Three Null themes',
     notes: [
       'Null 1st Theme, Null 2nd Theme and Null 3rd Theme are in the Shop. Each one has its own banner, they are all featured, and they play on a loop for as long as you are signed in.',
@@ -2828,6 +2835,7 @@ function initAppForUser() {
   subscribeCustomProfileEffects();
   subscribeCustomProfileFrames();
   subscribeShopOverrides();
+  subscribeCustomMusic();
   subscribeMessageFilter();
   subscribeStickers();
   showHomeView();
@@ -6233,6 +6241,75 @@ function attachmentDownloadUrl(url) {
   if (/^https:\/\/res\.cloudinary\.com\//.test(url) && url.includes('/upload/') && !url.includes('fl_attachment')) return url.replace('/upload/', '/upload/fl_attachment/');
   return url;
 }
+// ---------- audio / video attachments: watch or listen right inside the chat ----------
+// The player elements are kept in a cache and put back into each new row, because renderMessages rebuilds the whole list on every
+// change (a new message, a reaction...) and a freshly built <video> would restart mid-song. Moving a media element inside the same
+// task keeps it playing, so the cache is what lets playback carry on through re-renders.
+const AUDIO_FILE_EXT = /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus)$/i;
+const VIDEO_FILE_EXT = /\.(mp4|m4v|mov|webm|ogv|mkv|avi)$/i;
+function attachmentMediaKind(a) {
+  if (!a || !a.url || a.type === 'image') return null;
+  const n = a.name || '';
+  return AUDIO_FILE_EXT.test(n) ? 'audio' : VIDEO_FILE_EXT.test(n) ? 'video' : null;
+}
+const msgMediaCache = new Map();     // "messageId:index" -> the <audio>/<video> element
+const msgMediaFailed = new Set();    // keys whose file the browser couldn't play (show a note instead)
+let msgMediaUsed = new Set();
+let msgMediaPausedMusic = false;     // true while the Shop song is paused so a chat video/audio can be heard
+function getMsgMediaEl(key, kind, url) {
+  msgMediaUsed.add(key);
+  if (msgMediaFailed.has(key)) {
+    const note = document.createElement('div');
+    note.className = 'msg-media-err';
+    note.textContent = "Your browser can't play this file here. Use the download button.";
+    return note;
+  }
+  let el = msgMediaCache.get(key);
+  if (el && el.dataset.url !== url) { disposeMsgMedia(key); el = null; }
+  if (!el) {
+    el = document.createElement(kind);
+    el.className = 'msg-media msg-media-' + kind;
+    el.controls = true; el.preload = 'metadata'; el.dataset.url = url; el.src = url;
+    if (kind === 'video') el.playsInline = true;
+    el.addEventListener('error', () => {
+      msgMediaFailed.add(key); msgMediaCache.delete(key);
+      const note = document.createElement('div');
+      note.className = 'msg-media-err';
+      note.textContent = "Your browser can't play this file here. Use the download button.";
+      if (el.isConnected) el.replaceWith(note);
+    });
+    msgMediaCache.set(key, el);
+  }
+  return el;
+}
+function disposeMsgMedia(key) {
+  const el = msgMediaCache.get(key);
+  msgMediaCache.delete(key);
+  if (!el) return;
+  try { el.pause(); el.removeAttribute('src'); el.load(); } catch (e) {}
+}
+// Called at the end of every render: players for messages that are no longer on screen are stopped and dropped.
+function purgeMsgMedia() {
+  [...msgMediaCache.keys()].forEach(k => { if (!msgMediaUsed.has(k)) disposeMsgMedia(k); });
+  msgMediaMaybeResumeMusic();
+}
+function msgMediaMaybeResumeMusic() {
+  if (!msgMediaPausedMusic) return;
+  if ([...msgMediaCache.values()].some(o => !o.paused && !o.ended)) return;
+  msgMediaPausedMusic = false;
+  if (typeof musicAudio !== 'undefined' && musicAudio && musicAudio.paused) musicAudio.play().catch(() => {});
+}
+// One thing plays at a time: starting a chat video/audio pauses any other one and the Shop song, and the song carries on after.
+document.addEventListener('play', (e) => {
+  const el = e.target;
+  if (!el.classList || !el.classList.contains('msg-media')) return;
+  msgMediaCache.forEach(o => { if (o !== el && !o.paused) o.pause(); });
+  if (typeof musicAudio !== 'undefined' && musicAudio && !musicAudio.paused) { musicAudio.pause(); msgMediaPausedMusic = true; }
+}, true);
+['pause', 'ended'].forEach(ev => document.addEventListener(ev, (e) => {
+  if (e.target.classList && e.target.classList.contains('msg-media')) msgMediaMaybeResumeMusic();
+}, true));
+
 function attachmentHTML(m, canDelete) {
   // m.attachments (array) covers new multi-image messages; m.attachment
   // (singular) is kept for backward compatibility with older messages.
@@ -6241,12 +6318,20 @@ function attachmentHTML(m, canDelete) {
     const gridCls = atts.length > 1 ? ' msg-attachment-grid' : '';
     return `<div class="msg-attachment${gridCls}">` + atts.map((a, i) => {
       const delBtn = canDelete ? `<button type="button" class="msg-att-del" data-attidx="${i}" title="Delete this image">${icon('trash')}</button>` : '';
-      return a.type === 'image'
-        ? `<div class="msg-att-item"><img src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy">${delBtn}</div>`
-        : `<div class="msg-att-item is-file"><a class="msg-file-card" href="${esc(a.url)}" target="_blank" rel="noopener">
+      if (a.type === 'image') return `<div class="msg-att-item"><img src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy">${delBtn}</div>`;
+      const dlHref = esc(attachmentDownloadUrl(a.url)), dlName = esc(a.name || 'file');
+      const kind = attachmentMediaKind(a);
+      // Audio and video play right here. The file name and a download button sit under the player.
+      if (kind) return `<div class="msg-att-item is-media"><div class="msg-media-card is-${kind}">
+          <div class="msg-media-slot" data-mkey="${esc((m.id || 'x') + ':' + i)}" data-kind="${kind}" data-url="${esc(a.url)}"></div>
+          <div class="msg-media-cap"><span class="mfc-icon">${icon('file')}</span><span class="mmc-name">${dlName}</span><span class="mmc-size">${esc(humanFileSize(a.size || 0))}</span>
+            <a class="msg-media-dl" href="${dlHref}" download="${dlName}" rel="noopener" title="Download ${dlName}" aria-label="Download ${dlName}">${icon('download')}</a></div>
+        </div>${delBtn}</div>`;
+      // Other files: clicking the card downloads it (it no longer opens the Cloudinary page in a new tab).
+      return `<div class="msg-att-item is-file"><a class="msg-file-card" href="${dlHref}" download="${dlName}" rel="noopener">
             <span class="mfc-icon">${icon('file')}</span>
             <span class="mfc-body"><span class="mfc-name">${esc(a.name)}</span><span class="mfc-size">${esc(humanFileSize(a.size || 0))}</span></span>
-          </a><a class="msg-att-dl" href="${esc(attachmentDownloadUrl(a.url))}" download="${esc(a.name || 'file')}" rel="noopener" title="Download ${esc(a.name || 'file')}" aria-label="Download ${esc(a.name || 'file')}">${icon('download')}</a>${delBtn}</div>`;
+          </a><a class="msg-att-dl" href="${dlHref}" download="${dlName}" rel="noopener" title="Download ${dlName}" aria-label="Download ${dlName}">${icon('download')}</a>${delBtn}</div>`;
     }).join('') + `</div>`;
   }
   if (m.gifUrl) {
@@ -6412,6 +6497,7 @@ function buildMessageLineEl(m, canDelete) {
   if (pinnable) rowWrap.querySelector('.pin-msg').onclick = () => togglePin(m.id);
   if (canDelete) rowWrap.querySelector('.del-msg').onclick = () => deleteMessage(m.id);
   // (Anyone who can see a file can download it: the download button on a file card is a plain link, see attachmentDownloadUrl.)
+  rowWrap.querySelectorAll('.msg-media-slot').forEach(slot => slot.replaceWith(getMsgMediaEl(slot.dataset.mkey, slot.dataset.kind, slot.dataset.url)));
   rowWrap.querySelectorAll('.msg-att-del').forEach(btn => {
     btn.onclick = (e) => { e.stopPropagation(); deleteMessageAttachment(m.id, parseInt(btn.dataset.attidx, 10)); };
   });
@@ -6461,9 +6547,11 @@ async function renderMessages(rawMsgs) {
   const wrap = $('messages');
   const wasAtBottom = wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 80;
   wrap.innerHTML = '';
+  msgMediaUsed = new Set();
 
   if (searching && q && !msgs.length) {
     wrap.innerHTML = '<div class="empty" style="padding:20px 16px;">No messages match your search.</div>';
+    purgeMsgMedia();
     return;
   }
 
@@ -6475,6 +6563,7 @@ async function renderMessages(rawMsgs) {
         <h2>Welcome to ${esc(name)}!</h2>
         <p>${currentView === 'channel' ? 'This is the start of the channel.' : 'This is the beginning of your conversation.'}</p>
       </div>`;
+    purgeMsgMedia();
     return;
   }
 
@@ -6535,6 +6624,7 @@ async function renderMessages(rawMsgs) {
     lastUid = m.uid; lastMillis = millis;
   });
 
+  purgeMsgMedia();
   if (!searching && (wasAtBottom || msgs.length <= 20)) wrap.scrollTop = wrap.scrollHeight;
 }
 
@@ -9363,6 +9453,11 @@ const MUSIC_TRACKS = [
     desc: 'Plays on a loop for as long as you are signed in.',
     src: 'Music/null-3rd-theme.mp3' },
 ];
+// Songs added by staff (Admin / Owner panel > Shop > Music). They live in one config document, config/customMusic, as a map of
+// id -> { name, desc, price, featured, src, banner?, cutscenes?: [{ src, label }], createdBy, createdAt }. The files themselves are on
+// Cloudinary (see uploadFileToCloudinary). Built-in songs stay in MUSIC_TRACKS above.
+let customMusicTracks = [];
+function allMusicTracks() { return [...MUSIC_TRACKS, ...customMusicTracks]; }
 const MUSIC_SHAKE_ENVELOPES = {
   equinox: 'FaCOgXRpZl+PgHeOfW9kW1dPVU5HQz5LSENhV09KReDGrpmGg3RmX3FnX1ZRSkhBT0hTpJGCdWhcU7qkkpKCem5jXVN7bGC2oIx7bWNZloR0Z11VT0hYUbKfko9/c2hfYVd2al9hV1RPR2hcVE5M0rqjj359bmJcWlJNSERAal9ZUmzDrJeHd25jmIZ3dmpnXVdTSkhBPFBIQDo1Pjp+b2RZUU9JRFRNdWtvlIR2bGJhWVZPR0U/S0dAWU9KRETLs5+Le3ZoXFZPSUI9OjeBdG1ig8+3oZCAdmuYh3h2a2FZU25hWE9HcWVZUEdKRH1waFxUTUdCUUl7b2d1aF5WT01GTEU/PDg1M1RfVU5IROnMtZ6Lg3NmYVtaVlFNS8qxnoyEhHRpYVhRSXVoYF5UUUhCZVp+cGNhVlNORlhPaWJaVEtPR0A6NTMwL3duZl9ZUUlfVEtKQpeJem9iWVGau6SQf3BkWVBLR3pwa2JeV09JQmOSgHRrYVdNTUVASkI/OTQ0L0tEQpmGdmteVE1iWlFbUWZbUUxEWFJohnxzbGZfVmpeVFBIYFpRT0dDPqL727+nk4p5a2VeXlhUTkpEPjw2UbagjoJ7bWFfVU5QSFhPRz85TERNgHBkXFJKREpDPFtTY1hOSUJCPE+klYh+dW9iXlRMSkKjlYV4a2JaffHSuKGNfm9jXViFe3JpYFxTT0huiHhsZVpRSVNKRE5GRT44OjUwLG+Vg3NpXVhQXlxSWE5IQTs1MVJKapOIfHJqX1ZSSkNBOmhjWlRMRkH18tO4oo6BcWVeWXNqY11XVk5KQ0ijj391amFYbmNbWVBYTkZAOltRXIJyZV1TSkafi35vZGFXTkZAOjYycGVbVE5LRUtDPTg0ZWFWT0lFQOvfxayXhXhqXldTrZyMg3lrX1dOSmdbVFJLRkBKQz5QTEQ+OWxgVUxLi3psY1hQSXFkWVtVVEtDPThbVUxvaGNeWlNLSUI8R0B/eGtjWFBLiPHSuKGOfW5iXFipmo5/c2ZbUkpOcmVbVk1JQUE6OExEPjg4TkY/OWF/cGNaUEhEWVBLWE9uYldNRkJVTWhhXVlXT0hTSkNHQK2gjX9xZl2lwKiUgnNmWlFMS6GShn90aFxTS0ppXVVRS0Q+SEA8TUVDPTdZT0dAb3dpXVZNRUGCc2hnW1hPRj86PTs3bWZgW1hQR4ByZWFYV1FJRT45N66vmod3aWNYT0xLVlJgWlRLQz86RYp5cm5oZ2JdWVijkoR4anxvYlhd4c6zrKOgmJKSkY+ZlpKMf29iV0xDPDUvLIJyY1ZLQjp0bF5RRz42MU9FPDQtTEI6MiwmIh4aGE1DOjMsJyKekH9uYFZLRaOPe2tdUEZPSkE4MSwnIltQUEg+Wk5EOzQtJ4Z6alxQRTw3d2dZTkM7M1dPRTw1LigmVUpAODFdUUY9NS8qJSQgHBkZFhQSECkyPjgxKyk5MjcwK0ZAODIsKzs0Lirq28/KwL+3sK6ppJSCcmRgk5XCu7Gkj35uZpmZs6yhjnxtYF2WnZiOhXtsZFhOkouEenBkWU5GRJaQwLuwmYZ2Z1uWkPPZwaiThn13l5GMgnZsYF1TSpeRqJqMemtnWlGXkYyCd2xfVEtHl5L///fWuqWQkJalnpGKemtjV06WkId+c2hfX1RKlo6dlIl4aV1SSZa1rJ6PfW6nn5eXj4qBdWteXFFJlo+LgHNlWU9GQpeQioB1al1US0eXkZCGgXFjWU9NlrqxopaId3BiV5aRi4J3aV5TSkeVkP/34sSrlYJylpTbxa+Zhnpua5eRjYJ3al6JeGqXkK2fjn1ta15Vl5KKgHRnXlNJRpeR///93L+rloiVmqqck4Z2a15TlY+JgXtsX1RKQpWPop+VgnJpXGmVq9nEr5iFeXNtlpCKgXZnW1VMRJaQjIF0ZlpQR0eWkYqBd2hcUUhIlpGmmYt6a2VZq6ihnJCEfG1kWE6Wj4qAdGZaT0ZylpGSjIh3aVxRTZaQsqKRf29qY2CXkI6Dd2xfX1RLlo+ekIFxY2JXUZaPi4F4al1TSVKWkv/14MOpmYbJwravoZSFdGlcUpWOiH5yaFtaT0uVj4qDfW5gVUtelZCLgHRmWmFsa5WQjYN3a15aUEeRi4h9c2VZT0ZhnZWLgXZrXlNKSJaQjoN6a15TSszRw7KilId3bF9WlY+LgXZqXVVLkM2/sKGVg3NlWVKWkL2smod2bGB0lo+HfnNlWVlPRpaOlId7bF9ZT06Wko2Hfm9iVkxXlpfEwrmmkYNzh5uZl5WRiHZqXVd+fn5+fKeRfm5gVEqAdWZZTkQ8OT02MColIR40LismIh4cGRcVFBPIubGrnpaQhH59eGyWlZKOhX14dXRqhLutoZSOhoD////p08Gxm4h+xKubjH1vaV1TS4h4b2hgVVRMRT6tmI1/cW1gVk1FhHRsY1hOR0BsYFdPTUdAQD04My8zLz48OThbUUhCQTs6OTYxLjUzM/zcybijlJB/cGidin5xZVxZT0dAdmhjW1NKR0I8N1RLT01GS0Q9OjVrX1pRSUE8N2VaV05OSkI9OTQvLCkmREE/Pj44MzBORkOFd2ldWFFL6cy7qZeKiXlrY66Yin1vZVlQS0NhVlNOSkI8NzIuiXl0cGVcU0pEPVNKSUM9NzIuXlNRSVNTSkI9ODMxOjRPTEhERD04Mz44NWNZT0dGQT7dwbGikoaBcmVftZ6PgXNoX1VMRFtRTkpFPzo2MS1sYF1YT0tDPTg0Mi4qJyUiICA9N0Q/VHFkWVBIQDo5NE5MRkNCPDc0ZlpXaF1WTUpFQtO4rJ+PhYR0Z1+Zh3pxZlxSSUI8cWRfWlNKRkA6NWZbWlRMSEE7NTF4amVaUEhBO1RLSUJRS0M/Rj85NTUwREI/PnJlWlNRSEVBPDYyMS8t+trGtKCTkH5wZ6uWiXxvY15US0Onkod8bmFbU0pDgXJtZlxYT0Y/OYh3cWRZT0pDQTtkWVdRSEE7NTEuLSoxMS4tUUlFPjw3NlxSSkI/PTrOtKaYiX95a19ZppGEeGpgWE5GP2NYVVJLSEE+ODN1aGRcU3VnXFNKc2VfV01FSEFPR0I+XVtRSkhBPDo3M1hbWmRjWldVXVZqfnZtZmdlZf////Hczbejj4qNgHBpXFdMRGpd1Ligi3pqXVJPRUM7NWxecWNXUEa9pJKFdKOOfu7QzLOwrZ+WkIF5dKaSkIyDfHluZ2L/++fTvKyZjoB0//rl1r+uoo59csGpm45+cmtfWE//7tbDrpmHemxg/+zWxKuZiHhsYNu/sJ+Me21hX1T/9d7RtqKSgHZq1Lqpmol7dGdeVP/33sqxnIl9b2T/9+DNtaedinlywamZjHxxb2NYT//33sa1not9cGP/9t7Ksp+NfPHW8dLCsJuJg3ONfP/24Mivmot6/+Tfw6+ei32DdGZc//fdxrGciXxuYv/33sWvnpWDdGvGraCSg3t5a2BW//fdxq+ah3twY//238+1oI18//j62sexnImCc3Fk//XfzLOgkX//9+/RvKmVhYN0Zlz/997HrpqIfHRp//vlzrv///L/5+DEua2gmbelmpGJgn3////r2c2/2//+69zOvab44My4oIt5alxRRz6zpY98bF5SRz42MDUuKCODe2pcUExIPjYwKi4pJB8bGBUTEQ8ODAsKiIBvZ2V2bF5RRz45Miwmj4Z9bF5YVElAODE6X19ft7Glm5KNgnFiVZuOiIJ9hHVmWE1LSD83MImCe3ZxopaBcGFXUkg+Ni8pJCAcGBYTEQ+Eh391aF9XS0E5Mz01LimJeW1iVVxYTUM6OGZkYmGWkoqCfHJqX1NIjX95dHCDc2NWS1lYTEI5fHRuaWW3po98a2NaTkQ7MywmIh0aFxQSEHx5c21pkoBuX1JLQjkyLIF3cWxoz7yijHlyjIR6bZuVi4N1ZWBTSD+Hf3lzb7qgi3hoXlZKQDh4dG1oZL+pkn5tZ1pORDszLCYhHRkWFBEPd3JkV0t0ZFZKQEA4MSolc2RWS0GAdmZYTUM6My0oIx8cGhcVFBMREca8tdPDurKinZqwqaeml5GKfXp5qJ6YwqqflIJ5dbyroaWViHxtZF5zaGJoX1VMRD47qpeKin5wZFlRS7Ccj41/cGRZUE91amOGem5kXFROenFpeW1iWE9IRHhrZGdfVUxFPjp8bmeMgXJnW1JNpZKFjIBxZVlRS3JmX3JqX1VMRUGVhnuhjn9xZFpUpJGFhXxvZFlRTH1waIp6bWNhWlJSTkphW1JKQz47q5eJgnNlWlBIRHZqYXZtYVZNRkPoy7WolYV3aV5Wb2Vda2VbUUlCP6eUhn9yZlxSS0eYh3x3b2NYTkdDinxzbWNaU05KRltYVG5nXVVMR0WqmY2Fdm1jWFJPo5WNq5iLf3BoZNS/saaWi4FyamZdVUtDPOPv1rysl4RzZVjP1L2mmIV0ZllP0s65opWDc2VZTuXfyLOlxLWono2EfG1oY1xXVVFJUlFIS0pPSUmqmI2BcnBmXlVRg3RsYVZOSEI8PJiKfHBjW1JLREBhWlNMREE+a19ZiXpwZlqSgXhqYWFWT0lCPjk1MDOwn45+cGdfVk1ISkNBPDYzMV1TTbCejn9xfXBnW1SFdWpeVE1HRT89lod7bmFaU01FQYR0aV9UTkl4amKKfXFlWpODe21ihHRqX1ROSElCP4R5cGRZZVtbUU1nW1NMREA8XFJMmol8b2JfVlJJRE1FQzw3NDJUS0eCd21jWFZPXlRNS0NBPDc0M3ZpYKyXiHhqZ1xbUUttYFpRSEM/Pzo9rpuOgnOEenpwbWxiYmBWZHGOhoXy1Mm8pqSgo5uXlouRjoGIiIWBccWrlYFxtp6Jd2haT0U8NS8pJCAdGhcVE6aokn9uYLaejX1tZlmLf4aso5mRiIeKwK6sq6CUjoJ9epKFle3gzregkoe3oJmUhXtvYllTsZuRkIJ6a19WTtS5qZuLfW5hWE+Zhn3qzbWei31vu6OWiXluYldPR3RnY7afjX1uZl3w0ryplYN0Zl5XloR7iHpsYFVNSf/s08Cok4JzZ1/+3cfBqpaEdGph9dXAsZuIeGpfVsqwodC2n4x7bmqVg3xwY1hPTUpFWlBRsZuOfW5iWKSQhXttYFZNRT90Z2OzoJiFdmhd/97It6GPfm9jWLKckIqAdWdcUky7pJiMfW5iV09IspyR/+jPtZ6NfMqxoZiHd2ldVUx5a2a3oI18bmtj3sKunYp6a19YU8KpnbKejXxtZF7/6NG/qpiFdmxmX2BcVU5GPjhfVLmxopKDc2VZZ1utppiKe2xgVVNKm5eLgHJlWU9dU//eysavmYh4bWNgVVNRS0Q/OTc2hnZwoJOIeGphWHttZmRaUklCPTpmW1m+qZiGdmlfqJOGe25jWE5IQ6+ZjePIsZyJfG1yZV9bUkxEPj03bGBb4saumYZ/c7mikoZ3aV5UUEy5opTAqZSCc2df0LammYZ2aV1UTaCMgMWtmIZ2dGp/cGlkWU9HQDo4v6eYz7Wei3pwZGZaWFFJQTw3NDE5NFfZvqaUgoB0wamZiX1uYlhVT3JlYKOPfnBjfnJ5a2VkWU9HQDw6jXx24cStmYaFeL+nl4h4al9VTUi3oZPKsJqJeHVpqpWKhHRnW1FNSXVnYOzNtJ2KhXa/p5WJeGpeVFBKoIyAtKCNfG1hVti9qp+Me21gVk/Cqp+Wh4h4duHHwamelIqjj4qCdrSelYyB0bas/+HPta2ilJKAfpaEdW1j/+/czbaunJiKeW9jWVFIQTo1RE9HPzk1UEdAOlFWT0pCO0VAPDs7RGddWFdPS0dAPDZ+dW9oXFJMREF0aWNdVpWIgHpylYl/dm2TiH98hYSBend0bmZmYlZMQzs1L2dhWVxSSJOAb2Gv1L+vnId1ZqSVgXBhqZOAbw==',
 };
@@ -9391,7 +9486,7 @@ function musicSync(id) {
   if (cutsceneActive) return;
   if (!id) { if (musicAudio) musicStop(); return; }
   if (musicTrack && musicTrack.id === id) return;
-  const track = MUSIC_TRACKS.find(t => t.id === id);
+  const track = allMusicTracks().find(t => t.id === id);
   musicStop();
   if (!track) return;
   musicTrack = track;
@@ -9634,7 +9729,7 @@ function renderShopFeatured() {
   keys.forEach(key => {
     const def = SHOP_CATEGORY_DEFS[key];
     if (!def) return;
-    const items = def.catalog.filter(item => item.featured);
+    const items = def.catalog.filter(item => item.featured && !item.disabled);
     if (!items.length) return;
     sections.push(`<div class="shop-section-label">${esc(def.label)}</div><div class="${shopGridClass(key)}">${items.map(item => shopItemCardHTML(key, item)).join('')}</div>`);
   });
@@ -9660,7 +9755,7 @@ function renderShopCategoryPane(key) {
     return;
   }
   if (key === 'music') {
-    const list = def.catalog.filter(matches);
+    const list = def.catalog.filter(i => !i.disabled && matches(i));
     const now = def.catalog.find(t => t.id === myProfile.equippedMusic);
     wrap.innerHTML = `<div class="shop-section-label">Music</div>
       <div class="music-toolbar">
@@ -9696,6 +9791,7 @@ async function buyShopItem(key, id) {
   const def = SHOP_CATEGORY_DEFS[key];
   const item = def && def.catalog.find(i => i.id === id);
   if (!item) return;
+  if (item.disabled) { toast('That item is not available right now.', 'error'); return; }
   try {
     const fresh = (await db.collection('users').doc(myUid).get()).data();
     if ((fresh[def.ownedField] || []).includes(id)) { toast('You already own this.'); return; }
@@ -10895,6 +10991,102 @@ function renderAdminProfileFrameList() {
   finishAdminShopList(wrap, 'profile_frames');
 }
 
+// ---------- Staff: add a song ----------
+const isHttpsUrl = (u) => typeof u === 'string' && /^https:\/\//i.test(u);
+function subscribeCustomMusic() {
+  db.collection('config').doc('customMusic').onSnapshot(doc => {
+    const data = (doc.exists && doc.data()) || {};
+    customMusicTracks = Object.entries(data)
+      .filter(([, v]) => v && typeof v === 'object' && isHttpsUrl(v.src) && v.name)
+      .map(([id, v]) => ({
+        id, ...v, price: Number(v.price) || 0, featured: !!v.featured,
+        desc: v.desc || 'Plays on a loop for as long as you are signed in.',
+        banner: isHttpsUrl(v.banner) ? v.banner : null, disabled: !!v.disabled,
+        cutscenes: (Array.isArray(v.cutscenes) ? v.cutscenes : []).filter(c => c && isHttpsUrl(c.src)).slice(0, 3).map(c => ({ src: c.src, label: String(c.label || 'Animation').slice(0, 20) })),
+      }))
+      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    refreshOpenShopPanes();
+    if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminMusicList();
+    // The equipped song may be one of these, and it can't start until the list has loaded.
+    if (typeof myProfile !== 'undefined' && myProfile) musicSync(myProfile.equippedMusic || null);
+  }, err => console.warn('customMusic listener failed.', err));
+}
+const MUSIC_MAX_ANIMATIONS = 3;
+function updateMusicAnimControls() {
+  const n = $('music-anim-rows').children.length;
+  $('music-anim-count').textContent = `${n}/${MUSIC_MAX_ANIMATIONS}`;
+  $('music-anim-add').classList.toggle('hidden', n >= MUSIC_MAX_ANIMATIONS);
+}
+function addMusicAnimRow() {
+  const wrap = $('music-anim-rows');
+  if (wrap.children.length >= MUSIC_MAX_ANIMATIONS) return;
+  const row = document.createElement('div');
+  row.className = 'music-anim-row';
+  row.innerHTML = `<input type="text" class="fld-input music-anim-name" maxlength="20" placeholder="Name, e.g. Animation"><input type="file" class="music-anim-file" accept="video/*,.mp4,.webm,.mov"><button type="button" class="btn-secondary slim music-anim-rm" title="Remove this animation">&times;</button>`;
+  row.querySelector('.music-anim-rm').onclick = () => { row.remove(); updateMusicAnimControls(); };
+  wrap.append(row);
+  updateMusicAnimControls();
+}
+$('music-anim-add').onclick = addMusicAnimRow;
+let musicPreviewUrl = null;
+function updateMusicCardPreview() {
+  const host = $('music-card-preview');
+  if (!host) return;
+  const f = $('music-banner-input').files[0];
+  if (musicPreviewUrl) { URL.revokeObjectURL(musicPreviewUrl); musicPreviewUrl = null; }
+  if (f && f.type.startsWith('image/')) musicPreviewUrl = URL.createObjectURL(f);
+  host.innerHTML = shopItemPreviewHTML('music', { id: 'preview', name: ($('music-name-input').value || '').trim() || 'Song name', banner: musicPreviewUrl });
+}
+$('music-banner-input').addEventListener('change', updateMusicCardPreview);
+$('music-name-input').addEventListener('input', updateMusicCardPreview);
+updateMusicCardPreview();
+$('music-publish-btn').onclick = async () => {
+  if (!isAdmin && !isOwner) { toast('Admins only.', 'error'); return; }
+  const name = ($('music-name-input').value || '').trim();
+  const desc = ($('music-desc-input').value || '').trim() || 'Plays on a loop for as long as you are signed in.';
+  const price = parseInt($('music-price-input').value, 10);
+  const audio = $('music-audio-input').files[0];
+  const bannerFile = $('music-banner-input').files[0];
+  const rows = [...$('music-anim-rows').children].map(r => ({ label: r.querySelector('.music-anim-name').value.trim(), file: r.querySelector('.music-anim-file').files[0] }));
+  if (!name) { toast('Enter a name.'); return; }
+  if (!Number.isFinite(price) || price < 0) { toast('Enter a valid price.'); return; }
+  if (!audio) { toast('Choose the song\'s audio file.'); return; }
+  if (!isMediaFile(audio) || (audio.type && !audio.type.startsWith('audio/') && !AUDIO_FILE_EXT.test(audio.name))) { toast('The song has to be an audio file (mp3, wav, ogg, m4a...).', 'error'); return; }
+  if (audio.size > MAX_MEDIA_MB * 1024 * 1024) { toast(`The song is over ${MAX_MEDIA_MB}MB.`, 'error'); return; }
+  if (bannerFile && (!bannerFile.type.startsWith('image/') || bannerFile.size > MAX_FILE_MB * 1024 * 1024)) { toast(`The banner has to be an image under ${MAX_FILE_MB}MB.`, 'error'); return; }
+  for (const [i, r] of rows.entries()) {
+    if (!r.label || !r.file) { toast(`Animation ${i + 1} needs both a name and a video file.`); return; }
+    if (!isMediaFile(r.file) || r.file.size > MAX_MEDIA_MB * 1024 * 1024) { toast(`Animation ${i + 1} has to be a video under ${MAX_MEDIA_MB}MB.`, 'error'); return; }
+  }
+  const btn = $('music-publish-btn'), status = $('music-publish-status');
+  btn.disabled = true;
+  try {
+    status.textContent = 'Uploading the song…';
+    const src = await uploadFileToCloudinary(audio);
+    let banner = null;
+    if (bannerFile) { status.textContent = 'Uploading the banner…'; banner = await uploadImageToCloudinary(bannerFile); }
+    const cutscenes = [];
+    for (const [i, r] of rows.entries()) {
+      status.textContent = `Uploading animation ${i + 1} of ${rows.length}…`;
+      cutscenes.push({ src: await uploadFileToCloudinary(r.file), label: r.label });
+    }
+    status.textContent = 'Publishing…';
+    const id = 'cm-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const track = { name, desc, price, featured: $('music-featured-input').checked, src, cutscenes, createdBy: myUid, createdAt: Date.now() };
+    if (banner) track.banner = banner;
+    await db.collection('config').doc('customMusic').set({ [id]: track }, { merge: true });
+    ['music-name-input', 'music-desc-input', 'music-price-input', 'music-audio-input', 'music-banner-input'].forEach(i => { $(i).value = ''; }); updateMusicCardPreview();
+    $('music-featured-input').checked = false;
+    $('music-anim-rows').innerHTML = '';
+    updateMusicAnimControls();
+    status.textContent = '';
+    toast(`Published "${name}" to the shop!`);
+  } catch (e) {
+    status.textContent = '';
+    toast(e.message || 'Failed to publish the song.', 'error');
+  } finally { btn.disabled = false; }
+};
+
 // ---------- Shop item editor (admin/owner only) ----------
 // Published (Firestore) items are edited in place. Built-in catalog items
 // can't be rewritten in code, so their edits are stored as overrides in
@@ -10907,18 +11099,24 @@ const SHOP_EDIT_TYPES = {
   nameplates: { label: 'Nameplate', collection: 'shopNameplates', builtins: NAMEPLATES, custom: () => customNameplates, render: () => renderAdminNameplateList() },
   profile_effects: { label: 'Profile Effect', collection: 'shopProfileEffects', builtins: PROFILE_EFFECTS, custom: () => customProfileEffects, render: () => renderAdminProfileEffectList() },
   profile_frames: { label: 'Profile Frame', collection: 'shopProfileFrames', builtins: PROFILE_FRAMES, custom: () => customProfileFrames, render: () => renderAdminProfileFrameList() },
-  // Music tracks are built in (they need an audio file and a cutscene), so staff can only change the price and
-  // whether the track is featured. The editor locks the name and description for this type.
-  music: { label: 'Music', collection: null, builtins: MUSIC_TRACKS, custom: () => [], render: () => renderAdminMusicList(), priceFeaturedOnly: true },
+  // Built-in music tracks need code (audio, cutscenes, bars), so staff can only change their price and whether they are
+  // featured; the editor locks the name and description for those. Songs staff add themselves (customMusicTracks) can also be
+  // renamed and deleted. They are stored in config/customMusic rather than their own collection, so no new Firestore rule is needed.
+  music: { label: 'Music', collection: null, builtins: MUSIC_TRACKS, custom: () => customMusicTracks, render: () => renderAdminMusicList(), priceFeaturedOnly: true },
 };
 function renderAdminMusicList() {
   const wrap = $('admin-music-list');
   if (!wrap) return;
   wrap.innerHTML = '';
+  if (customMusicTracks.length) {
+    wrap.insertAdjacentHTML('beforeend', `<div class="admin-builtin-label">Added by staff</div>` + customMusicTracks.map(t =>
+      `<div class="admin-emoji-chip editable" data-id="${esc(t.id)}"><span>${esc(t.name)}</span><span class="admin-chip-tag">${esc(Number(t.price).toLocaleString())}${t.featured ? ' · Featured' : ''}${(t.cutscenes || []).length ? ` · ${t.cutscenes.length} anim` : ''}${t.disabled ? ' · Disabled' : ''}</span></div>`).join(''));
+  }
   finishAdminShopList(wrap, 'music');
 }
 const colorField = (path, label) => ({ path, label, type: 'color' });
 const SHOP_EDIT_EXTRA_FIELDS = {
+  music: () => [],
   decorations: item => [
     ...(decoEmojiLayers(item).length ? [{ path: 'emojis', label: 'Emoji layout', type: 'emoji-layout', full: true }] : []),
     { path: 'mask', label: 'Full avatar mask (moves it to the Avatar Masks section)', type: 'checkbox' },
@@ -10941,7 +11139,7 @@ function applyShopOverrides() {
   Object.entries(SHOP_EDIT_TYPES).forEach(([type, def]) => {
     def.builtins.forEach(item => {
       const key = shopOverrideKey(type, item.id);
-      if (!builtinShopOriginals.has(key)) builtinShopOriginals.set(key, { name: item.name, desc: item.desc, price: item.price, featured: !!item.featured });
+      if (!builtinShopOriginals.has(key)) builtinShopOriginals.set(key, { name: item.name, desc: item.desc, price: item.price, featured: !!item.featured, ...(type === 'music' ? { banner: item.banner || null } : {}) });
       Object.assign(item, builtinShopOriginals.get(key), shopOverrides[key] || {});
     });
   });
@@ -10975,6 +11173,7 @@ function finishAdminShopList(wrap, type) {
 
 const getByPath = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
 let shopEditTarget = null;
+let shopEditBannerUrl = null;
 
 function openShopItemEditor(type, id) {
   if (!isAdmin && !isOwner) return;
@@ -10984,9 +11183,9 @@ function openShopItemEditor(type, id) {
   if (!item) return;
   shopEditTarget = { type, id, isCustom: !!custom };
   $('shop-edit-title').textContent = `Edit ${item.name}`;
-  const locked = !!def.priceFeaturedOnly;
-  $('shop-edit-name').disabled = locked; $('shop-edit-desc').disabled = locked;
-  $('shop-edit-kind').textContent = custom ? def.label : locked ? `${def.label} · Built-in (only the price and featured can be changed)` : `${def.label} · Built-in (name, description, price and featured can be changed)`;
+  const locked = !!def.priceFeaturedOnly && !custom;
+  $('shop-edit-name').disabled = false; $('shop-edit-desc').disabled = false;   // built-in songs can be renamed and re-described too (audio and cutscenes stay as coded)
+  $('shop-edit-kind').textContent = custom ? def.label : locked ? `${def.label} · Built-in (name, description, price, featured and banner can be changed)` : `${def.label} · Built-in (name, description, price and featured can be changed)`;
   $('shop-edit-name').value = item.name || '';
   $('shop-edit-desc').value = item.desc || '';
   $('shop-edit-price').value = Number.isFinite(Number(item.price)) ? item.price : 0;
@@ -11006,7 +11205,20 @@ function openShopItemEditor(type, id) {
     const maskBox = $('shop-edit-extra').querySelector('[data-path="mask"]');
     if (maskBox) maskBox.addEventListener('change', () => h._editor.setMask(maskBox.checked));
   });
-  $('shop-edit-delete-btn').classList.toggle('hidden', !custom);
+  if (type === 'music') {
+    $('shop-edit-extra').insertAdjacentHTML('beforeend', `<div class="field full shop-edit-banner"><label>Banner (shown behind the name on its Shop card)</label><div id="shop-edit-banner-preview"></div><input type="file" id="shop-edit-banner-file" accept="image/*" class="music-file-input"><label class="shop-edit-check"><input type="checkbox" id="shop-edit-banner-clear"> Remove the banner</label></div>${custom ? `<label class="shop-edit-check field full"><input type="checkbox" id="shop-edit-disabled"${item.disabled ? ' checked' : ''}> Disabled (hidden from the Shop, nobody can buy it)</label>` : ''}`);
+    const refresh = () => {
+      const f = $('shop-edit-banner-file').files[0], clear = $('shop-edit-banner-clear').checked;
+      if (shopEditBannerUrl) { URL.revokeObjectURL(shopEditBannerUrl); shopEditBannerUrl = null; }
+      if (f && f.type.startsWith('image/')) shopEditBannerUrl = URL.createObjectURL(f);
+      const banner = clear ? null : (shopEditBannerUrl || item.banner || null);
+      $('shop-edit-banner-preview').innerHTML = shopItemPreviewHTML('music', { ...item, name: $('shop-edit-name').value || item.name, banner, bannerPos: shopEditBannerUrl ? null : item.bannerPos, fx: null });
+    };
+    $('shop-edit-banner-file').onchange = () => { $('shop-edit-banner-clear').checked = false; refresh(); };
+    $('shop-edit-banner-clear').onchange = refresh;
+    refresh();
+  }
+  $('shop-edit-delete-btn').classList.toggle('hidden', !custom || type === 'music');
   $('shop-edit-reset-btn').classList.toggle('hidden', !!custom || !shopOverrides[shopOverrideKey(type, id)]);
   openModal('shop-edit-modal');
 }
@@ -11015,15 +11227,21 @@ $('shop-edit-save-btn').onclick = async () => {
   if (!shopEditTarget || (!isAdmin && !isOwner)) return;
   const { type, id, isCustom } = shopEditTarget;
   const def = SHOP_EDIT_TYPES[type];
-  const priceFeaturedOnly = !!def.priceFeaturedOnly;
+  const priceFeaturedOnly = !!def.priceFeaturedOnly && !isCustom;
   const name = $('shop-edit-name').value.trim();
   const desc = $('shop-edit-desc').value.trim();
   const price = parseInt($('shop-edit-price').value, 10);
-  if (!priceFeaturedOnly && !name) { toast('Enter a name.'); return; }
-  if (!priceFeaturedOnly && !desc) { toast('Enter a description.'); return; }
+  if (!name) { toast('Enter a name.'); return; }
+  if (!desc) { toast('Enter a description.'); return; }
   if (!Number.isFinite(price) || price < 0) { toast('Enter a valid price.'); return; }
-  const update = priceFeaturedOnly ? { price, featured: $('shop-edit-featured').checked } : { name, desc, price, featured: $('shop-edit-featured').checked };
+  const update = { name, desc, price, featured: $('shop-edit-featured').checked };
   try {
+    if (type === 'music') {
+      const f = $('shop-edit-banner-file') && $('shop-edit-banner-file').files[0];
+      if (f && (!f.type.startsWith('image/') || f.size > MAX_FILE_MB * 1024 * 1024)) { toast(`The banner has to be an image under ${MAX_FILE_MB}MB.`, 'error'); return; }
+      if (f) { $('shop-edit-save-btn').disabled = true; toast('Uploading the banner…'); try { update.banner = await uploadImageToCloudinary(f); update.bannerPos = null; } finally { $('shop-edit-save-btn').disabled = false; } }
+      else if ($('shop-edit-banner-clear') && $('shop-edit-banner-clear').checked) { update.banner = null; update.bannerPos = null; }
+    }
     if (isCustom) {
       const item = def.custom().find(x => x.id === id) || {};
       $('shop-edit-extra').querySelectorAll('[data-path]').forEach(input => {
@@ -11041,12 +11259,13 @@ $('shop-edit-save-btn').onclick = async () => {
         if (!update.emojis.length) { toast('Add at least one emoji.'); return; }
         update.emoji = update.emojis[0].e;
       }
-      await db.collection(def.collection).doc(id).update(update);
+      if (type === 'music') { update.disabled = !!($('shop-edit-disabled') && $('shop-edit-disabled').checked); await db.collection('config').doc('customMusic').set({ [id]: update }, { merge: true }); }
+      else await db.collection(def.collection).doc(id).update(update);
     } else {
       await db.collection('config').doc('shopOverrides').set({ [shopOverrideKey(type, id)]: update }, { merge: true });
     }
     closeModal('shop-edit-modal');
-    toast(`Saved "${priceFeaturedOnly ? $('shop-edit-title').textContent.replace(/^Edit /, '') : name}".`);
+    toast(`Saved "${name}".`);
   } catch (e) { toast(e.message || 'Could not save changes.', 'error'); }
 };
 $('shop-edit-reset-btn').onclick = async () => {
@@ -11058,14 +11277,17 @@ $('shop-edit-reset-btn').onclick = async () => {
   } catch (e) { toast(e.message || 'Could not reset.', 'error'); }
 };
 $('shop-edit-delete-btn').onclick = () => {
-  if (!shopEditTarget || !shopEditTarget.isCustom) return;
+  if (!shopEditTarget || !shopEditTarget.isCustom || shopEditTarget.type === 'music') return;   // songs are disabled, never deleted
   const { type, id } = shopEditTarget;
   const def = SHOP_EDIT_TYPES[type];
   const item = def.custom().find(x => x.id === id);
   confirmAction({
     title: `Delete ${def.label}`, body: `Remove "${item ? item.name : 'this item'}" from the shop? People who bought it will lose it.`, confirmLabel: 'Delete',
     onConfirm: async () => {
-      try { await db.collection(def.collection).doc(id).delete(); closeModal('shop-edit-modal'); }
+      try {
+        await db.collection(def.collection).doc(id).delete();
+        closeModal('shop-edit-modal');
+      }
       catch (e) { toast(e.message || 'Could not delete.', 'error'); }
     },
   });
