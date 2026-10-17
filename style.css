@@ -1757,24 +1757,6 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 .msg-att-dl .i { display: flex; }
 .msg-att-dl .i { width: 18px; height: 18px; }
 .msg-att-item.is-file .msg-att-del { top: -7px; right: -7px; }
-/* audio / video players inside a message */
-.msg-att-item.is-media { width: 100%; }
-.msg-media-card { background: var(--bg-input); border-radius: 8px; padding: 8px; margin-top: 4px; width: 100%; box-sizing: border-box; }
-.msg-media { display: block; width: 100%; border-radius: 6px; outline: 0; }
-.msg-media-video { max-height: 320px; background: #000; }
-.msg-media-audio { height: 40px; }
-.msg-media-cap { display: flex; align-items: center; gap: 8px; margin-top: 8px; min-width: 0; }
-.msg-media-cap .mfc-icon { width: 18px; height: 18px; }
-.mmc-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mmc-size { font-size: 12px; color: var(--text-faint); flex-shrink: 0; }
-.msg-media-dl {
-  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  background: var(--accent); color: #fff; text-decoration: none; transition: filter .12s ease, transform .12s ease;
-}
-.msg-media-dl:hover { filter: brightness(1.15); transform: scale(1.08); }
-.msg-media-dl .i { display: flex; width: 15px; height: 15px; }
-.msg-media-err { padding: 10px 12px; font-size: 13px; color: var(--text-muted); }
-.msg-att-item.is-media .msg-att-del { top: -7px; right: -7px; }
 
 /* ============ STAGED ATTACHMENTS (draft strip above composer) ============ */
 .attachment-draft {
@@ -4088,17 +4070,3 @@ body.is-mobile .sys-ico { flex-basis: 32px; }
 .sic-replay-seg + .sic-replay-seg { border-left: 1px solid var(--border, rgba(255,255,255,.2)); }
 .sic-replay-seg:hover { background: rgba(255,255,255,.08); }
 .sic-replay { align-self: stretch; width: 100%; box-sizing: border-box; }
-
-/* ---------- staff: add a song (Admin / Owner panel > Shop > Music) ---------- */
-.music-creator { display: flex; flex-direction: column; gap: 12px; }
-.music-file-input { width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; background: var(--bg-input); color: var(--text-normal); font: inherit; font-size: 13px; }
-.music-anim-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-.music-anim-row .music-anim-name { flex: 0 0 38%; min-width: 0; }
-.music-anim-row .music-anim-file { flex: 1; min-width: 0; padding: 6px; border-radius: 6px; background: var(--bg-input); color: var(--text-normal); font: inherit; font-size: 12px; }
-.music-anim-count { font-weight: 600; color: var(--text-faint); margin-left: 6px; }
-.music-publish-status { font-size: 13px; color: var(--text-muted); min-height: 18px; }
-
-.music-card-preview { max-width: 320px; }
-.music-card-preview .sic-music-preview { height: 112px; }
-.shop-edit-banner { display: flex; flex-direction: column; gap: 8px; }
-.shop-edit-banner .sic-music-preview { height: 96px; max-width: 280px; }
