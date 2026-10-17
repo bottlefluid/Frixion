@@ -1745,6 +1745,18 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 .msg-att-item:hover .msg-att-del { opacity: 1; }
 .msg-att-del:hover { background: var(--danger); }
 .msg-att-del .i svg { width: 12px; height: 12px; }
+/* file cards: a download button that is always visible, and the delete button moves to the card's corner so they don't overlap */
+.msg-att-item.is-file { width: fit-content; max-width: 100%; }
+.msg-att-item.is-file .msg-file-card { padding-right: 56px; }
+.msg-att-dl {
+  position: absolute; top: 50%; right: 10px; transform: translateY(-50%); width: 34px; height: 34px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  background: var(--accent); color: #fff; border: 0; padding: 0; text-decoration: none; transition: filter .12s ease, transform .12s ease;
+}
+.msg-att-dl:hover { filter: brightness(1.15); transform: translateY(-50%) scale(1.08); }
+.msg-att-dl .i { display: flex; }
+.msg-att-dl .i { width: 18px; height: 18px; }
+.msg-att-item.is-file .msg-att-del { top: -7px; right: -7px; }
 
 /* ============ STAGED ATTACHMENTS (draft strip above composer) ============ */
 .attachment-draft {
@@ -2661,6 +2673,26 @@ body.shop-theme-active .ds-settings-layer#channel-settings-modal { background: v
 .msg-line:hover { z-index: 7; }
 .msg-line .msg-hover-actions .hover-icon-btn { padding: 6px; }
 #messages > :first-child .msg-line:first-child .msg-hover-actions { top: 0; }
+/* Message toolbar (react / reply / edit / pin / delete): small, but bright with an accent border so it stands out, and kept to the far
+   right of the chat with a small gap so the whole outline shows. It is anchored by its right edge, so any button added later just
+   makes it grow leftward. Its size follows the screen width (--tb-icon): about 13px icons on a small laptop, 16px on a 2000px
+   screen, 18px at most on very wide ones. The message content row shrinks to fit its text, so it isn't the anchor here; the
+   full-width message line is. Phones don't show the toolbar at all (they use the long-press sheet), so this is for computers only. */
+body:not(.is-mobile) .msg-line .msg-row-wrap { position: static; }
+body:not(.is-mobile) .msg-line .msg-hover-actions {
+  --tb-icon: clamp(13px, 0.5vw + 6px, 18px);
+  right: calc(clamp(4px, 0.5vw, 10px) - 16px); top: -16px; max-width: calc(100% - 8px); box-sizing: border-box;
+  padding: calc(var(--tb-icon) * .12) calc(var(--tb-icon) * .2); gap: 1px; border-radius: 8px;
+  background: var(--bg-tertiary); border: 1px solid var(--divider);
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--divider));
+  box-shadow: 0 3px 12px rgba(0,0,0,.5), 0 0 8px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+body:not(.is-mobile) .msg-line .msg-hover-actions .hover-icon-btn { padding: calc(var(--tb-icon) * .32); border-radius: 6px; color: var(--text-normal); }
+body:not(.is-mobile) .msg-line .msg-hover-actions .hover-icon-btn .i { width: var(--tb-icon); height: var(--tb-icon); }
+body:not(.is-mobile) .msg-line .msg-hover-actions .hover-icon-btn:hover { background: var(--accent); color: #fff; }
+body:not(.is-mobile) .msg-line .msg-hover-actions .hover-icon-btn.del-msg:hover { background: var(--danger); color: #fff; }
+body:not(.is-mobile) .msg-line .msg-hover-actions .hover-icon-btn.pin-msg.on { color: var(--accent); }
+body:not(.is-mobile) .msg-line .msg-hover-actions .hover-icon-btn.pin-msg.on:hover { color: #fff; }
 
 /* Quick delete armed: red outline on hover, trash cursor feel */
 body.quick-delete-armed #messages .msg-line { cursor: pointer; }
@@ -3188,7 +3220,7 @@ body.shop-theme-active .fg-window .fg-chip { background: rgba(0,0,0,.3); }
 @media (max-width: 560px) { .ban-facts { grid-template-columns: 1fr; } .ban-ack { width: 100%; } }
 
 /* ---- slash commands ---- */
-#slash-popup { position: absolute; left: 16px; right: 16px; bottom: 74px; max-width: 620px; max-height: min(360px, 50vh); overflow-y: auto; z-index: 55;
+#slash-popup { position: absolute; left: 16px; right: 16px; bottom: 74px; max-width: 620px; max-height: min(380px, 50vh); overflow: hidden; display: flex; z-index: 55;
   background: var(--bg-floating); border-radius: 10px; padding: 6px; box-shadow: 0 8px 30px var(--shadow-color), 0 0 0 1px rgba(255,255,255,.04); }
 .slash-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px 6px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
 .slash-head b { color: var(--text-normal); text-transform: none; letter-spacing: 0; }
@@ -3483,13 +3515,14 @@ body.is-mobile .ov-setting, body.is-mobile .ov-help-row { display: none; }
 @keyframes term-slice-b { 0% { clip-path: inset(60% 0 0 0); transform: translate(5px, 0); } 30% { clip-path: inset(20% 0 50% 0); transform: translate(-6px, 0); } 60% { clip-path: inset(70% 0 5% 0); transform: translate(3px, 0); } 100% { clip-path: inset(55% 0 0 0); transform: translate(4px, 0); } }
 @keyframes term-blink { 0% { opacity: 1; } 50% { opacity: .35; } 100% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  #terminate-screen .term-static, #terminate-screen .term-title, #terminate-screen .term-title::before, #terminate-screen .term-title::after, }
+  #terminate-screen .term-static, #terminate-screen .term-title, #terminate-screen .term-title::before, #terminate-screen .term-title::after { animation: none; }
+}
 
 /* tiny diagonal wall of text behind the Account Terminated card */
 #terminate-screen .term-wall { position: absolute; left: 50%; top: 50%; width: 160vmax; height: 160vmax; transform: translate(-50%, -50%) rotate(-32deg); overflow: hidden; z-index: 0; pointer-events: none;
   font: 700 10px/1.45 'Courier New', ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; color: rgba(255, 38, 28, .62); word-spacing: .2em; animation: term-wall-flicker 1.7s steps(1) infinite; }
 #terminate-screen .term-end::before { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse 55% 40% at 50% 50%, rgba(5, 0, 0, .9) 0%, rgba(5, 0, 0, .65) 55%, transparent 100%); }
-#terminate-screen .term-title, @keyframes term-wall-flicker { 0% { opacity: 1; } 18% { opacity: .55; } 22% { opacity: 1; } 61% { opacity: .8; } 64% { opacity: 1; } 100% { opacity: 1; } }
+@keyframes term-wall-flicker { 0% { opacity: 1; } 18% { opacity: .55; } 22% { opacity: 1; } 61% { opacity: .8; } 64% { opacity: 1; } 100% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { #terminate-screen .term-wall { animation: none; } }
 
 /* Devices tab (owner panel) */
@@ -3529,6 +3562,10 @@ button.dev-chip:hover { background: var(--bg-modifier-hover); }
 .sic-music-preview { position: relative; width: 100%; min-height: 150px; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 18px 14px; text-align: center; background: #05050a; border: 1px solid rgba(255,255,255,.1); }
 .sic-music-preview.fx-bg-equinox { background: radial-gradient(ellipse at 50% 45%, #1c2238 0%, #0a0c16 55%, #000 100%); box-shadow: inset 0 0 40px rgba(140,170,255,.12); }
 .sic-music-preview .smp-title { font-weight: 700; color: #fff; position: relative; z-index: 1; }
+/* a track with its own banner image (Pure Vessel): the picture fills the card, with a dark wash so the name stays readable */
+.sic-music-preview.has-banner { background-color: #05050a; background-size: cover; background-position: center; background-repeat: no-repeat; }
+.sic-music-preview.has-banner::before { content: ''; position: absolute; inset: 0; background: linear-gradient(rgba(0,0,0,.28), rgba(0,0,0,.5)); }
+.sic-music-preview.has-banner .smp-title { font-family: 'Times New Roman', Georgia, 'Noto Serif', serif; font-size: 24px; letter-spacing: .16em; text-transform: uppercase; text-shadow: 0 0 10px rgba(0,0,0,.9), 0 2px 14px rgba(0,0,0,.8); }
 /* little equalizer along the bottom; it only moves while the track is the equipped one */
 .smp-eq { position: absolute; left: 0; right: 0; bottom: 0; height: 26px; display: flex; align-items: flex-end; justify-content: center; gap: 5px; opacity: .45; }
 .smp-eq i { display: block; width: 5px; height: 4px; border-radius: 2px 2px 0 0; background: rgba(255,255,255,.8); }
@@ -3538,6 +3575,21 @@ button.dev-chip:hover { background: var(--bg-modifier-hover); }
 .smp-eq i:nth-child(4) { animation-delay: -.3s !important; } .smp-eq i:nth-child(5) { animation-delay: -.6s !important; }
 .smp-eq i:nth-child(6) { animation-delay: -.2s !important; } .smp-eq i:nth-child(7) { animation-delay: -.5s !important; }
 @keyframes smp-eq { 0%, 100% { height: 4px; } 50% { height: 22px; } }
+/* Equinox only: the strip matches the Equinox bars, flat black and white blocks with gaps that jump up and down and flash */
+.fx-bg-equinox .smp-eq { height: 32px; justify-content: space-around; gap: 0; padding: 0 4px; opacity: .6; overflow: hidden; }
+.fx-bg-equinox .smp-eq i { width: 9%; height: 8px; border-radius: 0; background: #fff; }
+.fx-bg-equinox .smp-eq i:nth-child(even) { background: #000; }
+.fx-bg-equinox.is-playing .smp-eq { opacity: 1; }
+.fx-bg-equinox.is-playing .smp-eq i { animation: smp-eq-h .62s ease-in-out infinite, smp-eq-c .34s steps(1, end) infinite; }
+.fx-bg-equinox .smp-eq i:nth-child(1) { animation-delay: -.10s, -.05s !important; animation-duration: .58s, .31s !important; }
+.fx-bg-equinox .smp-eq i:nth-child(2) { animation-delay: -.45s, -.20s !important; animation-duration: .71s, .27s !important; }
+.fx-bg-equinox .smp-eq i:nth-child(3) { animation-delay: -.25s, -.12s !important; animation-duration: .49s, .38s !important; }
+.fx-bg-equinox .smp-eq i:nth-child(4) { animation-delay: -.55s, -.28s !important; animation-duration: .66s, .24s !important; }
+.fx-bg-equinox .smp-eq i:nth-child(5) { animation-delay: -.05s, -.17s !important; animation-duration: .54s, .35s !important; }
+.fx-bg-equinox .smp-eq i:nth-child(6) { animation-delay: -.35s, -.08s !important; animation-duration: .77s, .29s !important; }
+.fx-bg-equinox .smp-eq i:nth-child(7) { animation-delay: -.60s, -.22s !important; animation-duration: .6s, .33s !important; }
+@keyframes smp-eq-h { 0%, 100% { height: 6px; } 25% { height: 30px; } 50% { height: 14px; } 75% { height: 26px; } }
+@keyframes smp-eq-c { 0% { background: #fff; } 50% { background: #000; } }
 
 /* ---------- Animated aura name text (EQUINOX) ----------
    The name itself stays steady and glows. Little words (.fx-echo) keep slipping out from behind it,
@@ -3596,3 +3648,425 @@ html[data-no-shake] .wordle-row.shake { animation: none !important; }
 .admin-item-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .admin-item-row .ai-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin-item-row .ai-cat { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+.dev-member { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 13px; }
+.dev-member .dm-main { flex: 1; min-width: 0; }
+.dev-member .dm-main small { display: block; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* Equinox bars (see musicBarsTick in script.js). Flat black and white blocks with gaps between them, like the ones in
+   Sol's RNG: one row hanging from the top of the screen, one standing on the bottom. Fixed to the screen, above
+   everything except the ban screen. The script slides each block up and down with transforms and flips its colour. */
+#music-bars { position: fixed; inset: 0; pointer-events: none; z-index: 9000; overflow: hidden; }
+#music-bars .mb-row { position: absolute; left: 0; right: 0; display: flex; overflow: hidden; }
+#music-bars .mb-top { top: 0; height: 14vh; }
+#music-bars .mb-bot { bottom: 0; height: 17vh; }
+#music-bars .mb-slot { position: relative; flex: 1 1 0; min-width: 0; height: 100%; }
+#music-bars .mb-bar { position: absolute; top: 0; left: 13.5%; width: 62.5%; height: 100%; background: #000; will-change: transform; transform: translateY(-100%); }
+#music-bars .mb-bot .mb-bar { transform: translateY(100%); }
+#music-bars .mb-bar.w { background: #fff; }
+.admin-items-search { width: 100%; box-sizing: border-box; margin: 6px 0 8px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border, rgba(255,255,255,.12)); background: var(--bg-tertiary, rgba(0,0,0,.25)); color: inherit; font: inherit; }
+.admin-item-row[hidden], .admin-items-none[hidden] { display: none !important; }
+
+/* ---------- Epilepsy mode (see ACCESSIBILITY — EPILEPSY MODE in script.js) ----------
+   RULE FOR ANY AI MODEL / DEVELOPER: Settings > Accessibility > "Epilepsy mode" sets html[data-epilepsy].
+   Anything that flashes, flickers, strobes or pulses brightly, today or added later, must be switched
+   off here. Add your selector to the list below. */
+html[data-epilepsy] body.shop-anim-hue::before,
+html[data-epilepsy] body.shop-anim-holo::before,
+html[data-epilepsy] body.shop-anim-aurora::before,
+html[data-epilepsy] .nameplate-blazing::before,
+html[data-epilepsy] .nameplate-starfall::before,
+html[data-epilepsy] .nameplate-aurora::before,
+html[data-epilepsy] .effect-sparkles .particle,
+html[data-epilepsy] .effect-glitter .particle,
+html[data-epilepsy] .nameplate-shimmer::after,
+html[data-epilepsy] .effect-style-twinkling .particle,
+html[data-epilepsy] .frame-custom-glow,
+html[data-epilepsy] .frame-neon,
+html[data-epilepsy] .frame-rainbow,
+html[data-epilepsy] .nameplate-galaxy::before,
+html[data-epilepsy] .frame-plasma,
+html[data-epilepsy] .fg-window .gg-plot.ready,
+html[data-epilepsy] .fg-window .r-super,
+html[data-epilepsy] .gag-item .r-super,
+html[data-epilepsy] .fg-window .r-prismatic,
+html[data-epilepsy] .gag-item .r-prismatic,
+html[data-epilepsy] .fg-window .r-transcendent,
+html[data-epilepsy] .gag-item .r-transcendent,
+html[data-epilepsy] .fg-window .r-null,
+html[data-epilepsy] .gag-item .r-null,
+html[data-epilepsy] #terminate-screen .term-static,
+html[data-epilepsy] #terminate-screen .term-title,
+html[data-epilepsy] #terminate-screen .term-title::before,
+html[data-epilepsy] #terminate-screen .term-title::after,
+html[data-epilepsy] #terminate-screen .term-wall,
+html[data-epilepsy] .fx-equinox .fx-letters,
+html[data-epilepsy] .fx-bg-equinox.is-playing .smp-eq i,
+html[data-epilepsy] .fx-echo { animation: none !important; }
+html[data-epilepsy] #terminate-screen .term-flash,
+html[data-epilepsy] #terminate-screen .term-static,
+html[data-epilepsy] #music-bars { display: none !important; }
+html[data-epilepsy] .fx-echo { display: none; }
+html[data-epilepsy] #terminate-screen .term-wall { opacity: .8; }
+html[data-epilepsy] #terminate-screen .term-title::before,
+html[data-epilepsy] #terminate-screen .term-title::after { display: none; }
+
+/* ============================================================
+   PHONE REWORK (body.is-mobile only; desktop and tablets are untouched)
+   - Messages header above the DMs, Friends/Quests/Codes/Shop as a row of buttons under it
+   - softer, rounder shapes
+   - menus slide in and out
+   ============================================================ */
+#mobile-home-top { display: none; }
+@keyframes frxSheetUp { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes frxSheetDown { from { transform: none; } to { transform: translateY(100%); } }
+@keyframes frxSlideInRight { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes frxSlideOutRight { from { transform: none; } to { transform: translateX(100%); } }
+@keyframes frxDropIn { from { opacity: 0; transform: translateY(-16px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes frxRiseIn { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+@keyframes frxBackdropOut { from { opacity: 1; } to { opacity: 0; } }
+
+body.is-mobile #app { background: var(--bg-deepest); }
+
+/* ---- rail: round icons, the active one turns into a rounded square ---- */
+body.is-mobile #server-rail { background: transparent; padding-top: 10px; }
+body.is-mobile .rail-item { border-radius: 50%; transition: border-radius .22s ease, background .2s ease, transform .15s ease; }
+body.is-mobile .rail-item:hover { border-radius: 50%; background: var(--bg-secondary); color: inherit; }
+body.is-mobile .rail-item.active, body.is-mobile .rail-item.dm-item.active { border-radius: 16px; background: var(--accent); color: #fff; }
+body.is-mobile .rail-item:active { transform: scale(.92); }
+body.is-mobile .rail-item::before { display: none; }
+
+/* ---- the second column becomes a rounded card ---- */
+body.is-mobile #side-panel { border-radius: 28px 0 0 0; background: var(--bg-secondary); overflow: hidden; box-shadow: -1px 0 0 rgba(255,255,255,.05); }
+body.is-mobile #app.is-home #side-header { display: none; }
+body.is-mobile #side-header { margin: 12px 12px 4px; height: 46px; border-radius: 16px; background: rgba(255,255,255,.06); box-shadow: none; }
+body.is-mobile #channel-list, body.is-mobile #dm-list { padding: 4px 8px 12px; scrollbar-width: none; }
+body.is-mobile #channel-list::-webkit-scrollbar, body.is-mobile #dm-list::-webkit-scrollbar { display: none; }
+body.is-mobile .channel-row { border-radius: 14px; min-height: 46px; padding: 8px 12px; }
+body.is-mobile .channel-row:hover { background: transparent; }
+body.is-mobile .channel-row.active { background: rgba(255,255,255,.09); }
+
+/* ---- Messages header ---- */
+body.is-mobile #mobile-home-top { display: block; position: relative; padding: 14px 8px 2px; }
+body.is-mobile .mht-title { font-size: 31px; line-height: 1.1; font-weight: 800; letter-spacing: -.02em; padding: 4px 8px 12px; margin: 0; }
+body.is-mobile .mht-actions { display: flex; align-items: center; gap: 10px; padding: 0 8px 12px; }
+body.is-mobile .mht-round, body.is-mobile .mht-pill {
+  height: 44px; border-radius: 22px; background: rgba(255,255,255,.08); color: var(--text-normal);
+  display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; font-size: 16px;
+  transition: transform .15s ease, background .2s ease;
+}
+body.is-mobile .mht-round { width: 44px; flex-shrink: 0; }
+body.is-mobile .mht-pill { flex: 1; min-width: 0; }
+body.is-mobile .mht-round.accent { background: var(--accent); color: #fff; }
+body.is-mobile .mht-round:active, body.is-mobile .mht-pill:active { transform: scale(.94); }
+body.is-mobile #mht-new[aria-expanded="true"] svg { transform: rotate(45deg); }
+body.is-mobile #mht-new svg { transition: transform .2s ease; }
+body.is-mobile .mht-search-row { display: flex; gap: 10px; align-items: center; padding: 0 8px 12px; }
+body.is-mobile .mht-search-row[hidden] { display: none; }
+body.is-mobile .mht-search-row.is-open { animation: frxDropIn .22s cubic-bezier(.2,.8,.3,1); }
+body.is-mobile .mht-search-row input { flex: 1; min-width: 0; height: 44px; border-radius: 22px; border: none; padding: 0 18px; background: rgba(255,255,255,.08); color: inherit; font: inherit; font-size: 16px; outline: none; }
+body.is-mobile .mht-search-row input:focus { box-shadow: 0 0 0 2px var(--accent); }
+body.is-mobile .mht-search-row button { color: var(--accent); font-weight: 600; font-size: 15px; padding: 8px 4px; }
+body.is-mobile .mht-menu { position: absolute; right: 16px; top: 112px; z-index: 20; min-width: 200px; padding: 6px; border-radius: 18px; background: var(--bg-floating); box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 12px 32px rgba(0,0,0,.5); transform-origin: top right; }
+body.is-mobile .mht-menu:not([hidden]) { animation: frxDropIn .2s cubic-bezier(.2,.8,.3,1); }
+body.is-mobile .mht-menu button { display: block; width: 100%; text-align: left; padding: 13px 16px; border-radius: 12px; font-size: 16px; font-weight: 500; color: var(--text-normal); }
+body.is-mobile .mht-menu button:active { background: rgba(255,255,255,.09); }
+
+/* Friends / Quests / Codes / Shop: a scrolling row of buttons under the header */
+body.is-mobile #home-nav { display: flex; gap: 8px; overflow-x: auto; margin: 0 -8px; padding: 0 24px 12px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+body.is-mobile #home-nav::-webkit-scrollbar { display: none; }
+body.is-mobile .home-nav-item { flex-shrink: 0; margin: 0; height: 40px; min-height: 40px; padding: 0 16px 0 12px; gap: 8px; border-radius: 20px; background: rgba(255,255,255,.07); font-size: 15px; transition: transform .15s ease, background .2s ease; }
+body.is-mobile .home-nav-item:hover, body.is-mobile .home-nav-item.active { background: rgba(255,255,255,.07); color: var(--text-muted); }
+body.is-mobile .home-nav-item:active { transform: scale(.94); background: rgba(255,255,255,.13); }
+body.is-mobile .home-nav-item .hn-badge { margin-left: 2px; }
+body.is-mobile #dm-list .side-section-label { display: none; }
+
+/* ---- DM rows: roomy and rounded ---- */
+body.is-mobile .dm-row { padding: 10px 14px; margin: 0 0 4px; gap: 12px; border-radius: 20px; min-height: 64px; color: var(--text-normal); transition: background .15s ease, transform .15s ease; }
+body.is-mobile .dm-row[hidden] { display: none; }
+body.is-mobile .dm-row:hover { background: transparent; }
+body.is-mobile .dm-row:active { background: rgba(255,255,255,.08); transform: scale(.985); }
+body.is-mobile .dm-row.active { background: rgba(255,255,255,.08); }
+body.is-mobile .dm-row .avatar { transform: scale(1.3); transform-origin: left center; margin-right: 12px; }
+body.is-mobile .dm-row .dm-name { font-size: 17px; font-weight: 600; }
+body.is-mobile .dm-row .dm-preview { font-size: 14px; }
+body.is-mobile .dm-row.has-nameplate { overflow: hidden; }
+
+/* ---- floating profile bar ---- */
+body.is-mobile #user-panel { height: 60px; margin: 6px 10px max(10px, env(safe-area-inset-bottom)); border-radius: 30px; padding: 0 12px 0 10px; background: rgba(255,255,255,.08); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 6px 18px rgba(0,0,0,.3); }
+body.is-mobile #user-panel .who { border-radius: 14px; }
+body.is-mobile #user-panel .icon-btn { width: 40px; height: 40px; background: rgba(255,255,255,.07); }
+body.is-mobile #user-panel .icon-btn:active { transform: scale(.92); }
+
+/* ---- chat: softer edges ---- */
+body.is-mobile #main-col { box-shadow: -10px 0 30px rgba(0,0,0,.35); }
+body.is-mobile #composer { border-radius: 24px; padding: 0 10px; }
+body.is-mobile .mp-header { height: auto; }
+
+/* ---- menus slide in and out ---- */
+body.is-mobile .modal-overlay:not(.ds-settings-layer) { align-items: flex-end; justify-content: center; animation: frxFade .2s ease; }
+body.is-mobile .modal-overlay:not(.ds-settings-layer) > .modal-box { width: 100%; max-width: 100%; border-radius: 26px 26px 0 0; padding-bottom: max(24px, env(safe-area-inset-bottom)); animation: frxSheetUp .34s cubic-bezier(.22,.8,.3,1); box-shadow: 0 -10px 40px rgba(0,0,0,.45); }
+body.is-mobile #settings-modal > .modal-box { width: 100%; max-width: 100%; height: 92vh; max-height: 92vh; }
+body.is-mobile #confirm-modal { align-items: center; }
+body.is-mobile #confirm-modal > .modal-box { width: 92vw; max-width: 420px; border-radius: 24px; animation: frxPop .22s cubic-bezier(.2,.9,.3,1.15); }
+body.is-mobile .ds-settings-layer { animation: frxSlideInRight .32s cubic-bezier(.22,.8,.3,1); }
+body.is-mobile .modal-overlay.sheet-closing:not(.ds-settings-layer) { animation: frxBackdropOut .23s ease forwards; }
+body.is-mobile .modal-overlay.sheet-closing:not(.ds-settings-layer) > .modal-box { animation: frxSheetDown .23s cubic-bezier(.4,0,.8,.4) forwards; }
+body.is-mobile .modal-overlay.sheet-closing#confirm-modal > .modal-box { animation: none; opacity: 0; transition: opacity .2s; }
+body.is-mobile .ds-settings-layer.sheet-closing { animation: frxSlideOutRight .23s cubic-bezier(.4,0,.8,.4) forwards; }
+body.is-mobile #app.member-list-open #member-panel { animation: frxSlideInRight .3s cubic-bezier(.22,.8,.3,1); border-radius: 28px 0 0 28px; }
+body.is-mobile #emoji-picker-panel:not(.hidden), body.is-mobile #sticker-picker-panel:not(.hidden), body.is-mobile #gif-picker-panel:not(.hidden),
+body.is-mobile .composer-action-menu:not(.hidden), body.is-mobile .ck-quicktext-popover { animation: frxRiseIn .24s cubic-bezier(.22,.8,.3,1); border-radius: 20px; }
+body.is-mobile .server-menu { animation: frxDropIn .24s cubic-bezier(.22,.8,.3,1); border-radius: 20px; }
+body.is-mobile #inbox-popover:not(.hidden), body.is-mobile #help-popover:not(.hidden) { animation: frxDropIn .24s cubic-bezier(.22,.8,.3,1); border-radius: 20px; }
+body.is-mobile .action-sheet-backdrop { animation: sheetFadeIn .2s ease; }
+body.is-mobile .action-sheet { border-radius: 26px 26px 0 0; animation: frxSheetUp .32s cubic-bezier(.22,.8,.3,1); }
+body.is-mobile #app.mobile-show-chat #main-col, body.is-mobile #side-panel, body.is-mobile #main-col { transition-timing-function: cubic-bezier(.22,.8,.3,1); transition-duration: .34s; }
+
+@media (prefers-reduced-motion: reduce) {
+  body.is-mobile .modal-overlay > .modal-box, body.is-mobile .ds-settings-layer, body.is-mobile #app.member-list-open #member-panel,
+  body.is-mobile .server-menu, body.is-mobile .action-sheet, body.is-mobile .mht-menu, body.is-mobile .mht-search-row { animation: none !important; }
+  body.is-mobile #side-panel, body.is-mobile #main-col { transition-duration: .01s; }
+}
+
+/* ============================================================
+   PHONE ROUNDING PASS (body.is-mobile only)
+   Buttons, fields, pages, cards, tabs, messages and pop-ups all lose their square corners.
+   ============================================================ */
+/* buttons become pills */
+body.is-mobile .btn-primary, body.is-mobile .btn-secondary, body.is-mobile .btn-danger, body.is-mobile .btn-accent-inline,
+body.is-mobile .ds-btn, body.is-mobile .sic-btn, body.is-mobile .shop-icon-btn { border-radius: 22px; }
+body.is-mobile .btn-secondary.slim, body.is-mobile .btn-accent-inline.slim, body.is-mobile .btn-danger.slim { border-radius: 18px; }
+body.is-mobile .btn-primary, body.is-mobile .btn-secondary, body.is-mobile .btn-danger, body.is-mobile .btn-accent-inline { min-height: 44px; padding-left: 20px; padding-right: 20px; }
+body.is-mobile .btn-secondary.slim, body.is-mobile .btn-accent-inline.slim, body.is-mobile .btn-danger.slim { min-height: 36px; padding-left: 14px; padding-right: 14px; }
+body.is-mobile button:active:not(:disabled) { transform: scale(.97); }
+body.is-mobile .hdr-icon-btn, body.is-mobile .composer-icon-btn, body.is-mobile .icon-btn, body.is-mobile #chat-header .members-toggle { border-radius: 50%; }
+
+/* fields */
+body.is-mobile input[type="text"], body.is-mobile input[type="password"], body.is-mobile input[type="search"], body.is-mobile input[type="email"],
+body.is-mobile input[type="number"], body.is-mobile input:not([type]), body.is-mobile select, body.is-mobile .fld-input, body.is-mobile textarea.fld-input { border-radius: 16px; }
+body.is-mobile textarea.fld-input { border-radius: 18px; }
+body.is-mobile input[type="text"]:not(#composer input), body.is-mobile input[type="password"], body.is-mobile .fld-input { padding-left: 16px; padding-right: 16px; }
+body.is-mobile #composer textarea { border-radius: 0; }
+
+/* the chat screen itself */
+body.is-mobile #main-col { border-radius: 28px 0 0 0; overflow: hidden; }
+body.is-mobile #chat-header { margin: 8px 10px 0; height: 52px; border-radius: 26px; background: rgba(255,255,255,.06); box-shadow: none; padding: 0 8px; }
+body.is-mobile #app.mobile-show-chat #main-col { border-radius: 0; }
+body.is-mobile #reply-bar { margin: 0 10px; border-radius: 18px 18px 0 0; }
+body.is-mobile .msg-attachment img, body.is-mobile .msg-attachment video, body.is-mobile .msg-attachment-grid > *, body.is-mobile .msg-sticker,
+body.is-mobile .msg-file-card, body.is-mobile .msg-reply-ref, body.is-mobile .attachment-draft, body.is-mobile .msg-embed, body.is-mobile .embed { border-radius: 18px; }
+body.is-mobile .msg-attachment img, body.is-mobile .msg-attachment video { overflow: hidden; }
+body.is-mobile .msg-edit-box, body.is-mobile .msg-edit-input { border-radius: 16px; }
+body.is-mobile .reaction-pill { border-radius: 16px; }
+body.is-mobile .poll-card, body.is-mobile .poll-option, body.is-mobile .poll-modal-box { border-radius: 20px; }
+body.is-mobile .typing-indicator { border-radius: 14px; }
+body.is-mobile .day-divider { margin-left: 18px; margin-right: 18px; }
+body.is-mobile .pinned-row { border-radius: 16px; }
+body.is-mobile #welcome-view .welcome-icon { border-radius: 50%; }
+
+/* Friends / Quests / Codes / Shop pages */
+body.is-mobile .main-page-view { border-radius: 28px 28px 0 0; }
+body.is-mobile .mp-header { margin: 8px 10px 0; border-radius: 26px; background: rgba(255,255,255,.06); box-shadow: none; padding: 8px 14px; }
+body.is-mobile .friends-tab { border-radius: 18px; padding: 7px 14px; }
+body.is-mobile .friends-tab.on { background: var(--accent); color: #fff; }
+body.is-mobile .friend-row, body.is-mobile .friend-pick-row, body.is-mobile .member-row { border-radius: 18px; }
+body.is-mobile .friend-row { background: rgba(255,255,255,.04); margin: 0 10px 6px; }
+body.is-mobile .quest-row { border-radius: 22px; margin-left: 10px; margin-right: 10px; }
+body.is-mobile .quest-bar, body.is-mobile .quest-bar-fill { border-radius: 8px; }
+body.is-mobile .code-display { border-radius: 16px; }
+body.is-mobile .shop-topbar { margin: 8px 10px 0; border-radius: 26px; }
+body.is-mobile .shop-tab, body.is-mobile .shop-browse-opt, body.is-mobile .shop-orb-chip, body.is-mobile .shop-mgr-tab { border-radius: 18px; }
+body.is-mobile .shop-search, body.is-mobile .shop-search input { border-radius: 20px; }
+body.is-mobile .shop-item-card, body.is-mobile .theme-card { border-radius: 24px; overflow: hidden; }
+body.is-mobile .sic-preview, body.is-mobile .sic-theme-preview, body.is-mobile .sic-banner-preview, body.is-mobile .sic-music-preview,
+body.is-mobile .sic-nameplate-preview, body.is-mobile .sic-effect-preview, body.is-mobile .sic-frame-preview, body.is-mobile .sic-deco-stage { border-radius: 18px; }
+body.is-mobile .shop-empty-state, body.is-mobile .music-toolbar { border-radius: 20px; }
+body.is-mobile .shop-browse-menu { border-radius: 20px; }
+body.is-mobile .big-choice { border-radius: 20px; }
+
+/* settings and other full-screen sheets */
+body.is-mobile #settings-nav { border-radius: 26px 26px 0 0; }
+body.is-mobile #settings-nav .nav-item, body.is-mobile .ds-nav-item { border-radius: 18px; }
+body.is-mobile #settings-content { border-radius: 0; }
+body.is-mobile .setting-row { border-radius: 20px; background: rgba(255,255,255,.04); padding: 14px 16px; margin-bottom: 10px; }
+body.is-mobile .ds-sidebar, body.is-mobile .ds-content { border-radius: 0; }
+body.is-mobile .ds-unsaved { border-radius: 22px; margin: 0 12px max(12px, env(safe-area-inset-bottom)); }
+body.is-mobile .theme-preview-swatch, body.is-mobile .admin-theme-chip-swatch { border-radius: 16px; }
+
+/* profile card, member list, pickers, toasts */
+body.is-mobile .profile-box { border-radius: 28px; overflow: hidden; }
+body.is-mobile .profile-banner { border-radius: 0; }
+body.is-mobile #member-panel .member-row { border-radius: 18px; }
+body.is-mobile .ep-search input, body.is-mobile .ep-cat-btn, body.is-mobile .gif-thumb, body.is-mobile .sticker-grid > * { border-radius: 14px; }
+body.is-mobile .toast { border-radius: 22px; }
+body.is-mobile .admin-emoji-chip, body.is-mobile .admin-row, body.is-mobile .admin-block { border-radius: 18px; }
+body.is-mobile .op-tag, body.is-mobile .ban-tag, body.is-mobile .owner-tag, body.is-mobile .bot-tag { border-radius: 8px; }
+
+/* ============================================================
+   LIQUID GLASS (Settings > Accessibility > Liquid glass; html[data-liquid-glass])
+   Frosted, see-through panels with a bright rim, like Apple's liquid glass. Menus, pop-ups, pickers, sheets,
+   toasts and floating bars. Add new menus and pop-ups to the lists below.
+   ============================================================ */
+html[data-liquid-glass] .modal-overlay:not(.ds-settings-layer) > .modal-box,
+html[data-liquid-glass] .server-menu,
+html[data-liquid-glass] .composer-action-menu,
+html[data-liquid-glass] #emoji-picker-panel,
+html[data-liquid-glass] #sticker-picker-panel,
+html[data-liquid-glass] #gif-picker-panel,
+html[data-liquid-glass] .ck-quicktext-popover,
+html[data-liquid-glass] #inbox-popover,
+html[data-liquid-glass] #help-popover,
+html[data-liquid-glass] .react-popover,
+html[data-liquid-glass] .full-react-popover,
+html[data-liquid-glass] .action-sheet,
+html[data-liquid-glass] .shop-browse-menu,
+html[data-liquid-glass] .toast,
+html[data-liquid-glass] #mention-popup,
+html[data-liquid-glass] .mht-menu,
+html[data-liquid-glass] #user-panel {
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(255,255,255,calc(.30 * var(--glass-hl, 1))) 0%, rgba(255,255,255,0) 55%),
+    radial-gradient(100% 80% at 100% 100%, rgba(255,255,255,calc(.16 * var(--glass-hl, 1))) 0%, rgba(255,255,255,0) 60%),
+    linear-gradient(135deg, rgba(255,255,255,calc(.16 * var(--glass-hl, 1))), rgba(255,255,255,calc(.05 * var(--glass-hl, 1))) 50%, rgba(255,255,255,calc(.12 * var(--glass-hl, 1)))),
+    rgba(24, 26, 34, var(--glass-a, .34)) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur, 30px)) saturate(var(--glass-sat, 1.9)) brightness(1.12);
+  backdrop-filter: blur(var(--glass-blur, 30px)) saturate(var(--glass-sat, 1.9)) brightness(1.12);
+  border: 1px solid rgba(255,255,255,.26);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255,255,255,calc(.7 * var(--glass-hl, 1))),
+    inset 0 -1px 0 rgba(255,255,255,calc(.14 * var(--glass-hl, 1))),
+    inset 1.5px 0 0 rgba(255,255,255,calc(.28 * var(--glass-hl, 1))),
+    inset -1px 0 0 rgba(255,255,255,.1),
+    inset 0 0 28px rgba(255,255,255,.07),
+    0 18px 50px rgba(0,0,0,.38), 0 2px 10px rgba(0,0,0,.2) !important;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html[data-liquid-glass] .modal-overlay:not(.ds-settings-layer) > .modal-box,
+html[data-liquid-glass] .server-menu,
+html[data-liquid-glass] .composer-action-menu,
+html[data-liquid-glass] #emoji-picker-panel,
+html[data-liquid-glass] #sticker-picker-panel,
+html[data-liquid-glass] #gif-picker-panel,
+html[data-liquid-glass] .ck-quicktext-popover,
+html[data-liquid-glass] #inbox-popover,
+html[data-liquid-glass] #help-popover,
+html[data-liquid-glass] .react-popover,
+html[data-liquid-glass] .full-react-popover,
+html[data-liquid-glass] .action-sheet,
+html[data-liquid-glass] .shop-browse-menu,
+html[data-liquid-glass] .toast,
+html[data-liquid-glass] #mention-popup,
+html[data-liquid-glass] .mht-menu,
+html[data-liquid-glass] #user-panel { background: rgba(44, 46, 56, .92) !important; }
+}
+html[data-liquid-glass] .server-menu, html[data-liquid-glass] .composer-action-menu, html[data-liquid-glass] #emoji-picker-panel,
+html[data-liquid-glass] #sticker-picker-panel, html[data-liquid-glass] #gif-picker-panel, html[data-liquid-glass] .ck-quicktext-popover,
+html[data-liquid-glass] #inbox-popover, html[data-liquid-glass] #help-popover, html[data-liquid-glass] .react-popover,
+html[data-liquid-glass] .full-react-popover, html[data-liquid-glass] .shop-browse-menu, html[data-liquid-glass] #mention-popup { border-radius: 22px; }
+html[data-liquid-glass] .modal-overlay:not(.ds-settings-layer) > .modal-box { border-radius: 28px; }
+html[data-liquid-glass] .toast { border-radius: 24px; }
+html[data-liquid-glass] #user-panel { border-radius: 26px; margin: 8px; height: 56px; }
+html[data-liquid-glass] .modal-overlay:not(.ds-settings-layer) { background: rgba(10, 12, 20, .32); }
+html[data-liquid-glass] .action-sheet-backdrop { background: rgba(10, 12, 20, .3); }
+/* Menu background blur slider (works with glass on or off): blurs the page behind pop-up windows and sheets */
+html .modal-overlay:not(.ds-settings-layer), html .action-sheet-backdrop { -webkit-backdrop-filter: var(--menu-bg-filter, none); backdrop-filter: var(--menu-bg-filter, none); }
+/* things inside glass stay readable and look like glass too */
+html[data-liquid-glass] .modal-box .fld-input, html[data-liquid-glass] .modal-box input[type="text"], html[data-liquid-glass] .modal-box input[type="password"],
+html[data-liquid-glass] .modal-box textarea, html[data-liquid-glass] .ep-search input { background: rgba(255,255,255,.1) !important; border: 1px solid rgba(255,255,255,.18); box-shadow: inset 0 1px 2px rgba(0,0,0,.2); color: #fff; }
+html[data-liquid-glass] .modal-box .btn-secondary, html[data-liquid-glass] .action-sheet .as-quick-react { background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.2); box-shadow: inset 0 1px 0 rgba(255,255,255,.4); }
+html[data-liquid-glass] .modal-box .btn-accent-inline, html[data-liquid-glass] .modal-box .btn-primary { box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 4px 14px color-mix(in srgb, var(--accent) 45%, transparent); }
+html[data-liquid-glass] .server-menu-item:hover, html[data-liquid-glass] .server-menu-item:focus-visible { background: rgba(255,255,255,.22); box-shadow: inset 0 1px 0 rgba(255,255,255,.4); color: #fff; }
+html[data-liquid-glass] .server-menu-item.danger:hover { background: rgba(218,55,60,.55); }
+html[data-liquid-glass] .composer-action-menu button:hover:not(:disabled), html[data-liquid-glass] .as-item:active, html[data-liquid-glass] .mht-menu button:active { background: rgba(255,255,255,.16); }
+html[data-liquid-glass] .modal-box, html[data-liquid-glass] .server-menu, html[data-liquid-glass] .action-sheet, html[data-liquid-glass] .toast { color: #fff; }
+/* phone: the floating pills turn to glass as well */
+html[data-liquid-glass] body.is-mobile #chat-header,
+html[data-liquid-glass] body.is-mobile .mp-header,
+html[data-liquid-glass] body.is-mobile .shop-topbar,
+html[data-liquid-glass] body.is-mobile #side-header,
+html[data-liquid-glass] body.is-mobile .friend-row,
+html[data-liquid-glass] body.is-mobile .setting-row {
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(255,255,255,.22), rgba(255,255,255,0) 60%),
+    rgba(255,255,255,.08) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px)) saturate(var(--glass-sat, 1.8)); backdrop-filter: blur(var(--glass-blur, 24px)) saturate(var(--glass-sat, 1.8));
+  border: 1px solid rgba(255,255,255,.2);
+  box-shadow: inset 0 1.5px 0 rgba(255,255,255,.55), inset 0 -1px 0 rgba(255,255,255,.1), 0 8px 24px rgba(0,0,0,.25) !important;
+}
+
+/* glass sliders in Settings > Accessibility */
+.glass-tune { display: flex; flex-direction: column; gap: 10px; margin: -2px 0 14px; padding: 14px 16px; border-radius: 16px; background: rgba(255,255,255,.04); }
+.glass-tune .gt-row { display: grid; grid-template-columns: minmax(96px, 150px) 1fr 48px; align-items: center; gap: 12px; font-size: 14px; }
+.glass-tune .gt-name { color: var(--text-normal); font-weight: 600; }
+.glass-tune .gt-val { text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.glass-tune input[type="range"] { width: 100%; accent-color: var(--accent); }
+.glass-tune #a11y-glass-reset { align-self: flex-start; }
+.glass-tune.is-off .gt-row:nth-child(-n+2) { opacity: .45; }
+body.is-mobile .glass-tune .gt-row { grid-template-columns: 1fr 48px; }
+body.is-mobile .glass-tune .gt-name { grid-column: 1 / -1; }
+/* phone: the member list is opaque like the chat, and slides with the finger */
+body.is-mobile #app.member-list-open #member-panel { background: color-mix(in srgb, var(--bg-primary) 92%, #000); will-change: transform; }
+
+
+/* ===== v4.14: vanish, system messages, command autofill (rail + scrolling), app command lists ===== */
+#slash-popup.hidden { display: none; }
+#slash-popup { padding: 0; }
+.slash-rail { flex: 0 0 52px; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 0; overflow-y: auto; scrollbar-width: none; background: rgba(0,0,0,.14); border-radius: 10px 0 0 10px; }
+.slash-rail::-webkit-scrollbar { display: none; }
+.slash-rail-btn { width: 38px; height: 38px; padding: 0; border-radius: 12px; overflow: hidden; flex-shrink: 0; opacity: .6; transition: opacity .15s, border-radius .15s, transform .15s; }
+.slash-rail-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.slash-rail-btn:hover, .slash-rail-btn.on { opacity: 1; border-radius: 10px; }
+.slash-rail-btn.on { box-shadow: 0 0 0 2px var(--accent); }
+.slash-col { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 6px; }
+.slash-head { flex: 0 0 auto; }
+.slash-count { font-weight: 600; color: var(--text-faint); }
+.slash-scroll { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.slash-group { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 8px 10px 6px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); background: var(--bg-floating); }
+.slash-group img { width: 18px; height: 18px; border-radius: 5px; }
+.slash-foot { flex: 0 0 auto; }
+.app-cmd-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.app-cmd-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; font-size: 13px; }
+.app-cmd-ico { width: 24px; height: 24px; border-radius: 7px; flex-shrink: 0; object-fit: cover; }
+.app-cmd-name { font-weight: 700; color: var(--text-normal); }
+.app-cmd-desc { flex-basis: 100%; padding-left: 32px; margin-top: -2px; font-size: 12px; color: var(--text-muted); line-height: 1.3; }
+.apps-panel-item { align-items: flex-start; }
+.apps-panel-item .apn-text small { display: block; white-space: normal; }
+@media (max-width: 760px) {
+  #slash-popup { max-height: min(340px, 45dvh); }
+  .slash-rail { flex-basis: 46px; }
+  .slash-rail-btn { width: 34px; height: 34px; }
+}
+
+/* join / leave lines */
+.sys-msg { display: flex; align-items: center; gap: 12px; margin: 6px 16px 6px 16px; padding: 4px 8px; border-radius: 8px; font-size: 15px; color: var(--text-muted); animation: sysIn .25s ease both; }
+.sys-msg:hover { background: var(--bg-modifier-hover); }
+.sys-ico { flex: 0 0 40px; display: flex; justify-content: center; }
+.sys-join .sys-ico { color: #3ba55d; }
+.sys-leave .sys-ico { color: #ed4245; }
+.sys-name { color: var(--text-normal); font-weight: 600; }
+.sys-time { margin-left: 4px; font-size: 11px; color: var(--text-faint); }
+@keyframes sysIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+body.is-mobile .sys-msg { margin: 4px 10px; font-size: 14px; }
+body.is-mobile .sys-ico { flex-basis: 32px; }
+
+/* "Only you can see this" */
+.msg-line.is-ephemeral .msg-text { color: var(--text-normal); }
+.eph-foot { display: flex; align-items: center; gap: 5px; margin-top: 4px; font-size: 12px; color: var(--text-faint); }
+.eph-eye .i { width: 14px; height: 14px; display: inline-flex; }
+.eph-eye svg { width: 14px; height: 14px; }
+.eph-dismiss { color: var(--text-link, #00a8fc); text-decoration: none; }
+.eph-dismiss:hover { text-decoration: underline; }
+.vanish-tag { margin-left: 6px; padding: 1px 6px; font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; border-radius: 4px; color: var(--text-muted); background: rgba(255,255,255,.08); }
+@media (prefers-reduced-motion: reduce) { .sys-msg { animation: none; } }
+.msg-line.is-ephemeral, .msg-line.is-ephemeral .msg-row-wrap { max-width: 100%; }
+.msg-line.is-ephemeral .msg-text { display: block; max-width: 100%; overflow-wrap: anywhere; }
+.msg-line.is-ephemeral .msg-row-wrap { padding-right: 0; min-width: 0; display: block; }
+.add-app-row { align-items: flex-start; }
+
+/* Replay buttons: one pill, split in half (two halves when a track has two cutscenes). */
+.sic-replay { display: flex; margin-top: 6px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border, rgba(255,255,255,.2)); }
+.sic-replay-seg { flex: 1; min-width: 0; padding: 9px 6px; font-size: 13px; font-weight: 600; background: transparent; color: inherit; cursor: pointer; border: 0; }
+.sic-replay-seg + .sic-replay-seg { border-left: 1px solid var(--border, rgba(255,255,255,.2)); }
+.sic-replay-seg:hover { background: rgba(255,255,255,.08); }
+.sic-replay { align-self: stretch; width: 100%; box-sizing: border-box; }

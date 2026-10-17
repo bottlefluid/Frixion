@@ -44,23 +44,18 @@
    Firebase Storage, because as of Feb 2026 Google requires every
    Firebase project to be on the paid Blaze plan just to use Cloud
    Storage at all, even within the free quota — a real paywall for
-   a hobby project on the Spark plan. Non-image files still go
-   through Firebase Storage as a fallback, so they'll only work
-   once this project is on Blaze; images and GIFs work either way.
+   a hobby project on the Spark plan. Other files (PDF, text, zip,
+   Office files, audio, video) go to Cloudinary too, as "raw" or
+   "video" uploads, so they work on the free plan. In the Cloudinary
+   dashboard go to Settings > Security and turn on "Allow delivery
+   of PDF and ZIP files", or PDFs and zips will upload fine but
+   refuse to open. Free limits: 10 MB per file, 100 MB for video.
    To set up Cloudinary: make a free account at cloudinary.com,
    grab your "Cloud name" from the dashboard home page, then go to
    Settings > Upload > Upload presets > Add upload preset and set
    its Signing Mode to "Unsigned" (this is what lets the browser
    upload directly with no secret key/backend involved) — put its
-   name in CLOUDINARY_UPLOAD_PRESET below. If you do want general
-   file uploads, the Storage rules they'd need are:
-
-   rules_version = '2';
-   service firebase.storage {
-     match /b/{bucket}/o {
-       match /{allPaths=**} { allow read, write: if true; }
-     }
-   }
+   name in CLOUDINARY_UPLOAD_PRESET below.
 
    GIFS: search is via the KLIPY API (Tenor shut its public API
    down for good in mid-2026). Get a free key at
@@ -487,6 +482,70 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.21', date: '2026-10-16', title: 'Three Null themes',
+    notes: [
+      'Null 1st Theme, Null 2nd Theme and Null 3rd Theme are in the Shop. Each one has its own banner, they are all featured, and they play on a loop for as long as you are signed in.',
+    ] },
+  { v: '4.20', date: '2026-10-16', title: 'New song: Overcontrol Main Theme',
+    notes: [
+      'Overcontrol Main Theme is in the Shop for 250,000 Orbs. It plays on a loop for as long as you are signed in.',
+      'Every song in the Shop is featured now, so they all show up on the Featured tab.',
+    ] },
+  { v: '4.19', date: '2026-10-16', title: 'New song: Pure Vessel',
+    notes: [
+      'Pure Vessel is in the Shop now for 150,000 Orbs. Buy it, equip it, and it plays on a loop for as long as you are signed in.',
+    ] },
+  { v: '4.18', date: '2026-10-16', title: 'Equinox bars ignore Reduce screen shake',
+    notes: [
+      'Reduce screen shake no longer touches the Equinox bars. They keep jumping and flashing like normal, and it only stops the screen itself from shaking. To switch the bars off, use Epilepsy mode in Settings > Accessibility.',
+    ] },
+  { v: '4.17', date: '2026-10-16', title: 'Equinox bars, for real this time',
+    notes: [
+      'The Equinox bars got a full redo to match Sol\'s RNG. Flat black and white blocks in two rows, one hanging from the top of the screen and one standing on the bottom, each one jumping up and down on its own.',
+      'They flash now too. Blocks flip between black and white quickly, and the louder the music gets, the faster they go. On a hit of the beat they all jump at once.',
+      'The little bars on the Equinox card in the Shop got the same look. If flashing bothers you, Epilepsy mode in Settings > Accessibility turns all of it off.',
+    ] },
+  { v: '4.15', date: '2026-10-15', title: 'Owners can see vanished owners',
+    notes: [
+      'Owners and co-owners can now see each other while vanished. A vanished person stays in the member list, the group name and the @mention list for them, with a Vanished tag. Everyone else still can\'t see them.',
+    ] },
+  { v: '4.14', date: '2026-10-15', title: 'Vanish, sfmode and join messages',
+    notes: [
+      'New /vanish for owners and co-owners, in group chats and servers only. It posts a "left" message, hides you from the member list and from the group name, and you can still read and type. Sapphire sends you a message only you can see, with a Dismiss link, like Discord. Type /vanish again or /unvanish to come back.',
+      'New /sfmode for every staff rank. Turn it on and your staff tag disappears and you lose staff commands and panels until you switch it off, so you play like a normal user. Use /sfmode on, /sfmode off or /sfmode toggle. Plain /sfmode flips it.',
+      'Group chats and servers now show join and leave lines. Adding friends to a group, joining a server, leaving, and vanishing all post one. There is also a Leave Group button in a group chat\'s header.',
+      'The command list scrolls properly now, groups commands under their app with an icon rail on the left, and every command has its icon. The Add App page and the + menu list each command with its icon and what it does.',
+    ] },
+  { v: '4.13', date: '2026-10-15', title: 'Liquid glass',
+    notes: [
+      'There is a new Liquid glass switch in Settings > Accessibility. When it is on, menus, pop-ups, pickers, sheets, the profile bar and toasts turn into frosted, see-through glass with a bright edge, like Apple\'s liquid glass.',
+      'Three sliders under it let you change how see-through the glass is, how strong the blur and shine are, and how much the page behind a menu is blurred.',
+      'Fixed the member list staying on screen over your DMs after you swiped out of a group chat. Going back now closes the member list, pickers and menus, and you can swipe the member list away.',
+    ] },
+  { v: '4.12', date: '2026-10-14', title: 'New look for phones',
+    notes: [
+      'The phone home screen now starts with a Messages header: a search button, Add Friends, and a plus button for new messages and group DMs. Friends, Quests, Codes and Shop sit in a row of buttons right below it.',
+      'Chats are softer and rounder: bigger profile pictures, rounded rows, a rounded message box, and a floating profile bar at the bottom.',
+      'The rest of the phone layout is rounder too: buttons, text boxes, the chat header, message pictures, and the Friends, Quests, Codes, Shop and Settings pages.',
+      'Menus on phones now slide in and out. Windows rise from the bottom, settings slide in from the side, and the member list, pickers and dropdown menus slide in too.',
+    ] },
+  { v: '4.11', date: '2026-10-14', title: 'Epilepsy mode and cutscene replay',
+    notes: [
+      'There is a new Epilepsy mode switch in Settings > Accessibility. It turns off flashing and flickering across Frixion: the Equinox bars, the flashes and static in the Account Terminated screen, glowing and pulsing name effects, frames and rarities, and the white flash in Geometry Dash. It also turns on Reduce screen shake.',
+      'With Epilepsy mode on, the Equinox cutscene no longer plays on its own when you buy it. Replaying it asks you first, since the video itself can\'t be changed.',
+      'Cutscenes you have unlocked can now be played again. Look for Replay Cutscene on the item in the Shop.',
+    ] },
+  { v: '4.10', date: '2026-10-14', title: 'Equinox bars and item search',
+    notes: [
+      'Equinox now brings in black and white bars at the top and bottom of the screen at set points in the song. They move with the beat, and stay still during the quiet moments before a drop.',
+      'The bars hold still if you turn on Reduce screen shake.',
+      'Owners can search a player\'s Shop items by name before removing one.',
+    ] },
+  { v: '4.9', date: '2026-10-14', title: 'Devices tab cleanup',
+    notes: [
+      'The Devices tab now shows one entry per device. Different browsers or private windows on the same device are grouped together instead of listed over and over.',
+      'There is a new Clean Up Duplicates button, and each browser on a device can be removed separately.',
+    ] },
   { v: '4.8', date: '2026-10-14', title: 'Owner panel: take items away',
     notes: [
       'The Owner Panel can now remove Shop items from a player. The item is taken off their account and unequipped.',
@@ -790,6 +849,7 @@ const ICONS = {
   send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2.5-7.5L3 11z"/></svg>',
   eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
   poll: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10"/><path d="M12 20V4"/><path d="M20 20v-7"/></svg>',
+  download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>',
 };
 function icon(name, cls) { return `<span class="i ${cls||''}">${ICONS[name] || ''}</span>`; }
@@ -1095,8 +1155,17 @@ function applyMessageFilter(text) {
 let myUid = null;          // holds the current username
 let myProfile = null;
 let isAdmin = false;
+let sfMode = false;  // staff "player mode": the account keeps its rank but acts like a normal player until /sfmode flips it back
 let isOwner = false; // set ONLY via a manually-added `owner: true` field on a user doc in Firebase — no in-app UI ever grants it
 let lastHandledRedirectNonce = null;
+// isAdmin / isOwner are the *effective* flags every feature checks. With sfmode on they are both
+// false, so staff commands, panels and moderation shortcuts all behave like a normal player's.
+// The real rank stays on the profile (platformRank(myProfile)) and /sfmode reads that.
+function staffFlagsFromProfile(p) {
+  sfMode = !!(p && p.sfMode) && platformRank(p) >= 1;
+  isAdmin = !sfMode && !!(p && p.op);
+  isOwner = !sfMode && !!(p && (p.owner || p.coowner));
+}
 function applyAdminVisibility() {
   const adminEl = $('open-admin-panel');
   const ownerEl = $('open-owner-panel');
@@ -1289,6 +1358,7 @@ function platformRank(profile) {
   return 0;
 }
 function roleTag(profile) {
+  if (profile && (profile.sfMode || (profile.username === myUid && sfMode))) return '';   // sfmode hides the staff tag for everyone
   const r = platformRank(profile);
   return r === 3 ? ownerTag(profile) : r === 2 ? coOwnerTag(profile) : opTag(profile);
 }
@@ -1681,9 +1751,20 @@ function computeDisplayStatus(uid) {
 }
 
 // ---------- modal wiring ----------
-function openModal(id) { $(id).classList.remove('hidden'); }
+function openModal(id) {
+  const el = $(id);
+  clearTimeout(el._closeT); el.classList.remove('sheet-closing');   // reopened while still sliding away
+  el.classList.remove('hidden');
+}
 function closeModal(id) {
   const el = $(id);
+  // On a phone, windows slide away (down, or off to the right for full-screen settings) instead of vanishing.
+  if (document.body.classList.contains('is-mobile') && el.classList.contains('modal-overlay') && !el.classList.contains('hidden') && !el.classList.contains('sheet-closing')
+      && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    el.classList.add('sheet-closing');
+    el._closeT = setTimeout(() => { el.classList.add('hidden'); el.classList.remove('sheet-closing'); }, 230);
+    return;
+  }
   // The image viewer fades and shrinks out instead of vanishing.
   if (id === 'image-preview-modal' && !el.classList.contains('hidden') && !el.classList.contains('closing')) {
     el.classList.add('closing');
@@ -1779,7 +1860,7 @@ function renderExploreServers(servers) {
     .slice()
     .sort((a, b) => (b.members || []).length - (a.members || []).length || (a.name || '').localeCompare(b.name || ''))
     .forEach(s => {
-      const memberCount = (s.members || []).length;
+      const memberCount = visibleMemberCount(s);
       const joined = (s.members || []).includes(myUid);
       const row = document.createElement('div');
       row.className = 'explore-server-row';
@@ -1802,6 +1883,7 @@ async function joinExploreServer(server, alreadyJoined) {
     if (!alreadyJoined) {
       await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayUnion(myUid) });
       db.collection('users').doc(myUid).update({ 'stats.serversCount': FieldValue.increment(1) }).catch(() => {});
+      postServerJoinMessage(server.id);
       s = { ...server, members: [...(server.members || []), myUid] };
       toast(`Joined ${s.name}.`);
     }
@@ -2012,7 +2094,59 @@ async function describeThisDevice() {
     else browser = 'Unknown browser';
   }
   let tz = ''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
-  return { name, os, browser, screen: `${screen.width}×${screen.height}`, tz, suspect };
+  const gpu = gpuRenderer();
+  const hw = gpu ? 'hw_' + hash53([family, Math.max(screen.width, screen.height) + 'x' + Math.min(screen.width, screen.height), navigator.hardwareConcurrency || 0, gpu, tz].join('|')) : '';
+  return { name, os, browser, screen: `${screen.width}×${screen.height}`, tz, suspect, hw };
+}
+
+// A hardware fingerprint that stays the same across browsers, private windows and cleared site data on one
+// machine: the kind of system, screen size, core count, graphics card and time zone. Many machines share one
+// (every M2 MacBook Air in a time zone, say), so it is never used to ban on its own. It is only used to
+// group entries for one device together, and only for entries that share an account.
+function hash53(str) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) { const c = str.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+function gpuRenderer() {
+  try {
+    const c = document.createElement('canvas'), gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+    const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+    return ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '') : '';
+  } catch (e) { return ''; }
+}
+// Two entries are the same device when they share an account and either have the same hardware fingerprint
+// or (older entries without one) the same name, system, browser, screen and time zone.
+const devFp = d => [d.name, String(d.os || '').split(' ')[0], d.browser, d.screen, d.tz].join('|');
+function sameDevice(a, b) {
+  if (a.id === b.id) return true;
+  if (!(a.accounts || []).some(x => (b.accounts || []).includes(x))) return false;
+  if (a.hw && b.hw) return a.hw === b.hw;
+  return devFp(a) === devFp(b);
+}
+// Turns the raw entries into one item per physical device. Each item lists the browsers (entries) it is made of.
+function groupDevices(devs) {
+  const parent = devs.map((_, i) => i);
+  const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  for (let i = 0; i < devs.length; i++) for (let j = i + 1; j < devs.length; j++) if (sameDevice(devs[i], devs[j])) parent[find(i)] = find(j);
+  const buckets = new Map();
+  devs.forEach((d, i) => { const r = find(i); if (!buckets.has(r)) buckets.set(r, []); buckets.get(r).push(d); });
+  return [...buckets.values()].map(members => {
+    members.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+    const latest = members[0];
+    const accounts = [...new Set(members.flatMap(m => m.accounts || []))];
+    const browsers = [...new Set(members.map(m => m.browser).filter(Boolean))];
+    const bannedCount = members.filter(m => m.banned).length;
+    return {
+      key: members.map(m => m.id).sort()[0], members, accounts, browsers, latest,
+      name: latest.name || 'Unknown device', os: latest.os, screen: latest.screen, tz: latest.tz,
+      firstSeen: Math.min(...members.map(m => m.firstSeen || Infinity).filter(isFinite)), lastSeen: latest.lastSeen || 0,
+      bannedCount, allBanned: bannedCount === members.length, anyBanned: bannedCount > 0,
+      suspect: members.some(m => m.suspect),
+    };
+  });
 }
 
 // Called every time someone signs in or the app opens with a saved session.
@@ -2022,8 +2156,16 @@ async function registerDevice(username) {
     const ref = db.collection('devices').doc(myDeviceId);
     const [info, snap] = await Promise.all([describeThisDevice(), ref.get()]);
     const patch = { id: myDeviceId, ...info, lastSeen: Date.now(), accounts: FieldValue.arrayUnion(username) };
+    if (!info.hw) delete patch.hw;
     if (!snap.exists) patch.firstSeen = Date.now();
     await ref.set(patch, { merge: true });          // merge: never touches the ban fields
+    // Ban evasion: this account has already been on a banned device, and this browser is on the same machine
+    // (same hardware fingerprint). Treat it as part of that ban.
+    const mine = { id: myDeviceId, ...info, accounts: [username] };
+    const all = await db.collection('devices').where('accounts', 'array-contains', username).get();
+    let hit = null;
+    all.forEach(s => { const d = s.data(); if (!hit && d.id !== myDeviceId && d.banned && sameDevice(d, mine)) hit = d; });
+    if (hit && !deviceBan.banned) await ref.update({ banned: true, banReason: hit.banReason || 'Same device as a banned entry', bannedBy: hit.bannedBy || 'auto', bannedAt: Date.now(), autoBanned: true });
   } catch (e) { console.warn('device register failed', e); }
 }
 
@@ -2066,9 +2208,11 @@ async function initDeviceBan() {
 }
 
 // ---------- Owner panel: Devices tab ----------
-let adminSelectedDevice = null;
+let adminSelectedDevice = null;      // the id of any entry inside the selected device
 const DEVICE_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>';
 const fmtDeviceTime = ms => ms ? new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Unknown';
+const browsersLabel = g => g.browsers.length > 2 ? g.browsers.slice(0, 2).join(', ') + ' +' + (g.browsers.length - 2) : g.browsers.join(', ');
+let deviceGroupsCache = [];
 
 async function renderDevicesPane() {
   if (!isOwner) return;
@@ -2079,123 +2223,155 @@ async function renderDevicesPane() {
   let devs = [];
   try { const snap = await db.collection('devices').get(); snap.forEach(d => devs.push(d.data())); }
   catch (e) { list.innerHTML = '<div class="empty">Could not load devices.</div>'; return; }
+  let groups = groupDevices(devs);
+  deviceGroupsCache = groups;
   // A device that shares an account with a banned device is worth a look: it can be the same person on a new browser.
   const bannedAccounts = new Set();
-  devs.filter(d => d.banned).forEach(d => (d.accounts || []).forEach(a => bannedAccounts.add(a)));
-  devs = devs.filter(d => !q || [d.name, d.os, d.browser, d.id, ...(d.accounts || [])].join(' ').toLowerCase().includes(q))
-    .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
-  list.innerHTML = devs.map(d => {
-    const n = (d.accounts || []).length;
-    const linked = !d.banned && (d.accounts || []).some(a => bannedAccounts.has(a));
-    return `<div class="admin-row ${adminSelectedDevice === d.id ? 'on' : ''}" data-d="${esc(d.id)}">
+  groups.filter(g => g.anyBanned).forEach(g => g.accounts.forEach(a => bannedAccounts.add(a)));
+  groups = groups.filter(g => !q || [g.name, g.os, ...g.browsers, ...g.accounts, ...g.members.map(m => m.id)].join(' ').toLowerCase().includes(q))
+    .sort((a, b) => b.lastSeen - a.lastSeen);
+  list.innerHTML = groups.map(g => {
+    const n = g.accounts.length;
+    const linked = !g.anyBanned && g.accounts.some(a => bannedAccounts.has(a));
+    const on = g.members.some(m => m.id === adminSelectedDevice);
+    return `<div class="admin-row ${on ? 'on' : ''}" data-d="${esc(g.members[0].id)}">
       <span class="dev-ico">${DEVICE_ICON}</span>
-      <span class="ar-name">${esc(d.name || 'Unknown device')}<small class="dev-sub">${esc(d.browser || '')} · ${n} account${n === 1 ? '' : 's'}</small></span>
-      ${d.banned ? '<span class="ban-tag">Banned</span>' : ''}${linked ? '<span class="ban-tag mute-tag" title="Shares an account with a banned device">Linked</span>' : ''}
+      <span class="ar-name">${esc(g.name)}<small class="dev-sub">${esc(browsersLabel(g))} · ${n} account${n === 1 ? '' : 's'}</small></span>
+      ${g.allBanned ? '<span class="ban-tag">Banned</span>' : g.anyBanned ? '<span class="ban-tag">Partly banned</span>' : ''}${linked ? '<span class="ban-tag mute-tag" title="Shares an account with a banned device">Linked</span>' : ''}
     </div>`;
   }).join('') || '<div class="empty">No devices yet. One shows up here after someone signs in on it.</div>';
   list.querySelectorAll('.admin-row').forEach(row => {
     row.onclick = () => { adminSelectedDevice = row.dataset.d; renderDevicesPane(); };
   });
-  renderDeviceDetail(devs.find(d => d.id === adminSelectedDevice) || null, bannedAccounts);
+  const sel = deviceGroupsCache.find(g => g.members.some(m => m.id === adminSelectedDevice)) || null;
+  renderDeviceDetail(sel, bannedAccounts);
 }
 
-async function renderDeviceDetail(d, bannedAccounts) {
+async function renderDeviceDetail(g, bannedAccounts) {
   const wrap = $('devices-detail');
   if (!wrap) return;
-  if (!d) { wrap.innerHTML = '<div class="empty">Select a device to manage.</div>'; return; }
-  const accounts = d.accounts || [];
-  const profiles = await Promise.all(accounts.map(a => db.collection('users').doc(a).get().then(s => s.exists ? s.data() : null).catch(() => null)));
-  if (adminSelectedDevice !== d.id) return;
-  const mine = d.id === myDeviceId;
-  const chips = accounts.map((a, i) => {
+  if (!g) { wrap.innerHTML = '<div class="empty">Select a device to manage.</div>'; return; }
+  const profiles = await Promise.all(g.accounts.map(a => db.collection('users').doc(a).get().then(s => s.exists ? s.data() : null).catch(() => null)));
+  if (!g.members.some(m => m.id === adminSelectedDevice)) return;
+  const mine = g.members.some(m => m.id === myDeviceId);
+  const chips = g.accounts.map((a, i) => {
     const p = profiles[i];
     if (!p) return `<span class="dev-chip gone" title="This account no longer exists">${esc(a)} (deleted)</span>`;
     return `<button type="button" class="dev-chip" data-u="${esc(a)}">${esc(a)}${banStatus(p).banned ? '<span class="ban-tag">Banned</span>' : ''}</button>`;
   }).join('') || '<span class="ab-note">No accounts recorded.</span>';
-  const linkedBanned = !d.banned && accounts.some(a => bannedAccounts && bannedAccounts.has(a));
+  const linkedBanned = !g.anyBanned && g.accounts.some(a => bannedAccounts && bannedAccounts.has(a));
+  const banned = g.members.find(m => m.banned);
+  const memberRows = g.members.map(m => `<div class="dev-member">
+      <div class="dm-main"><b>${esc(m.browser || 'Unknown browser')}</b>${m.id === myDeviceId ? ' <span class="ban-tag mute-tag">This browser</span>' : ''}${m.banned ? ' <span class="ban-tag">Banned</span>' : ''}<small>Last seen ${esc(fmtDeviceTime(m.lastSeen))} · ID ending ${esc(m.id.slice(-6))} · ${(m.accounts || []).length} account${(m.accounts || []).length === 1 ? '' : 's'}</small></div>
+      <button type="button" class="btn-secondary slim" data-rm-member="${esc(m.id)}" ${m.id === myDeviceId || m.banned ? 'disabled' : ''} title="${m.banned ? 'Unban it first' : m.id === myDeviceId ? 'This is the browser you are using' : 'Remove this entry from the list'}">Remove</button>
+    </div>`).join('');
   wrap.innerHTML = `
     <div class="admin-sel-head"><span class="dev-ico big">${DEVICE_ICON}</span><div>
-      <div class="as-name">${esc(d.name || 'Unknown device')}${mine ? ' <span class="ban-tag mute-tag">This device</span>' : ''}</div>
-      <div class="as-sub">${d.banned ? 'Banned — ' + esc(d.banReason || 'No reason given') : 'Not banned'}</div></div></div>
+      <div class="as-name">${esc(g.name)}${mine ? ' <span class="ban-tag mute-tag">This device</span>' : ''}</div>
+      <div class="as-sub">${g.allBanned ? 'Banned — ' + esc(banned.banReason || 'No reason given') : g.anyBanned ? 'Partly banned (' + g.bannedCount + ' of ' + g.members.length + ' browsers)' : 'Not banned'}</div></div></div>
     ${linkedBanned ? '<div class="admin-block"><span class="ab-note">An account on this device is also on a banned device. It could be the same person on a new browser.</span></div>' : ''}
     <div class="admin-block">
       <div class="ab-title">Device</div>
       <dl class="dev-facts">
-        <dt>Name</dt><dd>${esc(d.name || 'Unknown')}</dd>
-        <dt>System</dt><dd>${esc(d.os || 'Unknown')}</dd>
-        <dt>Browser</dt><dd>${esc(d.browser || 'Unknown')}</dd>
-        ${d.suspect ? '<dt>Heads up</dt><dd>This browser reports details that don\'t match each other (for example Windows and Mac at once). The name and browser above may be faked.</dd>' : ''}
-        <dt>Screen</dt><dd>${esc(d.screen || 'Unknown')}</dd>
-        <dt>Time zone</dt><dd>${esc(d.tz || 'Unknown')}</dd>
-        <dt>First seen</dt><dd>${esc(fmtDeviceTime(d.firstSeen))}</dd>
-        <dt>Last seen</dt><dd>${esc(fmtDeviceTime(d.lastSeen))}</dd>
-        <dt>Device ID</dt><dd class="mono">${esc(d.id)}</dd>
+        <dt>Name</dt><dd>${esc(g.name)}</dd>
+        <dt>System</dt><dd>${esc(g.os || 'Unknown')}</dd>
+        <dt>Screen</dt><dd>${esc(g.screen || 'Unknown')}</dd>
+        <dt>Time zone</dt><dd>${esc(g.tz || 'Unknown')}</dd>
+        ${g.suspect ? '<dt>Heads up</dt><dd>A browser on this device reports details that don\'t match each other (for example Windows and Mac at once). The name and browser may be faked.</dd>' : ''}
+        <dt>First seen</dt><dd>${esc(fmtDeviceTime(g.firstSeen))}</dd>
+        <dt>Last seen</dt><dd>${esc(fmtDeviceTime(g.lastSeen))}</dd>
       </dl>
     </div>
     <div class="admin-block">
-      <div class="ab-title">Accounts on this device (${accounts.length})</div>
+      <div class="ab-title">Browsers on this device (${g.members.length})</div>
+      ${memberRows}
+    </div>
+    <div class="admin-block">
+      <div class="ab-title">Accounts on this device (${g.accounts.length})</div>
       <div class="dev-accts">${chips}</div>
     </div>
     <div class="admin-block">
-      <div class="ab-title">Device ban${d.banned ? ' — banned' : ''}</div>
-      ${d.banned
-        ? `<div class="ab-row"><span class="ab-note">Banned ${esc(fmtDeviceTime(d.bannedAt))}${d.bannedBy ? ' by ' + esc(d.bannedBy) : ''}.</span><button class="btn-secondary slim" id="device-unban-btn">Unban Device</button></div>`
-        : `<div class="ab-row"><span class="ab-note">${mine ? "You can't ban the device you're using." : 'Blocks this device from Frixion, whatever account is used. The accounts themselves are not banned.'}</span>
-           <button class="btn-danger slim" id="device-ban-btn" ${mine ? 'disabled' : ''}>Ban Device</button></div>`}
-    </div>
-    ${d.banned ? '' : `<div class="admin-block">
-      <div class="ab-title">Clean up</div>
-      <div class="ab-row"><span class="ab-note">Removes this entry from the list. If the browser is still in use, it comes back the next time someone signs in.</span>
-      <button class="btn-secondary slim" id="device-remove-btn" ${mine ? 'disabled' : ''}>Remove Entry</button></div>
-    </div>`}`;
+      <div class="ab-title">Device ban${g.allBanned ? ' — banned' : ''}</div>
+      <div class="ab-row"><span class="ab-note">${g.allBanned ? `Banned ${esc(fmtDeviceTime(banned.bannedAt))}${banned.bannedBy ? ' by ' + esc(banned.bannedBy) : ''}.` : mine ? "You can't ban the device you're using." : 'Blocks every browser listed above from Frixion, whatever account is used. The accounts themselves are not banned.'}</span>
+        ${g.anyBanned ? '<button class="btn-secondary slim" id="device-unban-btn">Unban Device</button>' : ''}
+        ${g.allBanned ? '' : `<button class="btn-danger slim" id="device-ban-btn" ${mine ? 'disabled' : ''}>${g.anyBanned ? 'Ban The Rest' : 'Ban Device'}</button>`}</div>
+    </div>`;
   wrap.querySelectorAll('.dev-chip[data-u]').forEach(b => {
     b.onclick = () => { adminSelectedUser = b.dataset.u; document.querySelector('.admin-tab[data-admin-tab="systemhub"]').click(); renderAdminList(); };
   });
-  if (d.banned) $('device-unban-btn').onclick = () => adminUnbanDevice(d);
-  else {
-    if (!mine) $('device-ban-btn').onclick = () => adminBanDevice(d, profiles);
-    if (!mine) $('device-remove-btn').onclick = () => adminRemoveDeviceEntry(d);
-  }
+  wrap.querySelectorAll('[data-rm-member]').forEach(b => { b.onclick = () => adminRemoveDeviceEntry(g.members.find(m => m.id === b.dataset.rmMember)); });
+  if (g.anyBanned) $('device-unban-btn').onclick = () => adminUnbanDevice(g);
+  if (!g.allBanned && !mine) $('device-ban-btn').onclick = () => adminBanDevice(g, profiles);
 }
 
-function adminBanDevice(d, profiles) {
+function adminBanDevice(g, profiles) {
   if (!isOwner) { toast('Only the owner can ban devices.', 'error'); return; }
-  if (d.id === myDeviceId) { toast("You can't ban the device you're using.", 'error'); return; }
+  if (g.members.some(m => m.id === myDeviceId)) { toast("You can't ban the device you're using.", 'error'); return; }
   if ((profiles || []).some(p => p && !canManagePlatformUser(p))) { toast("An account on this device outranks you, so it can't be banned.", 'error'); return; }
-  const accounts = d.accounts || [];
+  const todo = g.members.filter(m => !m.banned);
   confirmAction({
     title: 'Ban Device',
-    body: `Ban ${d.name || 'this device'} (${d.browser || 'unknown browser'})? Nobody can use Frixion on it, whatever account they try${accounts.length ? '. Accounts seen on it: ' + accounts.join(', ') : ''}. The accounts themselves are not banned and still work on other devices.`,
+    body: `Ban ${g.name} (${browsersLabel(g)})? Nobody can use Frixion in ${todo.length === 1 ? 'that browser' : 'any of its ' + todo.length + ' browsers'}, whatever account they try${g.accounts.length ? '. Accounts seen on it: ' + g.accounts.join(', ') : ''}. The accounts themselves are not banned and still work on other devices.`,
     confirmLabel: 'Ban Device', input: { placeholder: 'Reason (optional)', maxLength: 120 },
     onConfirm: async typed => {
       try {
-        await db.collection('devices').doc(d.id).update({ banned: true, banReason: typed || 'No reason given', bannedBy: myUid, bannedAt: Date.now() });
+        await Promise.all(todo.map(m => db.collection('devices').doc(m.id).update({ banned: true, banReason: typed || 'No reason given', bannedBy: myUid, bannedAt: Date.now() })));
         toast('Device banned.');
       } catch (e) { toast(e.message || 'Could not ban device.', 'error'); }
       renderDevicesPane();
     },
   });
 }
-function adminRemoveDeviceEntry(d) {
+async function adminUnbanDevice(g) {
+  if (!isOwner) { toast('Only the owner can unban devices.', 'error'); return; }
+  try {
+    await Promise.all(g.members.filter(m => m.banned).map(m => db.collection('devices').doc(m.id).update({ banned: false, banReason: '', autoBanned: false, unbannedBy: myUid, unbannedAt: Date.now() })));
+    toast('Device unbanned.');
+  } catch (e) { toast(e.message || 'Could not unban device.', 'error'); }
+  renderDevicesPane();
+}
+function adminRemoveDeviceEntry(m) {
   if (!isOwner) { toast('Only the owner can remove devices.', 'error'); return; }
-  if (d.banned) { toast('Unban the device before removing its entry.', 'error'); return; }
+  if (!m) return;
+  if (m.banned) { toast('Unban the device before removing its entry.', 'error'); return; }
+  if (m.id === myDeviceId) { toast("That's the browser you're using.", 'error'); return; }
   confirmAction({
-    title: 'Remove Entry', body: `Remove ${d.name || 'this device'} (${d.browser || 'unknown browser'}) from the list? Nobody is banned or signed out. If that browser is still in use, it is added back the next time someone signs in.`,
+    title: 'Remove Entry', body: `Remove the ${m.browser || 'unknown browser'} entry (ID ending ${m.id.slice(-6)}) from the list? Nobody is banned or signed out. If that browser is still in use, it is added back the next time someone signs in.`,
     confirmLabel: 'Remove Entry',
     onConfirm: async () => {
-      try { await db.collection('devices').doc(d.id).delete(); toast('Entry removed.'); adminSelectedDevice = null; }
+      try { await db.collection('devices').doc(m.id).delete(); toast('Entry removed.'); }
       catch (e) { toast(e.message || 'Could not remove entry.', 'error'); }
       renderDevicesPane();
     },
   });
 }
-async function adminUnbanDevice(d) {
-  if (!isOwner) { toast('Only the owner can unban devices.', 'error'); return; }
-  try {
-    await db.collection('devices').doc(d.id).update({ banned: false, banReason: '', unbannedBy: myUid, unbannedAt: Date.now() });
-    toast('Device unbanned.');
-  } catch (e) { toast(e.message || 'Could not unban device.', 'error'); }
-  renderDevicesPane();
+// Exact duplicates (same browser, same system, same accounts) can only come from one browser having been counted
+// twice, so they are safe to drop. The newest entry is kept, and a banned one is never dropped.
+function adminCleanUpDevices() {
+  if (!isOwner) { toast('Only the owner can clean up devices.', 'error'); return; }
+  const byKey = new Map();
+  deviceGroupsCache.forEach(g => g.members.forEach(m => {
+    const k = devFp(m) + '|' + [...(m.accounts || [])].sort().join(',');
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(m);
+  }));
+  const drop = [];
+  byKey.forEach(arr => {
+    if (arr.length < 2) return;
+    arr.sort((a, b) => (b.banned ? 1 : 0) - (a.banned ? 1 : 0) || (b.lastSeen || 0) - (a.lastSeen || 0));
+    const keep = arr.find(m => m.id === myDeviceId) || arr[0];
+    arr.forEach(m => { if (m !== keep && !m.banned && m.id !== myDeviceId) drop.push(m); });
+  });
+  if (!drop.length) { toast('No duplicate entries found.'); return; }
+  confirmAction({
+    title: 'Clean Up Duplicates', body: `Remove ${drop.length} duplicate ${drop.length === 1 ? 'entry' : 'entries'}? Each one is the same browser with the same accounts as another entry, which stays. Nobody is banned or signed out.`,
+    confirmLabel: 'Clean Up', danger: false,
+    onConfirm: async () => {
+      try { await Promise.all(drop.map(m => db.collection('devices').doc(m.id).delete())); toast(`Removed ${drop.length} duplicate ${drop.length === 1 ? 'entry' : 'entries'}.`); }
+      catch (e) { toast(e.message || 'Could not clean up.', 'error'); }
+      renderDevicesPane();
+    },
+  });
 }
 
 // Owner-only block on a user's page: the devices that account has signed in on.
@@ -2205,10 +2381,10 @@ async function loadUserDevicesBlock(username) {
   try {
     const snap = await db.collection('devices').where('accounts', 'array-contains', username).get();
     const devs = []; snap.forEach(s => devs.push(s.data()));
-    devs.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+    const groups = groupDevices(devs).sort((a, b) => b.lastSeen - a.lastSeen);
     if (adminSelectedUser !== username || !$('admin-user-devices')) return;
-    box.innerHTML = `<div class="admin-block"><div class="ab-title">Devices (${devs.length})</div>${devs.length
-      ? devs.map(d => `<div class="dev-line"><span class="dev-ico">${DEVICE_ICON}</span><span class="dl-name">${esc(d.name || 'Unknown device')} · ${esc(d.browser || '')}</span>${d.banned ? '<span class="ban-tag">Banned</span>' : ''}<button type="button" class="btn-secondary slim" data-dev="${esc(d.id)}">Open</button></div>`).join('')
+    box.innerHTML = `<div class="admin-block"><div class="ab-title">Devices (${groups.length})</div>${groups.length
+      ? groups.map(g => `<div class="dev-line"><span class="dev-ico">${DEVICE_ICON}</span><span class="dl-name">${esc(g.name)} · ${esc(browsersLabel(g))}</span>${g.allBanned ? '<span class="ban-tag">Banned</span>' : g.anyBanned ? '<span class="ban-tag">Partly banned</span>' : ''}<button type="button" class="btn-secondary slim" data-dev="${esc(g.members[0].id)}">Open</button></div>`).join('')
       : '<span class="ab-note">No device recorded yet. It is saved the next time they sign in.</span>'}</div>`;
     box.querySelectorAll('[data-dev]').forEach(b => { b.onclick = () => { adminSelectedDevice = b.dataset.dev; document.querySelector('.admin-tab[data-admin-tab="devices"]').click(); }; });
   } catch (e) { box.innerHTML = ''; }
@@ -2245,8 +2421,7 @@ function enterApp() {
   $('boot-screen').classList.add('hidden');
   $('auth-screen').classList.add('hidden');
   $('app').classList.remove('hidden');
-  isAdmin = !!(myProfile && myProfile.op);
-  isOwner = !!(myProfile && (myProfile.owner || myProfile.coowner));
+  staffFlagsFromProfile(myProfile);
   applyAdminVisibility();
   initAppForUser();
 }
@@ -2334,7 +2509,7 @@ $('logout-btn').onclick = async () => {
   cleanupAllListeners();
   setSession(null);
   stopGameEngines();
-  myUid = null; myProfile = null; profileCache = {}; isAdmin = false; isOwner = false; seedBotProfiles();
+  myUid = null; myProfile = null; profileCache = {}; isAdmin = false; isOwner = false; sfMode = false; ephemeralMsgs = []; seedBotProfiles();
   applyAdminVisibility();
   clearMyTypingDoc();
   currentServerId = null; currentServerData = null; currentChannelId = null;
@@ -2453,7 +2628,8 @@ async function startTermination(info) {
   musicStop();
   const mode = info && info.mode === 'fake' ? 'fake' : 'real';
   const uid = myUid;
-  const calm = !shakeAllowed();                       // Settings > Accessibility > Reduce screen shake (or the browser's reduce-motion setting)
+  const calm = !shakeAllowed();                       // Settings > Accessibility > Reduce screen shake (or the browser's reduce-motion setting, or Epilepsy mode)
+  const epi = epilepsyMode();                         // Epilepsy mode: no red flashes, no static, no glitching skull
 
   // Nothing else should be clickable or typeable while this plays.
   document.querySelectorAll('.modal-overlay').forEach(el => el.classList.add('hidden'));
@@ -2502,7 +2678,7 @@ async function startTermination(info) {
     stage.style.display = 'none';
     el.classList.add('is-end');
     endBox.classList.remove('hidden');
-    flash.style.opacity = 1; flash.style.transition = 'opacity .6s ease-out'; requestAnimationFrame(() => { flash.style.opacity = 0; });
+    if (!epi) { flash.style.opacity = 1; flash.style.transition = 'opacity .6s ease-out'; requestAnimationFrame(() => { flash.style.opacity = 0; }); }
     sfx.scream();
     if (!calm && navigator.vibrate) try { navigator.vibrate([120, 60, 220]); } catch (e) {}
   }
@@ -2532,7 +2708,7 @@ async function startTermination(info) {
       const p = STEPS[stepIdx][1];
       shakeAt = t; shakeAmp = 5 + Math.min(p, 1) * 26;
       sfx.thump(Math.min(p, 1));
-      if (!calm) { flash.style.transition = 'none'; flash.style.opacity = 0.22 + Math.min(p, 1) * 0.3; requestAnimationFrame(() => { flash.style.transition = 'opacity .35s ease-out'; flash.style.opacity = 0; }); }
+      if (!calm && !epi) { flash.style.transition = 'none'; flash.style.opacity = 0.22 + Math.min(p, 1) * 0.3; requestAnimationFrame(() => { flash.style.transition = 'opacity .35s ease-out'; flash.style.opacity = 0; }); }
       if (!calm && navigator.vibrate) try { navigator.vibrate(30 + Math.round(p * 80)); } catch (e) {}
     }
     cur += (targetP(t) - cur) * (1 - Math.exp(-dt * 13));
@@ -2544,7 +2720,7 @@ async function startTermination(info) {
     cv.style.transform = `translateY(10%) scale(${sizeAt(cur)})`;
     cv.style.opacity = fadeIn * (0.55 + Math.min(cur, 1) * 0.45);
     el.style.setProperty('--term-p', Math.min(cur, 1).toFixed(3));
-    if (now - frameAt > (calm ? 220 : 70)) {
+    if (!epi && now - frameAt > (calm ? 220 : 70)) {   // Epilepsy mode keeps the first, clean frame of the skull
       frameAt = now; frameI = (frameI + 1 + Math.floor(Math.random() * 3)) % frames.length;
       cx.clearRect(0, 0, SW, SH); cx.drawImage(frames[frameI], 0, 0);
     }
@@ -2577,6 +2753,8 @@ function initAppForUser() {
     if (liveBan.banned) showBanScreen(liveBan, true);   // banned while signed in
     applyShopTheme(myProfile.equippedTheme);
     syncShakeFromProfile(myProfile);
+    syncEpilepsyFromProfile(myProfile);
+    syncLiquidGlassFromProfile(myProfile);
     musicSync(myProfile.equippedMusic || null);
     // Admin-triggered redirect: fires once per nonce, then best-effort
     // clears the field so a later reconnect doesn't replay it.
@@ -2587,9 +2765,10 @@ function initAppForUser() {
       window.location.href = target;
       return;
     }
-    isAdmin = !!myProfile.op;
-    isOwner = !!(myProfile.owner || myProfile.coowner);
+    const sfWas = sfMode;
+    staffFlagsFromProfile(myProfile);
     applyAdminVisibility();
+    if (sfWas !== sfMode && typeof renderCurrentView === 'function' && (currentView === 'channel' || currentView === 'dm' || currentView === 'groupdm')) { profileCache[myUid] = myProfile; renderCurrentView(); }
     applyTheme(myProfile.theme || 'default');
     applyCustomKeyboardSetting();
     ovRenderBindSetting();
@@ -2767,6 +2946,7 @@ async function joinServerDoc(doc) {
   if (!(data.members || []).includes(myUid)) {
     await doc.ref.update({ members: FieldValue.arrayUnion(myUid) });
     db.collection('users').doc(myUid).update({ 'stats.serversCount': FieldValue.increment(1) }).catch(() => {});
+    postServerJoinMessage(doc.id);
   }
   selectServer({ id: doc.id, ...data });
 }
@@ -2870,13 +3050,34 @@ function setMobilePane(pane) {
   // Anything the keyboard floated over the chat (quick text, the keyboard itself)
   // has no business staying on screen once the chat slides away.
   closeCkQuickTextPopover();
-  if (pane === 'list') hideCustomKeyboard();
+  if (pane === 'list') {
+    hideCustomKeyboard();
+    // Going back to the list (back button, swipe, or leaving a chat) also puts away everything that was open
+    // on top of that chat: the member list overlay, the pickers, the + menu and reaction pop-ups. Before, the
+    // member list stayed on screen over the DM list after a swipe.
+    if (isMobile()) closeMemberPanel(true);
+    try { closeEmojiPickerPanel(); } catch (e) {}
+    ['sticker-picker-panel', 'gif-picker-panel', 'composer-action-menu'].forEach(id => { const el = $(id); if (el) el.classList.add('hidden'); });
+    try { closeReactPopover(); } catch (e) {}
+  }
+}
+// Closes the full-screen member list on a phone. It slides off to the right (from wherever a swipe left it).
+function closeMemberPanel(animated) {
+  const app = $('app'), panel = $('member-panel');
+  if (isMobile()) memberListManualOverride = null;   // on a phone the list is never reopened on its own
+  if (!app.classList.contains('member-list-open')) return;
+  const done = () => { app.classList.remove('member-list-open'); panel.style.transition = ''; panel.style.transform = ''; panel.classList.remove('is-closing'); };
+  if (!animated || !isMobile() || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { done(); return; }
+  panel.classList.add('is-closing');
+  panel.style.transition = 'transform .23s cubic-bezier(.4,0,.8,.4)';
+  panel.style.transform = 'translateX(100%)';
+  setTimeout(done, 240);
 }
 // Applied whenever a channel or group DM is opened. Respects a manual
 // toggle made earlier this session; otherwise defaults to open, but never
 // auto-opens on mobile (there it's a full-screen overlay, not a column).
 function applyDefaultMemberListState() {
-  const open = memberListManualOverride !== null ? memberListManualOverride : !isMobile();
+  const open = isMobile() ? false : (memberListManualOverride !== null ? memberListManualOverride : true);   // a phone never opens it by itself
   $('app').classList.toggle('member-list-open', open);
 }
 $('back-to-list-btn').onclick = () => setMobilePane('list');
@@ -2999,7 +3200,7 @@ document.addEventListener('keydown', (e) => {
 
   zone.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1 || !eligible()) { tracking = false; return; }
-    if (e.target.closest('.modal-overlay:not(.hidden)') || e.target.closest('textarea, input')) { tracking = false; return; }
+    if (e.target.closest('.modal-overlay:not(.hidden)') || e.target.closest('textarea, input') || e.target.closest('#member-panel')) { tracking = false; return; }   // the member list has its own swipe
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     tracking = true;
@@ -3170,12 +3371,16 @@ function subscribeDMList() {
     await Promise.all(gs.flatMap(g => g.participants.filter(p => p !== myUid).map(p => getProfile(p))));
     hydrateConversationPreviews('groupDMs', gs);
     if (currentView !== 'channel') renderDMRows();
+    if (currentView === 'groupdm') {
+      const cg = gs.find(x => x.id === currentGroupDMId);
+      if (cg) { renderMemberPanel(cg.participants || [], cg.ownerId); $('chat-header-title').textContent = groupDMDisplayName(cg); }
+    }
   });
 }
 
 function groupDMDisplayName(g) {
   if (g.name) return g.name;
-  const others = g.participants.filter(p => p !== myUid);
+  const others = withoutVanished(g.participants, g).filter(p => p !== myUid);
   return others.map(u => (profileCache[u] || { username: u }).username).join(', ') || 'Group';
 }
 
@@ -3192,6 +3397,7 @@ function previewForMessage(message, includeAuthor = false) {
   if (!text && message.gifUrl) text = 'Sent a GIF';
   if (!text && message.sticker) text = `Sent a sticker${message.sticker.name ? `: ${message.sticker.name}` : ''}`;
   if (!text && message.poll) text = `📊 Poll: ${message.poll.question}`;
+  if (!text && message.system) text = systemPlainText(message);
   if (!text && message.purgeResult) text = `Deleted ${message.purgeResult.count} messages`;
   if (!text && message.wordle) text = '🟩 Started a game of Wordle';
   if (!text) text = 'New message';
@@ -3247,7 +3453,46 @@ function renderDMRows() {
     row.onclick = () => selectGroupDM(g.id);
     wrap.appendChild(row);
   });
+  applyDmFilter();
 }
+
+// ---------- Phone home screen: the Messages header above the DM list ----------
+// (The markup is #mobile-home-top in index.html; style.css only shows it on phones.)
+let dmFilterQuery = '';
+function applyDmFilter() {
+  const q = dmFilterQuery.trim().toLowerCase();
+  document.querySelectorAll('#dm-rows .dm-row').forEach(r => { r.hidden = !!q && !r.textContent.toLowerCase().includes(q); });
+}
+(function wireMobileHome() {
+  const search = $('mht-search'); if (!search) return;
+  const row = $('mht-search-row'), input = $('mht-search-input'), menu = $('mht-menu'), plus = $('mht-new');
+  const setSearch = on => {
+    row.hidden = !on;
+    row.classList.toggle('is-open', on);
+    if (on) { input.focus(); } else { input.value = ''; dmFilterQuery = ''; applyDmFilter(); }
+  };
+  const setMenu = on => { menu.hidden = !on; plus.setAttribute('aria-expanded', String(on)); };
+  search.onclick = () => { setMenu(false); setSearch(row.hidden); };
+  $('mht-search-clear').onclick = () => setSearch(false);
+  input.oninput = () => { dmFilterQuery = input.value; applyDmFilter(); };
+  plus.onclick = e => { e.stopPropagation(); setMenu(menu.hidden); };
+  document.addEventListener('click', e => { if (!menu.hidden && !menu.contains(e.target)) setMenu(false); });
+  $('mht-new-dm').onclick = () => { setMenu(false); $('dm-add-btn').click(); };
+  $('mht-new-group').onclick = () => { setMenu(false); $('new-group-dm-btn').click(); };
+  // Add Friends goes straight to the Add Friend tab of the Friends page.
+  $('mht-add-friends').onclick = () => {
+    setMenu(false);
+    clearHomeNavActive();
+    document.querySelector('.home-nav-item[data-home-view="friends"]').classList.add('active');
+    openHomeMainView('friends');
+    const tab = document.querySelector('.friends-tab[data-friends-tab="add"]'); if (tab) tab.click();
+  };
+  // Tells the stylesheet whether the Direct Messages list (and not a server's channel list) is showing.
+  const dmList = $('dm-list'), appEl = $('app');
+  const sync = () => appEl.classList.toggle('is-home', !dmList.classList.contains('hidden'));
+  new MutationObserver(sync).observe(dmList, { attributes: true, attributeFilter: ['class'] });
+  sync();
+})();
 
 $('dm-add-btn').onclick = () => { $('new-dm-username').value = ''; $('new-dm-error').textContent = ''; openModal('new-dm-modal'); };
 
@@ -3375,6 +3620,29 @@ $('add-member-toggle').onclick = () => {
   openModal('add-to-group-modal');
 };
 
+$('leave-group-toggle').onclick = () => {
+  const g = groupById(currentGroupDMId);
+  if (!g) return;
+  const name = groupDMDisplayName(g);
+  confirmAction({
+    title: `Leave '${name}'`, body: `Are you sure you want to leave ${name}? Someone in the group has to add you back if you change your mind.`, confirmLabel: 'Leave Group',
+    onConfirm: async () => {
+      try {
+        const id = g.id, wasVanished = vanishedListFor(g).includes(myUid);
+        if (!wasVanished) await postSystemMessage(db.collection('groupDMs').doc(id).collection('messages'), { system: 'leave', place: 'group', uid: myUid, username: myProfile.username });
+        const upd = { participants: FieldValue.arrayRemove(myUid) };
+        if (wasVanished) upd.vanished = FieldValue.arrayRemove(myUid);
+        if (g.ownerId === myUid) {
+          const next = (g.participants || []).find(u => u !== myUid);
+          if (next) upd.ownerId = next;
+        }
+        await db.collection('groupDMs').doc(id).update(upd);
+        if (currentGroupDMId === id) showHomeView();
+        toast(`You left ${name}.`);
+      } catch (e) { toast(e.message || 'Could not leave the group.', 'error'); }
+    },
+  });
+};
 $('confirm-new-group-dm').onclick = async () => {
   const checks = [...$('group-dm-friend-picker').querySelectorAll('input:checked')].map(i => i.value);
   if (checks.length < 2) { toast('Pick at least 2 friends for a group.'); return; }
@@ -3384,6 +3652,7 @@ $('confirm-new-group-dm').onclick = async () => {
     const ref = await db.collection('groupDMs').add({
       name: name || null, participants, ownerId: myUid, autoDelete: true, createdAt: FieldValue.serverTimestamp(),
     });
+    postSystemMessage(db.collection('groupDMs').doc(ref.id).collection('messages'), { system: 'add', place: 'group', uid: myUid, username: myProfile.username, targets: checks });
     closeModal('new-group-dm-modal');
     toast('Group created.');
     selectGroupDM(ref.id);
@@ -3395,6 +3664,7 @@ $('confirm-add-to-group').onclick = async () => {
   if (!checks.length || !currentGroupDMId) { toast('Pick at least one friend.'); return; }
   try {
     await db.collection('groupDMs').doc(currentGroupDMId).update({ participants: FieldValue.arrayUnion(...checks) });
+    postSystemMessage(db.collection('groupDMs').doc(currentGroupDMId).collection('messages'), { system: 'add', place: 'group', uid: myUid, username: myProfile.username, targets: checks });
     closeModal('add-to-group-modal');
     toast('Added to group.');
   } catch (e) { toast('Could not add to group.', 'error'); }
@@ -3623,13 +3893,39 @@ async function uploadImageToCloudinary(file) {
   if (!data.secure_url) throw new Error((data.error && data.error.message) || 'Cloudinary upload failed.');
   return data.secure_url;
 }
+// Everything that isn't a picture (PDF, text, zip, Office files, audio, video...) goes to Cloudinary too, so file uploads work on the
+// free plan with no Firebase Storage. Audio and video use Cloudinary's "video" upload type, everything else uses "raw".
+// Free plan limits: 10 MB per file, 100 MB for video/audio.
+const MAX_FILE_MB = 10, MAX_MEDIA_MB = 100;
+const MEDIA_FILE_EXT = /\.(mp4|m4v|mov|webm|mkv|avi|mp3|wav|ogg|m4a|aac|flac)$/i;
+function isMediaFile(file) { return /^(video|audio)\//.test(file.type || '') || MEDIA_FILE_EXT.test(file.name || ''); }
+async function uploadFileToCloudinary(file) {
+  if (!CLOUDINARY_CLOUD_NAME || CLOUDINARY_CLOUD_NAME === 'YOUR_CLOUD_NAME' || !CLOUDINARY_UPLOAD_PRESET || CLOUDINARY_UPLOAD_PRESET === 'YOUR_UPLOAD_PRESET') {
+    throw new Error('File uploads need a Cloudinary cloud name and unsigned upload preset added in script.js.');
+  }
+  const kind = isMediaFile(file) ? 'video' : 'raw';
+  const safe = (file.name || 'file').replace(/[^a-zA-Z0-9._-]/g, '_');
+  // For raw files the file name (with its extension) has to be part of the id, or the download comes back with no extension.
+  const publicId = `uploads/${myUid}/${Date.now()}/${kind === 'raw' ? safe : safe.replace(/\.[^.]+$/, '')}`;
+  const send = async (withId) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    if (withId) formData.append('public_id', publicId);
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${kind}/upload`, { method: 'POST', body: formData });
+    return res.json();
+  };
+  let data = await send(true);
+  // If this Cloudinary account refuses our file name, send it again and let Cloudinary pick one.
+  if (!data.secure_url && data.error && /unsupported|not allowed|public_id/i.test(data.error.message || '')) data = await send(false);
+  if (!data.secure_url) {
+    const msg = (data.error && data.error.message) || 'Cloudinary upload failed.';
+    throw new Error(/too large|size/i.test(msg) ? `${file.name} is too big for the free Cloudinary plan.` : msg);
+  }
+  return data.secure_url;
+}
 async function uploadFileGeneric(file, isImage) {
-  if (isImage) return uploadImageToCloudinary(file);
-  if (!storage) throw new Error("General file uploads need Firebase Storage on the project's Blaze plan. Images and GIFs work without it.");
-  const path = `uploads/${myUid}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-  const ref = storage.ref().child(path);
-  await ref.put(file);
-  return ref.getDownloadURL();
+  return isImage ? uploadImageToCloudinary(file) : uploadFileToCloudinary(file);
 }
 
 // ---- staged attachments ----
@@ -3640,9 +3936,9 @@ async function uploadFileGeneric(file, isImage) {
 let draftAttachments = []; // { id, file, type: 'image'|'file', previewUrl }
 function stageFile(file) {
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
-  if (file.size > 10 * 1024 * 1024) { toast(`${file.name} is over 10MB — not supported here.`, 'error'); return; }
   const isImage = file.type.startsWith('image/');
-  if (!isImage && !storage) { toast("General file uploads need Firebase Storage on the project's Blaze plan. Images and GIFs work without it.", 'error'); return; }
+  const maxMb = !isImage && isMediaFile(file) ? MAX_MEDIA_MB : MAX_FILE_MB;
+  if (file.size > maxMb * 1024 * 1024) { toast(`${file.name} is over ${maxMb}MB — not supported here.`, 'error'); return; }
   draftAttachments.push({
     id: 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
     file, type: isImage ? 'image' : 'file',
@@ -4159,7 +4455,8 @@ function runServerMenuAction(action, server) {
       onConfirm: async () => {
         try {
           leavingServerId = server.id;
-          await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayRemove(myUid) });
+          if (!vanishedListFor(server).includes(myUid)) await postServerLeaveMessage(server.id);   // already vanished = already announced
+          await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayRemove(myUid), vanished: FieldValue.arrayRemove(myUid) });
           if (currentServerId === server.id) showHomeView();
           toast(`You left ${server.name}.`);
         } catch (e) { toast(e.message || 'Could not leave the server.', 'error'); }
@@ -5533,6 +5830,7 @@ function showHeaderActions() {
   $('pins-toggle').classList.remove('hidden');
   $('search-toggle').classList.remove('hidden');
   $('add-member-toggle').classList.toggle('hidden', currentView !== 'groupdm');
+  $('leave-group-toggle').classList.toggle('hidden', currentView !== 'groupdm');
   updateMuteIcon();
   searchActive = false;
   $('search-toggle').classList.remove('on');
@@ -5543,6 +5841,7 @@ function hideHeaderActions() {
   $('pins-toggle').classList.add('hidden');
   $('search-toggle').classList.add('hidden');
   $('add-member-toggle').classList.add('hidden');
+  $('leave-group-toggle').classList.add('hidden');
   $('gift-btn').classList.add('hidden');
   $('search-bar').classList.add('hidden');
 }
@@ -5753,12 +6052,45 @@ $('composer-input').addEventListener('keydown', (e) => {
 // MEMBER PANEL
 // ============================================================
 $('members-toggle').onclick = () => {
-  memberListManualOverride = !$('app').classList.contains('member-list-open');
-  $('app').classList.toggle('member-list-open', memberListManualOverride);
+  const willOpen = !$('app').classList.contains('member-list-open');
+  if (!willOpen) { closeMemberPanel(true); if (!isMobile()) memberListManualOverride = false; return; }
+  memberListManualOverride = isMobile() ? null : true;   // on a phone it is only open while you are looking at it
+  $('app').classList.add('member-list-open');
 };
+// Phone: drag the member list to the right to put it away. It follows the finger and slides off, or snaps back.
+(function setupMemberPanelSwipe() {
+  const panel = $('member-panel');
+  let startX = 0, startY = 0, dx = 0, mode = '';
+  panel.addEventListener('touchstart', e => {
+    if (!isMobile() || e.touches.length !== 1) { mode = ''; return; }
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY; dx = 0; mode = 'wait';
+  }, { passive: true });
+  panel.addEventListener('touchmove', e => {
+    if (!mode) return;
+    dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if (mode === 'wait') {
+      if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+      if (Math.abs(dy) > Math.abs(dx) || dx < 0) { mode = ''; return; }   // scrolling the list, or swiping the wrong way
+      mode = 'drag'; panel.style.transition = 'none';
+    }
+    panel.style.transform = `translateX(${Math.max(0, dx)}px)`;
+    e.preventDefault();
+  }, { passive: false });
+  const end = () => {
+    if (mode !== 'drag') { mode = ''; return; }
+    mode = '';
+    if (dx > window.innerWidth * 0.25) closeMemberPanel(true);
+    else { panel.style.transition = 'transform .22s cubic-bezier(.22,.8,.3,1)'; panel.style.transform = ''; setTimeout(() => { panel.style.transition = ''; }, 240); }
+  };
+  panel.addEventListener('touchend', end);
+  panel.addEventListener('touchcancel', end);
+})();
 
 async function renderMemberPanel(members, ownerId, server) {
-  members = members || [];
+  const vanishData = server || (currentView === 'groupdm' ? groupById(currentGroupDMId) : null);
+  const iAmVanished = vanishedListFor(vanishData).includes(myUid);
+  members = withoutVanished(members || [], vanishData);
   await Promise.all(members.map(uid => getProfile(uid)));
   const canManageMembers = server && ['manageRoles', 'kickMembers', 'banMembers', 'timeoutMembers', 'manageNicknames'].some(k => hasServerPerm(server, myUid, k));
   const online = [], offline = [];
@@ -5778,7 +6110,7 @@ async function renderMemberPanel(members, ownerId, server) {
     return `
     <div class="member-row" data-u="${esc(uid)}">
       ${avatarHTML(32, p.avatarColor, initials(p.username), disp, p.avatarUrl, p.equippedDecoration, uid, p.equippedMask)}
-      <span class="mname${disp !== 'offline' ? ' online-name' : ''}"${roleColor ? ` style="color:${esc(roleColor)}"` : ''}>${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}</span>
+      <span class="mname${disp !== 'offline' ? ' online-name' : ''}"${roleColor ? ` style="color:${esc(roleColor)}"` : ''}>${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}${vanishedListFor(vanishData).includes(uid) && (uid === myUid || isOwner) ? `<span class="vanish-tag" title="${uid === myUid ? 'Only you and other owners can see you here' : 'Vanished. Only owners and co-owners can see this'}">Vanished</span>` : ''}</span>
       ${topRole && topRole.color ? roleChipHTML(topRole) : ''}
       ${showGear ? `<span class="member-manage-btn" title="Manage Member" data-manage-uid="${esc(uid)}">${icon('gear')}</span>` : ''}
     </div>`;
@@ -5893,6 +6225,14 @@ function reactionsHTML(reactions) {
   ).join('') + `</div>`;
 }
 
+// The download button is a real link, not script: Chrome only allows a download that starts right at the click, and blocks one that
+// starts after a delay ("this site attempted to download multiple files automatically"). For Cloudinary files the link has the
+// fl_attachment flag, which makes Cloudinary send the file as a download instead of showing it in the tab. The download attribute
+// is ignored for links to another site, so the file name comes from Cloudinary (new uploads keep their real name, see uploadFileToCloudinary).
+function attachmentDownloadUrl(url) {
+  if (/^https:\/\/res\.cloudinary\.com\//.test(url) && url.includes('/upload/') && !url.includes('fl_attachment')) return url.replace('/upload/', '/upload/fl_attachment/');
+  return url;
+}
 function attachmentHTML(m, canDelete) {
   // m.attachments (array) covers new multi-image messages; m.attachment
   // (singular) is kept for backward compatibility with older messages.
@@ -5903,10 +6243,10 @@ function attachmentHTML(m, canDelete) {
       const delBtn = canDelete ? `<button type="button" class="msg-att-del" data-attidx="${i}" title="Delete this image">${icon('trash')}</button>` : '';
       return a.type === 'image'
         ? `<div class="msg-att-item"><img src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy">${delBtn}</div>`
-        : `<div class="msg-att-item"><a class="msg-file-card" href="${esc(a.url)}" target="_blank" rel="noopener">
+        : `<div class="msg-att-item is-file"><a class="msg-file-card" href="${esc(a.url)}" target="_blank" rel="noopener">
             <span class="mfc-icon">${icon('file')}</span>
             <span class="mfc-body"><span class="mfc-name">${esc(a.name)}</span><span class="mfc-size">${esc(humanFileSize(a.size || 0))}</span></span>
-          </a>${delBtn}</div>`;
+          </a><a class="msg-att-dl" href="${esc(attachmentDownloadUrl(a.url))}" download="${esc(a.name || 'file')}" rel="noopener" title="Download ${esc(a.name || 'file')}" aria-label="Download ${esc(a.name || 'file')}">${icon('download')}</a>${delBtn}</div>`;
     }).join('') + `</div>`;
   }
   if (m.gifUrl) {
@@ -6006,6 +6346,15 @@ function purgeResultHTML(m) {
 }
 
 function buildMessageLineEl(m, canDelete) {
+  if (m.ephemeral) {
+    const el = document.createElement('div');
+    el.className = 'msg-line is-ephemeral';
+    el.dataset.mid = m.id;
+    el.innerHTML = `<div class="msg-row-wrap"><span class="msg-text">${esc(m.text).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</span></div>` +
+      `<div class="eph-foot"><span class="eph-eye">${icon('eye')}</span>Only you can see this <span class="eph-dot">•</span> <a href="#" class="eph-dismiss">Dismiss message</a></div>`;
+    el.querySelector('.eph-dismiss').onclick = (e) => { e.preventDefault(); dismissEphemeral(m.id); };
+    return el;
+  }
   const pinnable = canPin();
   const canEditThis = m.uid === myUid && !m.sticker && !m.poll && !m.purgeResult && !m.wordle;
   const line = document.createElement('div');
@@ -6062,6 +6411,7 @@ function buildMessageLineEl(m, canDelete) {
   if (canEditThis) rowWrap.querySelector('.edit-msg').onclick = () => startEditMessage(m.id);
   if (pinnable) rowWrap.querySelector('.pin-msg').onclick = () => togglePin(m.id);
   if (canDelete) rowWrap.querySelector('.del-msg').onclick = () => deleteMessage(m.id);
+  // (Anyone who can see a file can download it: the download button on a file card is a plain link, see attachmentDownloadUrl.)
   rowWrap.querySelectorAll('.msg-att-del').forEach(btn => {
     btn.onclick = (e) => { e.stopPropagation(); deleteMessageAttachment(m.id, parseInt(btn.dataset.attidx, 10)); };
   });
@@ -6098,10 +6448,15 @@ function jumpToMessage(id) {
 async function renderMessages(rawMsgs) {
   const searching = searchActive;
   const q = searching ? ($('search-input').value || '').trim().toLowerCase() : '';
-  const msgs = q ? rawMsgs.filter(m => `${m.text || ''} ${m.poll ? m.poll.question : ''}`.toLowerCase().includes(q)) : rawMsgs;
+  let msgs = q ? rawMsgs.filter(m => `${m.text || ''} ${m.poll ? m.poll.question : ''}`.toLowerCase().includes(q)) : rawMsgs;
+  if (!searching) {
+    // "Only you can see this" messages sit in the list by time but are never stored anywhere.
+    const eph = ephemeralsHere();
+    if (eph.length) msgs = [...msgs, ...eph].sort((a, b) => ((a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : Date.now()) - (b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : Date.now())));
+  }
   if (searching) $('search-count').textContent = q ? `${msgs.length} result${msgs.length === 1 ? '' : 's'}` : '';
 
-  const uids = [...new Set(msgs.flatMap(m => [m.uid, m.replyTo && m.replyTo.uid]).filter(Boolean))];
+  const uids = [...new Set(msgs.flatMap(m => [m.uid, m.replyTo && m.replyTo.uid, ...(m.targets || [])]).filter(Boolean))];
   await Promise.all(uids.map(u => getProfile(u)));
   const wrap = $('messages');
   const wasAtBottom = wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 80;
@@ -6140,6 +6495,11 @@ async function renderMessages(rawMsgs) {
       div.textContent = day;
       wrap.appendChild(div);
       lastDay = day; lastUid = null;
+    }
+    if (m.system) {
+      wrap.appendChild(buildSystemMessageEl(m));
+      lastUid = null; groupEl = null;
+      return;
     }
     const p = profileCache[m.uid] || { username: m.username || 'Unknown User', avatarColor: '#5865f2' };
     // A reply always starts a fresh group (own avatar + username), even when
@@ -6595,6 +6955,165 @@ async function postBotMessage(payload) {
   }
 }
 
+// ============================================================
+// VANISH, SFMODE AND JOIN/LEAVE MESSAGES  (v4.14)
+// NOTES FOR AI MODELS:
+//  - "Vanished" is stored per place as a `vanished` array of usernames on servers/{id} or
+//    groupDMs/{id}. A vanished person is still a member: they can read and type, but everyone
+//    else's member list, group name and @mention list skips them. This is cosmetic privacy, the
+//    app has no backend, so Firestore rules are not involved.
+//  - sfmode is `sfMode: true` on users/{name}. staffFlagsFromProfile() turns the effective
+//    isAdmin/isOwner flags off while it is on, so every existing staff check behaves like a
+//    normal player without being touched. The real rank is still platformRank(myProfile).
+//  - System messages (joined / left / added) are normal message docs with `system` set to
+//    'join' | 'leave' | 'add', plus `place` ('server' | 'group') and `targets` for 'add'.
+//  - Ephemeral messages ("Only you can see this") never touch Firestore. They live in
+//    ephemeralMsgs, are merged into the list in renderMessages(), and vanish on reload.
+// ============================================================
+let ephemeralMsgs = [];
+function convKey() { return [currentView, currentServerId, currentChannelId, currentDMId, currentGroupDMId].join('|'); }
+function groupById(id) { return (window.__myGroupDMs || []).find(x => x.id === id) || null; }
+function vanishedListFor(x) { return x && Array.isArray(x.vanished) ? x.vanished : []; }
+function currentVanishData() {
+  if (currentView === 'channel') return currentServerData;
+  if (currentView === 'groupdm') return groupById(currentGroupDMId);
+  return null;
+}
+// Everyone except you loses vanished people. You always see yourself, so you know it worked.
+// Owners and co-owners see each other vanished (only they can vanish), so for them nothing is
+// filtered. In sfmode isOwner is false, so an owner in player mode is hidden from like anyone else.
+function withoutVanished(list, data) {
+  const v = vanishedListFor(data);
+  if (isOwner) return list || [];
+  return v.length ? (list || []).filter(u => u === myUid || !v.includes(u)) : (list || []);
+}
+function visibleMemberCount(s) { return withoutVanished(s && s.members, s).length; }
+function postEphemeral(text) {
+  ephemeralMsgs.push({ id: 'eph-' + Date.now() + Math.random().toString(36).slice(2, 6), key: convKey(), text, ts: Date.now() });
+  if (currentView === 'channel' || currentView === 'dm' || currentView === 'groupdm') renderMessages(lastRawMessages);
+  else toast(text.replace(/\*\*/g, ''));
+}
+function dismissEphemeral(id) {
+  ephemeralMsgs = ephemeralMsgs.filter(e => e.id !== id);
+  renderMessages(lastRawMessages);
+}
+function ephemeralsHere() {
+  const k = convKey();
+  return ephemeralMsgs.filter(e => e.key === k).map(e => ({
+    id: e.id, ephemeral: true, text: e.text, uid: SAPPHIRE_BOT_UID, username: SAPPHIRE_BOT_PROFILE.username,
+    createdAt: { toMillis: () => e.ts, toDate: () => new Date(e.ts) },
+  }));
+}
+async function postSystemMessage(coll, fields) {
+  if (!coll) return;
+  await coll.add(Object.assign({ createdAt: FieldValue.serverTimestamp() }, fields));
+}
+const SYS_WELCOMES = [
+  '{u} just joined the server. Welcome!', '{u} hopped into the server.', 'Say hi to {u}, who just showed up.',
+  'Welcome, {u}. We hope you brought snacks.', '{u} arrived. Everyone act normal.', 'A wild {u} appeared.',
+  '{u} is here to hang out.', 'Good to see you, {u}.',
+];
+function sysNameHTML(uid) { return `<b class="sys-name">${esc(displayNameOf(profileCache[uid] || { username: uid }))}</b>`; }
+function systemTextHTML(m) {
+  const who = sysNameHTML(m.uid);
+  const place = m.place === 'server' ? 'server' : 'group';
+  if (m.system === 'leave') return `${who} left the ${place}.`;
+  if (m.system === 'add') {
+    const names = (m.targets || []).map(sysNameHTML);
+    const list = names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : (names[0] || 'someone');
+    return `${who} added ${list} to the group.`;
+  }
+  if (place === 'server') {
+    let h = 0; String(m.id || m.uid).split('').forEach(c => { h = (h * 31 + c.charCodeAt(0)) >>> 0; });
+    return SYS_WELCOMES[h % SYS_WELCOMES.length].replace('{u}', who);
+  }
+  return `${who} joined the group.`;
+}
+function systemPlainText(m) { const d = document.createElement('div'); d.innerHTML = systemTextHTML(m); return d.textContent; }
+function buildSystemMessageEl(m) {
+  const el = document.createElement('div');
+  el.className = 'sys-msg sys-' + (m.system === 'leave' ? 'leave' : 'join');
+  el.dataset.mid = m.id;
+  const arrow = m.system === 'leave'
+    ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H5v16h4M15 8l4 4-4 4M19 12H9"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h10M11 8l4 4-4 4M15 4h4v16h-4"/></svg>';
+  el.innerHTML = `<span class="sys-ico">${arrow}</span><span class="sys-text">${systemTextHTML(m)}</span><span class="sys-time">${esc(timeStr(m.createdAt) || timeStr(new Date()))}</span>`;
+  return el;
+}
+// A real server join drops a welcome line in the server's first channel (the oldest one).
+async function postServerJoinMessage(serverId) {
+  try {
+    const snap = await db.collection('servers').doc(serverId).collection('channels').get();
+    const ms = d => { const c = d.data().createdAt; return c && c.toMillis ? c.toMillis() : 0; };
+    const first = snap.docs.slice().sort((a, b) => ms(a) - ms(b))[0];
+    if (!first) return;
+    await postSystemMessage(db.collection('servers').doc(serverId).collection('channels').doc(first.id).collection('messages'), { system: 'join', place: 'server', uid: myUid, username: myProfile.username });
+  } catch (e) { /* a missing welcome line is not worth an error */ }
+}
+async function postServerLeaveMessage(serverId) {
+  try {
+    const snap = await db.collection('servers').doc(serverId).collection('channels').get();
+    const ms = d => { const c = d.data().createdAt; return c && c.toMillis ? c.toMillis() : 0; };
+    const first = snap.docs.slice().sort((a, b) => ms(a) - ms(b))[0];
+    if (!first) return;
+    await postSystemMessage(db.collection('servers').doc(serverId).collection('channels').doc(first.id).collection('messages'), { system: 'leave', place: 'server', uid: myUid, username: myProfile.username });
+  } catch (e) { /* ignore */ }
+}
+
+// /vanish, /unvanish. want: true = vanish, false = unvanish, null = toggle (typing /vanish again unvanishes).
+async function runVanishCommand(want) {
+  const cmd = want === false ? 'unvanish' : 'vanish';
+  if (!isOwner) { toast(`You do not have permission to use /${cmd}.`, 'error'); return; }
+  if (currentView !== 'channel' && currentView !== 'groupdm') { postEphemeral('**/vanish** only works in group chats and servers.'); return; }
+  const data = currentVanishData();
+  if (!data) return;
+  const already = vanishedListFor(data).includes(myUid);
+  const goVanish = want == null ? !already : want;
+  const isServer = currentView === 'channel';
+  const name = isServer ? data.name : groupDMDisplayName(data);
+  if (goVanish === already) {
+    postEphemeral(already ? `You are already vanished in **${name}**. Type **/unvanish** to come back.` : `You are not vanished in **${name}**.`);
+    return;
+  }
+  try {
+    const ref = isServer ? db.collection('servers').doc(data.id) : db.collection('groupDMs').doc(data.id);
+    await ref.update({ vanished: goVanish ? FieldValue.arrayUnion(myUid) : FieldValue.arrayRemove(myUid) });
+    const cur = vanishedListFor(data);
+    data.vanished = goVanish ? [...cur.filter(u => u !== myUid), myUid] : cur.filter(u => u !== myUid);
+    await postSystemMessage(msgCollectionRef(), { system: goVanish ? 'leave' : 'join', place: isServer ? 'server' : 'group', uid: myUid, username: myProfile.username });
+    refreshMembersAfterVanish();
+    postEphemeral(goVanish
+      ? `You are now vanished in **${name}**. Everyone else sees you as having left and you are gone from the member list, but you can still read and type here. Other owners and co-owners can still see you. Send **/vanish** or **/unvanish** to come back.`
+      : `Welcome back. You are visible again in **${name}**.`);
+  } catch (e) { toast(e.message || `Could not /${cmd}.`, 'error'); }
+}
+function refreshMembersAfterVanish() {
+  renderDMRows();
+  if (currentView === 'channel' && currentServerData) renderMemberPanel(currentServerData.members || [], currentServerData.ownerId, currentServerData);
+  else if (currentView === 'groupdm') { const g = groupById(currentGroupDMId); if (g) renderMemberPanel(g.participants || [], g.ownerId); }
+}
+
+// /sfmode [on|off|toggle]. "on" = player mode (tag hidden, staff commands off). Plain /sfmode flips it.
+async function runSfmodeCommand(arg) {
+  if (platformRank(myProfile) < 1) { toast('You do not have permission to use /sfmode.', 'error'); return; }
+  const a = (arg || '').toLowerCase();
+  if (a && !['on', 'off', 'toggle'].includes(a)) { postEphemeral('Use **/sfmode**, **/sfmode on**, **/sfmode off** or **/sfmode toggle**.'); return; }
+  const next = a === 'on' ? true : a === 'off' ? false : !sfMode;
+  if (next === sfMode) { postEphemeral(next ? 'sfmode is already **on**. You are acting like a normal player.' : 'sfmode is already **off**. Your staff powers are active.'); return; }
+  try {
+    await db.collection('users').doc(myUid).update({ sfMode: next });
+    myProfile.sfMode = next;
+    staffFlagsFromProfile(myProfile);
+    profileCache[myUid] = myProfile;
+    applyAdminVisibility();
+    renderSelfPanel();
+    if (currentView === 'channel' || currentView === 'dm' || currentView === 'groupdm') renderCurrentView();
+    postEphemeral(next
+      ? 'sfmode is **on**. Your staff tag is hidden and staff commands are off, so you are a normal player for now. Send **/sfmode** to switch back.'
+      : 'sfmode is **off**. Your staff tag and staff commands are back.');
+  } catch (e) { toast(e.message || 'Could not change sfmode.', 'error'); }
+}
+
 const SAPPHIRE_PURGE_MAX = 1000; // safety ceiling when an explicit count is given
 const SAPPHIRE_PURGE_BATCH_SIZE = 450; // stay safely under Firestore's 500-op batch cap
 async function runPurgeCommand(rawCountText) {
@@ -6750,6 +7269,20 @@ async function sendMessage() {
     clearMyTypingDoc();
     closeMentionPopup();
     openPollModal();
+    return;
+  }
+  // /vanish, /unvanish and /sfmode. They are handled here and never posted as text, even when the
+  // person is not allowed to use them (they get a "no permission" toast instead).
+  const selfCmd = !pendingAttachments.length ? /^\/(vanish|unvanish|sfmode)(?:\s+(\S+))?\s*$/i.exec(raw) : null;
+  if (selfCmd) {
+    input.value = '';
+    autoResize(input);
+    updateComposerCharCount();
+    clearMyTypingDoc();
+    closeMentionPopup();
+    const which = selfCmd[1].toLowerCase();
+    if (which === 'sfmode') runSfmodeCommand(selfCmd[2]);
+    else runVanishCommand(which === 'unvanish' ? false : null);
     return;
   }
   // "/purge <n>" — admin-only, deletes the last n messages in the current
@@ -6946,11 +7479,11 @@ $('composer-input').addEventListener('input', (e) => { autoResize(e.target); com
 // in the current conversation.
 // ============================================================
 function currentContextUsernames() {
-  if (currentView === 'channel' && currentServerData) return currentServerData.members || [];
+  if (currentView === 'channel' && currentServerData) return withoutVanished(currentServerData.members, currentServerData);
   if (currentView === 'dm') return [myUid, currentDMOtherUid].filter(Boolean);
   if (currentView === 'groupdm') {
     const g = (window.__myGroupDMs || []).find(x => x.id === currentGroupDMId);
-    return g ? (g.participants || []) : [];
+    return g ? withoutVanished(g.participants, g) : [];
   }
   return [];
 }
@@ -6972,6 +7505,16 @@ const FRIXION_APPS = [
     desc: 'Moderation commands for your server: /purge, /mute, /unmute, /ban, /unban and /kick. They only affect your server\'s members.', avatar: SAPPHIRE_AVATAR_URL },
 ];
 const isFrixionStaff = () => !!(isAdmin || isOwner);
+// A short list of an app's commands, each with its icon and what it does. Used on the Add App page
+// and in the + menu so every command shows the same picture it has in the autofill list.
+function appCommandRowsHTML(app) {
+  const names = app.commands || [app.command];
+  return `<div class="app-cmd-list">` + names.map(n => {
+    const c = SLASH_COMMANDS.find(x => x.name === n);
+    if (!c) return '';
+    return `<div class="app-cmd-row">${slashIconHTML(c, 'app-cmd-ico')}<span class="app-cmd-name">/${esc(c.name)}</span>${c.options.map(o => `<span class="slash-opt${o.required ? '' : ' optional'}">${esc(o.name)}</span>`).join('')}<span class="app-cmd-desc">${esc(c.desc)}</span></div>`;
+  }).join('') + `</div>`;
+}
 function appById(id) { return FRIXION_APPS.find(a => a.id === id) || null; }
 function serverHasApp(server, appId) { return !!(server && Array.isArray(server.apps) && server.apps.includes(appId)); }
 // Is this app usable in the conversation that's open right now?
@@ -7013,7 +7556,7 @@ function openAddAppModal(server) {
         <img class="add-app-avatar" src="${esc(a.avatar)}" alt="">
         <div class="add-app-info"><div class="add-app-name">${esc(a.name)} <span class="bot-tag"><span>APP</span></span></div>
           <div class="add-app-desc">${esc(a.desc)}</div>
-          <div class="add-app-cmd">${a.commands ? `Adds ${a.commands.map(c => `<b>/${esc(c)}</b>`).join(', ')}` : `Adds <b>/${esc(a.command)}</b> and a spot in the + menu`}</div></div>
+          <div class="add-app-cmd">${a.commands ? 'Adds these commands' : 'Adds this command and a spot in the + menu'}</div>${appCommandRowsHTML(a)}</div>
         <button type="button" class="${on ? 'btn-secondary' : 'btn-accent-inline'} add-app-btn">${on ? 'Remove' : 'Add App'}</button>
       </div>`;
     }).join('');
@@ -7043,7 +7586,7 @@ function renderAppsPanel() {
   const list = appsAvailableHere();
   const server = currentView === 'channel' ? currentServerData : null;
   panel.innerHTML = `<div class="apps-panel-head">Apps</div>` + (list.length
-    ? list.map(a => `<button type="button" class="apps-panel-item" data-app="${esc(a.id)}"><img src="${esc(a.avatar)}" alt=""><span class="apn-text"><b>${esc(a.name)}</b><small>${a.commands ? a.commands.map(c => '/' + esc(c)).join(' ') : '/' + esc(a.command)} — ${esc(a.desc)}</small></span></button>`).join('')
+    ? list.map(a => `<button type="button" class="apps-panel-item" data-app="${esc(a.id)}"><img src="${esc(a.avatar)}" alt=""><span class="apn-text"><b>${esc(a.name)}</b><small>${esc(a.desc)}</small>${appCommandRowsHTML(a)}</span></button>`).join('')
     : `<div class="apps-panel-empty">No apps are available here yet.${canOpenAddApp(server) ? '' : ' Ask the server owner to add one.'}</div>`)
     + (canOpenAddApp(server) ? `<button type="button" class="apps-panel-add" id="apps-panel-add-btn">＋ Add App</button>` : '');
   panel.querySelectorAll('.apps-panel-item').forEach(btn => { btn.onclick = () => { panel.classList.add('hidden'); runAppCommand(btn.dataset.app); }; });
@@ -7261,7 +7804,17 @@ const SLASH_COMMANDS = [
   { name: 'tts', desc: 'Send a text-to-speech message', needs: 'sendTTS', options: [
     { name: 'message', desc: 'What should be read out loud', required: true },
   ] },
+  // Staff commands. They are listed only for the people who can use them. In sfmode the owner ones
+  // disappear, because sfmode turns the effective staff flags off.
+  { name: 'vanish', desc: 'Owner: hide yourself here and post a "left" message. Run it again to come back', ownerOnly: true, places: ['channel', 'groupdm'], options: [] },
+  { name: 'unvanish', desc: 'Owner: come back after vanishing and post a "joined" message', ownerOnly: true, places: ['channel', 'groupdm'], options: [] },
+  { name: 'sfmode', desc: 'Staff: act like a normal player. Hides your staff tag and staff commands', staffAny: true, options: [
+    { name: 'mode', desc: 'on, off or toggle. Leave it empty to toggle.', required: false, type: 'choice' },
+  ] },
 ];
+// Which app each command belongs to. The autofill list groups by this and shows the app's icon on
+// a rail down the left side. Anything without a group falls into Frixion.
+SLASH_COMMANDS.forEach(c => { c.group = c.group || (c.sapphire ? 'sapphire' : c.app === 'wordle' ? 'wordle' : 'frixion'); });
 // Every command gets a picture (cmd.img: any image URL or data URI). The built-in ones are small
 // SVG tiles; /wordle uses the Wordle app's own icon.
 function slashTile(bg, shapes) {
@@ -7277,9 +7830,18 @@ const SLASH_IMAGES = {
   unban:     slashTile('#3ba55d', '<circle cx="32" cy="32" r="15"/><path d="M24 32.5l6 6 10-12"/>'),
   kick:      slashTile('#f0883e', '<path d="M28 17h-9v30h9M36 24l8 8-8 8M44 32H27"/>'),
   wordle:    typeof WORDLE_AVATAR_URL === 'string' ? WORDLE_AVATAR_URL : '',
+  vanish:    slashTile('#6b7280', '<path d="M19 49V30a13 13 0 0 1 26 0v19l-4.3-3.5L36.4 49 32 45.5 27.6 49l-4.3-3.5z"/><circle cx="27" cy="31" r="1.8" fill="#fff"/><circle cx="37" cy="31" r="1.8" fill="#fff"/>'),
+  unvanish:  slashTile('#14b8a6', '<path d="M10 32s8-14 22-14 22 14 22 14-8 14-22 14-22-14-22-14z"/><circle cx="32" cy="32" r="6"/>'),
+  sfmode:    slashTile('#5865f2', '<path d="M32 13l16 5.5v12.5c0 9.5-6.5 15.5-16 19.5-9.5-4-16-10-16-19.5V18.5z"/><path d="M24 32h16"/>'),
   tts:       slashTile('#f59e0b', '<path d="M15 26h8l10-8v28l-10-8h-8z" fill="#fff"/><path d="M41 26a9 9 0 0 1 0 12M46 20a17 17 0 0 1 0 24"/>'),
 };
 SLASH_COMMANDS.forEach(c => { if (!c.img) c.img = SLASH_IMAGES[c.name] || ''; });
+const SLASH_GROUPS = [
+  { id: 'frixion', name: 'Frixion', img: slashTile('#5865f2', '<path d="M23 49V17h20M23 32h14"/>') },
+  { id: 'sapphire', name: 'Sapphire', img: SAPPHIRE_AVATAR_URL },
+  { id: 'wordle', name: 'Wordle', img: typeof WORDLE_AVATAR_URL === 'string' ? WORDLE_AVATAR_URL : '' },
+];
+function slashGroupOf(cmd) { return SLASH_GROUPS.find(g => g.id === cmd.group) || SLASH_GROUPS[0]; }
 function slashIconHTML(cmd, cls) {
   return cmd.img
     ? `<img class="${cls} has-img" src="${esc(cmd.img)}" alt="" draggable="false">`
@@ -7292,7 +7854,7 @@ let cmdMode = null;          // { cmd, values: [], active, prevPlaceholder } whi
 
 function slashCommandsForMe() {
   return SLASH_COMMANDS.filter(cmd =>
-    (!cmd.admin || isAdmin || isOwner) && (!cmd.sapphire || sapphireModeFor(cmd.name)) && (!cmd.appCmd || canHere('useApplicationCommands')) && (!cmd.needs || canHere(cmd.needs)) && (!cmd.app || appInstalledHere(cmd.app)));
+    (!cmd.admin || isAdmin || isOwner) && (!cmd.ownerOnly || isOwner) && (!cmd.staffAny || platformRank(myProfile) >= 1) && (!cmd.places || cmd.places.includes(currentView)) && (!cmd.sapphire || sapphireModeFor(cmd.name)) && (!cmd.appCmd || canHere('useApplicationCommands')) && (!cmd.needs || canHere(cmd.needs)) && (!cmd.app || appInstalledHere(cmd.app)));
 }
 function updateSlashState(el) {
   if (cmdMode) { closeSlashPopup(); return; }
@@ -7306,7 +7868,8 @@ function updateSlashState(el) {
   if (!m) { closeSlashPopup(); return; }
   const q = m[1].toLowerCase();
   const all = slashCommandsForMe();
-  slashCandidates = [...all.filter(x => x.name.startsWith(q)), ...all.filter(x => !x.name.startsWith(q) && x.name.includes(q))];
+  slashCandidates = [...all.filter(x => x.name.startsWith(q)), ...all.filter(x => !x.name.startsWith(q) && x.name.includes(q))]
+    .sort((a, b) => SLASH_GROUPS.findIndex(g => g.id === a.group) - SLASH_GROUPS.findIndex(g => g.id === b.group));   // Array.sort is stable, so the match order is kept inside each app
   if (!slashCandidates.length) { closeSlashPopup(); return; }
   slashState = { query: q };
   slashIndex = Math.min(slashIndex, slashCandidates.length - 1);
@@ -7318,25 +7881,54 @@ function closeSlashPopup() {
 }
 function renderSlashPopup() {
   const pop = $('slash-popup');
-  pop.innerHTML =
-    `<div class="slash-head"><span>${slashState.query ? `Commands matching <b>/${esc(slashState.query)}</b>` : 'Commands'}</span><span class="slash-app">Frixion</span></div>` +
-    slashCandidates.map((cmd, i) => `
-      <div class="slash-row${i === slashIndex ? ' selected' : ''}" data-i="${i}">
+  // Rows are grouped under their app. slashCandidates is already in app order, so the index of a
+  // row is the same as its position in the list and the arrow keys just walk straight down it.
+  const groupsHere = SLASH_GROUPS.filter(g => slashCandidates.some(c => c.group === g.id));
+  let lastGroup = null;
+  const rows = slashCandidates.map((cmd, i) => {
+    const g = slashGroupOf(cmd);
+    const head = g.id !== lastGroup ? `<div class="slash-group" data-g="${esc(g.id)}"><img src="${esc(g.img)}" alt="" draggable="false"><span>${esc(g.name)}</span></div>` : '';
+    lastGroup = g.id;
+    return head + `
+      <div class="slash-row${i === slashIndex ? ' selected' : ''}" data-i="${i}" role="option">
         ${slashIconHTML(cmd, 'slash-ico')}
         <span class="slash-main">
           <span class="slash-name">/${esc(cmd.name)}</span>
           ${cmd.options.map(o => `<span class="slash-opt${o.required ? '' : ' optional'}">${esc(o.name)}</span>`).join('')}
         </span>
         <span class="slash-desc">${esc(cmd.desc)}</span>
-      </div>`).join('') +
-    `<div class="slash-foot"><b>↑↓</b> to navigate · <b>Tab</b> or <b>Enter</b> to select · <b>Esc</b> to close</div>`;
+      </div>`;
+  }).join('');
+  const curGroup = slashCandidates[slashIndex] ? slashCandidates[slashIndex].group : null;
+  pop.innerHTML =
+    `<div class="slash-rail">${groupsHere.map(g => `<button type="button" class="slash-rail-btn${g.id === curGroup ? ' on' : ''}" data-g="${esc(g.id)}" title="${esc(g.name)}"><img src="${esc(g.img)}" alt="${esc(g.name)}" draggable="false"></button>`).join('')}</div>` +
+    `<div class="slash-col">` +
+      `<div class="slash-head"><span>${slashState.query ? `Commands matching <b>/${esc(slashState.query)}</b>` : 'Commands'}</span><span class="slash-count">${slashCandidates.length}</span></div>` +
+      `<div class="slash-scroll">${rows}</div>` +
+      `<div class="slash-foot"><b>↑↓</b> to navigate · <b>Tab</b> or <b>Enter</b> to select · <b>Esc</b> to close</div>` +
+    `</div>`;
   pop.classList.remove('hidden');
+  const scroll = pop.querySelector('.slash-scroll');
+  // Keep the scroll position when the list repaints for an arrow key press.
+  if (renderSlashPopup.keep != null) { scroll.scrollTop = renderSlashPopup.keep; renderSlashPopup.keep = null; }
   pop.querySelectorAll('.slash-row').forEach(row => {
     row.onmousedown = e => e.preventDefault();   // keep the composer focused
     row.onclick = () => selectSlashCommand(slashCandidates[+row.dataset.i]);
   });
+  pop.querySelectorAll('.slash-rail-btn').forEach(btn => {
+    btn.onmousedown = e => e.preventDefault();
+    btn.onclick = () => {
+      const head = scroll.querySelector(`.slash-group[data-g="${btn.dataset.g}"]`);
+      if (head) scroll.scrollTo({ top: head.offsetTop, behavior: 'smooth' });
+    };
+  });
   const sel = pop.querySelector('.slash-row.selected');
-  if (sel) sel.scrollIntoView({ block: 'nearest' });
+  if (sel) {
+    const prev = sel.previousElementSibling;
+    const hdrH = prev && prev.classList.contains('slash-group') ? prev.offsetHeight : 0;   // show the app header with its first row
+    if (sel.offsetTop - hdrH < scroll.scrollTop) scroll.scrollTop = sel.offsetTop - hdrH;
+    else if (sel.offsetTop + sel.offsetHeight > scroll.scrollTop + scroll.clientHeight) scroll.scrollTop = sel.offsetTop + sel.offsetHeight - scroll.clientHeight;
+  }
 }
 function selectSlashCommand(cmd) {
   if (!cmd) return;
@@ -7450,6 +8042,10 @@ function finishCommandMode() {
     const who = vals[0].replace(/^@/, '');
     if (/\s/.test(who)) { switchCommandOption(0); toast('Usernames do not contain spaces.', 'error'); return null; }
     text = `/${cmd.name} ${who}`;
+  } else if (cmd.name === 'sfmode') {
+    const v = vals[0].toLowerCase();
+    if (v && !['on', 'off', 'toggle'].includes(v)) { switchCommandOption(0); toast('Use on, off or toggle, or leave it empty.', 'error'); return null; }
+    text = v ? `/sfmode ${v}` : '/sfmode';
   } else if (cmd.name === 'tts') text = `/tts ${vals[0]}`;
   else text = `/${cmd.name}`;
   exitCommandMode(false);
@@ -7458,8 +8054,11 @@ function finishCommandMode() {
 // Keys for the list and command mode. Returns true when the key was used.
 function slashHandleKey(e) {
   if (slashState) {
-    if (e.key === 'ArrowDown') { slashIndex = (slashIndex + 1) % slashCandidates.length; renderSlashPopup(); return true; }
-    if (e.key === 'ArrowUp') { slashIndex = (slashIndex - 1 + slashCandidates.length) % slashCandidates.length; renderSlashPopup(); return true; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const sc = $('slash-popup').querySelector('.slash-scroll'); renderSlashPopup.keep = sc ? sc.scrollTop : null;
+      slashIndex = (slashIndex + (e.key === 'ArrowDown' ? 1 : slashCandidates.length - 1)) % slashCandidates.length;
+      renderSlashPopup(); return true;
+    }
     if (e.key === 'Tab' || e.key === 'Enter') { selectSlashCommand(slashCandidates[slashIndex]); return true; }
     if (e.key === 'Escape') { closeSlashPopup(); return true; }
     return false;
@@ -8591,11 +9190,11 @@ function screenShakeOff() {
   if (v === '0') return false;
   return !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 }
-function shakeAllowed() { return !screenShakeOff(); }
+function shakeAllowed() { return !screenShakeOff() && !epilepsyMode(); }   // Epilepsy Mode (below) also stops every shake
 function applyShakeSetting() {
-  const off = screenShakeOff();
+  const epi = epilepsyMode(), off = screenShakeOff() || epi;
   document.documentElement.toggleAttribute('data-no-shake', off);
-  const t = $('a11y-no-shake-toggle'); if (t) t.checked = off;
+  const t = $('a11y-no-shake-toggle'); if (t) { t.checked = off; t.disabled = epi; }   // Epilepsy Mode forces it on
   if (off) resetScreenShake();
 }
 function setScreenShakeOff(off) {
@@ -8608,6 +9207,98 @@ function syncShakeFromProfile(p) {
   let v = null; try { v = localStorage.getItem(SHAKE_KEY); } catch (e) {}
   if (v !== (p.a11yNoShake ? '1' : '0')) { try { localStorage.setItem(SHAKE_KEY, p.a11yNoShake ? '1' : '0'); } catch (e) {} applyShakeSetting(); }
 }
+// ============================================================
+// ACCESSIBILITY — EPILEPSY MODE
+//
+// >>> RULE FOR EVERY AI MODEL AND DEVELOPER WORKING ON THIS PROJECT <<<
+// Settings > Accessibility has an "Epilepsy mode" switch (epilepsyMode()). When it is on, NOTHING in Frixion
+// may flash, strobe, flicker, pulse brightly or swap colours quickly: no screen flashes, no flickering or
+// glitching effects, no pulsing glows, no bars that blink, no static. It also switches on everything that
+// "Reduce screen shake" does. Whenever you add something that flashes or flickers, including shop items,
+// games, cutscenes, animations and sound-synced visuals:
+//   - Motion driven by JavaScript: check epilepsyMode() and skip the effect (or show a still version).
+//   - A CSS animation: add html[data-epilepsy] .your-class { animation: none !important; } to the
+//     "Epilepsy mode" block at the very bottom of style.css.
+//   - A video or other media that flashes: don't autoplay it in epilepsy mode, and warn before playing it.
+// Never ship a flashing effect that ignores this switch. It is saved on the device and mirrored onto the
+// account (a11yEpilepsy). It is never turned on automatically.
+// ============================================================
+const EPI_KEY = 'frixion_epilepsy_mode';
+function epilepsyMode() { try { return localStorage.getItem(EPI_KEY) === '1'; } catch (e) { return false; } }
+function applyEpilepsySetting() {
+  const on = epilepsyMode();
+  document.documentElement.toggleAttribute('data-epilepsy', on);
+  const t = $('a11y-epilepsy-toggle'); if (t) t.checked = on;
+  if (on && musicBarsEl) { musicBarsEl.remove(); musicBarsEl = null; musicBarSet = null; musicBarsH = 0; }
+  applyShakeSetting();
+}
+function setEpilepsyMode(on) {
+  try { localStorage.setItem(EPI_KEY, on ? '1' : '0'); } catch (e) {}
+  applyEpilepsySetting();
+  if (myUid) db.collection('users').doc(myUid).update({ a11yEpilepsy: on }).catch(() => {});
+}
+function syncEpilepsyFromProfile(p) {
+  if (!p || typeof p.a11yEpilepsy !== 'boolean') return;
+  if (p.a11yEpilepsy !== epilepsyMode()) { try { localStorage.setItem(EPI_KEY, p.a11yEpilepsy ? '1' : '0'); } catch (e) {} applyEpilepsySetting(); }
+}
+
+// ============================================================
+// ACCESSIBILITY — LIQUID GLASS
+// Settings > Accessibility > "Liquid glass" sets html[data-liquid-glass], and style.css turns menus, pop-ups,
+// pickers, sheets and floating bars into frosted, see-through glass. Anything new that is a menu, pop-up or
+// floating panel should get a rule in the "Liquid glass" block at the bottom of style.css. Saved on the device and
+// mirrored onto the account (a11yLiquidGlass).
+// ============================================================
+const GLASS_KEY = 'frixion_liquid_glass';
+function liquidGlassOn() { try { return localStorage.getItem(GLASS_KEY) === '1'; } catch (e) { return false; } }
+// Three sliders tune it: Opacity (how solid the glass is), Strength (blur, colour boost and edge shine) and Menu
+// background blur (how much the page behind a menu or pop-up window is blurred; works with or without glass).
+const GLASS_TUNE_KEY = 'frixion_glass_tune';
+const GLASS_TUNE_DEFAULTS = { opacity: 34, strength: 60, menuBlur: null };   // menuBlur null = automatic (8px with glass on, none with it off)
+function glassTune() {
+  let t = {}; try { t = JSON.parse(localStorage.getItem(GLASS_TUNE_KEY) || '{}') || {}; } catch (e) {}
+  const num = (v, lo, hi, d) => (typeof v === 'number' && isFinite(v)) ? Math.min(hi, Math.max(lo, v)) : d;
+  return { opacity: num(t.opacity, 10, 100, GLASS_TUNE_DEFAULTS.opacity), strength: num(t.strength, 0, 100, GLASS_TUNE_DEFAULTS.strength), menuBlur: num(t.menuBlur, 0, 30, null) };
+}
+function applyLiquidGlass() {
+  const on = liquidGlassOn(), t = glassTune(), root = document.documentElement;
+  root.toggleAttribute('data-liquid-glass', on);
+  root.style.setProperty('--glass-a', (t.opacity / 100).toFixed(2));
+  root.style.setProperty('--glass-blur', (4 + t.strength * 0.56).toFixed(1) + 'px');
+  root.style.setProperty('--glass-sat', (1 + t.strength * 0.02).toFixed(2));
+  root.style.setProperty('--glass-hl', (t.strength / 60).toFixed(2));
+  const bg = t.menuBlur === null ? (on ? 8 : 0) : t.menuBlur;
+  root.style.setProperty('--menu-bg-filter', bg > 0 ? `blur(${bg}px)` : 'none');
+  const tog = $('a11y-glass-toggle'); if (tog) tog.checked = on;
+  [['a11y-glass-opacity', t.opacity, '%'], ['a11y-glass-strength', t.strength, '%'], ['a11y-menu-blur', bg, 'px']].forEach(([id, v, u]) => {
+    const el = $(id); if (!el) return;
+    if (document.activeElement !== el) el.value = v;
+    const out = $(id + '-val'); if (out) out.textContent = Math.round(v) + u;
+  });
+  const box = $('glass-tune-box'); if (box) box.classList.toggle('is-off', !on);
+}
+function setLiquidGlass(on) {
+  try { localStorage.setItem(GLASS_KEY, on ? '1' : '0'); } catch (e) {}
+  applyLiquidGlass();
+  if (myUid) db.collection('users').doc(myUid).update({ a11yLiquidGlass: on }).catch(() => {});
+}
+let glassTuneSaveT = 0;
+function setGlassTune(patch, save) {
+  const next = { ...glassTune(), ...patch };
+  try { localStorage.setItem(GLASS_TUNE_KEY, JSON.stringify(next)); } catch (e) {}
+  applyLiquidGlass();
+  if (!save) return;
+  clearTimeout(glassTuneSaveT);
+  glassTuneSaveT = setTimeout(() => { if (myUid) db.collection('users').doc(myUid).update({ a11yGlassTune: next }).catch(() => {}); }, 400);
+}
+function syncLiquidGlassFromProfile(p) {
+  if (!p) return;
+  if (typeof p.a11yLiquidGlass === 'boolean' && p.a11yLiquidGlass !== liquidGlassOn()) { try { localStorage.setItem(GLASS_KEY, p.a11yLiquidGlass ? '1' : '0'); } catch (e) {} applyLiquidGlass(); }
+  if (p.a11yGlassTune && typeof p.a11yGlassTune === 'object' && JSON.stringify(p.a11yGlassTune) !== JSON.stringify(glassTune())) {
+    try { localStorage.setItem(GLASS_TUNE_KEY, JSON.stringify(p.a11yGlassTune)); } catch (e) {} applyLiquidGlass();
+  }
+}
+
 function resetScreenShake() {
   document.body.style.transform = '';
   document.documentElement.classList.remove('is-shaking');
@@ -8617,23 +9308,67 @@ function resetScreenShake() {
 // SHOP MUSIC
 // A track is an ordinary shop item (category "music", profile fields
 // ownedMusic / equippedMusic). The equipped track loops for as long as the
-// person is signed in. To add one: put the audio file next to index.html,
+// person is signed in. To add one: put the audio file in the Music folder (next to index.html),
 // add an entry here and, if it should shake the screen, a loudness envelope
 // in MUSIC_SHAKE_ENVELOPES (one byte per 1/30 s, 0-255, base64).
-//   cutscene: optional video that plays once, on the first purchase.
+//   cutscenes: optional list of { src, label } videos (kept in the Cutscenes folder) that play one after another on the first purchase.
+//   banner:   optional image file (kept in the Banners folder) used as the background of the track's Shop card, behind its name.
+//   bannerPos: optional CSS background-position for the banner (e.g. '50% 30%') when the middle of the picture isn't the part to show.
 //   shake:    the screen tilts and shakes to the beat (up to 40 degrees).
 //   Any new shake must respect shakeAllowed() — see the accessibility rule above.
+//
+// RULES FOR ANY AI MODEL / DEVELOPER ADDING A SONG (the owner asked for these):
+//   1. Files live in folders next to index.html, never loose in the main directory:
+//        Music/      the song's audio file          (src: 'Music/your-song.mp3')
+//        Banners/    the Shop card's banner image   (banner: 'Banners/your-song-banner.jpg')
+//        Cutscenes/  any cutscene videos            (cutscenes: [{ src: 'Cutscenes/your-video.mp4' }])
+//      Folder names are case-sensitive on GitHub, so keep the capital first letter.
+//   2. DO NOT feature new songs. Leave "featured" out of the new entry (or set featured: false) so it stays off the
+//      Featured tab. Only the songs already marked featured below stay there. The owner can feature one later from the
+//      Shop tab of the Admin or Owner panel.
+//   3. Do not add a changelog entry for a song unless the owner asks for one.
 // ============================================================
 const MUSIC_TRACKS = [
   { id: 'equinox', name: '『 EQUILIBRIUM INCARNATE, EQUINOX 』', price: 1000000, featured: true, hero: true, fx: 'equinox',
-    desc: 'Plays on a loop and shakes your screen to the beat. Buying it plays a cutscene. You can turn the shaking off in Settings > Accessibility.',
-    src: 'equinox-music.mp3', cutscene: 'equinox-cutscene.mp4', shake: true },
+    desc: 'Plays on a loop and shakes your screen to the beat. Buying it plays two cutscenes. You can turn the shaking off in Settings > Accessibility.',
+    src: 'Music/equinox-music.mp3', shake: true,
+    // Videos shown in order the first time it is bought. Each one can be replayed on its own from the Shop.
+    // The ?v= on a file name is only there so browsers fetch the newer video instead of an old cached one.
+    cutscenes: [{ src: 'Cutscenes/equinox-cutscene.mp4?v=2', label: 'Cutscene' }, { src: 'Cutscenes/equinox-aftermath.mp4?v=1', label: 'Aftermath' }],
+    // Black-and-white bars at the top and bottom of the screen, on cue with the song (seconds into the track).
+    // 'move' bars jump up and down and flash black/white with the beat; 'hold' bars stay still, waiting for the drop.
+    bars: [
+      { from: 59,  to: 79,  mode: 'move' },   // 0:59 - 1:18
+      { from: 101, to: 110, mode: 'move' },   // 1:41 - 1:49
+      { from: 110, to: 112, mode: 'hold' },   // 1:50 - 1:51
+      { from: 112, to: 122, mode: 'move' },   // 1:52 - 2:01
+      { from: 122, to: 124, mode: 'hold' },   // 2:02 - 2:03
+      { from: 124, to: 133, mode: 'move' },   // 2:04 - 2:12
+      { from: 133, to: 134, mode: 'hold' },   // 2:13
+      { from: 134, to: 143, mode: 'move' },   // 2:14 - 2:22
+    ] },
+  { id: 'pure-vessel', name: 'Pure Vessel', price: 150000, featured: true, banner: 'Banners/pure-vessel-banner.png',
+    desc: 'Plays on a loop for as long as you are signed in.',
+    src: 'Music/pure-vessel-music.mp3' },
+  { id: 'overcontrol', name: 'Overcontrol Main Theme', price: 250000, featured: true, banner: 'Banners/overcontrol-banner.png',
+    desc: 'Plays on a loop for as long as you are signed in.',
+    src: 'Music/overcontrol-main-theme.mp3' },
+  { id: 'null-1st-theme', name: 'Null 1st Theme', price: 500000, featured: true, banner: 'Banners/null-1st-banner.jpg', bannerPos: '50% 30%',
+    desc: 'Plays on a loop for as long as you are signed in.',
+    src: 'Music/null-1st-theme.mp3' },
+  { id: 'null-2nd-theme', name: 'Null 2nd Theme', price: 750000, featured: true, banner: 'Banners/null-2nd-banner.jpg',
+    desc: 'Plays on a loop for as long as you are signed in.',
+    src: 'Music/null-2nd-theme.mp3' },
+  { id: 'null-3rd-theme', name: 'Null 3rd Theme', price: 1250000, featured: true, banner: 'Banners/null-3rd-banner.jpg',
+    desc: 'Plays on a loop for as long as you are signed in.',
+    src: 'Music/null-3rd-theme.mp3' },
 ];
 const MUSIC_SHAKE_ENVELOPES = {
   equinox: 'FaCOgXRpZl+PgHeOfW9kW1dPVU5HQz5LSENhV09KReDGrpmGg3RmX3FnX1ZRSkhBT0hTpJGCdWhcU7qkkpKCem5jXVN7bGC2oIx7bWNZloR0Z11VT0hYUbKfko9/c2hfYVd2al9hV1RPR2hcVE5M0rqjj359bmJcWlJNSERAal9ZUmzDrJeHd25jmIZ3dmpnXVdTSkhBPFBIQDo1Pjp+b2RZUU9JRFRNdWtvlIR2bGJhWVZPR0U/S0dAWU9KRETLs5+Le3ZoXFZPSUI9OjeBdG1ig8+3oZCAdmuYh3h2a2FZU25hWE9HcWVZUEdKRH1waFxUTUdCUUl7b2d1aF5WT01GTEU/PDg1M1RfVU5IROnMtZ6Lg3NmYVtaVlFNS8qxnoyEhHRpYVhRSXVoYF5UUUhCZVp+cGNhVlNORlhPaWJaVEtPR0A6NTMwL3duZl9ZUUlfVEtKQpeJem9iWVGau6SQf3BkWVBLR3pwa2JeV09JQmOSgHRrYVdNTUVASkI/OTQ0L0tEQpmGdmteVE1iWlFbUWZbUUxEWFJohnxzbGZfVmpeVFBIYFpRT0dDPqL727+nk4p5a2VeXlhUTkpEPjw2UbagjoJ7bWFfVU5QSFhPRz85TERNgHBkXFJKREpDPFtTY1hOSUJCPE+klYh+dW9iXlRMSkKjlYV4a2JaffHSuKGNfm9jXViFe3JpYFxTT0huiHhsZVpRSVNKRE5GRT44OjUwLG+Vg3NpXVhQXlxSWE5IQTs1MVJKapOIfHJqX1ZSSkNBOmhjWlRMRkH18tO4oo6BcWVeWXNqY11XVk5KQ0ijj391amFYbmNbWVBYTkZAOltRXIJyZV1TSkafi35vZGFXTkZAOjYycGVbVE5LRUtDPTg0ZWFWT0lFQOvfxayXhXhqXldTrZyMg3lrX1dOSmdbVFJLRkBKQz5QTEQ+OWxgVUxLi3psY1hQSXFkWVtVVEtDPThbVUxvaGNeWlNLSUI8R0B/eGtjWFBLiPHSuKGOfW5iXFipmo5/c2ZbUkpOcmVbVk1JQUE6OExEPjg4TkY/OWF/cGNaUEhEWVBLWE9uYldNRkJVTWhhXVlXT0hTSkNHQK2gjX9xZl2lwKiUgnNmWlFMS6GShn90aFxTS0ppXVVRS0Q+SEA8TUVDPTdZT0dAb3dpXVZNRUGCc2hnW1hPRj86PTs3bWZgW1hQR4ByZWFYV1FJRT45N66vmod3aWNYT0xLVlJgWlRLQz86RYp5cm5oZ2JdWVijkoR4anxvYlhd4c6zrKOgmJKSkY+ZlpKMf29iV0xDPDUvLIJyY1ZLQjp0bF5RRz42MU9FPDQtTEI6MiwmIh4aGE1DOjMsJyKekH9uYFZLRaOPe2tdUEZPSkE4MSwnIltQUEg+Wk5EOzQtJ4Z6alxQRTw3d2dZTkM7M1dPRTw1LigmVUpAODFdUUY9NS8qJSQgHBkZFhQSECkyPjgxKyk5MjcwK0ZAODIsKzs0Lirq28/KwL+3sK6ppJSCcmRgk5XCu7Gkj35uZpmZs6yhjnxtYF2WnZiOhXtsZFhOkouEenBkWU5GRJaQwLuwmYZ2Z1uWkPPZwaiThn13l5GMgnZsYF1TSpeRqJqMemtnWlGXkYyCd2xfVEtHl5L///fWuqWQkJalnpGKemtjV06WkId+c2hfX1RKlo6dlIl4aV1SSZa1rJ6PfW6nn5eXj4qBdWteXFFJlo+LgHNlWU9GQpeQioB1al1US0eXkZCGgXFjWU9NlrqxopaId3BiV5aRi4J3aV5TSkeVkP/34sSrlYJylpTbxa+Zhnpua5eRjYJ3al6JeGqXkK2fjn1ta15Vl5KKgHRnXlNJRpeR///93L+rloiVmqqck4Z2a15TlY+JgXtsX1RKQpWPop+VgnJpXGmVq9nEr5iFeXNtlpCKgXZnW1VMRJaQjIF0ZlpQR0eWkYqBd2hcUUhIlpGmmYt6a2VZq6ihnJCEfG1kWE6Wj4qAdGZaT0ZylpGSjIh3aVxRTZaQsqKRf29qY2CXkI6Dd2xfX1RLlo+ekIFxY2JXUZaPi4F4al1TSVKWkv/14MOpmYbJwravoZSFdGlcUpWOiH5yaFtaT0uVj4qDfW5gVUtelZCLgHRmWmFsa5WQjYN3a15aUEeRi4h9c2VZT0ZhnZWLgXZrXlNKSJaQjoN6a15TSszRw7KilId3bF9WlY+LgXZqXVVLkM2/sKGVg3NlWVKWkL2smod2bGB0lo+HfnNlWVlPRpaOlId7bF9ZT06Wko2Hfm9iVkxXlpfEwrmmkYNzh5uZl5WRiHZqXVd+fn5+fKeRfm5gVEqAdWZZTkQ8OT02MColIR40LismIh4cGRcVFBPIubGrnpaQhH59eGyWlZKOhX14dXRqhLutoZSOhoD////p08Gxm4h+xKubjH1vaV1TS4h4b2hgVVRMRT6tmI1/cW1gVk1FhHRsY1hOR0BsYFdPTUdAQD04My8zLz48OThbUUhCQTs6OTYxLjUzM/zcybijlJB/cGidin5xZVxZT0dAdmhjW1NKR0I8N1RLT01GS0Q9OjVrX1pRSUE8N2VaV05OSkI9OTQvLCkmREE/Pj44MzBORkOFd2ldWFFL6cy7qZeKiXlrY66Yin1vZVlQS0NhVlNOSkI8NzIuiXl0cGVcU0pEPVNKSUM9NzIuXlNRSVNTSkI9ODMxOjRPTEhERD04Mz44NWNZT0dGQT7dwbGikoaBcmVftZ6PgXNoX1VMRFtRTkpFPzo2MS1sYF1YT0tDPTg0Mi4qJyUiICA9N0Q/VHFkWVBIQDo5NE5MRkNCPDc0ZlpXaF1WTUpFQtO4rJ+PhYR0Z1+Zh3pxZlxSSUI8cWRfWlNKRkA6NWZbWlRMSEE7NTF4amVaUEhBO1RLSUJRS0M/Rj85NTUwREI/PnJlWlNRSEVBPDYyMS8t+trGtKCTkH5wZ6uWiXxvY15US0Onkod8bmFbU0pDgXJtZlxYT0Y/OYh3cWRZT0pDQTtkWVdRSEE7NTEuLSoxMS4tUUlFPjw3NlxSSkI/PTrOtKaYiX95a19ZppGEeGpgWE5GP2NYVVJLSEE+ODN1aGRcU3VnXFNKc2VfV01FSEFPR0I+XVtRSkhBPDo3M1hbWmRjWldVXVZqfnZtZmdlZf////Hczbejj4qNgHBpXFdMRGpd1Ligi3pqXVJPRUM7NWxecWNXUEa9pJKFdKOOfu7QzLOwrZ+WkIF5dKaSkIyDfHluZ2L/++fTvKyZjoB0//rl1r+uoo59csGpm45+cmtfWE//7tbDrpmHemxg/+zWxKuZiHhsYNu/sJ+Me21hX1T/9d7RtqKSgHZq1Lqpmol7dGdeVP/33sqxnIl9b2T/9+DNtaedinlywamZjHxxb2NYT//33sa1not9cGP/9t7Ksp+NfPHW8dLCsJuJg3ONfP/24Mivmot6/+Tfw6+ei32DdGZc//fdxrGciXxuYv/33sWvnpWDdGvGraCSg3t5a2BW//fdxq+ah3twY//238+1oI18//j62sexnImCc3Fk//XfzLOgkX//9+/RvKmVhYN0Zlz/997HrpqIfHRp//vlzrv///L/5+DEua2gmbelmpGJgn3////r2c2/2//+69zOvab44My4oIt5alxRRz6zpY98bF5SRz42MDUuKCODe2pcUExIPjYwKi4pJB8bGBUTEQ8ODAsKiIBvZ2V2bF5RRz45Miwmj4Z9bF5YVElAODE6X19ft7Glm5KNgnFiVZuOiIJ9hHVmWE1LSD83MImCe3ZxopaBcGFXUkg+Ni8pJCAcGBYTEQ+Eh391aF9XS0E5Mz01LimJeW1iVVxYTUM6OGZkYmGWkoqCfHJqX1NIjX95dHCDc2NWS1lYTEI5fHRuaWW3po98a2NaTkQ7MywmIh0aFxQSEHx5c21pkoBuX1JLQjkyLIF3cWxoz7yijHlyjIR6bZuVi4N1ZWBTSD+Hf3lzb7qgi3hoXlZKQDh4dG1oZL+pkn5tZ1pORDszLCYhHRkWFBEPd3JkV0t0ZFZKQEA4MSolc2RWS0GAdmZYTUM6My0oIx8cGhcVFBMREca8tdPDurKinZqwqaeml5GKfXp5qJ6YwqqflIJ5dbyroaWViHxtZF5zaGJoX1VMRD47qpeKin5wZFlRS7Ccj41/cGRZUE91amOGem5kXFROenFpeW1iWE9IRHhrZGdfVUxFPjp8bmeMgXJnW1JNpZKFjIBxZVlRS3JmX3JqX1VMRUGVhnuhjn9xZFpUpJGFhXxvZFlRTH1waIp6bWNhWlJSTkphW1JKQz47q5eJgnNlWlBIRHZqYXZtYVZNRkPoy7WolYV3aV5Wb2Vda2VbUUlCP6eUhn9yZlxSS0eYh3x3b2NYTkdDinxzbWNaU05KRltYVG5nXVVMR0WqmY2Fdm1jWFJPo5WNq5iLf3BoZNS/saaWi4FyamZdVUtDPOPv1rysl4RzZVjP1L2mmIV0ZllP0s65opWDc2VZTuXfyLOlxLWono2EfG1oY1xXVVFJUlFIS0pPSUmqmI2BcnBmXlVRg3RsYVZOSEI8PJiKfHBjW1JLREBhWlNMREE+a19ZiXpwZlqSgXhqYWFWT0lCPjk1MDOwn45+cGdfVk1ISkNBPDYzMV1TTbCejn9xfXBnW1SFdWpeVE1HRT89lod7bmFaU01FQYR0aV9UTkl4amKKfXFlWpODe21ihHRqX1ROSElCP4R5cGRZZVtbUU1nW1NMREA8XFJMmol8b2JfVlJJRE1FQzw3NDJUS0eCd21jWFZPXlRNS0NBPDc0M3ZpYKyXiHhqZ1xbUUttYFpRSEM/Pzo9rpuOgnOEenpwbWxiYmBWZHGOhoXy1Mm8pqSgo5uXlouRjoGIiIWBccWrlYFxtp6Jd2haT0U8NS8pJCAdGhcVE6aokn9uYLaejX1tZlmLf4aso5mRiIeKwK6sq6CUjoJ9epKFle3gzregkoe3oJmUhXtvYllTsZuRkIJ6a19WTtS5qZuLfW5hWE+Zhn3qzbWei31vu6OWiXluYldPR3RnY7afjX1uZl3w0ryplYN0Zl5XloR7iHpsYFVNSf/s08Cok4JzZ1/+3cfBqpaEdGph9dXAsZuIeGpfVsqwodC2n4x7bmqVg3xwY1hPTUpFWlBRsZuOfW5iWKSQhXttYFZNRT90Z2OzoJiFdmhd/97It6GPfm9jWLKckIqAdWdcUky7pJiMfW5iV09IspyR/+jPtZ6NfMqxoZiHd2ldVUx5a2a3oI18bmtj3sKunYp6a19YU8KpnbKejXxtZF7/6NG/qpiFdmxmX2BcVU5GPjhfVLmxopKDc2VZZ1utppiKe2xgVVNKm5eLgHJlWU9dU//eysavmYh4bWNgVVNRS0Q/OTc2hnZwoJOIeGphWHttZmRaUklCPTpmW1m+qZiGdmlfqJOGe25jWE5IQ6+ZjePIsZyJfG1yZV9bUkxEPj03bGBb4saumYZ/c7mikoZ3aV5UUEy5opTAqZSCc2df0LammYZ2aV1UTaCMgMWtmIZ2dGp/cGlkWU9HQDo4v6eYz7Wei3pwZGZaWFFJQTw3NDE5NFfZvqaUgoB0wamZiX1uYlhVT3JlYKOPfnBjfnJ5a2VkWU9HQDw6jXx24cStmYaFeL+nl4h4al9VTUi3oZPKsJqJeHVpqpWKhHRnW1FNSXVnYOzNtJ2KhXa/p5WJeGpeVFBKoIyAtKCNfG1hVti9qp+Me21gVk/Cqp+Wh4h4duHHwamelIqjj4qCdrSelYyB0bas/+HPta2ilJKAfpaEdW1j/+/czbaunJiKeW9jWVFIQTo1RE9HPzk1UEdAOlFWT0pCO0VAPDs7RGddWFdPS0dAPDZ+dW9oXFJMREF0aWNdVpWIgHpylYl/dm2TiH98hYSBend0bmZmYlZMQzs1L2dhWVxSSJOAb2Gv1L+vnId1ZqSVgXBhqZOAbw==',
 };
 
 let musicAudio = null, musicTrack = null, musicEnv = null, musicShakeRaf = 0, musicGestureFn = null, cutsceneActive = false;
+let musicBarsEl = null, musicBarsH = 0, musicBarsLast = 0;
 function musicVolume() {
   let v = NaN; try { v = parseFloat(localStorage.getItem('frixion_music_volume')); } catch (e) {}
   return isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.6;
@@ -8648,6 +9383,8 @@ function musicStop() {
   musicAudio = null; musicTrack = null; musicEnv = null;
   cancelAnimationFrame(musicShakeRaf); musicShakeRaf = 0;
   resetScreenShake();
+  if (musicBarsEl) { musicBarsEl.remove(); musicBarsEl = null; }
+  musicBarSet = null; musicBarsH = 0; musicBarsLast = 0;
 }
 // Call with the equipped track id (or null). Starts, switches or stops the music to match.
 function musicSync(id) {
@@ -8669,14 +9406,16 @@ function musicSync(id) {
     musicGestureFn = go;
     ['pointerdown', 'keydown', 'touchstart'].forEach(t => window.addEventListener(t, go, true));
   });
-  if (musicEnv) musicShakeRaf = requestAnimationFrame(musicShakeTick);
+  if (musicEnv || track.bars) musicShakeRaf = requestAnimationFrame(musicShakeTick);
 }
 // Shakes the whole page in time with the music. The loudness envelope was measured from the
 // track ahead of time, so it stays in sync with audio.currentTime and works from any hosting.
 function musicShakeTick(now) {
   musicShakeRaf = requestAnimationFrame(musicShakeTick);
   const a = musicAudio;
-  if (!a || !musicEnv) return;
+  if (!a) return;
+  musicBarsTick(a, now);
+  if (!musicEnv) return;
   if (!shakeAllowed() || a.paused || document.hidden || cutsceneActive) { if (document.body.style.transform) resetScreenShake(); return; }
   const pos = (a.currentTime * 30) % musicEnv.length, i = Math.floor(pos), f = pos - i;
   const e = (musicEnv[i] * (1 - f) + musicEnv[(i + 1) % musicEnv.length] * f) / 255;
@@ -8686,6 +9425,88 @@ function musicShakeTick(now) {
   const MAX_TILT = 40;                                // degrees
   document.documentElement.classList.add('is-shaking');
   document.body.style.transform = `translate(${(26 * s * Math.sin(t * 43 + 2)).toFixed(1)}px, ${(20 * s * Math.sin(t * 37)).toFixed(1)}px) rotate(${(MAX_TILT * s * wobble).toFixed(2)}deg) scale(${(1 + 0.04 * s).toFixed(3)})`;
+}
+
+// The Equinox bars, built to match the ones in Sol's RNG: flat, solid blocks with a gap between each one, every block
+// either black or white. One row hangs from the top of the screen and another stands on the bottom. They sit on the
+// <html> element, not the page, so the screen shake doesn't carry them off.
+//   'move' cue: every bar jumps up and down on its own and flips between black and white, quickly. The whole set
+//               re-rolls on each hit of the beat, and the louder the music the faster they flash.
+//   'hold' cue: the bars freeze where they are, waiting for the drop.
+//   Between cues they slide away. "Reduce screen shake" does not affect them at all, and
+//   Epilepsy mode hides them completely (they flash, so they MUST respect it — see the Epilepsy mode block).
+const MB_PITCH = 96;           // px from the start of one bar to the start of the next; the bar is 62% of that, the rest is gap
+let musicBarSet = null;        // { n, top: [bar...], bot: [bar...] }; each bar { el, cur, to, hold, white, flipAt, moveAt }
+function mbRnd() { return Math.random(); }
+function buildMusicBars() {
+  const n = Math.max(8, Math.round(window.innerWidth / MB_PITCH));
+  if (musicBarsEl) musicBarsEl.remove();
+  musicBarsEl = document.createElement('div');
+  musicBarsEl.id = 'music-bars';
+  musicBarsEl.setAttribute('aria-hidden', 'true');
+  const set = { n, top: [], bot: [], beatAvg: 0, beatAt: 0, fakeAt: 0 };
+  [['top', 'mb-top'], ['bot', 'mb-bot']].forEach(([key, cls]) => {
+    const row = document.createElement('div');
+    row.className = 'mb-row ' + cls;
+    for (let i = 0; i < n; i++) {
+      const slot = document.createElement('div'), el = document.createElement('div');
+      slot.className = 'mb-slot'; el.className = 'mb-bar';
+      const white = mbRnd() < 0.5;
+      if (white) el.classList.add('w');
+      slot.append(el); row.append(slot);
+      const h = 0.06 + mbRnd() * 0.94;
+      set[key].push({ el, cur: 0, to: h, hold: 0.12 + mbRnd() * 0.8, white, flipAt: 0, moveAt: 0, y: '' });
+    }
+    musicBarsEl.append(row);
+  });
+  document.documentElement.append(musicBarsEl);
+  musicBarSet = set;
+}
+function musicBarsTick(a, now) {
+  const cues = musicTrack && musicTrack.bars;
+  if (!cues) return;
+  const dt = Math.min(0.1, Math.max(0, (now - (musicBarsLast || now)) / 1000)); musicBarsLast = now;
+  const live = !a.paused && !document.hidden && !cutsceneActive;
+  const cue = live && !epilepsyMode() ? cues.find(c => a.currentTime >= c.from && a.currentTime < c.to) : null;
+  musicBarsH += ((cue ? 1 : 0) - musicBarsH) * Math.min(1, dt * (cue ? 9 : 6));   // 0 = away, 1 = in place
+  if (musicBarsH < 0.01 && !cue) { if (musicBarsEl) musicBarsEl.style.visibility = 'hidden'; return; }
+  if (!musicBarsEl || !musicBarSet || musicBarSet.n !== Math.max(8, Math.round(window.innerWidth / MB_PITCH))) buildMusicBars();
+  musicBarsEl.style.visibility = 'visible';
+  const set = musicBarSet;
+  const moving = !!cue && cue.mode === 'move';          // "Reduce screen shake" does nothing here; only Epilepsy mode stops the bars (it makes cue null above)
+  // How loud the song is right now (0-1). If the loudness data is missing, a steady made-up beat stands in.
+  let s = 0.6;
+  if (musicEnv) {
+    const pos = (a.currentTime * 30) % musicEnv.length, i = Math.floor(pos), f = pos - i;
+    s = Math.pow((musicEnv[i] * (1 - f) + musicEnv[(i + 1) % musicEnv.length] * f) / 255, 1.2);
+  }
+  // A "beat" is the loudness jumping above its recent average.
+  let beat = false;
+  if (moving) {
+    const t = now / 1000;
+    set.beatAvg += (s - set.beatAvg) * Math.min(1, dt * 5);
+    if (musicEnv ? (s > set.beatAvg * 1.18 + 0.05 && t - set.beatAt > 0.11) : t - set.beatAt > 0.26) { beat = true; set.beatAt = t; }
+  }
+  const ease = 1 - Math.exp(-dt * (moving ? 30 : 9));
+  const paint = (bars, flip) => bars.forEach(b => {
+    if (moving) {
+      if (beat) {
+        if (mbRnd() < 0.8) b.to = 0.06 + Math.pow(mbRnd(), 0.7) * 0.94 * (0.75 + 0.25 * s);   // jump to a new height
+        if (mbRnd() < 0.45) { b.white = !b.white; b.el.classList.toggle('w', b.white); }      // flash on the hit
+      }
+      if (now >= b.moveAt) { b.to = 0.06 + Math.pow(mbRnd(), 0.8) * 0.94 * (0.7 + 0.3 * s); b.moveAt = now + 110 + mbRnd() * 330; }
+      if (now >= b.flipAt) {                                                                    // quick flicker between black and white
+        b.white = !b.white; b.el.classList.toggle('w', b.white);
+        b.flipAt = now + (70 + mbRnd() * 230) * (1.25 - 0.7 * s);
+      }
+    }
+    const target = moving ? b.to : b.hold;
+    b.cur += (target - b.cur) * ease;
+    const y = ((1 - Math.min(1, b.cur) * musicBarsH) * 100 * (flip ? 1 : -1)).toFixed(2);
+    if (y !== b.y) { b.y = y; b.el.style.transform = `translateY(${y}%)`; }
+  });
+  paint(set.top, false);
+  paint(set.bot, true);
 }
 
 // The video that plays the first time a track with a cutscene is bought.
@@ -8737,7 +9558,7 @@ function orbIconSVG(size) { return `<svg viewBox="0 0 24 24" width="${size}" hei
 function shopItemPreviewHTML(key, item) {
   if (key === 'decorations') return `<div class="sic-deco-stage">${avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, item.id)}</div>`;
   if (key === 'masks') return `<div class="sic-deco-stage">${avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, null, undefined, item.id)}</div>`;
-  if (key === 'music') return `<div class="sic-music-preview${item.fx ? ' fx-bg-' + esc(item.fx) : ''}${myProfile.equippedMusic === item.id ? ' is-playing' : ''}"><div class="smp-eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>${item.fx ? fxTextHTML(item.name, item.fx) : `<span class="smp-title">${esc(item.name)}</span>`}</div>`;
+  if (key === 'music') return `<div class="sic-music-preview${item.fx ? ' fx-bg-' + esc(item.fx) : ''}${item.banner ? ' has-banner' : ''}${myProfile.equippedMusic === item.id ? ' is-playing' : ''}"${item.banner ? ` style="background-image:url('${esc(item.banner)}')${item.bannerPos ? ';background-position:' + esc(item.bannerPos) : ''}"` : ''}><div class="smp-eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>${item.fx ? fxTextHTML(item.name, item.fx) : `<span class="smp-title">${esc(item.name)}</span>`}</div>`;
   if (key === 'banners') return `<div class="sic-banner-preview">
     <div class="sic-banner-strip${item.animated ? ' banner-anim' : ''}" style="background:${esc(bannerGradientCSS(item))};"></div>
     <div class="sic-banner-avatar">${avatarHTML(44, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl)}</div>
@@ -8771,6 +9592,7 @@ function shopItemPreviewHTML(key, item) {
   return '';
 }
 
+function itemCutscenes(item) { return item.cutscenes || (item.cutscene ? [{ src: item.cutscene, label: 'Cutscene' }] : []); }
 function shopItemCardHTML(key, item) {
   const def = SHOP_CATEGORY_DEFS[key];
   const owned = (myProfile[def.ownedField] || []).includes(item.id);
@@ -8782,6 +9604,7 @@ function shopItemCardHTML(key, item) {
     ${(key === 'themes' || key === 'music') ? '' : `<div class="sic-name">${esc(item.name)}${item.animated ? '<span class="sic-animated-tag">Animated</span>' : ''}</div>`}
     ${item.desc ? `<div class="sic-desc">${esc(item.desc)}</div>` : ''}
     <button class="sic-btn${equipped ? ' is-equipped' : owned ? ' is-owned' : ''}" data-action="${action}">${label}</button>
+    ${owned && itemCutscenes(item).length ? `<div class="sic-replay" role="group" aria-label="Replay cutscenes">${itemCutscenes(item).map((c, n) => `<button type="button" class="sic-replay-seg" data-seg="${n}">Replay ${esc(c.label)}</button>`).join('')}</div>` : ''}
   </div>`;
 }
 
@@ -8790,6 +9613,7 @@ function wireShopCardButtons(wrap) {
     const key = card.dataset.cat;
     const id = card.dataset.item;
     const btn = card.querySelector('.sic-btn');
+    card.querySelectorAll('.sic-replay-seg').forEach(b => { b.onclick = () => replayCutscene(key, id, +b.dataset.seg); });
     btn.onclick = () => {
       if (btn.dataset.action === 'buy') buyShopItem(key, id);
       else if (btn.dataset.action === 'equip') equipShopItem(key, id);
@@ -8877,7 +9701,9 @@ async function buyShopItem(key, id) {
     if ((fresh[def.ownedField] || []).includes(id)) { toast('You already own this.'); return; }
     if ((fresh.orbs || 0) < item.price) { toast('Not enough Orbs. Play games to earn more.'); return; }
     // The first purchase of a track with a cutscene plays it, so hold the music back until it ends.
-    if (item.cutscene) cutsceneActive = true;
+    const cuts = itemCutscenes(item);
+    const showCut = cuts.length && !epilepsyMode();   // Epilepsy mode: not played automatically (it can be replayed from the Shop)
+    if (showCut) cutsceneActive = true;
     // Equip it immediately on purchase, matching how Discord's own shop works.
     await db.collection('users').doc(myUid).update({
       orbs: FieldValue.increment(-item.price),
@@ -8886,12 +9712,32 @@ async function buyShopItem(key, id) {
     });
     toast(`Purchased ${item.name}!`);
     refreshOpenShopPanes();
-    if (item.cutscene) {
-      await playCutscene(item.cutscene);
+    if (cuts.length && !showCut) toast('Epilepsy mode is on, so the cutscenes were skipped. You can replay them from the Shop.');
+    if (showCut) {
+      for (const c of cuts) await playCutscene(c.src);
       cutsceneActive = false;
       musicSync(myProfile && myProfile[def.equipField] === id ? id : (myProfile && myProfile.equippedMusic) || null);
     }
   } catch (e) { cutsceneActive = false; toast('Purchase failed.', 'error'); }
+}
+
+// Plays an unlocked item's cutscene again. The music stops while it plays and carries on afterwards.
+function replayCutscene(key, id, seg) {
+  const def = SHOP_CATEGORY_DEFS[key];
+  const item = def && def.catalog.find(i => i.id === id);
+  const cut = item && itemCutscenes(item)[seg || 0];
+  if (!cut || !(myProfile[def.ownedField] || []).includes(id) || cutsceneActive) return;
+  const run = async () => {
+    cutsceneActive = true;
+    if (musicAudio) try { musicAudio.pause(); } catch (e) {}
+    try { await playCutscene(cut.src); } catch (e) {}
+    cutsceneActive = false;
+    if (musicAudio) musicAudio.play().catch(() => {});
+    else musicSync((myProfile && myProfile.equippedMusic) || null);
+  };
+  if (epilepsyMode()) {
+    confirmAction({ title: 'Flashing Lights Warning', body: 'Epilepsy mode is on, but this cutscene is a video and it may contain flashing lights that Frixion can\'t remove. Play it anyway?', confirmLabel: 'Play Cutscene', danger: false, onConfirm: run });
+  } else run();
 }
 
 async function equipShopItem(key, id) {
@@ -9021,6 +9867,7 @@ function openAdminPanel() {
 $('admin-search').addEventListener('input', renderAdminList);
 if ($('system-hub-search')) $('system-hub-search').addEventListener('input', renderAdminList);
 if ($('devices-search')) $('devices-search').addEventListener('input', renderDevicesPane);
+if ($('devices-cleanup-btn')) $('devices-cleanup-btn').onclick = adminCleanUpDevices;
 
 document.querySelectorAll('.admin-tab').forEach(tab => {
   tab.onclick = () => {
@@ -9041,6 +9888,7 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
       renderAdminProfileEffectList(); initEffectEditor();
       renderAdminProfileFrameList(); initFrameEditor();
       renderAdminBannerList(); initBannerEditor();
+      renderAdminMusicList();
     }
     if (tab.dataset.adminTab === 'quests') { initGagAdmin(); initCcAdmin(); }
     if (tab.dataset.adminTab === 'systemhub') { adminSelectedUser = null; renderAdminList(); }
@@ -10059,7 +10907,16 @@ const SHOP_EDIT_TYPES = {
   nameplates: { label: 'Nameplate', collection: 'shopNameplates', builtins: NAMEPLATES, custom: () => customNameplates, render: () => renderAdminNameplateList() },
   profile_effects: { label: 'Profile Effect', collection: 'shopProfileEffects', builtins: PROFILE_EFFECTS, custom: () => customProfileEffects, render: () => renderAdminProfileEffectList() },
   profile_frames: { label: 'Profile Frame', collection: 'shopProfileFrames', builtins: PROFILE_FRAMES, custom: () => customProfileFrames, render: () => renderAdminProfileFrameList() },
+  // Music tracks are built in (they need an audio file and a cutscene), so staff can only change the price and
+  // whether the track is featured. The editor locks the name and description for this type.
+  music: { label: 'Music', collection: null, builtins: MUSIC_TRACKS, custom: () => [], render: () => renderAdminMusicList(), priceFeaturedOnly: true },
 };
+function renderAdminMusicList() {
+  const wrap = $('admin-music-list');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  finishAdminShopList(wrap, 'music');
+}
 const colorField = (path, label) => ({ path, label, type: 'color' });
 const SHOP_EDIT_EXTRA_FIELDS = {
   decorations: item => [
@@ -10107,7 +10964,7 @@ function finishAdminShopList(wrap, type) {
   const def = SHOP_EDIT_TYPES[type];
   if (def.builtins.length) {
     wrap.insertAdjacentHTML('beforeend', `<div class="admin-builtin-label">Built-in</div>` + def.builtins.map(item =>
-      `<div class="admin-emoji-chip editable" data-id="${esc(item.id)}" data-builtin="1">${builtinChipVisual(type, item)}<span>${esc(item.name)}</span><span class="admin-chip-tag">${esc(String(item.price))}</span></div>`
+      `<div class="admin-emoji-chip editable" data-id="${esc(item.id)}" data-builtin="1">${builtinChipVisual(type, item)}<span>${esc(item.name)}</span><span class="admin-chip-tag">${esc(Number(item.price).toLocaleString())}${item.featured ? ' · Featured' : ''}</span></div>`
     ).join(''));
   }
   wrap.querySelectorAll('.admin-emoji-chip.editable').forEach(chip => {
@@ -10127,7 +10984,9 @@ function openShopItemEditor(type, id) {
   if (!item) return;
   shopEditTarget = { type, id, isCustom: !!custom };
   $('shop-edit-title').textContent = `Edit ${item.name}`;
-  $('shop-edit-kind').textContent = custom ? def.label : `${def.label} · Built-in (name, description, price and featured can be changed)`;
+  const locked = !!def.priceFeaturedOnly;
+  $('shop-edit-name').disabled = locked; $('shop-edit-desc').disabled = locked;
+  $('shop-edit-kind').textContent = custom ? def.label : locked ? `${def.label} · Built-in (only the price and featured can be changed)` : `${def.label} · Built-in (name, description, price and featured can be changed)`;
   $('shop-edit-name').value = item.name || '';
   $('shop-edit-desc').value = item.desc || '';
   $('shop-edit-price').value = Number.isFinite(Number(item.price)) ? item.price : 0;
@@ -10156,13 +11015,14 @@ $('shop-edit-save-btn').onclick = async () => {
   if (!shopEditTarget || (!isAdmin && !isOwner)) return;
   const { type, id, isCustom } = shopEditTarget;
   const def = SHOP_EDIT_TYPES[type];
+  const priceFeaturedOnly = !!def.priceFeaturedOnly;
   const name = $('shop-edit-name').value.trim();
   const desc = $('shop-edit-desc').value.trim();
   const price = parseInt($('shop-edit-price').value, 10);
-  if (!name) { toast('Enter a name.'); return; }
-  if (!desc) { toast('Enter a description.'); return; }
+  if (!priceFeaturedOnly && !name) { toast('Enter a name.'); return; }
+  if (!priceFeaturedOnly && !desc) { toast('Enter a description.'); return; }
   if (!Number.isFinite(price) || price < 0) { toast('Enter a valid price.'); return; }
-  const update = { name, desc, price, featured: $('shop-edit-featured').checked };
+  const update = priceFeaturedOnly ? { price, featured: $('shop-edit-featured').checked } : { name, desc, price, featured: $('shop-edit-featured').checked };
   try {
     if (isCustom) {
       const item = def.custom().find(x => x.id === id) || {};
@@ -10186,7 +11046,7 @@ $('shop-edit-save-btn').onclick = async () => {
       await db.collection('config').doc('shopOverrides').set({ [shopOverrideKey(type, id)]: update }, { merge: true });
     }
     closeModal('shop-edit-modal');
-    toast(`Saved "${name}".`);
+    toast(`Saved "${priceFeaturedOnly ? $('shop-edit-title').textContent.replace(/^Edit /, '') : name}".`);
   } catch (e) { toast(e.message || 'Could not save changes.', 'error'); }
 };
 $('shop-edit-reset-btn').onclick = async () => {
@@ -10394,6 +11254,13 @@ async function renderAdminActions() {
     $('admin-delete-btn').onclick = adminDelete;
     $('admin-fake-delete-btn').onclick = adminFakeDelete;
     wrap.querySelectorAll('[data-rm-item]').forEach(b => { b.onclick = () => adminRemoveItem(u.username, b.dataset.field, b.dataset.id); });
+    const itemSearch = wrap.querySelector('[data-items-search]');
+    if (itemSearch) itemSearch.oninput = () => {
+      const q = itemSearch.value.toLowerCase().trim();
+      let shown = 0;
+      wrap.querySelectorAll('.admin-item-row').forEach(r => { const hit = !q || r.textContent.toLowerCase().includes(q); r.hidden = !hit; if (hit) shown++; });
+      wrap.querySelector('.admin-items-none').hidden = shown > 0;
+    };
     loadUserDevicesBlock(u.username);
   }
 }
@@ -10533,7 +11400,9 @@ function adminItemsBlockHTML(u) {
   const rows = ownedShopRows(u);
   return `<div class="admin-block">
       <div class="ab-title">Shop items (${rows.length})</div>
+      ${rows.length ? '<input type="text" class="admin-items-search" data-items-search placeholder="Search items..." autocomplete="off" maxlength="60">' : ''}
       ${rows.length ? `<div class="admin-items-list">${rows.map(r => `<div class="admin-item-row"><span class="ai-name" title="${esc(r.name)}">${esc(r.name)}</span><span class="ai-cat">${esc(r.label)}</span>${r.equipped ? '<span class="ban-tag mute-tag">Equipped</span>' : ''}<button type="button" class="btn-secondary slim" data-rm-item data-field="${esc(r.field)}" data-id="${esc(r.id)}">Remove</button></div>`).join('')}</div>` : '<span class="ab-note">No Shop items.</span>'}
+      <div class="ab-note admin-items-none" hidden>No items match.</div>
     </div>`;
 }
 async function adminRemoveItem(username, field, id) {
@@ -10602,7 +11471,15 @@ window.addEventListener('beforeunload', () => {
 });
 
 $('a11y-no-shake-toggle').onchange = e => setScreenShakeOff(e.target.checked);
-applyShakeSetting();
+$('a11y-epilepsy-toggle').onchange = e => setEpilepsyMode(e.target.checked);
+applyEpilepsySetting();   // also applies the shake setting
+$('a11y-glass-toggle').onchange = e => setLiquidGlass(e.target.checked);
+$('a11y-glass-opacity').oninput = e => setGlassTune({ opacity: +e.target.value });
+$('a11y-glass-strength').oninput = e => setGlassTune({ strength: +e.target.value });
+$('a11y-menu-blur').oninput = e => setGlassTune({ menuBlur: +e.target.value });
+['a11y-glass-opacity', 'a11y-glass-strength', 'a11y-menu-blur'].forEach(id => { $(id).onchange = () => setGlassTune({}, true); });
+$('a11y-glass-reset').onclick = () => { try { localStorage.removeItem(GLASS_TUNE_KEY); } catch (e) {} applyLiquidGlass(); if (myUid) db.collection('users').doc(myUid).update({ a11yGlassTune: FieldValue.delete() }).catch(() => {}); };
+applyLiquidGlass();
 
 boot();
 
@@ -11641,7 +12518,7 @@ function gdDraw(){
   }
   const cx=s.x+s.size/2, cy=s.y+s.size/2, h=s.size/2;
   c.save(); c.translate(cx,cy); c.rotate(s.rot);
-  c.fillStyle = s.flash>0 ? '#ffffff' : col.cube;
+  c.fillStyle = s.flash>0 && !epilepsyMode() ? '#ffffff' : col.cube;
   if(s.mode==='cube'){ c.fillRect(-h,-h,s.size,s.size); c.fillStyle='rgba(255,255,255,.85)'; c.fillRect(-h+6,-h+6,7,7); }
   else if(s.mode==='ship'){ c.beginPath(); c.moveTo(-h,-h+3); c.lineTo(h-5,-h+5); c.lineTo(h,0); c.lineTo(h-5,h-5); c.lineTo(-h,h-3); c.closePath(); c.fill();
     if(s.holding){ c.fillStyle='#ffd23b'; c.beginPath(); c.moveTo(-h,-4); c.lineTo(-h-9,0); c.lineTo(-h,4); c.closePath(); c.fill(); }
@@ -13337,7 +14214,7 @@ function ovServersListHTML() {
     const list = servers.filter(s => !q || (s.name || '').toLowerCase().includes(q));
     if (!list.length) return `<div class="ov-empty">${servers.length ? `No servers match “${esc(ovQuery.trim())}”.` : 'You are not in any servers yet.'}</div>`;
     return list.map(s => {
-      const n = (s.members || []).length;
+      const n = visibleMemberCount(s);
       return `<button type="button" class="ov-row" data-sid="${esc(s.id)}"><span class="ov-srv-ico">${esc(serverInitials(s.name))}</span>` +
         `<span class="ov-row-copy"><span class="ov-row-name">${esc(s.name)}</span><span class="ov-row-sub">${n} member${n === 1 ? '' : 's'}</span></span></button>`;
     }).join('');

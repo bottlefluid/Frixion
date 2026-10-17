@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=63">
+<link rel="stylesheet" href="style.css?v=75">
 </head>
 <body>
 
@@ -139,6 +139,23 @@
 
     <!-- DM list (home view) -->
     <div id="dm-list">
+      <!-- Phone only (hidden on desktop): the top part of the home screen, above the DMs. -->
+      <div id="mobile-home-top">
+        <h1 class="mht-title">Messages</h1>
+        <div class="mht-actions">
+          <button type="button" class="mht-round" id="mht-search" aria-label="Search messages"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>
+          <button type="button" class="mht-pill" id="mht-add-friends"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.4 2.9-6 6.5-6s6.5 2.6 6.5 6"/><path d="M19 8v6M16 11h6"/></svg><span>Add Friends</span></button>
+          <button type="button" class="mht-round accent" id="mht-new" aria-label="New message" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+        <div class="mht-search-row" id="mht-search-row" hidden>
+          <input type="text" id="mht-search-input" placeholder="Search your messages" autocomplete="off" maxlength="60" aria-label="Search your messages">
+          <button type="button" id="mht-search-clear" aria-label="Close search">Cancel</button>
+        </div>
+        <div class="mht-menu" id="mht-menu" role="menu" hidden>
+          <button type="button" role="menuitem" id="mht-new-dm">New Message</button>
+          <button type="button" role="menuitem" id="mht-new-group">New Group DM</button>
+        </div>
+      </div>
       <div id="home-nav">
         <div class="home-nav-item active" data-home-view="friends">
           <span class="hn-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9" r="2.3"/><path d="M15 14.2c2.6.3 4.5 2.4 4.5 5.3"/></svg></span>
@@ -208,6 +225,9 @@
         </span>
         <span class="hdr-icon-btn hidden" id="add-member-toggle" title="Add Friend to Group">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.3 2.7-6 7-6s7 2.7 7 6"/><path d="M17 8h5M19.5 5.5v5"/></svg>
+        </span>
+        <span class="hdr-icon-btn hidden" id="leave-group-toggle" title="Leave Group">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H5v16h4M15 8l4 4-4 4M19 12H9"/></svg>
         </span>
         <span class="hdr-icon-btn hidden" id="search-toggle" title="Search">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
@@ -348,7 +368,7 @@
           <div class="gif-attribution">Powered by KLIPY</div>
           <div class="gif-grid" id="gif-grid"></div>
         </div>
-        <input type="file" id="file-input" class="hidden" accept="image/*,.pdf,.txt,.zip,.mp4,.mp3" multiple>
+        <input type="file" id="file-input" class="hidden" accept="image/*,.pdf,.txt,.csv,.json,.zip,.rar,.7z,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.mp4,.mov,.webm,.mp3,.wav,.ogg,.m4a" multiple>
         <div id="attachment-draft" class="attachment-draft hidden"></div>
         <div id="mention-popup" class="hidden"></div>
         <div id="slash-popup" class="hidden" role="listbox" aria-label="Commands"></div>
@@ -864,7 +884,6 @@
 
       <div class="settings-pane hidden" id="pane-accessibility">
         <h2>Accessibility</h2>
-        <p class="desc">Options that make Frixion more comfortable to use.</p>
         <!-- NOTE FOR ANY AI MODEL / DEVELOPER: this switch must disable EVERY screen shake, tilt, rumble and
              violent-motion effect in the app, including ones added in the future. Check shakeAllowed() in
              script.js (see "ACCESSIBILITY — SCREEN SHAKE") and add html[data-no-shake] rules in style.css
@@ -872,9 +891,33 @@
         <div class="setting-row">
           <div class="setting-row-text">
             <div class="setting-row-title">Reduce screen shake</div>
-            <div class="setting-row-desc">Turns off every screen shake and tilt effect in Frixion, including music in the Shop. It also applies to anything new we add later.</div>
+            <div class="setting-row-desc">Stops the screen from shaking or tilting, like the music in the Shop does.</div>
           </div>
           <label class="toggle-switch"><input type="checkbox" id="a11y-no-shake-toggle"><span class="toggle-slider"></span></label>
+        </div>
+        <!-- NOTE FOR ANY AI MODEL / DEVELOPER: this switch must turn off EVERY flashing, flickering, strobing or
+             quickly pulsing effect in the app, including ones added in the future. Check epilepsyMode() in
+             script.js (see "ACCESSIBILITY — EPILEPSY MODE") and add html[data-epilepsy] rules in style.css
+             for any new CSS animation that flashes. It also turns on Reduce screen shake. -->
+        <div class="setting-row">
+          <div class="setting-row-text">
+            <div class="setting-row-title">Epilepsy mode</div>
+            <div class="setting-row-desc">Turns off flashing lights and flickering effects everywhere, including the Equinox bars and the Account Terminated screen. It also turns on Reduce screen shake.</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="a11y-epilepsy-toggle"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="setting-row">
+          <div class="setting-row-text">
+            <div class="setting-row-title">Liquid glass</div>
+            <div class="setting-row-desc">Menus, pop-ups, pickers and floating bars become frosted, see-through glass, like Apple's liquid glass.</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="a11y-glass-toggle"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="glass-tune" id="glass-tune-box">
+          <label class="gt-row"><span class="gt-name">Opacity</span><input type="range" id="a11y-glass-opacity" min="10" max="100" step="1" value="34"><span class="gt-val" id="a11y-glass-opacity-val">34%</span></label>
+          <label class="gt-row"><span class="gt-name">Strength</span><input type="range" id="a11y-glass-strength" min="0" max="100" step="1" value="60"><span class="gt-val" id="a11y-glass-strength-val">60%</span></label>
+          <label class="gt-row"><span class="gt-name">Menu background blur</span><input type="range" id="a11y-menu-blur" min="0" max="30" step="1" value="8"><span class="gt-val" id="a11y-menu-blur-val">8px</span></label>
+          <button type="button" class="btn-secondary slim" id="a11y-glass-reset">Reset to default</button>
         </div>
       </div>
 
@@ -972,6 +1015,7 @@
         <button type="button" class="shop-mgr-tab" data-shop-section="nameplates">Nameplates</button>
         <button type="button" class="shop-mgr-tab" data-shop-section="effects">Profile Effects</button>
         <button type="button" class="shop-mgr-tab" data-shop-section="frames">Profile Frames</button>
+        <button type="button" class="shop-mgr-tab" data-shop-section="music">Music</button>
       </div>
       <small class="hint shop-mgr-hint">Click any item below (published or built-in) to edit it.</small>
       <div class="admin-block shop-mgr-section" data-shop-section="decorations masks">
@@ -1123,6 +1167,11 @@
       <div class="admin-block shop-mgr-section hidden" data-shop-section="frames">
         <div class="ab-title">Published Profile Frames</div>
         <div class="admin-emoji-list" id="admin-frame-list"></div>
+      </div>
+      <div class="admin-block shop-mgr-section hidden" data-shop-section="music">
+        <div class="ab-title">Music</div>
+        <div class="setting-desc" style="margin-bottom:8px;color:var(--text-muted);font-size:13px">Tracks are built in. Click one to change its price or whether it is featured. Names, descriptions, songs and cutscenes can't be edited here.</div>
+        <div class="admin-emoji-list" id="admin-music-list"></div>
       </div>
       <div class="admin-block shop-mgr-section hidden" data-shop-section="banners">
         <div class="ab-title">Create a Gradient Banner</div>
@@ -1349,6 +1398,7 @@
       <div class="admin-layout">
         <div class="admin-left">
           <input class="fld-input" id="devices-search" placeholder="Search devices or accounts" autocomplete="off">
+          <button type="button" class="btn-secondary slim" id="devices-cleanup-btn">Clean Up Duplicates</button>
           <div class="admin-user-list" id="devices-list"></div>
         </div>
         <div class="admin-right" id="devices-detail"><div class="empty">Select a device to manage.</div></div>
@@ -1458,6 +1508,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
-<script src="script.js?v=63"></script>
+<script src="script.js?v=75"></script>
 </body>
 </html>
