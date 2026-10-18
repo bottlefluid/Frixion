@@ -5,10 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
 <title>Frixion</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%235865f2'/%3E%3Cpath d='M8 8h9a1 1 0 0 1 1 1v5.2a1 1 0 0 1-1 1h-4.6L9.8 18v-2.8H8a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=75">
+<!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
+<link rel="stylesheet" href="style.css?v=77">
 </head>
 <body>
 
@@ -156,6 +160,7 @@
           <button type="button" role="menuitem" id="mht-new-group">New Group DM</button>
         </div>
       </div>
+      <div id="home-activity" class="home-activity hidden" aria-label="What your friends are doing"></div>
       <div id="home-nav">
         <div class="home-nav-item active" data-home-view="friends">
           <span class="hn-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9" r="2.3"/><path d="M15 14.2c2.6.3 4.5 2.4 4.5 5.3"/></svg></span>
@@ -742,6 +747,7 @@
           <div class="profile-handle hidden" id="profile-handle"></div>
           <div class="profile-pronouns" id="profile-pronouns"></div>
         </div>
+        <div class="profile-section hidden" id="profile-activity"></div>
         <div class="profile-section" id="profile-bio-view"></div>
         <div class="profile-section-label">Member Since</div>
         <div class="profile-section" id="profile-member-since"></div>
@@ -781,6 +787,7 @@
     <div id="settings-nav">
       <div class="nav-label">User Settings</div>
       <div class="nav-item active" data-pane="pane-account">My Account</div>
+      <div class="nav-item" data-pane="pane-activity">Activity Status</div>
       <div class="nav-item" data-pane="pane-keyboard">Keyboard</div>
       <div class="nav-item" data-pane="pane-premium">Frixion Premium</div>
       <div class="nav-item" data-pane="pane-quests">Quests</div>
@@ -804,6 +811,27 @@
           <div class="color-swatches" id="avatar-color-swatches"></div>
         </div>
         <button class="btn-accent-inline" id="save-account-btn">Save Changes</button>
+      </div>
+
+      <div class="settings-pane hidden" id="pane-activity">
+        <h2>Activity Status</h2>
+        <p class="desc">Frixion shows your friends what you're doing, all on its own. It appears on your profile, in the Friends list and on the phone Home screen, and it goes away when you leave Frixion.</p>
+        <div class="setting-row">
+          <div class="setting-row-text">
+            <div class="setting-row-title">Share my activity</div>
+            <div class="setting-row-desc">Turn this off and nothing about what you're doing is shown to anyone.</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="rpc-share-toggle" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="field"><label>Showing right now</label><div id="rpc-preview" class="rpc-preview"></div></div>
+        <div class="rpc-auto-list">
+          <div class="rpc-form-title">What gets shared</div>
+          <ul>
+            <li><b>Playing</b> a game from the Games hub</li>
+            <li><b>Watching</b> or <b>Listening to</b> a video or audio file you're playing in a chat</li>
+            <li><b>Listening to</b> the Shop song you have equipped</li>
+          </ul>
+        </div>
       </div>
 
       <div class="settings-pane hidden" id="pane-keyboard">
@@ -1169,8 +1197,28 @@
         <div class="admin-emoji-list" id="admin-frame-list"></div>
       </div>
       <div class="admin-block shop-mgr-section hidden" data-shop-section="music">
+        <div class="ab-title">Add a Song</div>
+        <div class="setting-desc" style="margin-bottom:10px;color:var(--text-muted);font-size:13px">Upload an audio file, give it a name and a price, and add a banner if you like. You can also add up to 3 animations (videos). They play one after another the first time someone buys the song, and can be replayed from the Shop. Songs you add are not featured unless you tick the box.</div>
+        <div class="music-creator">
+          <div class="field"><label class="fld-label">Name</label><input type="text" id="music-name-input" maxlength="40" placeholder="e.g. Midnight Drive" class="fld-input"></div>
+          <div class="field"><label class="fld-label">Description (optional)</label><input type="text" id="music-desc-input" maxlength="120" placeholder="Plays on a loop for as long as you are signed in." class="fld-input"></div>
+          <div class="field"><label class="fld-label">Price (Orbs)</label><input type="number" id="music-price-input" min="0" placeholder="250000" class="fld-input"></div>
+          <div class="field"><label class="fld-label">Song (audio file, up to 100 MB)</label><input type="file" id="music-audio-input" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac" class="music-file-input"></div>
+          <div class="field"><label class="fld-label">Banner image (optional, shown behind the name on its Shop card)</label><input type="file" id="music-banner-input" accept="image/*" class="music-file-input"></div>
+          <div class="field"><label class="fld-label">Card preview</label><div id="music-card-preview" class="music-card-preview"></div></div>
+          <div class="field">
+            <label class="fld-label">Animations (optional) <span id="music-anim-count" class="music-anim-count">0/3</span></label>
+            <div id="music-anim-rows"></div>
+            <button type="button" class="btn-secondary slim" id="music-anim-add">+ Add animation</button>
+          </div>
+          <div class="setting-row compact"><div class="setting-row-text"><div class="setting-row-title">Show on the Featured tab</div></div><label class="toggle-switch"><input type="checkbox" id="music-featured-input"><span class="toggle-slider"></span></label></div>
+          <button class="btn-accent-inline" id="music-publish-btn">Publish to Shop</button>
+          <div id="music-publish-status" class="music-publish-status"></div>
+        </div>
+      </div>
+      <div class="admin-block shop-mgr-section hidden" data-shop-section="music">
         <div class="ab-title">Music</div>
-        <div class="setting-desc" style="margin-bottom:8px;color:var(--text-muted);font-size:13px">Tracks are built in. Click one to change its price or whether it is featured. Names, descriptions, songs and cutscenes can't be edited here.</div>
+        <div class="setting-desc" style="margin-bottom:8px;color:var(--text-muted);font-size:13px">Click a song to change its price or whether it is featured. Songs added here can also be renamed, and they can be disabled (hidden from the Shop) but not deleted. The built-in songs keep their audio and cutscenes, but their name, description, price, featured status and banner can be changed.</div>
         <div class="admin-emoji-list" id="admin-music-list"></div>
       </div>
       <div class="admin-block shop-mgr-section hidden" data-shop-section="banners">
@@ -1504,10 +1552,10 @@
   </div>
 </div>
 
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
-<script src="script.js?v=75"></script>
+<!-- All scripts are deferred: the page (and the loading screen) paints first, then they run in order. Firebase Storage is not loaded because nothing uses it. -->
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script defer src="script.js?v=77"></script>
 </body>
 </html>

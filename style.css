@@ -1757,6 +1757,24 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 .msg-att-dl .i { display: flex; }
 .msg-att-dl .i { width: 18px; height: 18px; }
 .msg-att-item.is-file .msg-att-del { top: -7px; right: -7px; }
+/* audio / video players inside a message */
+.msg-att-item.is-media { width: 100%; }
+.msg-media-card { background: var(--bg-input); border-radius: 8px; padding: 8px; margin-top: 4px; width: 100%; box-sizing: border-box; }
+.msg-media { display: block; width: 100%; border-radius: 6px; outline: 0; }
+.msg-media-video { max-height: 320px; background: #000; }
+.msg-media-audio { height: 40px; }
+.msg-media-cap { display: flex; align-items: center; gap: 8px; margin-top: 8px; min-width: 0; }
+.msg-media-cap .mfc-icon { width: 18px; height: 18px; }
+.mmc-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mmc-size { font-size: 12px; color: var(--text-faint); flex-shrink: 0; }
+.msg-media-dl {
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--accent); color: #fff; text-decoration: none; transition: filter .12s ease, transform .12s ease;
+}
+.msg-media-dl:hover { filter: brightness(1.15); transform: scale(1.08); }
+.msg-media-dl .i { display: flex; width: 15px; height: 15px; }
+.msg-media-err { padding: 10px 12px; font-size: 13px; color: var(--text-muted); }
+.msg-att-item.is-media .msg-att-del { top: -7px; right: -7px; }
 
 /* ============ STAGED ATTACHMENTS (draft strip above composer) ============ */
 .attachment-draft {
@@ -4070,3 +4088,82 @@ body.is-mobile .sys-ico { flex-basis: 32px; }
 .sic-replay-seg + .sic-replay-seg { border-left: 1px solid var(--border, rgba(255,255,255,.2)); }
 .sic-replay-seg:hover { background: rgba(255,255,255,.08); }
 .sic-replay { align-self: stretch; width: 100%; box-sizing: border-box; }
+
+/* ---------- staff: add a song (Admin / Owner panel > Shop > Music) ---------- */
+.music-creator { display: flex; flex-direction: column; gap: 12px; }
+.music-file-input { width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; background: var(--bg-input); color: var(--text-normal); font: inherit; font-size: 13px; }
+.music-anim-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.music-anim-row .music-anim-name { flex: 0 0 38%; min-width: 0; }
+.music-anim-row .music-anim-file { flex: 1; min-width: 0; padding: 6px; border-radius: 6px; background: var(--bg-input); color: var(--text-normal); font: inherit; font-size: 12px; }
+.music-anim-count { font-weight: 600; color: var(--text-faint); margin-left: 6px; }
+.music-publish-status { font-size: 13px; color: var(--text-muted); min-height: 18px; }
+
+.music-card-preview { max-width: 320px; }
+.music-card-preview .sic-music-preview { height: 112px; }
+.shop-edit-banner { display: flex; flex-direction: column; gap: 8px; }
+.shop-edit-banner .sic-music-preview { height: 96px; max-width: 280px; }
+
+
+/* ============================================================
+   RICH PRESENCE (activity status): profile card, friends list line, phone Home cards, Settings pane
+   ============================================================ */
+.rpc-card { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.07); border-radius: 12px; padding: 12px; margin: 4px 0 10px; }
+.rpc-head { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+.rpc-body { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.rpc-img { width: 58px; height: 58px; flex: none; border-radius: 10px; background: rgba(255,255,255,.08) center / cover no-repeat; }
+.rpc-img-none { display: flex; align-items: center; justify-content: center; font-size: 24px; color: var(--text-muted); }
+.rpc-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rpc-name { font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rpc-line, .rpc-time { font-size: 13px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rpc-time { color: var(--text-faint); font-size: 12px; }
+.rpc-preview .rpc-card { margin: 0; }
+.rpc-none { color: var(--text-muted); font-size: 14px; padding: 4px 0; }
+.rpc-form { display: flex; flex-direction: column; gap: 12px; margin-top: 6px; padding: 14px; border-radius: 12px; background: rgba(255,255,255,.04); }
+.rpc-form-title { font-weight: 800; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.rpc-form .field { margin: 0; }
+.rpc-form select, .rpc-form input[type="text"], .rpc-form input[type="url"] { width: 100%; }
+.rpc-form-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.rpc-dev { margin-top: 14px; font-size: 13px; color: var(--text-muted); }
+.rpc-dev summary { cursor: pointer; font-weight: 600; color: var(--text-normal); }
+.rpc-dev pre { background: rgba(0,0,0,.35); padding: 10px 12px; border-radius: 8px; overflow-x: auto; font-size: 12px; line-height: 1.5; white-space: pre; user-select: text; }
+.friend-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.friend-row-text .friend-row-name { flex: none; align-self: flex-start; max-width: 100%; }
+.friend-row-act { font-size: 12.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-activity, .dm-time { display: none; }
+
+/* ============================================================
+   PHONE POLISH: closer to Discord's phone app
+   ============================================================ */
+/* Friend activity cards across the top of Home, like Discord's "Listening to" cards. */
+body.is-mobile .home-activity:not(.hidden) { display: flex; gap: 10px; overflow-x: auto; padding: 2px 16px 12px; margin: 0 -8px; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+body.is-mobile .home-activity::-webkit-scrollbar { display: none; }
+body.is-mobile .rpc-home-card { flex: 0 0 min(78%, 300px); scroll-snap-align: start; display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 20px; background: rgba(255,255,255,.06); min-width: 0; cursor: pointer; }
+body.is-mobile .rpc-home-card:active { background: rgba(255,255,255,.1); }
+body.is-mobile .rpch-art { width: 62px; height: 62px; flex: none; border-radius: 14px; background: rgba(255,255,255,.08) center / cover no-repeat; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--text-muted); }
+body.is-mobile .rpch-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+body.is-mobile .rpch-who { font-weight: 700; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.is-mobile .rpch-act, body.is-mobile .rpch-sub { font-size: 13px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Message rows: the time sits on the right, name and preview on the left. */
+body.is-mobile .dm-row .dm-time { display: block; flex: none; align-self: flex-start; margin-top: 4px; font-size: 13px; color: var(--text-faint); }
+body.is-mobile .dm-row.has-nameplate .dm-time { position: relative; z-index: 1; color: rgba(255,255,255,.75); }
+body.is-mobile .mht-title { font-size: 30px; letter-spacing: -.01em; }
+/* The server list gets Discord's white marker on the left edge for the selected server. */
+body.is-mobile #server-rail { overflow-x: visible; }
+body.is-mobile .rail-item { position: relative; overflow: visible; }
+body.is-mobile .rail-item::before { display: block; content: ''; position: absolute; left: -6px; top: 50%; width: 4px; height: 0; border-radius: 0 4px 4px 0; background: var(--text-header, #fff); transform: translateY(-50%); transition: height .18s ease; pointer-events: none; }
+body.is-mobile .rail-item.active::before { height: 28px; }
+/* The message box: one tidy line. A long "Message @name" used to wrap and get cut off. */
+body.is-mobile #composer textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.is-mobile #composer textarea { white-space: pre-wrap; min-width: 0; }
+
+/* Settings on a phone: the tabs sit in one swipeable row instead of wrapping into a block that fills half the screen. */
+body.is-mobile #settings-nav { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; flex-shrink: 0; gap: 8px; padding: 14px 12px 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+body.is-mobile #settings-nav::-webkit-scrollbar { display: none; }
+body.is-mobile #settings-nav .nav-item { flex: none; white-space: nowrap; font-size: 15px; padding: 9px 16px; margin: 0; border-radius: 999px; background: rgba(255,255,255,.06); }
+body.is-mobile #settings-nav .nav-item.active { background: var(--accent); color: #fff; }
+body.is-mobile #settings-content { padding: 16px 16px 28px; }
+#self-status-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#open-my-settings, .who { min-width: 0; }
+
+.rpc-auto-list { margin-top: 14px; padding: 14px; border-radius: 12px; background: rgba(255,255,255,.04); }
+.rpc-auto-list ul { margin: 8px 0 0; padding-left: 20px; color: var(--text-muted); font-size: 14px; line-height: 1.7; }
