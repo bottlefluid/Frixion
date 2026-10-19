@@ -4107,15 +4107,20 @@ body.is-mobile .sys-ico { flex-basis: 32px; }
 /* ============================================================
    RICH PRESENCE (activity status): profile card, friends list line, phone Home cards, Settings pane
    ============================================================ */
-.rpc-card { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.07); border-radius: 12px; padding: 12px; margin: 4px 0 10px; }
-.rpc-head { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
-.rpc-body { display: flex; gap: 12px; align-items: center; min-width: 0; }
-.rpc-img { width: 58px; height: 58px; flex: none; border-radius: 10px; background: rgba(255,255,255,.08) center / cover no-repeat; }
-.rpc-img-none { display: flex; align-items: center; justify-content: center; font-size: 24px; color: var(--text-muted); }
+.rpc-card { background: var(--bg-tertiary, rgba(255,255,255,.05)); border: 1px solid rgba(255,255,255,.07); border-radius: 10px; padding: 14px; margin: 4px 0 10px; }
+.rpc-head { font-size: 13px; font-weight: 700; color: var(--text-normal); margin-bottom: 10px; }
+.rpc-body { display: flex; gap: 14px; align-items: center; min-width: 0; }
+.rpc-img { width: 68px; height: 68px; flex: none; border-radius: 10px; background: rgba(255,255,255,.08) center / cover no-repeat; }
+.rpc-art-icon { background-color: rgba(0,0,0,.32); background-size: 44px 44px; background-position: center; background-repeat: no-repeat; }
+.rpc-art-glyph { display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,.92); }
+.rpc-art-glyph svg { width: 44%; height: 44%; }
 .rpc-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.rpc-name { font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rpc-line, .rpc-time { font-size: 13px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rpc-time { color: var(--text-faint); font-size: 12px; }
+.rpc-name { font-weight: 700; font-size: 16px; color: var(--text-header, #fff); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rpc-line { font-size: 13.5px; color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rpc-clock { display: flex; align-items: center; gap: 6px; margin-top: 2px; color: #23a55a; font-size: 13px; }
+.rpc-clock-ico { display: inline-flex; width: 16px; height: 16px; }
+.rpc-clock-ico svg { width: 16px; height: 16px; }
+.rpc-clock-val { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
 .rpc-preview .rpc-card { margin: 0; }
 .rpc-none { color: var(--text-muted); font-size: 14px; padding: 4px 0; }
 .rpc-form { display: flex; flex-direction: column; gap: 12px; margin-top: 6px; padding: 14px; border-radius: 12px; background: rgba(255,255,255,.04); }
@@ -4139,7 +4144,8 @@ body.is-mobile .home-activity:not(.hidden) { display: flex; gap: 10px; overflow-
 body.is-mobile .home-activity::-webkit-scrollbar { display: none; }
 body.is-mobile .rpc-home-card { flex: 0 0 min(78%, 300px); scroll-snap-align: start; display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 20px; background: rgba(255,255,255,.06); min-width: 0; cursor: pointer; }
 body.is-mobile .rpc-home-card:active { background: rgba(255,255,255,.1); }
-body.is-mobile .rpch-art { width: 62px; height: 62px; flex: none; border-radius: 14px; background: rgba(255,255,255,.08) center / cover no-repeat; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--text-muted); }
+body.is-mobile .rpch-art { width: 62px; height: 62px; flex: none; border-radius: 14px; background: rgba(255,255,255,.08) center / cover no-repeat; }
+body.is-mobile .rpch-art.rpc-art-icon { background-size: 40px 40px; }
 body.is-mobile .rpch-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 body.is-mobile .rpch-who { font-weight: 700; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.is-mobile .rpch-act, body.is-mobile .rpch-sub { font-size: 13px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

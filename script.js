@@ -483,6 +483,11 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.25', date: '2026-10-19', title: 'Nicer activity cards',
+    notes: [
+      'Activity cards have a new look with a big icon, a live timer and a symbol for what someone is doing, like a game controller for games and headphones for music.',
+      'In the Frixion app for computers, your games and Spotify show their own app icons.',
+    ] },
   { v: '4.24', date: '2026-10-18', title: 'The Frixion desktop app',
     notes: [
       'Frixion now has an app for your computer. In it, your friends can see the game you are playing and the Spotify song you are listening to, automatically, just like Discord.',
@@ -1801,7 +1806,7 @@ function cleanActivity(a) {
   if (!a || typeof a !== 'object') return null;
   const name = rpcStr(a.name, 40);
   if (!name) return null;
-  const image = typeof a.image === 'string' && /^https:\/\/\S{1,300}$/i.test(a.image) ? a.image : null;
+  const image = typeof a.image === 'string' && (/^https:\/\/\S{1,300}$/i.test(a.image) || /^data:image\/png;base64,[A-Za-z0-9+\/=]{20,24000}$/.test(a.image)) ? a.image : null;
   const startedAt = Number(a.startedAt) > 0 && Number(a.startedAt) < Date.now() + 86400000 ? Number(a.startedAt) : null;
   return { type: ACTIVITY_TYPES[a.type] ? a.type : 'playing', name, details: rpcStr(a.details, 60), state: rpcStr(a.state, 60), image, startedAt, source: ['music', 'game', 'media', 'desktop'].includes(a.source) ? a.source : 'music' };
 }
@@ -1867,12 +1872,39 @@ function fmtElapsed(ms) {
   if (m < 1) return 'just now';
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 }
+// A running clock like Discord's: 2:08:14 (or 8:05 under an hour).
+function fmtClock(ms) {
+  const t = Math.floor(Math.max(0, ms) / 1000), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+}
+// Small line icons for each kind of activity. They are also the picture shown when there is no artwork.
+const ACT_ICONS = {
+  playing: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.5 6C4.5 6 3 8.4 2.4 11.7l-.9 5c-.3 1.8.9 3.3 2.7 3.3 1.1 0 1.9-.6 2.6-1.5L8 16.5h8l1.2 2c.7.9 1.5 1.5 2.6 1.5 1.8 0 3-1.5 2.7-3.3l-.9-5C21 8.4 19.500 6 16.500 6h-9ZM8 9v1.500H6.500V12H8v1.500h1.500V12H11v-1.500H9.500V9H8Zm7.500.500a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm2.500 2a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/></svg>',
+  listening: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 0 0-9 9v6a3 3 0 0 0 3 3h1.500a1.500 1.500 0 0 0 1.500-1.500v-5a1.500 1.500 0 0 0-1.500-1.500H5v-1a7 7 0 0 1 14 0v1h-2.500a1.500 1.500 0 0 0-1.500 1.500v5a1.500 1.500 0 0 0 1.500 1.500H18a3 3 0 0 0 3-3v-6a9 9 0 0 0-9-9Z"/></svg>',
+  watching: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 4h14a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Zm5 4.500v7l6-3.500-6-3.500Z"/></svg>',
+  competing: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 3h10v2h3v3a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.900V17h3v2H8v-2h3v-2.100A5 5 0 0 1 8.300 12H8a4 4 0 0 1-4-4V5h3V3Zm-1 4v1a2 2 0 0 0 1.100 1.800A7 7 0 0 1 7 8V7H6Zm12 0h-1v1c0 .6-.1 1.200-.1 1.800A2 2 0 0 0 18 8V7Z"/></svg>',
+};
+const actIcon = a => ACT_ICONS[a && a.type] || ACT_ICONS.playing;
+// The big square next to an activity: real artwork if there is some, otherwise a coloured tile with the icon.
+// A program icon from the desktop app (a data: PNG) is small, so it sits on a dark tile instead of being stretched.
+function activityArtHTML(a, cls) {
+  if (a.image && a.image.startsWith('data:')) return `<div class="${cls} rpc-art-icon" style="background-image:url('${esc(a.image)}')"></div>`;
+  if (a.image) return `<div class="${cls}" style="background-image:url('${esc(a.image)}')"></div>`;
+  let h = 0; for (const ch of a.name || '') h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return `<div class="${cls} rpc-art-glyph" style="background:linear-gradient(135deg,hsl(${h} 55% 44%),hsl(${(h + 50) % 360} 60% 30%))">${actIcon(a)}</div>`;
+}
 function activityCardHTML(a) {
   if (!a) return '';
+  const clock = a.startedAt ? `<div class="rpc-clock"><span class="rpc-clock-ico">${actIcon(a)}</span><span class="rpc-clock-val" data-start="${a.startedAt}">${fmtClock(Date.now() - a.startedAt)}</span></div>` : '';
   return `<div class="rpc-card"><div class="rpc-head">${esc(ACTIVITY_TYPES[a.type])}</div><div class="rpc-body">
-    ${a.image ? `<div class="rpc-img" style="background-image:url('${esc(a.image)}')"></div>` : `<div class="rpc-img rpc-img-none">${a.type === 'listening' ? '♪' : '▶'}</div>`}
-    <div class="rpc-text"><div class="rpc-name">${esc(a.name)}</div>${a.details ? `<div class="rpc-line">${esc(a.details)}</div>` : ''}${a.state ? `<div class="rpc-line">${esc(a.state)}</div>` : ''}${a.startedAt ? `<div class="rpc-time">${esc(fmtElapsed(Date.now() - a.startedAt))} elapsed</div>` : ''}</div></div></div>`;
+    ${activityArtHTML(a, 'rpc-img')}
+    <div class="rpc-text"><div class="rpc-name">${esc(a.name)}</div>${a.details ? `<div class="rpc-line">${esc(a.details)}</div>` : ''}${a.state ? `<div class="rpc-line">${esc(a.state)}</div>` : ''}${clock}</div></div></div>`;
 }
+// Keeps every visible clock ticking (one timer for all of them, and it only does work while there is one on screen).
+setInterval(() => {
+  if (document.hidden) return;
+  document.querySelectorAll('.rpc-clock-val[data-start]').forEach(el => { el.textContent = fmtClock(Date.now() - Number(el.dataset.start)); });
+}, 1000);
 // The row of friend activity cards at the top of the phone home screen.
 function renderHomeActivity() {
   const wrap = $('home-activity');
@@ -1882,7 +1914,7 @@ function renderHomeActivity() {
   wrap.innerHTML = cards.map(({ u, a }) => {
     const p = profileCache[u] || { username: u, avatarColor: '#5865f2' };
     return `<div class="rpc-home-card" data-openprofile="${esc(u)}">
-      <div class="rpch-art"${a.image ? ` style="background-image:url('${esc(a.image)}')"` : ''}>${a.image ? '' : (a.type === 'listening' ? '♪' : '▶')}</div>
+      ${activityArtHTML(a, 'rpch-art')}
       <div class="rpch-text"><div class="rpch-who">${esc(displayNameOf(p))}</div><div class="rpch-act">${esc(activityLine(a))}</div>${a.details ? `<div class="rpch-sub">${esc(a.details)}</div>` : ''}</div></div>`;
   }).join('');
   wrap.querySelectorAll('[data-openprofile]').forEach(b => b.onclick = () => openProfileModal(b.dataset.openprofile));
