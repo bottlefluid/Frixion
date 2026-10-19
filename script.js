@@ -483,6 +483,12 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.24', date: '2026-10-18', title: 'The Frixion desktop app',
+    notes: [
+      'Frixion now has an app for your computer. In it, your friends can see the game you are playing and the Spotify song you are listening to, automatically, just like Discord.',
+      'The app has real minimize, maximize and close buttons, can stay in your system tray, and can start with your computer.',
+      'You can choose whether games and Spotify are shared in Settings, then Activity Status.',
+    ] },
   { v: '4.23', date: '2026-10-18', title: 'Activity status and a better phone',
     notes: [
       'Activity Status is here, and it is all automatic. Friends can see when you are listening to your Shop song, playing a game, or playing a video or audio file in a chat. It shows on profiles, in the Friends list and on your phone Home screen, and you can turn it off in Settings.',
@@ -1785,6 +1791,10 @@ function computeDisplayStatus(uid) {
 // so games and apps outside Frixion can't be detected from here.
 // ============================================================
 const ACTIVITY_TYPES = { playing: 'Playing', listening: 'Listening to', watching: 'Watching', competing: 'Competing in' };
+// The Frixion desktop app (see frixion-desktop) puts window.frixionDesktop on the page. In a normal browser this is undefined and nothing below runs.
+const DESKTOP = (window.frixionDesktop && window.frixionDesktop.isDesktop) ? window.frixionDesktop : null;
+if (DESKTOP) document.documentElement.classList.add('is-electron');
+let desktopActivity = null, desktopDetectSent = null;   // desktopActivity: the game / Spotify song the app found on this computer
 let myActivityPublished = null, activityDebounce = 0, musicStartedAt = 0, rpcGameStartedAt = 0, rpcMedia = null;   // rpcMedia: { el, type, name, startedAt } for a chat file that is playing
 const rpcStr = (v, n) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n) : '');
 function cleanActivity(a) {
@@ -1793,15 +1803,18 @@ function cleanActivity(a) {
   if (!name) return null;
   const image = typeof a.image === 'string' && /^https:\/\/\S{1,300}$/i.test(a.image) ? a.image : null;
   const startedAt = Number(a.startedAt) > 0 && Number(a.startedAt) < Date.now() + 86400000 ? Number(a.startedAt) : null;
-  return { type: ACTIVITY_TYPES[a.type] ? a.type : 'playing', name, details: rpcStr(a.details, 60), state: rpcStr(a.state, 60), image, startedAt, source: ['music', 'game', 'media'].includes(a.source) ? a.source : 'music' };
+  return { type: ACTIVITY_TYPES[a.type] ? a.type : 'playing', name, details: rpcStr(a.details, 60), state: rpcStr(a.state, 60), image, startedAt, source: ['music', 'game', 'media', 'desktop'].includes(a.source) ? a.source : 'music' };
 }
 // One switch. (An older version also had a separate "share my song" switch; turning that off still counts as off.)
 function rpcEnabled() {
   const r = (myProfile && myProfile.rpc) || {};
   return r.enabled !== false && r.showMusic !== false;
 }
+// Games and Spotify on the computer are shared unless the person turns "Show games and Spotify" off.
+function detectEnabled() { return rpcEnabled() && !(myProfile && myProfile.rpc && myProfile.rpc.detectGames === false); }
 function computeMyActivity() {
   if (!rpcEnabled()) return null;
+  if (DESKTOP && desktopActivity && detectEnabled()) return desktopActivity;
   if (typeof currentGameId !== 'undefined' && currentGameId) {
     const g = GAME_TILES.find(x => x.id === currentGameId);
     if (g) return cleanActivity({ type: 'playing', name: g.title, details: 'on Frixion', startedAt: rpcGameStartedAt || null, source: 'game' });
@@ -1811,7 +1824,21 @@ function computeMyActivity() {
   return null;
 }
 function activityRefresh() { clearTimeout(activityDebounce); activityDebounce = setTimeout(publishActivity, 250); }
+function syncDesktopDetection() {
+  if (!DESKTOP) return;
+  const on = !!myUid && detectEnabled();
+  if (on === desktopDetectSent) return;
+  desktopDetectSent = on;
+  try { DESKTOP.setDetection(on); } catch (e) {}
+  if (!on) desktopActivity = null;
+}
+if (DESKTOP) {
+  try {
+    DESKTOP.onActivity(a => { desktopActivity = cleanActivity(a ? { ...a, source: 'desktop' } : null); activityRefresh(); });
+  } catch (e) { console.warn('Could not connect to the desktop app.', e); }
+}
 function publishActivity() {
+  syncDesktopDetection();
   if (!myUid) return;
   const act = computeMyActivity();
   const sig = JSON.stringify(act);
@@ -1872,8 +1899,17 @@ function renderRpcPreview() {
 function populateRpc() {
   if (!$('rpc-share-toggle') || !myProfile) return;
   $('rpc-share-toggle').checked = rpcEnabled();
+  if ($('rpc-detect-row')) {
+    $('rpc-detect-row').classList.toggle('hidden', !DESKTOP);
+    $('rpc-desktop-note').classList.toggle('hidden', !!DESKTOP);
+    if ($('rpc-detect-toggle')) $('rpc-detect-toggle').checked = !(myProfile.rpc && myProfile.rpc.detectGames === false);
+  }
   renderRpcPreview();
 }
+if ($('rpc-detect-toggle')) $('rpc-detect-toggle').onchange = async (e) => {
+  try { await db.collection('users').doc(myUid).update({ 'rpc.detectGames': e.target.checked }); }
+  catch (err) { e.target.checked = !e.target.checked; toast('Could not save that.', 'error'); }
+};
 if ($('rpc-share-toggle')) $('rpc-share-toggle').onchange = async (e) => {
   try { await db.collection('users').doc(myUid).update({ 'rpc.enabled': e.target.checked, 'rpc.showMusic': FieldValue.delete() }); }
   catch (err) { e.target.checked = !e.target.checked; toast('Could not save that.', 'error'); }
@@ -1944,8 +1980,9 @@ document.addEventListener('click', (e) => {
   if (!$('inbox-popover').contains(e.target) && !e.target.closest('#tb-inbox-btn')) $('inbox-popover').classList.add('hidden');
   if (!$('help-popover').contains(e.target) && !e.target.closest('#tb-help-btn')) $('help-popover').classList.add('hidden');
 });
-$('tb-min-btn').onclick = () => toast('Minimize Frixion using your browser or OS window controls.');
+$('tb-min-btn').onclick = () => { if (DESKTOP) DESKTOP.minimize(); else toast('Minimize Frixion using your browser or OS window controls.'); };
 $('tb-max-btn').onclick = () => {
+  if (DESKTOP) { DESKTOP.toggleMaximize(); return; }
   if (!document.fullscreenElement) {
     (document.documentElement.requestFullscreen ? document.documentElement.requestFullscreen() : Promise.reject())
       .catch(() => toast('Fullscreen is not available here.'));
@@ -1953,13 +1990,16 @@ $('tb-max-btn').onclick = () => {
     document.exitFullscreen();
   }
 };
-document.addEventListener('fullscreenchange', () => {
+function setMaxButton(isMax) {
   const restoreIcon = '<svg viewBox="0 0 10 10" width="10" height="10"><rect x="1.5" y="2.5" width="5" height="5" fill="none" stroke="currentColor" stroke-width="1.1"/><path d="M3 2.5V1.5h5.5V7H7.5" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>';
   const maxIcon = '<svg viewBox="0 0 10 10" width="10" height="10"><rect x="1.5" y="1.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>';
-  $('tb-max-btn').innerHTML = document.fullscreenElement ? restoreIcon : maxIcon;
-  $('tb-max-btn').title = document.fullscreenElement ? 'Restore Down' : 'Maximize';
-});
+  $('tb-max-btn').innerHTML = isMax ? restoreIcon : maxIcon;
+  $('tb-max-btn').title = isMax ? 'Restore Down' : 'Maximize';
+}
+document.addEventListener('fullscreenchange', () => { if (!DESKTOP) setMaxButton(!!document.fullscreenElement); });
+if (DESKTOP) { try { DESKTOP.onMaximizeChange(setMaxButton); } catch (e) {} }
 $('tb-close-btn').onclick = () => {
+  if (DESKTOP) { DESKTOP.close(); return; }
   try { window.close(); } catch (e) {}
   setTimeout(() => toast("Browsers don't let a page close its own tab — close it manually."), 50);
 };

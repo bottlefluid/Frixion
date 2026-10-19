@@ -12,7 +12,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=77">
+<link rel="stylesheet" href="style.css?v=78">
 </head>
 <body>
 
@@ -823,6 +823,14 @@
           </div>
           <label class="toggle-switch"><input type="checkbox" id="rpc-share-toggle" checked><span class="toggle-slider"></span></label>
         </div>
+        <div class="setting-row hidden" id="rpc-detect-row">
+          <div class="setting-row-text">
+            <div class="setting-row-title">Show games and Spotify</div>
+            <div class="setting-row-desc">The Frixion app notices the game you are playing and the Spotify song you are listening to on this computer. Turn this off to stop sharing them.</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="rpc-detect-toggle" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="rpc-desktop-note hidden" id="rpc-desktop-note">Games on your computer and your Spotify song are shared automatically when you use the Frixion app for computers.</div>
         <div class="field"><label>Showing right now</label><div id="rpc-preview" class="rpc-preview"></div></div>
         <div class="rpc-auto-list">
           <div class="rpc-form-title">What gets shared</div>
@@ -830,6 +838,7 @@
             <li><b>Playing</b> a game from the Games hub</li>
             <li><b>Watching</b> or <b>Listening to</b> a video or audio file you're playing in a chat</li>
             <li><b>Listening to</b> the Shop song you have equipped</li>
+            <li>In the Frixion computer app: the <b>game</b> you're playing and your <b>Spotify</b> song</li>
           </ul>
         </div>
       </div>
@@ -1556,6 +1565,6 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=77"></script>
+<script defer src="script.js?v=78"></script>
 </body>
 </html>
