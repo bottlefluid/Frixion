@@ -1888,10 +1888,14 @@ const actIcon = a => ACT_ICONS[a && a.type] || ACT_ICONS.playing;
 // The big square next to an activity: real artwork if there is some, otherwise a coloured tile with the icon.
 // A program icon from the desktop app (a data: PNG) is small, so it sits on a dark tile instead of being stretched.
 function activityArtHTML(a, cls) {
-  if (a.image && a.image.startsWith('data:')) return `<div class="${cls} rpc-art-icon" style="background-image:url('${esc(a.image)}')"></div>`;
-  if (a.image) return `<div class="${cls}" style="background-image:url('${esc(a.image)}')"></div>`;
+  // Your own picture for a game wins if you added one: put Icons/<game name>.png in the site (Roblox -> Icons/roblox.png,
+  // Minecraft -> Icons/minecraft.png, "Rocket League" -> Icons/rocket-league.png). No file means it is quietly ignored.
+  const slug = (a.type === 'playing' && a.source !== 'media') ? String(a.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : '';
+  const own = slug ? `<img class="rpc-art-file" src="Icons/${esc(slug)}.png" alt="" onerror="this.remove()">` : '';
+  if (a.image && a.image.startsWith('data:')) return `<div class="${cls} rpc-art-icon" style="background-image:url('${esc(a.image)}')">${own}</div>`;
+  if (a.image) return `<div class="${cls}" style="background-image:url('${esc(a.image)}')">${own}</div>`;
   let h = 0; for (const ch of a.name || '') h = (h * 31 + ch.charCodeAt(0)) % 360;
-  return `<div class="${cls} rpc-art-glyph" style="background:linear-gradient(135deg,hsl(${h} 55% 44%),hsl(${(h + 50) % 360} 60% 30%))">${actIcon(a)}</div>`;
+  return `<div class="${cls} rpc-art-glyph" style="background:linear-gradient(135deg,hsl(${h} 55% 44%),hsl(${(h + 50) % 360} 60% 30%))">${actIcon(a)}${own}</div>`;
 }
 function activityCardHTML(a) {
   if (!a) return '';
