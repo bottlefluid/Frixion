@@ -483,6 +483,11 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.26', date: '2026-10-19', title: 'Get the Frixion app',
+    notes: [
+      'If you open Frixion in a browser on a computer, it now offers the Frixion app. Choose "Don\'t remind me again" and it stops asking.',
+      'There is a new Frixion App tab in Settings with the download for Windows, Mac and Linux.',
+    ] },
   { v: '4.25', date: '2026-10-19', title: 'Nicer activity cards',
     notes: [
       'Activity cards have a new look with a big icon, a live timer and a symbol for what someone is doing, like a game controller for games and headphones for music.',
@@ -2956,6 +2961,7 @@ function initAppForUser() {
       } else { startTermination(tm); return; }
     }
     syncGameState(myProfile);
+    maybeShowAppPrompt();
     const liveBan = banStatus(myProfile);
     if (liveBan.banned) showBanScreen(liveBan, true);   // banned while signed in
     applyShopTheme(myProfile.equippedTheme);
@@ -9349,6 +9355,107 @@ $('emoji-search').addEventListener('input', renderEmojiPickerGrids);
 document.addEventListener('click', emojiPickerOutsideClick);
 
 // ============================================================
+// THE FRIXION APP FOR COMPUTERS: a reminder to get it, and the Settings > Frixion App tab.
+// Downloads come from the GitHub Releases of the desktop app's repo (publish a release there and the newest one is picked up here).
+// ============================================================
+const APP_REPO = 'bottlefluid/frx';                      // the desktop app's GitHub repo: owner/name
+const APP_RELEASES_PAGE = `https://github.com/${APP_REPO}/releases/latest`;
+const appOS = (() => {
+  if (isMobileDevice()) return null;                    // phones and tablets cannot install it
+  const ua = navigator.userAgent || '';
+  if (/Windows/i.test(ua)) return 'win';
+  if (/Mac OS X|Macintosh/i.test(ua)) return 'mac';
+  if (/Linux|X11/i.test(ua) && !/Android/i.test(ua)) return 'linux';
+  return null;
+})();
+const APP_OS_NAMES = { win: 'Windows', mac: 'Mac', linux: 'Linux' };
+let appReleaseP = null;
+// { version, win, mac: [{label,url}], linux } from the newest release, or null if it cannot be read (then the Releases page is linked).
+function getAppRelease() {
+  if (appReleaseP) return appReleaseP;
+  appReleaseP = (async () => {
+    try {
+      const cached = JSON.parse(sessionStorage.getItem('frixion_app_release') || 'null');
+      if (cached && Date.now() - cached.at < 3600000) return cached.data;
+    } catch (e) {}
+    try {
+      const r = await fetch(`https://api.github.com/repos/${APP_REPO}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' } });
+      if (!r.ok) return null;
+      const j = await r.json();
+      const assets = (j.assets || []).filter(a => a && a.browser_download_url);
+      const by = ext => assets.filter(a => a.name.toLowerCase().endsWith(ext));
+      const data = {
+        version: String(j.tag_name || '').replace(/^v/, ''),
+        win: (by('.exe')[0] || {}).browser_download_url || null,
+        linux: (by('.appimage')[0] || {}).browser_download_url || null,
+        mac: by('.dmg').map(a => ({ label: /arm64/i.test(a.name) ? 'Mac (Apple chip)' : 'Mac (Intel)', url: a.browser_download_url })),
+      };
+      try { sessionStorage.setItem('frixion_app_release', JSON.stringify({ at: Date.now(), data })); } catch (e) {}
+      return data;
+    } catch (e) { return null; }
+  })();
+  return appReleaseP;
+}
+function appDownloadLinks(rel) {
+  const out = [];
+  const pageLink = label => ({ label, url: APP_RELEASES_PAGE });
+  if (!rel) return ['win', 'mac', 'linux'].map(k => pageLink(APP_OS_NAMES[k]));
+  out.push(rel.win ? { label: 'Windows', url: rel.win } : pageLink('Windows'));
+  if (rel.mac.length) out.push(...rel.mac); else out.push(pageLink('Mac'));
+  out.push(rel.linux ? { label: 'Linux', url: rel.linux } : pageLink('Linux'));
+  return out;
+}
+const labelOS = l => /^Mac/.test(l) ? 'mac' : /^Windows/.test(l) ? 'win' : 'linux';
+// Fills a box with a big button for this computer and smaller links for the others.
+async function renderAppDownloads(box) {
+  if (!box) return;
+  box.innerHTML = `<a class="app-dl-main" href="${APP_RELEASES_PAGE}" target="_blank" rel="noopener">Download the app</a>`;
+  const rel = await getAppRelease();
+  const links = appDownloadLinks(rel);
+  const mine = links.filter(l => labelOS(l.label) === appOS);
+  const others = links.filter(l => labelOS(l.label) !== appOS);
+  const dl = l => `<a href="${esc(l.url)}"${l.url === APP_RELEASES_PAGE ? ' target="_blank" rel="noopener"' : ''}>`;
+  box.innerHTML = (mine.length ? mine : links.slice(0, 1)).map(l => `${dl(l).replace('<a ', '<a class="app-dl-main" ')}Download for ${esc(l.label)}${rel && rel.version ? ` <small>v${esc(rel.version)}</small>` : ''}</a>`).join('')
+    + `<div class="app-dl-others">Other computers: ${others.map(l => `${dl(l)}${esc(l.label)}</a>`).join(' · ')}</div>`
+    + `<div class="app-dl-tip">${appOS === 'mac' ? 'The first time, right-click the app and choose Open.' : appOS === 'linux' ? 'Make the file runnable (right-click, Properties, Allow executing as program), then open it.' : 'If Windows says it protected your PC, click More info, then Run anyway.'}</div>`;
+}
+const appPromptOff = () => { try { if (localStorage.getItem('frixion_app_prompt_off') === '1') return true; } catch (e) {} return !!(myProfile && myProfile.hideAppPrompt); };
+async function setAppPromptOff(off) {
+  try { off ? localStorage.setItem('frixion_app_prompt_off', '1') : localStorage.removeItem('frixion_app_prompt_off'); } catch (e) {}
+  if (myUid) { try { await db.collection('users').doc(myUid).update({ hideAppPrompt: off ? true : FieldValue.delete() }); } catch (e) {} }
+}
+let appPromptDone = false;
+// Called once per visit, after sign-in. Not in the app, not on a phone, and not if "do not remind me again" was chosen.
+function maybeShowAppPrompt() {
+  if (appPromptDone) return;
+  appPromptDone = true;
+  if (DESKTOP || !appOS || appPromptOff()) return;
+  setTimeout(() => {
+    if (!myUid || appPromptOff()) return;
+    renderAppDownloads($('app-prompt-dl'));
+    openModal('app-prompt-modal');
+  }, 2500);
+}
+$('app-prompt-later').onclick = () => closeModal('app-prompt-modal');
+$('app-prompt-never').onclick = () => { closeModal('app-prompt-modal'); setAppPromptOff(true); toast("Okay. You can still get the app in Settings, under Frixion App."); };
+function populateAppPane() {
+  const box = $('app-pane-body');
+  if (!box) return;
+  if (DESKTOP) {
+    box.innerHTML = `<p class="desc">You are using the Frixion app${DESKTOP.version ? ` (version ${esc(DESKTOP.version)})` : ''}. It updates itself, so there is nothing to do.</p>
+      <div class="rpc-auto-list"><div class="rpc-form-title">What the app does</div><ul>
+        <li>Shows your game and Spotify song to friends (Settings, then Activity Status)</li><li>Stays in the system tray when you close the window</li><li>Can start with your computer (right-click the tray icon)</li></ul></div>`;
+    return;
+  }
+  box.innerHTML = `<p class="desc">${appOS ? 'Get Frixion as an app on your computer.' : 'The Frixion app is for Windows, Mac and Linux computers. Open Frixion on a computer to download it.'}</p>
+    <ul class="app-perks"><li>Your friends see the game you are playing and your Spotify song</li><li>Stays in your tray so you do not miss messages</li><li>Can start with your computer</li><li>Updates itself</li></ul>
+    <div id="app-pane-dl" class="app-dl"></div>
+    ${appOS ? `<div class="setting-row"><div class="setting-row-text"><div class="setting-row-title">Remind me to get the app</div><div class="setting-row-desc">Shows a reminder when you open Frixion in a browser.</div></div>
+      <label class="toggle-switch"><input type="checkbox" id="app-remind-toggle"${appPromptOff() ? '' : ' checked'}><span class="toggle-slider"></span></label></div>` : ''}`;
+  renderAppDownloads($('app-pane-dl'));
+  if ($('app-remind-toggle')) $('app-remind-toggle').onchange = e => setAppPromptOff(!e.target.checked);
+}
+// ============================================================
 // SETTINGS MODAL
 // ============================================================
 $('open-my-settings').onclick = () => openProfileModal(myUid);
@@ -9363,6 +9470,7 @@ document.querySelectorAll('#settings-nav .nav-item[data-pane]').forEach(item => 
     $(item.dataset.pane).classList.remove('hidden');
     if (item.dataset.pane === 'pane-updates') renderUpdates();
     if (item.dataset.pane === 'pane-activity') populateRpc();
+    if (item.dataset.pane === 'pane-app') populateAppPane();
     try { item.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); } catch (e) {}   // keeps the chosen tab in view in the phone's swipeable row
   };
 });

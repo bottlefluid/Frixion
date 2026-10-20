@@ -12,7 +12,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=80">
+<link rel="stylesheet" href="style.css?v=81">
 </head>
 <body>
 
@@ -780,6 +780,24 @@
   </div>
 </div>
 
+<!-- ============ MODAL: get the desktop app ============ -->
+<div class="modal-overlay hidden" id="app-prompt-modal" role="dialog" aria-modal="true" aria-labelledby="app-prompt-title">
+  <div class="modal-box app-prompt-box">
+    <div class="modal-header-row"><h2 id="app-prompt-title">Get the Frixion app</h2><span class="x" data-close="app-prompt-modal">✕</span></div>
+    <p class="desc">Frixion works best as an app on your computer.</p>
+    <ul class="app-perks">
+      <li>Your friends see the game you are playing and your Spotify song</li>
+      <li>Stays in your tray so you do not miss messages</li>
+      <li>Can start with your computer</li>
+    </ul>
+    <div id="app-prompt-dl" class="app-dl"></div>
+    <div class="modal-actions app-prompt-actions">
+      <button class="btn-secondary" id="app-prompt-never">Don't remind me again</button>
+      <button class="btn-secondary" id="app-prompt-later">Not now</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL: user settings ============ -->
 <div class="modal-overlay hidden" id="settings-modal">
 
@@ -794,6 +812,7 @@
       <div class="nav-item" data-pane="pane-themes">Themes</div>
       <div class="nav-item" data-pane="pane-accessibility">Accessibility</div>
       <div class="nav-label">App</div>
+      <div class="nav-item" data-pane="pane-app">Frixion App</div>
       <div class="nav-item" data-pane="pane-updates">Update Log</div>
       <div class="nav-label">&nbsp;</div>
       <div class="nav-item hidden" id="open-admin-panel">Admin Panel</div>
@@ -956,6 +975,11 @@
           <label class="gt-row"><span class="gt-name">Menu background blur</span><input type="range" id="a11y-menu-blur" min="0" max="30" step="1" value="8"><span class="gt-val" id="a11y-menu-blur-val">8px</span></label>
           <button type="button" class="btn-secondary slim" id="a11y-glass-reset">Reset to default</button>
         </div>
+      </div>
+
+      <div class="settings-pane hidden" id="pane-app">
+        <h2>Frixion App</h2>
+        <div id="app-pane-body"></div>
       </div>
 
       <div class="settings-pane hidden" id="pane-updates">
@@ -1565,6 +1589,6 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=80"></script>
+<script defer src="script.js?v=81"></script>
 </body>
 </html>

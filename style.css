@@ -4178,3 +4178,15 @@ body.is-mobile #settings-content { padding: 16px 16px 28px; }
 
 /* Desktop app */
 .rpc-desktop-note { margin: 4px 0 14px; padding: 10px 12px; border-radius: 8px; background: var(--bg-secondary, rgba(255,255,255,.04)); color: var(--text-muted); font-size: 13px; line-height: 1.4; }
+
+/* Frixion App: reminder window and Settings tab */
+.app-prompt-box { max-width: 440px; }
+.app-perks { margin: 4px 0 14px; padding-left: 20px; color: var(--text-normal); font-size: 14px; line-height: 1.6; }
+.app-dl { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }
+.app-dl-main { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 18px; border-radius: 6px; background: var(--accent, #5865f2); color: #fff; font-weight: 700; font-size: 15px; text-decoration: none; }
+.app-dl-main:hover { background: var(--accent-hover, #4752c4); }
+.app-dl-main small { font-weight: 500; opacity: .85; }
+.app-dl-others, .app-dl-tip { font-size: 13px; color: var(--text-muted); }
+.app-dl-others a { color: var(--text-link, #00a8fc); }
+.app-prompt-actions { justify-content: space-between; flex-wrap: wrap; }
+#pane-app .setting-row { margin-top: 18px; }
