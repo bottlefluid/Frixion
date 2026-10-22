@@ -12,7 +12,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=85">
+<link rel="stylesheet" href="style.css?v=86">
 </head>
 <body>
 
@@ -107,7 +107,7 @@
     <!-- REGISTER -->
     <div id="register-view" class="hidden">
       <h1>Create an account</h1>
-      <p class="sub">Pick a username and a password of 6 or more characters. No email needed.</p>
+      <p class="sub">Pick a username and password. No email needed.</p>
       <div class="auth-error" id="register-error"></div>
       <div class="field"><label>Username</label><input type="text" id="reg-username" maxlength="24" autocomplete="username"></div>
       <div class="field"><label>Password</label><input type="password" id="reg-password" autocomplete="new-password"></div>
@@ -839,15 +839,6 @@
           <div class="color-swatches" id="avatar-color-swatches"></div>
         </div>
         <button class="btn-accent-inline" id="save-account-btn">Save Changes</button>
-
-        <h3 class="settings-subhead">Password</h3>
-        <form id="change-password-form" autocomplete="on" onsubmit="return false">
-          <input type="text" id="change-password-username" autocomplete="username" hidden>
-          <div class="field"><label for="current-password">Current password</label><input type="password" id="current-password" autocomplete="current-password"></div>
-          <div class="field"><label for="new-password">New password</label><input type="password" id="new-password" autocomplete="new-password" minlength="6"></div>
-          <div class="auth-error" id="change-password-error" role="status"></div>
-          <button type="submit" class="btn-accent-inline" id="change-password-btn">Change Password</button>
-        </form>
       </div>
 
       <div class="settings-pane hidden" id="pane-activity">
@@ -1473,7 +1464,6 @@
       <div class="admin-layout">
         <div class="admin-left">
           <input class="fld-input" id="system-hub-search" placeholder="Search users" autocomplete="off">
-          <button type="button" class="btn-secondary slim" id="secure-accounts-btn" title="Moves accounts that still have a saved password over to Firebase sign-in">Secure all accounts</button>
           <div class="admin-user-list" id="system-hub-user-list"></div>
         </div>
         <div class="admin-right" id="system-hub-actions"><div class="empty">Select a user to manage.</div></div>
@@ -1591,9 +1581,8 @@
 
 <!-- All scripts are deferred: the page (and the loading screen) paints first, then they run in order. Firebase Storage is not loaded because nothing uses it. -->
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=85"></script>
+<script defer src="script.js?v=86"></script>
 </body>
 </html>

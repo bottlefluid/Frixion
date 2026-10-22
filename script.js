@@ -3,25 +3,29 @@
    A Discord-style client backed by Firebase Firestore, with
    Realtime Database for presence and Storage for uploads.
 
-   AUTH: username + password, no email. Sign-in goes through
-   Firebase Authentication: each account is an Email/Password
-   user whose (never-used) email is <lowercase username>@
-   frixion.example.com and whose display name is the username.
-   Passwords are never stored in the database. Profiles are
-   still documents at users/{username}. Accounts made before
-   this change had a plain password on that doc; they are moved
-   over the first time they log in, or all at once from Owner
-   Panel > System Hub > Secure all accounts. See
-   SECURITY-SETUP.md for the one-time setup.
+   AUTH: username + password only, no email — accounts are
+   documents at users/{username}, same pattern as Toblox.
+   NOTE: passwords are stored as plain fields on that doc,
+   matching how the Toblox account system works. Fine for a
+   personal project; don't reuse a real password here.
 
    ADMIN: staff are accounts with op, coowner or owner on their
-   user doc. firestore.rules checks the same fields, so staff
-   powers can't be granted from the browser console.
+   user doc (set from the Owner Panel, or by hand in Firebase).
 
-   PRESENCE: online/idle/offline lives in the Realtime Database
-   at presence/{username} (Console > Build > Realtime Database).
-   Its rules are in database.rules.json. If Realtime Database
-   isn't enabled, everyone just shows as online (see
+   PRESENCE: real online/offline detection needs the Realtime
+   Database product enabled on this Firebase project (separate
+   from Firestore — Console > Build > Realtime Database >
+   Create Database). Once enabled, its rules need to allow the
+   presence path:
+
+   {
+     "rules": {
+       "presence": { ".read": true, "$uid": { ".write": true } }
+     }
+   }
+
+   If Realtime Database isn't enabled, Frixion falls back to the
+   old manual-only status (this is caught automatically — see
    initPresence below).
 
    AUTO-DELETE: messages older than 7 days are swept client-side
@@ -63,11 +67,17 @@
    check there and tell me what the real field names are if GIFs
    still don't show up, and I'll fix it precisely.
 
-   SECURITY RULES: firestore.rules (Firestore) and
-   database.rules.json (Realtime Database), next to this file.
-   Paste them into the Firebase Console. They decide who may
-   read and change what, so they must be updated whenever a
-   feature starts writing a new collection or field.
+   REQUIRED Firestore security rules (Firebase Console >
+   Firestore > Rules). Everything is open, because there's no
+   Firebase Auth session to key permissions off of — access
+   control here is purely app-side, same trust model as Toblox:
+
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /{document=**} { allow read, write: if true; }
+     }
+   }
    ============================================ */
 
 // ---------- Firebase init ----------
@@ -87,24 +97,13 @@ try { db.settings({ experimentalAutoDetectLongPolling: true, merge: true }); } c
 const FieldValue = firebase.firestore.FieldValue;
 let rtdb = null;
 try { rtdb = firebase.database(); } catch (e) { console.warn('Realtime Database not available — presence will stay manual-only.', e); }
-const fbAuth = firebase.auth();
 // Testing on your own computer: http://localhost:<port>/?emulators talks to the Firebase emulators (firebase
 // emulators:start) instead of the real database, so test accounts and messages never reach it. Ignored on the live site.
-const USE_EMULATORS = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && new URLSearchParams(location.search).has('emulators');
-const AUTH_EMULATOR_URL = 'http://127.0.0.1:9099';
-if (USE_EMULATORS) {
-  fbAuth.useEmulator(AUTH_EMULATOR_URL);
+if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && new URLSearchParams(location.search).has('emulators')) {
   db.useEmulator('127.0.0.1', 8080);
   if (rtdb) rtdb.useEmulator('127.0.0.1', 9000);
   console.info('Frixion is using the local Firebase emulators.');
 }
-// Usernames become Firebase Authentication accounts with a made-up email that is never sent anything. Emails are not
-// case-sensitive, so "Bob" and "bob" can't both exist. The rules check this same format (see firestore.rules).
-const AUTH_EMAIL_DOMAIN = 'frixion.example.com';
-const authEmailFor = username => `${String(username).toLowerCase()}@${AUTH_EMAIL_DOMAIN}`;
-// Firebase needs passwords of 6+ characters, and older Frixion accounts were allowed 4. The fixed prefix lets those keep
-// their password. (It adds no strength; it only satisfies the length check.)
-const authPassFor = pass => 'frx1:' + pass;
 
 // Get a free key at https://klipy.com/developers (their API is free, no billing needed) and paste it here to enable GIF search.
 const GIF_API_KEY = 'TAGiarX1tDFDJvipS3zo71rD97RUMgnAm0iKBjLVVfJdds2DaeGxJEkcCu6GQU2Z';
@@ -128,7 +127,7 @@ function playPingSound() {
 }
 
 // ---------- constants ----------
-const SESSION_KEY = 'frixion_user';   // only read to clear sessions from before Firebase Authentication
+const SESSION_KEY = 'frixion_user';
 
 const AVATAR_COLORS = ['#5865f2','#eb459e','#ed4245','#f0b232','#23a55a','#00a8fc','#9b59b6','#e67e22','#1abc9c'];
 const BANNER_GRADIENTS = [
@@ -452,10 +451,8 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
-  { v: '4.28', date: '2026-10-22', title: 'Safer accounts, and friends on the app',
+  { v: '4.28', date: '2026-10-22', title: 'Friends on the app, and fixes',
     notes: [
-      'Logging in is now much safer. Your password is no longer saved where other people could see it. You will be asked to log in once more.',
-      'New: change your password in Settings > My Account.',
       'Friends using the Frixion computer app now show as Online even when it is in the tray, and Idle only after 10 minutes away.',
       'Hover someone\'s status dot to see if they are on the Frixion app.',
       'Big conversations open faster. Older messages load as you scroll up.',
@@ -2156,72 +2153,8 @@ async function joinExploreServer(server, alreadyJoined) {
 // ============================================================
 // SESSION
 // ============================================================
-// The signed-in account is whatever Firebase Authentication says (it remembers the sign-in by itself). Its display name is
-// the username; the email check makes sure the two belong together.
-function usernameForAuthUser(user) {
-  const name = user && user.displayName;
-  return name && authEmailFor(name) === String(user.email || '').toLowerCase() ? name : null;
-}
-function friendlyAuthError(e, context) {
-  const code = (e && e.code) || '';
-  if (code === 'frx/wrong' || code === 'auth/invalid-credential' || code === 'auth/invalid-login-credentials' || code === 'auth/wrong-password' || code === 'auth/user-not-found') return 'Incorrect username or password.';
-  if (code === 'auth/operation-not-allowed' || code === 'auth/configuration-not-found' || code === 'auth/admin-restricted-operation') return "Sign-in isn't switched on yet. The site owner needs to turn on Email/Password sign-in in Firebase (see SECURITY-SETUP.md).";
-  if (code === 'auth/too-many-requests') return 'Too many tries. Wait a few minutes, then try again.';
-  if (code === 'auth/network-request-failed') return "Can't reach Frixion. Check your connection and try again.";
-  if (code === 'auth/email-already-in-use') return context === 'register' ? 'That username is already taken.' : "This account couldn't be moved to the new sign-in because another account has the same name in different capitals. Ask the owner for help.";
-  if (code === 'auth/requires-recent-login') return 'For safety, log out and back in, then try again.';
-  if (code === 'auth/invalid-email') return "This username can't be used with the new sign-in. Ask the owner for help.";
-  return (e && e.message) || 'Something went wrong.';
-}
-const authFail = code => Object.assign(new Error(code), { code });
-// Signs in with Firebase Authentication. An account from before Firebase Authentication isn't there yet; if its old
-// saved password matches, it is moved over now (same password) and the saved copy is deleted from the database.
-async function signInOrMoveOver(typed, pass) {
-  try {
-    const cred = await fbAuth.signInWithEmailAndPassword(authEmailFor(typed), authPassFor(pass));
-    const name = usernameForAuthUser(cred.user);
-    if (name) return name;
-    // Signed in, but an earlier move-over stopped before the display name was saved. Finish it.
-    await cred.user.updateProfile({ displayName: typed });
-    await cred.user.getIdToken(true);
-    return typed;
-  } catch (e) {
-    if (!['auth/invalid-credential', 'auth/invalid-login-credentials', 'auth/user-not-found', 'auth/wrong-password'].includes(e.code)) throw e;
-  }
-  // Check the saved password first. Once the new database rules are published, signed-out visitors can't read
-  // profiles (data stays undefined); then the check happens below, signed in as the new account.
-  let data;
-  try { const snap = await db.collection('users').doc(typed).get(); data = snap.exists ? snap.data() : null; } catch (e) {}
-  if (data === null || (data && (typeof data.password !== 'string' || data.password !== pass))) throw authFail('frx/wrong');
-  let cred;
-  try { cred = await fbAuth.createUserWithEmailAndPassword(authEmailFor(typed), authPassFor(pass)); }
-  catch (e) {
-    // There is already a sign-in account with this name, so the password was wrong (or, rarely, a name clash).
-    if (e.code === 'auth/email-already-in-use') throw authFail(data ? 'auth/email-already-in-use' : 'frx/wrong');
-    throw e;
-  }
-  try {
-    await cred.user.updateProfile({ displayName: typed });
-    await cred.user.getIdToken(true);                // so the database sees the username on this sign-in already
-    if (data === undefined) {
-      const snap = await db.collection('users').doc(typed).get();
-      const saved = snap.exists ? snap.data().password : undefined;
-      if (typeof saved !== 'string' || saved !== pass) throw authFail('frx/wrong');
-    }
-    await db.collection('users').doc(typed).update({ password: FieldValue.delete() });
-  } catch (e) {
-    await cred.user.delete().catch(() => fbAuth.signOut());   // undo: a half-made sign-in account must not stay behind
-    throw e;
-  }
-  return typed;
-}
-async function finishSignIn(username, data) {
-  // Signed in through Firebase, so an old saved password (left by an interrupted move-over) is no longer needed.
-  if (typeof data.password === 'string') { delete data.password; db.collection('users').doc(username).update({ password: FieldValue.delete() }).catch(() => {}); }
-  await normalizeProfile(username, data);
-  myUid = username; myProfile = data; profileCache[myUid] = data;
-  enterApp();
-}
+function getSession() { return localStorage.getItem(SESSION_KEY); }
+function setSession(u) { u ? localStorage.setItem(SESSION_KEY, u) : localStorage.removeItem(SESSION_KEY); }
 
 function banStatus(profile) {
   if (!profile || !profile.banned) return { banned: false };
@@ -2311,7 +2244,7 @@ function showBanScreen(ban, signedIn) {
     clearInterval(banScreenTimer);
     el.remove();
     if (signedIn && myUid) { await $('logout-btn').onclick(); return; }
-    try { await fbAuth.signOut(); } catch (e) {}
+    setSession(null);
     $('login-password').value = '';
     $('login-btn').disabled = false; $('login-btn').textContent = 'Log In';
     showAuthScreen();
@@ -2716,23 +2649,23 @@ async function loadUserDevicesBlock(username) {
 }
 
 async function boot() {
-  // A saved username from before Firebase Authentication proves nothing (anyone could type one in), so it no longer signs
-  // anyone in. Those people log in once more, which also moves their account over.
-  try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
-  // Wait for Firebase to restore a saved sign-in at the same time as the device check: one round trip instead of two.
-  const userP = new Promise(resolve => { const off = fbAuth.onAuthStateChanged(u => { off(); resolve(u); }, () => resolve(null)); });
+  // Start loading the profile at the same time as the device check instead of after it: that's one network round trip saved on every launch.
+  const saved = getSession();
+  const profileP = saved ? db.collection('users').doc(saved).get().catch(e => e) : null;
   try { await initDeviceBan(); } catch (e) { console.warn('device check failed', e); }
   if (deviceBan.banned) { showAuthScreen(); return; }     // the device ban screen is already covering everything
-  const user = await userP;
-  const username = usernameForAuthUser(user);
-  if (!username) { if (user) await fbAuth.signOut().catch(() => {}); showAuthScreen(); return; }
-  let snap;
-  try { snap = await db.collection('users').doc(username).get(); } catch (e) { showAuthScreen(); return; }
-  if (!snap.exists) { await fbAuth.signOut().catch(() => {}); showAuthScreen(); return; }
+  if (!saved) { showAuthScreen(); return; }
+  const snap = await profileP;
+  if (snap instanceof Error) { showAuthScreen(); return; }
+  if (!snap.exists) { setSession(null); showAuthScreen(); return; }
   const data = snap.data();
   const ban = banStatus(data);
   if (ban.banned) { showAuthScreen(); showBanScreen(ban, false); return; }
-  await finishSignIn(username, data);
+  await normalizeProfile(saved, data);
+  myUid = saved;
+  myProfile = data;
+  profileCache[myUid] = data;
+  enterApp();
 }
 
 function showAuthScreen() {
@@ -2765,23 +2698,26 @@ $('login-btn').onclick = async () => {
   const pass = $('login-password').value;
   $('login-error').textContent = '';
   if (!username || !pass) { $('login-error').textContent = 'Please fill in both fields.'; return; }
-  if (!/^[^\s@/]{1,40}$/.test(username)) { $('login-error').textContent = 'Incorrect username or password.'; return; }
   $('login-btn').disabled = true; $('login-btn').textContent = 'Checking...';
   try {
-    const name = await signInOrMoveOver(username, pass);
-    const snap = await db.collection('users').doc(name).get();
-    if (!snap.exists) { await fbAuth.signOut(); throw authFail('frx/wrong'); }
+    const snap = await db.collection('users').doc(username).get();
+    if (!snap.exists || snap.data().password !== pass) {
+      $('login-error').textContent = 'Incorrect username or password.';
+      $('login-btn').disabled = false; $('login-btn').textContent = 'Log In'; return;
+    }
     const data = snap.data();
     const ban = banStatus(data);
     if (ban.banned) {
-      await fbAuth.signOut().catch(() => {});
       $('login-btn').disabled = false; $('login-btn').textContent = 'Log In';
       showBanScreen(ban, false); return;
     }
-    if (ban.expired) { await db.collection('users').doc(name).update({ banned: false, banReason: '', bannedUntil: null }); data.banned = false; }
-    await finishSignIn(name, data);
+    if (ban.expired) { await db.collection('users').doc(username).update({ banned: false, banReason: '', bannedUntil: null }); data.banned = false; }
+    await normalizeProfile(username, data);
+    myUid = username; myProfile = data; profileCache[myUid] = data;
+    setSession(username);
+    enterApp();
   } catch (e) {
-    $('login-error').textContent = friendlyAuthError(e, 'login');
+    $('login-error').textContent = e.message || 'Something went wrong.';
   }
   $('login-btn').disabled = false; $('login-btn').textContent = 'Log In';
 };
@@ -2793,23 +2729,17 @@ $('register-btn').onclick = async () => {
   if (!username || !pass) { $('register-error').textContent = 'Please fill in both fields.'; return; }
   if (username.length < 3) { $('register-error').textContent = 'Username must be at least 3 characters.'; return; }
   if (!/^[A-Za-z0-9_]+$/.test(username)) { $('register-error').textContent = 'Letters, numbers, and underscores only.'; return; }
-  if (pass.length < 6) { $('register-error').textContent = 'Password must be at least 6 characters.'; return; }
+  if (pass.length < 4) { $('register-error').textContent = 'Password must be at least 4 characters.'; return; }
   $('register-btn').disabled = true; $('register-btn').textContent = 'Creating...';
   try {
-    // Creating the sign-in account first also claims the name: Firebase refuses a second account with the same email.
-    const cred = await fbAuth.createUserWithEmailAndPassword(authEmailFor(username), authPassFor(pass));
-    await cred.user.updateProfile({ displayName: username });
-    await cred.user.getIdToken(true);
-    // An older account may have this exact name and not be moved over yet. Never take it over.
     const existing = await db.collection('users').doc(username).get();
     if (existing.exists) {
-      await cred.user.delete().catch(() => fbAuth.signOut());
       $('register-error').textContent = 'That username is already taken.';
       $('register-btn').disabled = false; $('register-btn').textContent = 'Continue'; return;
     }
     const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
     const data = {
-      username, avatarColor: color, status: 'online',
+      username, password: pass, avatarColor: color, status: 'online',
       premiumUntil: null, theme: 'dark', op: false,
       orbs: STARTING_ORBS,
       stats: { messagesSent: 0, reactionsGiven: 0, dmsStarted: 0, serversCount: 0 },
@@ -2822,9 +2752,11 @@ $('register-btn').onclick = async () => {
       createdAt: FieldValue.serverTimestamp(),
     };
     await db.collection('users').doc(username).set(data);
-    await finishSignIn(username, data);
+    myUid = username; myProfile = data; profileCache[myUid] = data;
+    setSession(username);
+    enterApp();
   } catch (e) {
-    $('register-error').textContent = friendlyAuthError(e, 'register');
+    $('register-error').textContent = e.message || 'Something went wrong.';
   }
   $('register-btn').disabled = false; $('register-btn').textContent = 'Continue';
 };
@@ -2838,7 +2770,7 @@ $('logout-btn').onclick = async () => {
   try { if (myUid) await db.collection('users').doc(myUid).update({ status: 'offline' }); } catch (e) {}
   clearMyTypingDoc();
   cleanupAllListeners();
-  try { await fbAuth.signOut(); } catch (e) {}
+  setSession(null);
   stopGameEngines();
   myUid = null; myProfile = null; profileCache = {}; isAdmin = false; isOwner = false; sfMode = false; ephemeralMsgs = []; seedBotProfiles();
   applyAdminVisibility();
@@ -3019,12 +2951,7 @@ async function startTermination(info) {
     cancelAnimationFrame(raf);
     el.classList.add('is-black');
     try {
-      if (mode === 'real') {
-        await db.collection('users').doc(uid).delete();
-        // Also remove the sign-in account so the name is free again. Firebase may refuse if the sign-in is old; then
-        // the account just can't get back in (its profile is gone).
-        try { if (fbAuth.currentUser) await fbAuth.currentUser.delete(); } catch (e) {}
-      }
+      if (mode === 'real') await db.collection('users').doc(uid).delete();
       else await db.collection('users').doc(uid).update({ terminated: FieldValue.delete() });
     } catch (e) { console.warn('termination write failed', e); }
     try { await $('logout-btn').onclick(); } catch (e) {}
@@ -9759,7 +9686,6 @@ $('open-owner-panel').onclick = () => { closeModal('settings-modal'); openAdminP
 function populateSettings() {
   if (!myProfile) return;
   $('set-username').value = myProfile.username;
-  $('change-password-username').value = myProfile.username;   // lets password managers file the new password under the right account
   $('autocorrect-toggle').checked = isAutocorrectEnabled();
   $('custom-keyboard-toggle').checked = useCustomKeyboard();
   $('quick-buttons-toggle').checked = showQuickButtons();
@@ -10603,94 +10529,10 @@ $('save-account-btn').onclick = async () => {
   $('set-username').value = myProfile.username;
 };
 
-// Changing the password asks for the current one first: Firebase only allows it right after proving who you are.
-$('change-password-form').addEventListener('submit', async () => {
-  const current = $('current-password').value, next = $('new-password').value;
-  const out = $('change-password-error'), btn = $('change-password-btn');
-  out.textContent = '';
-  if (!current || !next) { out.textContent = 'Fill in both passwords.'; return; }
-  if (next.length < 6) { out.textContent = 'The new password must be at least 6 characters.'; return; }
-  const user = fbAuth.currentUser;
-  if (!user || btn.disabled) return;
-  btn.disabled = true;
-  try {
-    await user.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(user.email, authPassFor(current)));
-    await user.updatePassword(authPassFor(next));
-    $('current-password').value = ''; $('new-password').value = '';
-    toast('Password changed.');
-  } catch (e) {
-    out.textContent = /invalid-credential|wrong-password|invalid-login/.test(e.code || '') ? 'Your current password is wrong.' : friendlyAuthError(e);
-  } finally { btn.disabled = false; }
-});
-
-// Owner tool: moves every account that still has a saved password over to Firebase sign-in in one go (each keeps its
-// password), then deletes the saved copy. Run it before switching on the new database rules (see SECURITY-SETUP.md).
-// It signs in on a separate, throwaway Firebase connection, so the owner stays signed in as themself the whole time.
-async function secureAllAccounts() {
-  if (!isOwner) { toast('Only the owner can do this.', 'error'); return; }
-  let snap;
-  try { snap = await db.collection('users').get(); } catch (e) { toast('Could not load accounts.', 'error'); return; }
-  const todo = snap.docs.filter(d => typeof d.data().password === 'string');
-  if (!todo.length) { toast('Every account is already secured.'); return; }
-  confirmAction({
-    title: 'Secure all accounts',
-    body: `${todo.length} account${todo.length === 1 ? '' : 's'} still have a saved password. Each one is moved over to Firebase sign-in with the same password, and the saved copy is deleted. Keep this tab open until it finishes.`,
-    confirmLabel: 'Secure accounts', danger: false,
-    onConfirm: async () => {
-      let helper, fresh = false;
-      try { helper = firebase.app('account-mover'); } catch (e) { helper = firebase.initializeApp(firebaseConfig, 'account-mover'); fresh = true; }
-      const helperAuth = helper.auth();
-      if (fresh && USE_EMULATORS) helperAuth.useEmulator(AUTH_EMULATOR_URL);   // same place as the main connection
-      try { await helperAuth.setPersistence(firebase.auth.Auth.Persistence.NONE); } catch (e) {}
-      const btn = $('secure-accounts-btn');
-      if (btn) btn.disabled = true;
-      let moved = 0, stopReason = '';
-      const clashes = [], failed = [];
-      for (let i = 0; i < todo.length; i++) {
-        const d = todo[i], name = d.id, pw = d.data().password;
-        if (btn) btn.textContent = `Securing ${i + 1} of ${todo.length}…`;
-        try {
-          let cred;
-          try { cred = await helperAuth.createUserWithEmailAndPassword(authEmailFor(name), authPassFor(pw)); }
-          catch (e) {
-            if (e.code !== 'auth/email-already-in-use') throw e;
-            // A sign-in account already exists. Only finish the move if this account's saved password opens it.
-            try { cred = await helperAuth.signInWithEmailAndPassword(authEmailFor(name), authPassFor(pw)); }
-            catch (e2) { clashes.push(name); continue; }
-          }
-          const u = cred.user;
-          if (u.displayName && u.displayName !== name) { clashes.push(name); await helperAuth.signOut(); continue; }   // belongs to "Bob" while this is "bob"
-          if (!u.displayName) await u.updateProfile({ displayName: name });
-          await helperAuth.signOut();
-          await d.ref.update({ password: FieldValue.delete() });
-          moved++;
-        } catch (e) {
-          if (e.code === 'auth/too-many-requests' || e.code === 'auth/quota-exceeded') {
-            stopReason = 'Firebase limits how many sign-in accounts can be made per hour, so run this again in an hour.';
-            failed.push(...todo.slice(i).map(x => x.id)); break;
-          }
-          if (e.code === 'auth/operation-not-allowed' || e.code === 'auth/configuration-not-found' || e.code === 'auth/admin-restricted-operation') {
-            stopReason = friendlyAuthError(e);
-            failed.push(...todo.slice(i).map(x => x.id)); break;
-          }
-          console.warn('Could not secure', name, e);
-          failed.push(name);
-        }
-      }
-      if (btn) { btn.disabled = false; btn.textContent = 'Secure all accounts'; }
-      openInfoModal('Secure all accounts', `<p>${moved} account${moved === 1 ? '' : 's'} secured.</p>`
-        + (clashes.length ? `<p><b>Name clashes (${clashes.length}):</b> ${esc(clashes.join(', '))}. Another account already uses each of these names in different capitals, so these can't log in until they get a new name (see SECURITY-SETUP.md).</p>` : '')
-        + (failed.length ? `<p><b>Not done yet (${failed.length}):</b> ${esc(failed.join(', '))}. ${esc(stopReason || 'Something went wrong with these. Run this again; the browser console (F12) has the details.')}</p>` : ''));
-    },
-  });
-}
-if ($('secure-accounts-btn')) $('secure-accounts-btn').onclick = secureAllAccounts;
-
 // ============================================================
 // ADMIN PANEL
-// Staff are the accounts with op, coowner or owner on their user doc, and the database rules (firestore.rules) check
-// the same fields. There is no separate admin password any more: a password typed into the page can't prove anything
-// to the database, so it only ever unlocked buttons whose changes the database would refuse.
+// Staff are the accounts with op, coowner or owner on their user doc. (The old admin-password dialog was removed: the
+// Admin Panel button only ever showed for staff, so the dialog could never appear.)
 // ============================================================
 function openAdminEntry() {
   if (isAdmin || isOwner) { openAdminPanel(); return; }

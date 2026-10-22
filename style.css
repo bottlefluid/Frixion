@@ -993,8 +993,6 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 #settings-nav .nav-label { font-size: 13px; text-transform: uppercase; color: var(--text-faint); font-weight: 700; padding: 18px 14px 6px; }
 #settings-content { flex: 1; padding: 44px 60px; overflow-y: auto; position: relative; }
 #settings-content h2 { font-size: 28px; margin-bottom: 24px; text-transform: uppercase; letter-spacing: .3px; }
-.settings-subhead { font-size: 13px; text-transform: uppercase; color: var(--text-faint); font-weight: 700; margin: 32px 0 12px; padding-top: 24px; border-top: 1px solid var(--divider); }
-#change-password-form .auth-error:empty { display: none; }
 .settings-close { position: absolute; top: 24px; right: 24px; }
 
 /* ---- update log ---- */
