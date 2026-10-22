@@ -3,31 +3,25 @@
    A Discord-style client backed by Firebase Firestore, with
    Realtime Database for presence and Storage for uploads.
 
-   AUTH: username + password only, no email — accounts are
-   documents at users/{username}, same pattern as Toblox.
-   NOTE: passwords are stored as plain fields on that doc,
-   matching how the Toblox account system works. Fine for a
-   personal project; don't reuse a real password here.
+   AUTH: username + password, no email. Sign-in goes through
+   Firebase Authentication: each account is an Email/Password
+   user whose (never-used) email is <lowercase username>@
+   frixion.example.com and whose display name is the username.
+   Passwords are never stored in the database. Profiles are
+   still documents at users/{username}. Accounts made before
+   this change had a plain password on that doc; they are moved
+   over the first time they log in, or all at once from Owner
+   Panel > System Hub > Secure all accounts. See
+   SECURITY-SETUP.md for the one-time setup.
 
-   ADMIN: password below is hashed (SHA-256) and checked
-   against a hash stored in Firestore at config/admin, same
-   as Toblox's admin panel. Operators (op:true on their user
-   doc) skip the password entirely, same as Toblox.
+   ADMIN: staff are accounts with op, coowner or owner on their
+   user doc. firestore.rules checks the same fields, so staff
+   powers can't be granted from the browser console.
 
-   PRESENCE: real online/offline detection needs the Realtime
-   Database product enabled on this Firebase project (separate
-   from Firestore — Console > Build > Realtime Database >
-   Create Database). Once enabled, its rules need to allow the
-   presence path:
-
-   {
-     "rules": {
-       "presence": { ".read": true, "$uid": { ".write": true } }
-     }
-   }
-
-   If Realtime Database isn't enabled, Frixion falls back to the
-   old manual-only status (this is caught automatically — see
+   PRESENCE: online/idle/offline lives in the Realtime Database
+   at presence/{username} (Console > Build > Realtime Database).
+   Its rules are in database.rules.json. If Realtime Database
+   isn't enabled, everyone just shows as online (see
    initPresence below).
 
    AUTO-DELETE: messages older than 7 days are swept client-side
@@ -69,53 +63,11 @@
    check there and tell me what the real field names are if GIFs
    still don't show up, and I'll fix it precisely.
 
-   REQUIRED Firestore security rules (Firebase Console >
-   Firestore > Rules):
-
-   rules_version = '2';
-   service cloud.firestore {
-     match /databases/{database}/documents {
-       match /users/{username} {
-         allow read: if true;
-         allow write: if true;
-         match /privateNotes/{noteAuthor} { allow read, write: if true; }
-       }
-       match /config/{doc} { allow read, write: if true; }
-       match /customEmojis/{id} { allow read, write: if true; }
-       match /shopDecorations/{id} { allow read, write: if true; }
-       match /shopThemes/{id} { allow read, write: if true; }
-       match /shopNameplates/{id} { allow read, write: if true; }
-       match /shopProfileEffects/{id} { allow read, write: if true; }
-       match /shopProfileFrames/{id} { allow read, write: if true; }
-       match /shopBanners/{id} { allow read, write: if true; }
-       match /stickers/{id} { allow read, write: if true; }
-       match /gardenSeeds/{id} { allow read, write: if true; }
-       match /gardenSprinklers/{id} { allow read, write: if true; }
-       match /gardenPets/{id} { allow read, write: if true; }
-       match /redeemCodes/{code} { allow read, write: if true; }
-       match /servers/{sid} {
-         allow read, write: if true;
-         match /categories/{cid} { allow read, write: if true; }
-         match /channels/{cid} {
-           allow read, write: if true;
-           match /messages/{mid} { allow read, write: if true; }
-         }
-       }
-       match /dms/{did} {
-       
-         allow read, write: if true;
-         match /messages/{mid} { allow read, write: if true; }
-       }
-       match /groupDMs/{gid} {
-         allow read, write: if true;
-         match /messages/{mid} { allow read, write: if true; }
-       }
-     }
-   }
-
-   (Wide-open rules because there's no Firebase Auth session
-   to key permissions off of — access control here is purely
-   app-side, same trust model as Toblox.)
+   SECURITY RULES: firestore.rules (Firestore) and
+   database.rules.json (Realtime Database), next to this file.
+   Paste them into the Firebase Console. They decide who may
+   read and change what, so they must be updated whenever a
+   feature starts writing a new collection or field.
    ============================================ */
 
 // ---------- Firebase init ----------
@@ -135,6 +87,24 @@ try { db.settings({ experimentalAutoDetectLongPolling: true, merge: true }); } c
 const FieldValue = firebase.firestore.FieldValue;
 let rtdb = null;
 try { rtdb = firebase.database(); } catch (e) { console.warn('Realtime Database not available — presence will stay manual-only.', e); }
+const fbAuth = firebase.auth();
+// Testing on your own computer: http://localhost:<port>/?emulators talks to the Firebase emulators (firebase
+// emulators:start) instead of the real database, so test accounts and messages never reach it. Ignored on the live site.
+const USE_EMULATORS = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && new URLSearchParams(location.search).has('emulators');
+const AUTH_EMULATOR_URL = 'http://127.0.0.1:9099';
+if (USE_EMULATORS) {
+  fbAuth.useEmulator(AUTH_EMULATOR_URL);
+  db.useEmulator('127.0.0.1', 8080);
+  if (rtdb) rtdb.useEmulator('127.0.0.1', 9000);
+  console.info('Frixion is using the local Firebase emulators.');
+}
+// Usernames become Firebase Authentication accounts with a made-up email that is never sent anything. Emails are not
+// case-sensitive, so "Bob" and "bob" can't both exist. The rules check this same format (see firestore.rules).
+const AUTH_EMAIL_DOMAIN = 'frixion.example.com';
+const authEmailFor = username => `${String(username).toLowerCase()}@${AUTH_EMAIL_DOMAIN}`;
+// Firebase needs passwords of 6+ characters, and older Frixion accounts were allowed 4. The fixed prefix lets those keep
+// their password. (It adds no strength; it only satisfies the length check.)
+const authPassFor = pass => 'frx1:' + pass;
 
 // Get a free key at https://klipy.com/developers (their API is free, no billing needed) and paste it here to enable GIF search.
 const GIF_API_KEY = 'TAGiarX1tDFDJvipS3zo71rD97RUMgnAm0iKBjLVVfJdds2DaeGxJEkcCu6GQU2Z';
@@ -158,8 +128,7 @@ function playPingSound() {
 }
 
 // ---------- constants ----------
-const SESSION_KEY = 'frixion_user';
-const ADMIN_HASH = 'f7c323a01e4a88630c1301300a5212a6d21c874c5dee36d26de35cb9b75ca8d4'; // sha256("theflyisflying")
+const SESSION_KEY = 'frixion_user';   // only read to clear sessions from before Firebase Authentication
 
 const AVATAR_COLORS = ['#5865f2','#eb459e','#ed4245','#f0b232','#23a55a','#00a8fc','#9b59b6','#e67e22','#1abc9c'];
 const BANNER_GRADIENTS = [
@@ -483,6 +452,21 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.28', date: '2026-10-22', title: 'Safer accounts, and friends on the app',
+    notes: [
+      'Logging in is now much safer. Your password is no longer saved where other people could see it. You will be asked to log in once more.',
+      'New: change your password in Settings > My Account.',
+      'Friends using the Frixion computer app now show as Online even when it is in the tray, and Idle only after 10 minutes away.',
+      'Hover someone\'s status dot to see if they are on the Frixion app.',
+      'Big conversations open faster. Older messages load as you scroll up.',
+      'Fixed codes that could be redeemed twice, and a rare mix-up where switching chats quickly showed the wrong messages.',
+    ] },
+  { v: '4.27', date: '2026-10-20', title: 'A phone layout like Discord',
+    notes: [
+      'On your phone there is now a bar at the bottom with Home, Notifications and You, just like Discord.',
+      'Settings now lives under You. Tap an item to open that part of Settings.',
+      'Friend requests show up under Notifications, where you can accept or ignore them.',
+    ] },
   { v: '4.26', date: '2026-10-19', title: 'Get the Frixion app',
     notes: [
       'If you open Frixion in a browser on a computer, it now offers the Frixion app. Choose "Don\'t remind me again" and it stops asking.',
@@ -998,11 +982,26 @@ const EMOJI_CATEGORIES = [
   } },
 ];
 const SHORTCODE_MAP = Object.assign({}, ...EMOJI_CATEGORIES.map(c => c.items));
+// Shop items, emojis and stickers that staff publish live in the database, and parts of them end up inside HTML
+// attributes and CSS. They are cleaned once, as they arrive: colours must be real colours and pictures real addresses.
+function cleanCatalogItem(raw) {
+  const it = { ...raw };
+  delete it.svg;                                         // only built-in items carry drawing code
+  ['color', 'accent', 'accent2'].forEach(k => { if (k in it) it[k] = cssColor(it[k], '#5865f2'); });
+  ['bg', 'colors'].forEach(k => { if (k in it) it[k] = (Array.isArray(it[k]) ? it[k] : []).slice(0, 4).map(c => cssColor(c, '#1e1f22')); });
+  ['imageUrl', 'banner', 'dataUrl'].forEach(k => { if (it[k] != null) it[k] = safeUrl(it[k], 'image') || null; });
+  if (it.src != null) it.src = safeUrl(it.src, 'media') || null;
+  if (Array.isArray(it.cutscenes)) it.cutscenes = it.cutscenes.filter(c => c && safeUrl(c.src, 'media')).slice(0, 3);
+  if (it.bannerPos != null && !/^[\w\s.%-]{1,40}$/.test(String(it.bannerPos))) it.bannerPos = null;
+  ['fx', 'cssClass', 'style'].forEach(k => { if (it[k] != null && !/^[\w -]{1,60}$/.test(String(it[k]))) delete it[k]; });
+  if ('price' in it) it.price = Number(it.price) || 0;
+  return it;
+}
 let customEmojis = {}; // name -> { name, dataUrl }
 function subscribeCustomEmojis() {
   db.collection('customEmojis').onSnapshot(snap => {
     const map = {};
-    snap.forEach(d => { map[d.id] = d.data(); });
+    snap.forEach(d => { const e = cleanCatalogItem(d.data()); if (e.dataUrl) map[d.id] = e; });
     customEmojis = map;
     renderEmojiPickerGrids();
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminEmojiList();
@@ -1011,7 +1010,7 @@ function subscribeCustomEmojis() {
 function subscribeCustomDecorations() {
   db.collection('shopDecorations').onSnapshot(snap => {
     const items = [];
-    snap.forEach(d => items.push({ id: d.id, animated: false, ...d.data() }));
+    snap.forEach(d => items.push(cleanCatalogItem({ id: d.id, animated: false, ...d.data() })));
     customDecorations = items;
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) { renderAdminDecorationList(); renderAdminMaskList(); }
@@ -1020,7 +1019,7 @@ function subscribeCustomDecorations() {
 function subscribeCustomThemes() {
   db.collection('shopThemes').onSnapshot(snap => {
     const items = [];
-    snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+    snap.forEach(d => items.push(cleanCatalogItem({ id: d.id, ...d.data() })));
     customThemes = items;
     customThemesLoaded = true;
     // The profile snapshot usually lands before this catalog does, so an
@@ -1035,7 +1034,7 @@ function subscribeCustomThemes() {
 function subscribeCustomNameplates() {
   db.collection('shopNameplates').onSnapshot(snap => {
     const items = [];
-    snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+    snap.forEach(d => items.push(cleanCatalogItem({ id: d.id, ...d.data() })));
     customNameplates = items;
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminNameplateList();
@@ -1044,7 +1043,7 @@ function subscribeCustomNameplates() {
 function subscribeCustomBanners() {
   db.collection('shopBanners').onSnapshot(snap => {
     const items = [];
-    snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+    snap.forEach(d => items.push(cleanCatalogItem({ id: d.id, ...d.data() })));
     customBanners = items;
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminBannerList();
@@ -1053,7 +1052,7 @@ function subscribeCustomBanners() {
 function subscribeCustomProfileEffects() {
   db.collection('shopProfileEffects').onSnapshot(snap => {
     const items = [];
-    snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+    snap.forEach(d => items.push(cleanCatalogItem({ id: d.id, ...d.data() })));
     customProfileEffects = items;
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminProfileEffectList();
@@ -1062,7 +1061,7 @@ function subscribeCustomProfileEffects() {
 function subscribeCustomProfileFrames() {
   db.collection('shopProfileFrames').onSnapshot(snap => {
     const items = [];
-    snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+    snap.forEach(d => items.push(cleanCatalogItem({ id: d.id, ...d.data() })));
     customProfileFrames = items;
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminProfileFrameList();
@@ -1077,7 +1076,7 @@ function renderMessageText(rawText) {
   const safe = esc(stripped);
   const withEmoji = safe.replace(/:([a-z0-9_]+):/gi, (whole, name) => {
     const key = name.toLowerCase();
-    if (customEmojis[key]) return `<img class="custom-emoji" src="${customEmojis[key].dataUrl}" alt=":${esc(key)}:" title=":${esc(key)}:">`;
+    if (customEmojis[key]) return `<img class="custom-emoji" src="${esc(customEmojis[key].dataUrl)}" alt=":${esc(key)}:" title=":${esc(key)}:">`;
     if (SHORTCODE_MAP[key]) return `<span class="native-emoji">${SHORTCODE_MAP[key]}</span>`;
     return whole;
   });
@@ -1124,7 +1123,8 @@ function messageTextMentionsMe(text, allowEveryone = true) {
 // an already-inserted tag or break out of the href attribute it gets
 // placed into.
 function linkifyText(html) {
-  return html.replace(/\b((?:https?:\/\/|www\.)[^\s<>"']+)/gi, (match) => {
+  // The text is already escaped, so a quote shows up as &quot; or &#39; and ends the link there.
+  return html.replace(/\b((?:https?:\/\/|www\.)(?:(?!&quot;|&#39;)[^\s<>"'])+)/gi, (match) => {
     // Trim trailing punctuation that's almost always sentence punctuation
     // rather than part of the link, but keep a closing bracket/paren that
     // balances one earlier in the URL.
@@ -1245,7 +1245,32 @@ seedBotProfiles();
 
 // ---------- helpers ----------
 function $(id) { return document.getElementById(id); }
-function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+// Escapes text for HTML. Quotes are escaped too, so the result is also safe inside attribute values.
+const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ESC_MAP[c]); }
+// Links and pictures that come from the database are only used when they are a web address, a picture stored inside the
+// page (data:image/...), a blob made by this page, or one of the site's own files (Banners/x.png). Anything else, such as
+// a javascript: link, comes back as ''. Callers still esc() the result when they put it in HTML.
+function safeUrl(u, kind) {
+  if (typeof u !== 'string') return '';
+  const s = u.trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s) || /^blob:/i.test(s)) return s;
+  if (kind === 'image' && /^data:image\/[a-z0-9.+-]+[;,]/i.test(s)) return s;
+  if (kind === 'media' && /^data:(audio|video|image)\/[a-z0-9.+-]+[;,]/i.test(s)) return s;
+  if (/^[\w-][\w\-./%]*(\?[\w\-.=&%]*)?$/.test(s) && !s.includes('..')) return s;   // a file on this site
+  return '';
+}
+// A colour for a style attribute: #rgb / #rrggbb(aa), rgb()/hsl(), or a plain name. Anything else uses the fallback.
+function cssColor(c, fallback = 'transparent') {
+  const s = typeof c === 'string' ? c.trim() : '';
+  return /^#[0-9a-f]{3,8}$/i.test(s) || /^(rgb|hsl)a?\([\d\s.,%/-]{1,60}\)$/i.test(s) || /^[a-z]{3,20}$/i.test(s) ? s : fallback;
+}
+// url("...") for a style attribute, or 'none' when the address isn't allowed.
+function cssUrl(u) {
+  const s = safeUrl(u, 'image');
+  return s ? `url("${s.replace(/["\\\n\r()]/g, ch => '\\' + ch.charCodeAt(0).toString(16) + ' ')}")` : 'none';
+}
 function initials(name) { return name ? name.trim().charAt(0).toUpperCase() : '?'; }
 function serverInitials(name) {
   if (!name) return '?';
@@ -1286,8 +1311,10 @@ function emojiRotateStyle(l) {
   const r = Number(l && l.r) || 0;
   return r ? `transform:translate(-50%,-50%) rotate(${r}deg);` : '';
 }
+// Layer numbers are forced to be numbers here, because they go straight into a style attribute.
 function decoEmojiLayers(deco) {
-  if (deco && Array.isArray(deco.emojis) && deco.emojis.length) return deco.emojis;
+  const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+  if (deco && Array.isArray(deco.emojis) && deco.emojis.length) return deco.emojis.filter(l => l && typeof l === 'object').map(l => ({ e: l.e, x: num(l.x, 50), y: num(l.y, 50), s: num(l.s, 40), r: num(l.r, 0) }));
   return deco && deco.emoji ? [{ e: deco.emoji, x: 50, y: 23, s: 42 }] : [];
 }
 function decorationOverlayHTML(decorationId, size, hole, maskId) {
@@ -1325,7 +1352,7 @@ function decorationBoxHTML(deco, size, hole) {
   const layers = decoEmojiLayers(deco);
   const inner = layers.length
     ? layers.map(l => `<span class="avatar-decoration-emoji" style="left:${l.x}%;top:${l.y}%;font-size:${(decoSize * l.s / 100).toFixed(1)}px;${emojiRotateStyle(l)}">${esc(l.e)}</span>`).join('')
-    : deco.imageUrl ? `<img src="${esc(deco.imageUrl)}" alt="" draggable="false">` : deco.svg(decoSize);
+    : deco.imageUrl ? `<img src="${esc(safeUrl(deco.imageUrl, 'image'))}" alt="" draggable="false">` : typeof deco.svg === 'function' ? deco.svg(decoSize) : '';
   return `<span class="avatar-decoration${deco.mask ? ' is-mask' : ''}" style="width:${decoSize}px;height:${decoSize}px;left:${-decoOffset}px;top:${-decoOffset}px;${maskStyle}">${inner}</span>`;
 }
 // Discord's mobile presence indicator: a little phone glyph in the status
@@ -1369,10 +1396,12 @@ function avatarHTML(size, color, letter, status, avatarUrl, decorationId, uid, m
       hole = { r: holeR, center };
       const grad = `radial-gradient(circle ${holeR}px at calc(100% - ${center}px) calc(100% - ${center}px), transparent ${holeR - 1}px, #000 ${holeR}px)`;
       maskStyle = `-webkit-mask-image:${grad};mask-image:${grad};`;
-      dotHTML = `<span class="status-dot ${status}" style="width:${dotD}px;height:${dotD}px;right:${dotOffset}px;bottom:${dotOffset}px;"></span>`;
+      const label = status === 'idle' ? 'Idle' : status === 'offline' ? 'Offline' : 'Online';
+      const where = status !== 'offline' && uid && isOnApp(uid) ? ' on the Frixion app' : '';
+      dotHTML = `<span class="status-dot ${status}" title="${label}${where}" style="width:${dotD}px;height:${dotD}px;right:${dotOffset}px;bottom:${dotOffset}px;"></span>`;
     }
   }
-  const inner = `<img src="${esc(avatarUrl || DEFAULT_AVATAR_URL)}" alt="" loading="lazy" style="${maskStyle}">`;
+  const inner = `<img src="${esc(safeUrl(avatarUrl, 'image') || DEFAULT_AVATAR_URL)}" alt="" loading="lazy" style="${maskStyle}">`;
   return `<div class="avatar has-image" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.42)}px;background:transparent">${inner}${dotHTML}${decorationOverlayHTML(decorationId, size, hole, maskId)}</div>`;
 }
 function premiumStar(profile) { return isPremium(profile) ? icon('star', 'premium-star') : ''; }
@@ -1550,7 +1579,7 @@ function roleColorFor(server, uid) {
   return colored.length ? colored[0].color : null;
 }
 function roleChipHTML(role) {
-  return `<span class="role-chip" style="${role.color ? `--role-color:${role.color}` : ''}">${role.color ? '<span class="role-dot"></span>' : ''}${esc(role.name)}</span>`;
+  return `<span class="role-chip" style="${role.color ? `--role-color:${esc(cssColor(role.color))}` : ''}">${role.color ? '<span class="role-dot"></span>' : ''}${esc(role.name)}</span>`;
 }
 // Per-channel visibility override — scoped down from Discord's full
 // allow/deny permission matrix to the one thing people actually reach
@@ -1658,11 +1687,6 @@ function dayStr(ts) {
   const d = ts.toDate ? ts.toDate() : new Date(ts);
   return d.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' });
 }
-async function sha256(str) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
 async function getProfile(uid) {
   if (profileCache[uid]) return profileCache[uid];
   try {
@@ -1687,6 +1711,7 @@ let presenceCache = {};       // uid -> true (connected) | false (disconnected)
 let idleCache = {};           // uid -> true (tab hidden) | false (tab visible)
 let presenceListeners = {};   // uid -> RTDB ref+callback, so we only subscribe once per uid
 let mobileCache = {};         // uid -> true when that person's active session is a phone/tablet
+let appCache = {};            // uid -> true when that person is active in the Frixion computer app
 let activityCache = {};       // uid -> that person's current activity (Rich Presence), or null
 let activityCacheSig = {};
 // Real device detection (not just "is the window narrow"): UA Client Hints
@@ -1700,6 +1725,7 @@ function isMobileDevice() {
   return uaMobile && (navigator.maxTouchPoints > 0 || 'ontouchstart' in window);
 }
 function isOnMobile(uid) { return !!mobileCache[uid]; }
+function isOnApp(uid) { return uid === myUid ? !!DESKTOP : !!appCache[uid]; }
 // Multi-device presence: every open tab/device writes its OWN child under
 // presence/{uid}/connections/{connId} instead of all of them fighting over
 // one shared record. Before, logging in on a phone and a PC at once meant
@@ -1710,6 +1736,19 @@ function isOnMobile(uid) { return !!mobileCache[uid]; }
 //   mobile = every connection is mobile (any PC session wins → shows PC)
 let myPresenceConnRef = null;
 let presenceConnectedCb = null;
+// The Frixion computer app keeps running in the tray with its window hidden, so "the page is hidden" says nothing about
+// whether the person is around. The app reports the computer's own idle state instead (no keyboard or mouse for 10 minutes,
+// or the screen is locked), like Discord does. Older app versions don't send it; then the app counts as active while it runs.
+let desktopIdle = false;
+let desktopWindowHidden = false;   // the app window is in the tray or minimized (the page itself may still report "visible")
+const pageHidden = () => document.hidden || desktopWindowHidden;
+function myConnectionState() {
+  return { idle: DESKTOP ? desktopIdle : document.hidden, mobile: isMobileDevice(), app: !!DESKTOP, at: firebase.database.ServerValue.TIMESTAMP };
+}
+function updateMyConnection() {
+  if (!rtdb || !myUid || !myPresenceConnRef) return;
+  try { myPresenceConnRef.update(myConnectionState()); } catch (e) {}
+}
 function initPresence() {
   if (!rtdb || !myUid) return;
   try {
@@ -1720,7 +1759,7 @@ function initPresence() {
       if (!myPresenceConnRef) myPresenceConnRef = myRef.child('connections').push();
       const connRef = myPresenceConnRef;
       connRef.onDisconnect().remove()
-        .then(() => connRef.set({ idle: document.hidden, mobile: isMobileDevice(), at: firebase.database.ServerValue.TIMESTAMP }))
+        .then(() => connRef.set(myConnectionState()))
         .then(() => myRef.update({ online: null, idle: null, mobile: null, lastChanged: firebase.database.ServerValue.TIMESTAMP }))
         .then(() => { myActivityPublished = null; publishActivity(); })   // an offline blip clears the activity, so send it again
         .catch(() => {});
@@ -1729,8 +1768,8 @@ function initPresence() {
   } catch (e) { console.warn('Presence init failed', e); }
 }
 document.addEventListener('visibilitychange', () => {
-  if (!rtdb || !myUid || !myPresenceConnRef) return;
-  try { myPresenceConnRef.update({ idle: document.hidden, mobile: isMobileDevice(), at: firebase.database.ServerValue.TIMESTAMP }); } catch (e) {}
+  resumeMusicLoop();
+  if (!DESKTOP) updateMyConnection();   // in the app, idle comes from the computer (see above), not from the window
 });
 function teardownPresence() {
   if (!rtdb || !myUid) return;
@@ -1745,6 +1784,7 @@ function teardownPresence() {
   presenceCache = {};
   idleCache = {};
   mobileCache = {};
+  appCache = {};
   activityCache = {}; activityCacheSig = {}; myActivityPublished = null; rpcMedia = null;
 }
 function subscribePresence(uid) {
@@ -1753,23 +1793,26 @@ function subscribePresence(uid) {
     const ref = rtdb.ref('presence/' + uid);
     const cb = (snap) => {
       const val = snap.val();
-      const conns = val && val.connections ? Object.values(val.connections).filter(Boolean) : [];
-      let online, idle, mobile;
+      const conns = val && val.connections ? Object.values(val.connections).filter(c => c && typeof c === 'object') : [];
+      let online, idle, mobile, onApp;
       if (conns.length) {
         online = true;
         idle = conns.every(c => c.idle);
         mobile = conns.every(c => c.mobile);
+        onApp = conns.some(c => c.app && !c.idle);
       } else {
         online = !!(val && val.online);
         idle = !!(val && val.idle);
         mobile = !!(val && val.online && val.mobile);
+        onApp = false;
       }
       const act = cleanActivity(val && val.activity);
       const actSig = JSON.stringify(act);
-      if (presenceCache[uid] === online && idleCache[uid] === idle && mobileCache[uid] === mobile && activityCacheSig[uid] === actSig) return;
+      if (presenceCache[uid] === online && idleCache[uid] === idle && mobileCache[uid] === mobile && appCache[uid] === onApp && activityCacheSig[uid] === actSig) return;
       presenceCache[uid] = online;
       idleCache[uid] = idle;
       mobileCache[uid] = mobile;
+      appCache[uid] = onApp;
       activityCache[uid] = act; activityCacheSig[uid] = actSig;
       renderCurrentView();
       renderDMRows();
@@ -1811,7 +1854,8 @@ function cleanActivity(a) {
   if (!a || typeof a !== 'object') return null;
   const name = rpcStr(a.name, 40);
   if (!name) return null;
-  const image = typeof a.image === 'string' && (/^https:\/\/\S{1,300}$/i.test(a.image) || /^data:image\/png;base64,[A-Za-z0-9+\/=]{20,24000}$/.test(a.image)) ? a.image : null;
+  // Web pictures may only use ordinary URL characters (no quotes, brackets or spaces), since this ends up inside CSS.
+  const image = typeof a.image === 'string' && (/^https:\/\/[\w\-.~:\/?#@!$&*+,;=%]{1,300}$/i.test(a.image) || /^data:image\/png;base64,[A-Za-z0-9+\/=]{20,24000}$/.test(a.image)) ? a.image : null;
   const startedAt = Number(a.startedAt) > 0 && Number(a.startedAt) < Date.now() + 86400000 ? Number(a.startedAt) : null;
   return { type: ACTIVITY_TYPES[a.type] ? a.type : 'playing', name, details: rpcStr(a.details, 60), state: rpcStr(a.state, 60), image, startedAt, source: ['music', 'game', 'media', 'desktop'].includes(a.source) ? a.source : 'music' };
 }
@@ -1830,7 +1874,12 @@ function computeMyActivity() {
     if (g) return cleanActivity({ type: 'playing', name: g.title, details: 'on Frixion', startedAt: rpcGameStartedAt || null, source: 'game' });
   }
   if (rpcMedia) return cleanActivity({ type: rpcMedia.type, name: rpcMedia.name, details: 'in a Frixion chat', startedAt: rpcMedia.startedAt, source: 'media' });
-  if (musicTrack) return cleanActivity({ type: 'listening', name: musicTrack.name, details: 'on Frixion', image: musicTrack.banner || null, startedAt: musicStartedAt || null, source: 'music' });
+  if (musicTrack) {
+    // Built-in songs keep their banner on this site (Banners/...). Friends need the full address to load it.
+    let image = null;
+    try { image = musicTrack.banner ? new URL(musicTrack.banner, location.href).href : null; } catch (e) {}
+    return cleanActivity({ type: 'listening', name: musicTrack.name, details: 'on Frixion', image, startedAt: musicStartedAt || null, source: 'music' });
+  }
   return null;
 }
 function activityRefresh() { clearTimeout(activityDebounce); activityDebounce = setTimeout(publishActivity, 250); }
@@ -1846,6 +1895,9 @@ if (DESKTOP) {
   try {
     DESKTOP.onActivity(a => { desktopActivity = cleanActivity(a ? { ...a, source: 'desktop' } : null); activityRefresh(); });
   } catch (e) { console.warn('Could not connect to the desktop app.', e); }
+  // Both of these only exist in app version 2.1 and newer.
+  try { if (typeof DESKTOP.onIdleChange === 'function') DESKTOP.onIdleChange(idle => { desktopIdle = !!idle; updateMyConnection(); }); } catch (e) {}
+  try { if (typeof DESKTOP.onWindowVisibility === 'function') DESKTOP.onWindowVisibility(visible => { desktopWindowHidden = !visible; resumeMusicLoop(); }); } catch (e) {}
 }
 function publishActivity() {
   syncDesktopDetection();
@@ -1897,8 +1949,8 @@ function activityArtHTML(a, cls) {
   // Minecraft -> Icons/minecraft.png, "Rocket League" -> Icons/rocket-league.png). No file means it is quietly ignored.
   const slug = (a.type === 'playing' && a.source !== 'media') ? String(a.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : '';
   const own = slug ? `<img class="rpc-art-file" src="Icons/${esc(slug)}.png" alt="" onerror="this.remove()">` : '';
-  if (a.image && a.image.startsWith('data:')) return `<div class="${cls} rpc-art-icon" style="background-image:url('${esc(a.image)}')">${own}</div>`;
-  if (a.image) return `<div class="${cls}" style="background-image:url('${esc(a.image)}')">${own}</div>`;
+  if (a.image && a.image.startsWith('data:')) return `<div class="${cls} rpc-art-icon" style="background-image:${esc(cssUrl(a.image))}">${own}</div>`;
+  if (a.image) return `<div class="${cls}" style="background-image:${esc(cssUrl(a.image))}">${own}</div>`;
   let h = 0; for (const ch of a.name || '') h = (h * 31 + ch.charCodeAt(0)) % 360;
   return `<div class="${cls} rpc-art-glyph" style="background:linear-gradient(135deg,hsl(${h} 55% 44%),hsl(${(h + 50) % 360} 60% 30%))">${actIcon(a)}${own}</div>`;
 }
@@ -1911,7 +1963,7 @@ function activityCardHTML(a) {
 }
 // Keeps every visible clock ticking (one timer for all of them, and it only does work while there is one on screen).
 setInterval(() => {
-  if (document.hidden) return;
+  if (pageHidden()) return;
   document.querySelectorAll('.rpc-clock-val[data-start]').forEach(el => { el.textContent = fmtClock(Date.now() - Number(el.dataset.start)); });
 }, 1000);
 // The row of friend activity cards at the top of the phone home screen.
@@ -2104,8 +2156,72 @@ async function joinExploreServer(server, alreadyJoined) {
 // ============================================================
 // SESSION
 // ============================================================
-function getSession() { return localStorage.getItem(SESSION_KEY); }
-function setSession(u) { u ? localStorage.setItem(SESSION_KEY, u) : localStorage.removeItem(SESSION_KEY); }
+// The signed-in account is whatever Firebase Authentication says (it remembers the sign-in by itself). Its display name is
+// the username; the email check makes sure the two belong together.
+function usernameForAuthUser(user) {
+  const name = user && user.displayName;
+  return name && authEmailFor(name) === String(user.email || '').toLowerCase() ? name : null;
+}
+function friendlyAuthError(e, context) {
+  const code = (e && e.code) || '';
+  if (code === 'frx/wrong' || code === 'auth/invalid-credential' || code === 'auth/invalid-login-credentials' || code === 'auth/wrong-password' || code === 'auth/user-not-found') return 'Incorrect username or password.';
+  if (code === 'auth/operation-not-allowed' || code === 'auth/configuration-not-found' || code === 'auth/admin-restricted-operation') return "Sign-in isn't switched on yet. The site owner needs to turn on Email/Password sign-in in Firebase (see SECURITY-SETUP.md).";
+  if (code === 'auth/too-many-requests') return 'Too many tries. Wait a few minutes, then try again.';
+  if (code === 'auth/network-request-failed') return "Can't reach Frixion. Check your connection and try again.";
+  if (code === 'auth/email-already-in-use') return context === 'register' ? 'That username is already taken.' : "This account couldn't be moved to the new sign-in because another account has the same name in different capitals. Ask the owner for help.";
+  if (code === 'auth/requires-recent-login') return 'For safety, log out and back in, then try again.';
+  if (code === 'auth/invalid-email') return "This username can't be used with the new sign-in. Ask the owner for help.";
+  return (e && e.message) || 'Something went wrong.';
+}
+const authFail = code => Object.assign(new Error(code), { code });
+// Signs in with Firebase Authentication. An account from before Firebase Authentication isn't there yet; if its old
+// saved password matches, it is moved over now (same password) and the saved copy is deleted from the database.
+async function signInOrMoveOver(typed, pass) {
+  try {
+    const cred = await fbAuth.signInWithEmailAndPassword(authEmailFor(typed), authPassFor(pass));
+    const name = usernameForAuthUser(cred.user);
+    if (name) return name;
+    // Signed in, but an earlier move-over stopped before the display name was saved. Finish it.
+    await cred.user.updateProfile({ displayName: typed });
+    await cred.user.getIdToken(true);
+    return typed;
+  } catch (e) {
+    if (!['auth/invalid-credential', 'auth/invalid-login-credentials', 'auth/user-not-found', 'auth/wrong-password'].includes(e.code)) throw e;
+  }
+  // Check the saved password first. Once the new database rules are published, signed-out visitors can't read
+  // profiles (data stays undefined); then the check happens below, signed in as the new account.
+  let data;
+  try { const snap = await db.collection('users').doc(typed).get(); data = snap.exists ? snap.data() : null; } catch (e) {}
+  if (data === null || (data && (typeof data.password !== 'string' || data.password !== pass))) throw authFail('frx/wrong');
+  let cred;
+  try { cred = await fbAuth.createUserWithEmailAndPassword(authEmailFor(typed), authPassFor(pass)); }
+  catch (e) {
+    // There is already a sign-in account with this name, so the password was wrong (or, rarely, a name clash).
+    if (e.code === 'auth/email-already-in-use') throw authFail(data ? 'auth/email-already-in-use' : 'frx/wrong');
+    throw e;
+  }
+  try {
+    await cred.user.updateProfile({ displayName: typed });
+    await cred.user.getIdToken(true);                // so the database sees the username on this sign-in already
+    if (data === undefined) {
+      const snap = await db.collection('users').doc(typed).get();
+      const saved = snap.exists ? snap.data().password : undefined;
+      if (typeof saved !== 'string' || saved !== pass) throw authFail('frx/wrong');
+    }
+    await db.collection('users').doc(typed).update({ password: FieldValue.delete() });
+  } catch (e) {
+    await cred.user.delete().catch(() => fbAuth.signOut());   // undo: a half-made sign-in account must not stay behind
+    throw e;
+  }
+  return typed;
+}
+async function finishSignIn(username, data) {
+  // Signed in through Firebase, so an old saved password (left by an interrupted move-over) is no longer needed.
+  if (typeof data.password === 'string') { delete data.password; db.collection('users').doc(username).update({ password: FieldValue.delete() }).catch(() => {}); }
+  await normalizeProfile(username, data);
+  myUid = username; myProfile = data; profileCache[myUid] = data;
+  enterApp();
+}
 
 function banStatus(profile) {
   if (!profile || !profile.banned) return { banned: false };
@@ -2195,7 +2311,7 @@ function showBanScreen(ban, signedIn) {
     clearInterval(banScreenTimer);
     el.remove();
     if (signedIn && myUid) { await $('logout-btn').onclick(); return; }
-    setSession(null);
+    try { await fbAuth.signOut(); } catch (e) {}
     $('login-password').value = '';
     $('login-btn').disabled = false; $('login-btn').textContent = 'Log In';
     showAuthScreen();
@@ -2600,23 +2716,23 @@ async function loadUserDevicesBlock(username) {
 }
 
 async function boot() {
-  // Start loading the profile at the same time as the device check instead of after it: that's one network round trip saved on every launch.
-  const saved = getSession();
-  const profileP = saved ? db.collection('users').doc(saved).get().catch(e => e) : null;
+  // A saved username from before Firebase Authentication proves nothing (anyone could type one in), so it no longer signs
+  // anyone in. Those people log in once more, which also moves their account over.
+  try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+  // Wait for Firebase to restore a saved sign-in at the same time as the device check: one round trip instead of two.
+  const userP = new Promise(resolve => { const off = fbAuth.onAuthStateChanged(u => { off(); resolve(u); }, () => resolve(null)); });
   try { await initDeviceBan(); } catch (e) { console.warn('device check failed', e); }
   if (deviceBan.banned) { showAuthScreen(); return; }     // the device ban screen is already covering everything
-  if (!saved) { showAuthScreen(); return; }
-  const snap = await profileP;
-  if (snap instanceof Error) { showAuthScreen(); return; }
-  if (!snap.exists) { setSession(null); showAuthScreen(); return; }
+  const user = await userP;
+  const username = usernameForAuthUser(user);
+  if (!username) { if (user) await fbAuth.signOut().catch(() => {}); showAuthScreen(); return; }
+  let snap;
+  try { snap = await db.collection('users').doc(username).get(); } catch (e) { showAuthScreen(); return; }
+  if (!snap.exists) { await fbAuth.signOut().catch(() => {}); showAuthScreen(); return; }
   const data = snap.data();
   const ban = banStatus(data);
   if (ban.banned) { showAuthScreen(); showBanScreen(ban, false); return; }
-  await normalizeProfile(saved, data);
-  myUid = saved;
-  myProfile = data;
-  profileCache[myUid] = data;
-  enterApp();
+  await finishSignIn(username, data);
 }
 
 function showAuthScreen() {
@@ -2649,26 +2765,23 @@ $('login-btn').onclick = async () => {
   const pass = $('login-password').value;
   $('login-error').textContent = '';
   if (!username || !pass) { $('login-error').textContent = 'Please fill in both fields.'; return; }
+  if (!/^[^\s@/]{1,40}$/.test(username)) { $('login-error').textContent = 'Incorrect username or password.'; return; }
   $('login-btn').disabled = true; $('login-btn').textContent = 'Checking...';
   try {
-    const snap = await db.collection('users').doc(username).get();
-    if (!snap.exists || snap.data().password !== pass) {
-      $('login-error').textContent = 'Incorrect username or password.';
-      $('login-btn').disabled = false; $('login-btn').textContent = 'Log In'; return;
-    }
+    const name = await signInOrMoveOver(username, pass);
+    const snap = await db.collection('users').doc(name).get();
+    if (!snap.exists) { await fbAuth.signOut(); throw authFail('frx/wrong'); }
     const data = snap.data();
     const ban = banStatus(data);
     if (ban.banned) {
+      await fbAuth.signOut().catch(() => {});
       $('login-btn').disabled = false; $('login-btn').textContent = 'Log In';
       showBanScreen(ban, false); return;
     }
-    if (ban.expired) { await db.collection('users').doc(username).update({ banned: false, banReason: '', bannedUntil: null }); data.banned = false; }
-    await normalizeProfile(username, data);
-    myUid = username; myProfile = data; profileCache[myUid] = data;
-    setSession(username);
-    enterApp();
+    if (ban.expired) { await db.collection('users').doc(name).update({ banned: false, banReason: '', bannedUntil: null }); data.banned = false; }
+    await finishSignIn(name, data);
   } catch (e) {
-    $('login-error').textContent = e.message || 'Something went wrong.';
+    $('login-error').textContent = friendlyAuthError(e, 'login');
   }
   $('login-btn').disabled = false; $('login-btn').textContent = 'Log In';
 };
@@ -2680,17 +2793,23 @@ $('register-btn').onclick = async () => {
   if (!username || !pass) { $('register-error').textContent = 'Please fill in both fields.'; return; }
   if (username.length < 3) { $('register-error').textContent = 'Username must be at least 3 characters.'; return; }
   if (!/^[A-Za-z0-9_]+$/.test(username)) { $('register-error').textContent = 'Letters, numbers, and underscores only.'; return; }
-  if (pass.length < 4) { $('register-error').textContent = 'Password must be at least 4 characters.'; return; }
+  if (pass.length < 6) { $('register-error').textContent = 'Password must be at least 6 characters.'; return; }
   $('register-btn').disabled = true; $('register-btn').textContent = 'Creating...';
   try {
+    // Creating the sign-in account first also claims the name: Firebase refuses a second account with the same email.
+    const cred = await fbAuth.createUserWithEmailAndPassword(authEmailFor(username), authPassFor(pass));
+    await cred.user.updateProfile({ displayName: username });
+    await cred.user.getIdToken(true);
+    // An older account may have this exact name and not be moved over yet. Never take it over.
     const existing = await db.collection('users').doc(username).get();
     if (existing.exists) {
+      await cred.user.delete().catch(() => fbAuth.signOut());
       $('register-error').textContent = 'That username is already taken.';
       $('register-btn').disabled = false; $('register-btn').textContent = 'Continue'; return;
     }
     const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
     const data = {
-      username, password: pass, avatarColor: color, status: 'online',
+      username, avatarColor: color, status: 'online',
       premiumUntil: null, theme: 'dark', op: false,
       orbs: STARTING_ORBS,
       stats: { messagesSent: 0, reactionsGiven: 0, dmsStarted: 0, serversCount: 0 },
@@ -2703,27 +2822,26 @@ $('register-btn').onclick = async () => {
       createdAt: FieldValue.serverTimestamp(),
     };
     await db.collection('users').doc(username).set(data);
-    myUid = username; myProfile = data; profileCache[myUid] = data;
-    setSession(username);
-    enterApp();
+    await finishSignIn(username, data);
   } catch (e) {
-    $('register-error').textContent = e.message || 'Something went wrong.';
+    $('register-error').textContent = friendlyAuthError(e, 'register');
   }
   $('register-btn').disabled = false; $('register-btn').textContent = 'Continue';
 };
 
 $('logout-btn').onclick = async () => {
+  setMobileTab('home');
   ovReset();
   musicStop();
   ggRaccoonSeen = null;
   teardownPresence();
   try { if (myUid) await db.collection('users').doc(myUid).update({ status: 'offline' }); } catch (e) {}
+  clearMyTypingDoc();
   cleanupAllListeners();
-  setSession(null);
+  try { await fbAuth.signOut(); } catch (e) {}
   stopGameEngines();
   myUid = null; myProfile = null; profileCache = {}; isAdmin = false; isOwner = false; sfMode = false; ephemeralMsgs = []; seedBotProfiles();
   applyAdminVisibility();
-  clearMyTypingDoc();
   currentServerId = null; currentServerData = null; currentChannelId = null;
   currentDMId = null; currentDMOtherUid = null; currentView = 'none';
   document.body.className = '';
@@ -2901,7 +3019,12 @@ async function startTermination(info) {
     cancelAnimationFrame(raf);
     el.classList.add('is-black');
     try {
-      if (mode === 'real') await db.collection('users').doc(uid).delete();
+      if (mode === 'real') {
+        await db.collection('users').doc(uid).delete();
+        // Also remove the sign-in account so the name is free again. Firebase may refuse if the sign-in is old; then
+        // the account just can't get back in (its profile is gone).
+        try { if (fbAuth.currentUser) await fbAuth.currentUser.delete(); } catch (e) {}
+      }
       else await db.collection('users').doc(uid).update({ terminated: FieldValue.delete() });
     } catch (e) { console.warn('termination write failed', e); }
     try { await $('logout-btn').onclick(); } catch (e) {}
@@ -2976,8 +3099,8 @@ function initAppForUser() {
       lastHandledRedirectNonce = myProfile.redirectNonce;
       const target = myProfile.redirectUrl;
       db.collection('users').doc(myUid).update({ redirectUrl: FieldValue.delete(), redirectNonce: FieldValue.delete() }).catch(() => {});
-      window.location.href = target;
-      return;
+      // Only ever a web address: a javascript: "address" here would run code inside this page.
+      if (typeof target === 'string' && /^https?:\/\//i.test(target.trim())) { window.location.href = target.trim(); return; }
     }
     const sfWas = sfMode;
     staffFlagsFromProfile(myProfile);
@@ -3078,7 +3201,8 @@ function renderSelfPanel() {
   $('self-username').innerHTML = esc(displayNameOf(myProfile)) + premiumStar(myProfile) + roleTag(myProfile);
   const st = STATUSES.find(s => s.key === computeDisplayStatus(myUid));
   const myAct = computeMyActivity();
-  $('self-status-label').textContent = myAct ? activityLine(myAct) : (st ? st.label : 'Online') + (isOnMobile(myUid) && st && st.key !== 'offline' ? ' · Mobile' : '');
+  $('self-status-label').textContent = myAct ? activityLine(myAct) : (st ? st.label : 'Online') + (st && st.key !== 'offline' ? (isOnMobile(myUid) ? ' · Mobile' : DESKTOP ? ' · App' : '') : '');
+  updateMobileTabbar();
 }
 
 // ============================================================
@@ -3776,13 +3900,11 @@ async function selectDM(id, otherUid) {
   scheduleMsgLoading();
   const dmDoc = (window.__myDMs || []).find(d => d.id === id);
   if (!dmDoc || dmDoc.autoDelete !== false) sweepOldMessages(db.collection('dms').doc(id).collection('messages'));
-  if (unsub.messages) unsub.messages();
-  unsub.messages = db.collection('dms').doc(id).collection('messages').orderBy('createdAt', 'asc')
-    .onSnapshot(snap => {
-      const msgs = [];
-      snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
-      onMessagesUpdate(msgs);
-    });
+  listenToMessages(db.collection('dms').doc(id).collection('messages'), snap => {
+    const msgs = [];
+    snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+    onMessagesUpdate(msgs);
+  });
 }
 
 async function selectGroupDM(id) {
@@ -3814,13 +3936,11 @@ async function selectGroupDM(id) {
   setMobilePane('chat');
   scheduleMsgLoading();
   if (!g || g.autoDelete !== false) sweepOldMessages(db.collection('groupDMs').doc(id).collection('messages'));
-  if (unsub.messages) unsub.messages();
-  unsub.messages = db.collection('groupDMs').doc(id).collection('messages').orderBy('createdAt', 'asc')
-    .onSnapshot(snap => {
-      const msgs = [];
-      snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
-      onMessagesUpdate(msgs);
-    });
+  listenToMessages(db.collection('groupDMs').doc(id).collection('messages'), snap => {
+    const msgs = [];
+    snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+    onMessagesUpdate(msgs);
+  });
 }
 
 let groupDmPickerSelection = [];
@@ -4033,8 +4153,7 @@ async function openProfileModal(username) {
     </div>`;
     $('profile-message-btn').onclick = () => { closeModal('profile-modal'); startDMWith(username); };
     if ($('profile-add-friend')) $('profile-add-friend').onclick = async () => {
-      await db.collection('users').doc(myUid).update({ outgoingRequests: FieldValue.arrayUnion(username) });
-      await db.collection('users').doc(username).update({ incomingRequests: FieldValue.arrayUnion(myUid) });
+      try { await sendFriendRequest(username); } catch (e) { toast('Could not send the request.', 'error'); }
       openProfileModal(username);
     };
     if ($('profile-cancel-req')) $('profile-cancel-req').onclick = async () => { await cancelFriendRequest(username); openProfileModal(username); };
@@ -4261,8 +4380,9 @@ function openImageViewer(url, name) {
   img.src = url;
   if (img.complete && img.naturalWidth) img.onload();
   const open = $('image-preview-open');
-  if (open) open.href = /^blob:/.test(url) ? '#' : url;
-  if (open) open.style.display = /^blob:/.test(url) ? 'none' : '';
+  const web = /^https?:\/\//i.test(url || '');      // only real web addresses get an "Open original" link
+  if (open) open.href = web ? url : '#';
+  if (open) open.style.display = web ? '' : 'none';
   openModal('image-preview-modal');
   requestAnimationFrame(() => requestAnimationFrame(() => box.classList.remove('no-anim')));
 }
@@ -4360,7 +4480,7 @@ let stickerCache = {};
 function subscribeStickers() {
   db.collection('stickers').onSnapshot(snap => {
     const map = {};
-    snap.forEach(d => { map[d.id] = d.data(); });
+    snap.forEach(d => { const s = cleanCatalogItem(d.data()); if (s.dataUrl) map[d.id] = s; });
     stickerCache = map;
     renderStickerGrid();
   });
@@ -4370,7 +4490,7 @@ function renderStickerGrid() {
   if (!wrap) return;
   const names = Object.keys(stickerCache).sort();
   wrap.innerHTML = names.length
-    ? names.map(n => `<button type="button" title="${esc(n)}"><img src="${stickerCache[n].dataUrl}" alt="${esc(n)}"></button>`).join('')
+    ? names.map(n => `<button type="button" title="${esc(n)}"><img src="${esc(stickerCache[n].dataUrl)}" alt="${esc(n)}"></button>`).join('')
     : '<div class="ep-empty">No stickers published yet</div>';
   wrap.querySelectorAll('button').forEach((btn, i) => {
     btn.onclick = async () => {
@@ -4565,37 +4685,39 @@ $('send-friend-req-btn').onclick = async () => {
     if ((myProfile.friends || []).includes(uname)) { $('add-friend-error').textContent = 'Already friends.'; return; }
     if ((myProfile.outgoingRequests || []).includes(uname)) { $('add-friend-error').textContent = 'Request already sent.'; return; }
     if ((myProfile.incomingRequests || []).includes(uname)) { await respondFriendRequest(uname, true); $('add-friend-username').value = ''; return; }
-    await db.collection('users').doc(myUid).update({ outgoingRequests: FieldValue.arrayUnion(uname) });
-    await db.collection('users').doc(uname).update({ incomingRequests: FieldValue.arrayUnion(myUid) });
+    await sendFriendRequest(uname);
     $('add-friend-username').value = '';
     toast('Friend request sent.');
   } catch (e) { $('add-friend-error').textContent = 'Something went wrong.'; }
 };
+// Friend changes touch two accounts, so both sides are written together in one batch: either both change or neither does.
+// (The database rules also rely on this: you may only add yourself to someone's friends while their request to you is still there.)
+function friendBatch(mine, theirs, username) {
+  const batch = db.batch();
+  batch.update(db.collection('users').doc(myUid), mine);
+  batch.update(db.collection('users').doc(username), theirs);
+  return batch.commit();
+}
+function sendFriendRequest(username) {
+  return friendBatch({ outgoingRequests: FieldValue.arrayUnion(username) }, { incomingRequests: FieldValue.arrayUnion(myUid) }, username);
+}
 async function respondFriendRequest(username, accept) {
   try {
-    await db.collection('users').doc(myUid).update({ incomingRequests: FieldValue.arrayRemove(username) });
-    await db.collection('users').doc(username).update({ outgoingRequests: FieldValue.arrayRemove(myUid) });
-    if (accept) {
-      await db.collection('users').doc(myUid).update({ friends: FieldValue.arrayUnion(username) });
-      await db.collection('users').doc(username).update({ friends: FieldValue.arrayUnion(myUid) });
-      toast(`You're now friends with ${username}.`);
-    }
+    await friendBatch(
+      accept ? { incomingRequests: FieldValue.arrayRemove(username), friends: FieldValue.arrayUnion(username) } : { incomingRequests: FieldValue.arrayRemove(username) },
+      accept ? { outgoingRequests: FieldValue.arrayRemove(myUid), friends: FieldValue.arrayUnion(myUid) } : { outgoingRequests: FieldValue.arrayRemove(myUid) },
+      username);
+    if (accept) toast(`You're now friends with ${username}.`);
   } catch (e) { toast('Something went wrong.', 'error'); }
 }
 async function cancelFriendRequest(username) {
-  try {
-    await db.collection('users').doc(myUid).update({ outgoingRequests: FieldValue.arrayRemove(username) });
-    await db.collection('users').doc(username).update({ incomingRequests: FieldValue.arrayRemove(myUid) });
-  } catch (e) {}
+  try { await friendBatch({ outgoingRequests: FieldValue.arrayRemove(username) }, { incomingRequests: FieldValue.arrayRemove(myUid) }, username); } catch (e) {}
 }
 async function removeFriend(username) {
   confirmAction({
     title: 'Remove Friend', body: `Remove ${username} as a friend?`, confirmLabel: 'Remove Friend',
     onConfirm: async () => {
-      try {
-        await db.collection('users').doc(myUid).update({ friends: FieldValue.arrayRemove(username) });
-        await db.collection('users').doc(username).update({ friends: FieldValue.arrayRemove(myUid) });
-      } catch (e) {}
+      try { await friendBatch({ friends: FieldValue.arrayRemove(username) }, { friends: FieldValue.arrayRemove(myUid) }, username); } catch (e) {}
     },
   });
 }
@@ -5049,7 +5171,7 @@ function renderRolesListView(root) {
         <div class="dr-row" role="row" tabindex="0" data-id="${esc(r.id)}" data-name="${esc(r.name.toLowerCase())}" ${canManage && canEditRole(r) ? 'draggable="true"' : ''}>
           <span class="dr-cell-name" role="cell">
             <span class="dr-drag">${canManage && canEditRole(r) ? ROLE_ICONS.drag : ''}</span>
-            <span class="dr-shield" style="color:${esc(r.color || ROLE_DEFAULT_COLOR)}">${ROLE_ICONS.shield}</span>
+            <span class="dr-shield" style="color:${esc(cssColor(r.color, ROLE_DEFAULT_COLOR))}">${ROLE_ICONS.shield}</span>
             <span class="dr-name">${esc(r.name)}</span>
           </span>
           <span class="dr-cell-members" role="cell">${roleMemberIds(r.id).length}${ROLE_ICONS.person}</span>
@@ -5207,7 +5329,7 @@ function renderRoleEditView(root) {
           ${canManage ? `<button type="button" class="dr-icon-btn" id="dr-side-create" title="Create Role" aria-label="Create Role">${ROLE_ICONS.plus}</button>` : ''}
         </div>
         <div class="dr-side-list">
-          ${sideRoles.map(r => `<button type="button" class="dr-side-row${r.id === role.id ? ' on' : ''}" data-id="${esc(r.id)}" ${canManage && canEditRole(r) ? 'draggable="true"' : ''}><span class="dr-dot" style="background:${esc((r.id === role.id ? v.color : r.color) || ROLE_DEFAULT_COLOR)}"></span><span class="dr-side-name">${esc(r.id === role.id ? (v.name || r.name) : r.name)}</span></button>`).join('')}
+          ${sideRoles.map(r => `<button type="button" class="dr-side-row${r.id === role.id ? ' on' : ''}" data-id="${esc(r.id)}" ${canManage && canEditRole(r) ? 'draggable="true"' : ''}><span class="dr-dot" style="background:${esc(cssColor((r.id === role.id ? v.color : r.color) || ROLE_DEFAULT_COLOR, ROLE_DEFAULT_COLOR))}"></span><span class="dr-side-name">${esc(r.id === role.id ? (v.name || r.name) : r.name)}</span></button>`).join('')}
           <button type="button" class="dr-side-row${isEveryone ? ' on' : ''}" data-id="everyone"><span class="dr-dot" style="background:${ROLE_DEFAULT_COLOR}"></span><span class="dr-side-name">@everyone</span></button>
         </div>
       </aside>
@@ -5771,7 +5893,7 @@ function renderChannelPermsPane() {
   $('cs-target-list').innerHTML = targets.map(id => {
     const r = roleById(id);
     return `<button type="button" role="option" aria-selected="${id === csTarget}" class="cs-target${id === csTarget ? ' on' : ''}" data-target="${esc(id)}">
-      <span class="cs-dot" style="background:${esc(r.color || '#99aab5')}"></span><span class="cs-tname">${esc(r.name)}</span>
+      <span class="cs-dot" style="background:${esc(cssColor(r.color, '#99aab5'))}"></span><span class="cs-tname">${esc(r.name)}</span>
       ${id !== 'everyone' ? `<span class="cs-rm" data-rm="${esc(id)}" title="Remove override" aria-label="Remove ${esc(r.name)} override">✕</span>` : ''}</button>`;
   }).join('');
   $('cs-target-list').querySelectorAll('[data-target]').forEach(b => { b.onclick = (e) => {
@@ -5955,27 +6077,25 @@ function selectChannel(channel) {
   setMobilePane('chat');
   scheduleMsgLoading();
   if (channel.autoDelete !== false) sweepOldMessages(db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id).collection('messages'));
-  if (unsub.messages) unsub.messages();
-  let channelFirstSync = true;
-  unsub.messages = db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id)
-    .collection('messages').orderBy('createdAt', 'asc')
-    .onSnapshot(snap => {
-      if (!channelFirstSync) {
-        snap.docChanges().forEach(change => {
-          if (change.type !== 'added') return;
-          const m = change.doc.data();
-          if (m.uid === myUid || isConversationMuted('ch', channel.id)) return;
-          if (messageTextMentionsMe(m.text || '', m.everyoneBlocked !== true)) playPingSound();
-          if (m.tts && m.text && 'speechSynthesis' in window) {
-            try { speechSynthesis.speak(new SpeechSynthesisUtterance(`${m.username || 'Someone'} said ${m.text.slice(0, 300)}`)); } catch (e) {}
-          }
-        });
-      }
-      channelFirstSync = false;
-      const msgs = [];
-      snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
-      onMessagesUpdate(msgs);
-    });
+  listenToMessages(db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id).collection('messages'), (snap, first) => {
+    if (!first) {
+      snap.docChanges().forEach(change => {
+        if (change.type !== 'added') return;
+        const m = change.doc.data();
+        if (m.uid === myUid || isConversationMuted('ch', channel.id)) return;
+        // Only brand-new messages ping. An older one can re-enter the window when a newer one is deleted.
+        const sentAt = m.createdAt && m.createdAt.toMillis ? m.createdAt.toMillis() : Date.now();
+        if (Date.now() - sentAt > 60000) return;
+        if (messageTextMentionsMe(m.text || '', m.everyoneBlocked !== true)) playPingSound();
+        if (m.tts && m.text && 'speechSynthesis' in window) {
+          try { speechSynthesis.speak(new SpeechSynthesisUtterance(`${m.username || 'Someone'} said ${m.text.slice(0, 300)}`)); } catch (e) {}
+        }
+      });
+    }
+    const msgs = [];
+    snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+    onMessagesUpdate(msgs);
+  });
 }
 
 // ============================================================
@@ -6008,6 +6128,7 @@ function canPin() {
 $('pins-toggle').onclick = () => {
   renderPinnedList(lastRawMessages.filter(m => m.pinned));
   openModal('pinned-modal');
+  refreshPinnedList();
 };
 function renderPinnedList(pinned) {
   const wrap = $('pinned-list');
@@ -6068,6 +6189,9 @@ $('search-toggle').onclick = () => {
   $('search-toggle').classList.toggle('on', searchActive);
   $('search-bar').classList.toggle('hidden', !searchActive);
   if (searchActive) { $('search-input').value = ''; $('search-input').focus(); }
+  // Search looks through more history than the normal view keeps loaded.
+  const SEARCH_WINDOW = 500;
+  if (searchActive && hasOlderMessages() && msgLimit < SEARCH_WINDOW) { msgLimit = SEARCH_WINDOW; listenToMessages(msgListen.coll, msgListen.onSnap); }
   renderMessages(lastRawMessages);
 };
 $('search-close').onclick = () => {
@@ -6112,9 +6236,60 @@ function onMessagesUpdate(msgs) {
     });
   }
   cancelMsgLoading();
+  msgLoadingOlder = false;
   lastRawMessages = msgs;
   renderMessages(msgs);
-  if (!$('pinned-modal').classList.contains('hidden')) renderPinnedList(msgs.filter(m => m.pinned));
+  if (!$('pinned-modal').classList.contains('hidden')) refreshPinnedList();
+}
+
+// ---------- message paging ----------
+// A conversation opens with its newest MSG_PAGE messages and scrolling to the top loads MSG_PAGE more. Before, every
+// message ever sent was loaded (and read from the database) each time a conversation was opened.
+const MSG_PAGE = 100;
+let msgLimit = MSG_PAGE;
+let msgListen = null;          // { coll, onSnap } for the open conversation, so it can be re-subscribed with a bigger window
+let msgKeepFromBottom = null;  // { dist, count }: keeps the view still while older messages are added above it
+let msgLoadingOlder = false;
+// onSnap(snap, first): `first` is true for the listener's first snapshot (what was already there, not new messages).
+function listenToMessages(coll, onSnap) {
+  if (!msgListen || msgListen.coll.path !== coll.path) { msgLimit = MSG_PAGE; msgKeepFromBottom = null; msgLoadingOlder = false; }
+  if (unsub.messages) unsub.messages();
+  msgListen = { coll, onSnap };
+  let first = true;
+  unsub.messages = coll.orderBy('createdAt', 'asc').limitToLast(msgLimit).onSnapshot(snap => {
+    const wasFirst = first;
+    first = false;
+    onSnap(snap, wasFirst);
+  }, err => console.warn('Messages listener stopped.', err));
+}
+function hasOlderMessages() { return !!msgListen && !!unsub.messages && lastRawMessages.length >= msgLimit; }
+function loadOlderMessages(minimum) {
+  if (!hasOlderMessages() || msgLoadingOlder) return;
+  const wrap = $('messages');
+  msgLoadingOlder = true;
+  msgKeepFromBottom = { dist: wrap.scrollHeight - wrap.scrollTop, count: lastRawMessages.length };
+  msgLimit = Math.max(msgLimit + MSG_PAGE, minimum || 0);
+  listenToMessages(msgListen.coll, msgListen.onSnap);
+}
+$('messages').addEventListener('scroll', () => { if (!searchActive && $('messages').scrollTop < 80) loadOlderMessages(); }, { passive: true });
+
+// Pinned messages can be older than the loaded window, so they are fetched on their own.
+async function refreshPinnedList() {
+  const coll = msgCollectionRef();
+  let pinned = lastRawMessages.filter(m => m.pinned);
+  if (coll) {
+    try {
+      const snap = await coll.where('pinned', '==', true).get();
+      pinned = [];
+      snap.forEach(d => pinned.push({ id: d.id, ...d.data() }));
+      const ms = m => (m.createdAt && m.createdAt.toMillis ? m.createdAt.toMillis() : 0);
+      if (currentView === 'channel' && !canHere('readMessageHistory')) pinned = pinned.filter(m => ms(m) >= channelOpenedAt - 2000);
+      pinned.sort((a, b) => ms(a) - ms(b));
+      await Promise.all([...new Set(pinned.map(m => m.uid).filter(Boolean))].map(u => getProfile(u)));
+    } catch (e) { console.warn('Could not load pinned messages.', e); }
+  }
+  const now = msgCollectionRef();
+  if (!coll || (now && now.path === coll.path)) renderPinnedList(pinned);   // skip if you switched conversations meanwhile
 }
 
 // ============================================================
@@ -6364,7 +6539,7 @@ async function renderMemberPanel(members, ownerId, server) {
     return `
     <div class="member-row" data-u="${esc(uid)}">
       ${avatarHTML(32, p.avatarColor, initials(p.username), disp, p.avatarUrl, p.equippedDecoration, uid, p.equippedMask)}
-      <span class="mname${disp !== 'offline' ? ' online-name' : ''}"${roleColor ? ` style="color:${esc(roleColor)}"` : ''}>${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}${vanishedListFor(vanishData).includes(uid) && (uid === myUid || isOwner) ? `<span class="vanish-tag" title="${uid === myUid ? 'Only you and other owners can see you here' : 'Vanished. Only owners and co-owners can see this'}">Vanished</span>` : ''}</span>
+      <span class="mname${disp !== 'offline' ? ' online-name' : ''}"${roleColor ? ` style="color:${esc(cssColor(roleColor, 'inherit'))}"` : ''}>${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}${vanishedListFor(vanishData).includes(uid) && (uid === myUid || isOwner) ? `<span class="vanish-tag" title="${uid === myUid ? 'Only you and other owners can see you here' : 'Vanished. Only owners and co-owners can see this'}">Vanished</span>` : ''}</span>
       ${topRole && topRole.color ? roleChipHTML(topRole) : ''}
       ${showGear ? `<span class="member-manage-btn" title="Manage Member" data-manage-uid="${esc(uid)}">${icon('gear')}</span>` : ''}
     </div>`;
@@ -6572,13 +6747,15 @@ function attachmentHTML(m, canDelete) {
   if (atts.length) {
     const gridCls = atts.length > 1 ? ' msg-attachment-grid' : '';
     return `<div class="msg-attachment${gridCls}">` + atts.map((a, i) => {
+      const url = safeUrl(a && a.url, 'media');
+      if (!url) return '';
       const delBtn = canDelete ? `<button type="button" class="msg-att-del" data-attidx="${i}" title="Delete this image">${icon('trash')}</button>` : '';
-      if (a.type === 'image') return `<div class="msg-att-item"><img src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy">${delBtn}</div>`;
-      const dlHref = esc(attachmentDownloadUrl(a.url)), dlName = esc(a.name || 'file');
+      if (a.type === 'image') return `<div class="msg-att-item"><img src="${esc(url)}" alt="${esc(a.name)}" loading="lazy">${delBtn}</div>`;
+      const dlHref = esc(attachmentDownloadUrl(url)), dlName = esc(a.name || 'file');
       const kind = attachmentMediaKind(a);
       // Audio and video play right here. The file name and a download button sit under the player.
       if (kind) return `<div class="msg-att-item is-media"><div class="msg-media-card is-${kind}">
-          <div class="msg-media-slot" data-mkey="${esc((m.id || 'x') + ':' + i)}" data-kind="${kind}" data-url="${esc(a.url)}"></div>
+          <div class="msg-media-slot" data-mkey="${esc((m.id || 'x') + ':' + i)}" data-kind="${kind}" data-url="${esc(url)}"></div>
           <div class="msg-media-cap"><span class="mfc-icon">${icon('file')}</span><span class="mmc-name">${dlName}</span><span class="mmc-size">${esc(humanFileSize(a.size || 0))}</span>
             <a class="msg-media-dl" href="${dlHref}" download="${dlName}" rel="noopener" title="Download ${dlName}" aria-label="Download ${dlName}">${icon('download')}</a></div>
         </div>${delBtn}</div>`;
@@ -6786,7 +6963,11 @@ function jumpToMessage(id) {
   setTimeout(() => el.classList.remove('flash-highlight'), 1200);
 }
 
+// Every render gets a number. A render that had to wait for profiles gives up if a newer one started meanwhile
+// (a new message arrived, or you switched to another conversation), so an old list can never be drawn over a newer one.
+let messagesRenderSeq = 0;
 async function renderMessages(rawMsgs) {
+  const seq = ++messagesRenderSeq;
   const searching = searchActive;
   const q = searching ? ($('search-input').value || '').trim().toLowerCase() : '';
   let msgs = q ? rawMsgs.filter(m => `${m.text || ''} ${m.poll ? m.poll.question : ''}`.toLowerCase().includes(q)) : rawMsgs;
@@ -6798,7 +6979,8 @@ async function renderMessages(rawMsgs) {
   if (searching) $('search-count').textContent = q ? `${msgs.length} result${msgs.length === 1 ? '' : 's'}` : '';
 
   const uids = [...new Set(msgs.flatMap(m => [m.uid, m.replyTo && m.replyTo.uid, ...(m.targets || [])]).filter(Boolean))];
-  await Promise.all(uids.map(u => getProfile(u)));
+  if (uids.some(u => !profileCache[u])) await Promise.all(uids.map(u => getProfile(u)));
+  if (seq !== messagesRenderSeq) return;
   const wrap = $('messages');
   const wasAtBottom = wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 80;
   wrap.innerHTML = '';
@@ -6869,7 +7051,7 @@ async function renderMessages(rawMsgs) {
       const meta = document.createElement('div');
       meta.className = 'msg-meta';
       const roleColor = (currentView === 'channel' && currentServerData) ? roleColorFor(currentServerData, m.uid) : null;
-      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}"${roleColor ? ` style="color:${esc(roleColor)}"` : ''}>${esc((currentView === 'channel' && serverNickFor(m.uid)) || displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
+      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}"${roleColor ? ` style="color:${esc(cssColor(roleColor, 'inherit'))}"` : ''}>${esc((currentView === 'channel' && serverNickFor(m.uid)) || displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
       body.appendChild(meta);
       body.appendChild(buildMessageLineEl(m, canDelete));
       groupEl.innerHTML = avatarHTML(40, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration, undefined, p.equippedMask);
@@ -6880,7 +7062,10 @@ async function renderMessages(rawMsgs) {
   });
 
   purgeMsgMedia();
-  if (!searching && (wasAtBottom || msgs.length <= 20)) wrap.scrollTop = wrap.scrollHeight;
+  if (!searching && msgKeepFromBottom && rawMsgs.length > msgKeepFromBottom.count) {
+    wrap.scrollTop = wrap.scrollHeight - msgKeepFromBottom.dist;   // older messages arrived above: stay where you were
+    msgKeepFromBottom = null;
+  } else if (!searching && (wasAtBottom || msgs.length <= 20)) wrap.scrollTop = wrap.scrollHeight;
 }
 
 // ---------- reaction popover (full emoji picker: standard + custom) ----------
@@ -6913,7 +7098,7 @@ function toggleReactPopover(anchorEl, msgId) {
     const customNames = Object.keys(customEmojis).filter(n => !q || n.includes(q)).sort();
     const customWrap = pop.querySelector('.rp-custom-grid');
     customWrap.innerHTML = customNames.length
-      ? customNames.map(n => `<button type="button" title=":${esc(n)}:"><img src="${customEmojis[n].dataUrl}" alt=":${esc(n)}:"></button>`).join('')
+      ? customNames.map(n => `<button type="button" title=":${esc(n)}:"><img src="${esc(customEmojis[n].dataUrl)}" alt=":${esc(n)}:"></button>`).join('')
       : '<div class="ep-empty">No custom emoji yet</div>';
     customWrap.querySelectorAll('button').forEach((btn, i) => { btn.onclick = () => doReact(`:${customNames[i]}:`); });
 
@@ -9194,7 +9379,7 @@ function renderCustomKeyboard() {
 // as the letter/symbol rows, so they pick up identical key styling.
 function ckEmojiRowsHTML() {
   const customTiles = Object.keys(customEmojis).sort().map(n =>
-    `<button type="button" class="ck-key ck-emoji-key" data-custom-emoji="${esc(n)}" title=":${esc(n)}:"><img src="${customEmojis[n].dataUrl}" alt=":${esc(n)}:"></button>`);
+    `<button type="button" class="ck-key ck-emoji-key" data-custom-emoji="${esc(n)}" title=":${esc(n)}:"><img src="${esc(customEmojis[n].dataUrl)}" alt=":${esc(n)}:"></button>`);
   const stdTiles = ALL_EMOJI_FLAT.map(e => `<button type="button" class="ck-key ck-emoji-key" data-ch="${esc(e)}">${e}</button>`);
   const tiles = customTiles.concat(stdTiles);
   const perRow = 7;
@@ -9306,7 +9491,7 @@ function renderEmojiPickerGrids() {
   const customWrap = $('ep-custom-grid');
   const customNames = Object.keys(customEmojis).filter(n => !q || n.includes(q)).sort();
   customWrap.innerHTML = customNames.length
-    ? customNames.map(n => `<button type="button" title=":${esc(n)}:"><img src="${customEmojis[n].dataUrl}" alt=":${esc(n)}:"></button>`).join('')
+    ? customNames.map(n => `<button type="button" title=":${esc(n)}:"><img src="${esc(customEmojis[n].dataUrl)}" alt=":${esc(n)}:"></button>`).join('')
     : '<div class="ep-empty">No custom emoji yet</div>';
   customWrap.querySelectorAll('button').forEach((btn, i) => { btn.onclick = () => applyEmojiPick({ custom: customNames[i] }); });
 
@@ -9452,8 +9637,101 @@ function populateAppPane() {
     <div id="app-pane-dl" class="app-dl"></div>
     ${appOS ? `<div class="setting-row"><div class="setting-row-text"><div class="setting-row-title">Remind me to get the app</div><div class="setting-row-desc">Shows a reminder when you open Frixion in a browser.</div></div>
       <label class="toggle-switch"><input type="checkbox" id="app-remind-toggle"${appPromptOff() ? '' : ' checked'}><span class="toggle-slider"></span></label></div>` : ''}`;
-  renderAppDownloads($('app-pane-dl'));
+  if (appOS) renderAppDownloads($('app-pane-dl'));
   if ($('app-remind-toggle')) $('app-remind-toggle').onchange = e => setAppPromptOff(!e.target.checked);
+}
+// ============================================================
+// PHONE: Discord-style bottom bar. Home is the normal screens; Notifications and You are full pages on top of them.
+// "You" is where Settings lives: tapping a row opens that part of Settings.
+// ============================================================
+let mobileTab = 'home';
+function setMobileTab(t) {
+  mobileTab = t;
+  document.querySelectorAll('#mobile-tabbar .mtab').forEach(b => b.classList.toggle('active', b.dataset.mtab === t));
+  $('mobile-notif-page').classList.toggle('hidden', t !== 'notif');
+  $('mobile-you-page').classList.toggle('hidden', t !== 'you');
+  if (t === 'notif') renderMobileNotif();
+  if (t === 'you') renderMobileYou();
+  if (t === 'home') document.querySelectorAll('#mobile-tabbar .mtab[data-mtab="home"]').forEach(b => b.blur());
+}
+document.querySelectorAll('#mobile-tabbar .mtab').forEach(b => b.onclick = () => setMobileTab(b.dataset.mtab));
+async function renderMobileNotif() {
+  const box = $('mobile-notif-page');
+  if (!myProfile) return;
+  const incoming = myProfile.incomingRequests || [];
+  box.innerHTML = `<div class="mpage-title">Notifications</div><div class="mpage-body"><div class="mpage-empty">Loading…</div></div>`;
+  await Promise.all(incoming.map(u => getProfile(u)));
+  if (mobileTab !== 'notif') return;
+  const body = box.querySelector('.mpage-body');
+  if (!incoming.length) {
+    body.innerHTML = `<div class="mpage-empty"><svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9.500"/><path d="M7.500 12.500l2.700 2.700 6-6.400"/></svg><b>You're all caught up.</b><span>Friend requests and other news show up here.</span></div>`;
+    return;
+  }
+  body.innerHTML = `<div class="mpage-label">Friend requests — ${incoming.length}</div>` + incoming.map(u => {
+    const p = profileCache[u] || { username: u };
+    return `<div class="mnotif-row"><span data-openprofile="${esc(u)}">${avatarHTML(44, p.avatarColor, initials(p.username || u), null, p.avatarUrl, p.equippedDecoration, u, p.equippedMask)}</span>
+      <div class="mnotif-text"><div class="mnotif-name">${esc(displayNameOf(p) || u)}</div><div class="mnotif-sub">Sent you a friend request</div></div>
+      <button type="button" class="mnotif-btn yes" data-accept="${esc(u)}">Accept</button><button type="button" class="mnotif-btn" data-decline="${esc(u)}">Ignore</button></div>`;
+  }).join('');
+  body.querySelectorAll('[data-accept]').forEach(b => b.onclick = () => respondFriendRequest(b.dataset.accept, true));
+  body.querySelectorAll('[data-decline]').forEach(b => b.onclick = () => respondFriendRequest(b.dataset.decline, false));
+  body.querySelectorAll('[data-openprofile]').forEach(b => b.onclick = () => openProfileModal(b.dataset.openprofile));
+}
+const YOU_ICONS = {
+  account: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.400 3.600-7 8-7s8 2.600 8 7H4Z"/></svg>',
+  activity: ACT_ICONS.playing,
+  keyboard: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 6h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Zm2 2.500v1.500h1.500V8.500H5Zm3.500 0v1.500H10V8.500H8.500Zm3.500 0v1.500h1.500V8.500H12Zm3.500 0v1.500H17V8.500h-1.500ZM5 12v1.500h1.500V12H5Zm3.500 3.500H15.500V14H8.500v1.500Z"/></svg>',
+  premium: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.500 2.900 6 6.600.9-4.800 4.600 1.200 6.500L12 17.300 6.100 20.500l1.200-6.500L2.500 9.400l6.600-.9L12 2.500Z"/></svg>',
+  quests: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 3h9l5 5v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm8 1.500V9h4.500L13 4.500ZM7.500 13v1.500h9V13h-9Zm0 3.500V18h6v-1.500h-6Z"/></svg>',
+  themes: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20c1.300 0 2-.9 2-1.800 0-.5-.2-.9-.5-1.300-.3-.4-.5-.8-.5-1.300 0-1 .8-1.800 1.800-1.800H17a5 5 0 0 0 5-5C22 6 17.500 2 12 2ZM6.500 12a1.500 1.500 0 1 1 0-3 1.500 1.500 0 0 1 0 3Zm3-4a1.500 1.500 0 1 1 0-3 1.500 1.500 0 0 1 0 3Zm5 0a1.500 1.500 0 1 1 0-3 1.500 1.500 0 0 1 0 3Zm3 4a1.500 1.500 0 1 1 0-3 1.500 1.500 0 0 1 0 3Z"/></svg>',
+  access: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="4.500" r="2.200"/><path d="M4 8.500 12 9.800l8-1.300v2.200l-5.500 1V21h-2.200v-5h-.6v5H9.500v-9.300L4 10.700V8.500Z"/></svg>',
+  app: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 3h2v9.200l3.300-3.300 1.400 1.400L12 16l-5.700-5.700 1.400-1.400L11 12.200V3ZM4 19h16v2H4v-2Z"/></svg>',
+  updates: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4a1 1 0 0 0 1 1h2l5 4V5L6 9H4a1 1 0 0 0-1 1Zm13.500 2a4.500 4.500 0 0 0-2.500-4v8a4.500 4.500 0 0 0 2.500-4ZM14 3.200v2.100a7 7 0 0 1 0 13.400v2.100a9 9 0 0 0 0-17.600Z"/></svg>',
+  shield: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 4 5.500V11c0 5 3.400 9.300 8 11 4.600-1.700 8-6 8-11V5.500L12 2Z"/></svg>',
+  logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H5v16h4M15 8l4 4-4 4M19 12H9"/></svg>',
+};
+function renderMobileYou() {
+  const box = $('mobile-you-page');
+  if (!myProfile) return;
+  const p = myProfile;
+  const st = STATUSES.find(x => x.key === computeDisplayStatus(myUid));
+  const myAct = computeMyActivity();
+  const sub = myAct ? activityLine(myAct) : (st ? st.label : 'Online');
+  const row = (pane, label, icon) => `<button type="button" class="myou-row" data-ypane="${pane}"><span class="myou-ico">${YOU_ICONS[icon]}</span><span class="myou-label">${label}</span><svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>`;
+  const staff = [];
+  if (!$('open-owner-panel').classList.contains('hidden')) staff.push(`<button type="button" class="myou-row" data-ystaff="owner"><span class="myou-ico">${YOU_ICONS.shield}</span><span class="myou-label">Owner Panel</span><svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>`);
+  else if (!$('open-admin-panel').classList.contains('hidden')) staff.push(`<button type="button" class="myou-row" data-ystaff="admin"><span class="myou-ico">${YOU_ICONS.shield}</span><span class="myou-label">Admin Panel</span><svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>`);
+  box.innerHTML = `<div class="mpage-title">You</div><div class="mpage-body">
+    <button type="button" class="myou-card" id="myou-card">
+      ${avatarHTML(72, p.avatarColor, initials(p.username), computeDisplayStatus(myUid), p.avatarUrl, p.equippedDecoration, myUid, p.equippedMask)}
+      <span class="myou-who"><span class="myou-name">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}</span><span class="myou-user">${esc(p.username)}</span><span class="myou-status">${esc(sub)}</span></span>
+      <svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+    </button>
+    <div class="mpage-label">Settings</div>
+    <div class="myou-group">${row('pane-account', 'My Account', 'account')}${row('pane-activity', 'Activity Status', 'activity')}${row('pane-premium', 'Frixion Premium', 'premium')}${row('pane-quests', 'Quests', 'quests')}${row('pane-themes', 'Themes', 'themes')}${row('pane-accessibility', 'Accessibility', 'access')}${row('pane-keyboard', 'Keyboard', 'keyboard')}</div>
+    <div class="mpage-label">App</div>
+    <div class="myou-group">${row('pane-app', 'Frixion App', 'app')}${row('pane-updates', 'Update Log', 'updates')}</div>
+    ${staff.length ? `<div class="mpage-label">Staff</div><div class="myou-group">${staff.join('')}</div>` : ''}
+    <div class="myou-group myou-out"><button type="button" class="myou-row danger" id="myou-logout"><span class="myou-ico">${YOU_ICONS.logout}</span><span class="myou-label">Log Out</span></button></div>
+  </div>`;
+  $('myou-card').onclick = () => openProfileModal(myUid);
+  box.querySelectorAll('[data-ypane]').forEach(b => b.onclick = () => {
+    openSettings();
+    const nav = document.querySelector(`#settings-nav .nav-item[data-pane="${b.dataset.ypane}"]`);
+    if (nav) nav.click();
+  });
+  box.querySelectorAll('[data-ystaff]').forEach(b => b.onclick = () => $(b.dataset.ystaff === 'owner' ? 'open-owner-panel' : 'open-admin-panel').click());
+  $('myou-logout').onclick = () => confirmAction({ title: 'Log Out', body: 'Log out of Frixion?', confirmLabel: 'Log Out', onConfirm: () => { setMobileTab('home'); $('logout-btn').click(); } });
+}
+// Keeps the bar in step with the profile: your picture on "You", the number on the bell, and whichever page is open.
+function updateMobileTabbar() {
+  if (!myProfile || !$('mtab-you-ico')) return;
+  $('mtab-you-ico').innerHTML = avatarHTML(28, myProfile.avatarColor, initials(myProfile.username), computeDisplayStatus(myUid), myProfile.avatarUrl, myProfile.equippedDecoration, myUid, myProfile.equippedMask);
+  const n = (myProfile.incomingRequests || []).length;
+  $('mtab-notif-badge').classList.toggle('hidden', n === 0);
+  $('mtab-notif-badge').textContent = n > 9 ? '9+' : String(n);
+  if (mobileTab === 'notif') renderMobileNotif();
+  if (mobileTab === 'you') renderMobileYou();
 }
 // ============================================================
 // SETTINGS MODAL
@@ -9481,6 +9759,7 @@ $('open-owner-panel').onclick = () => { closeModal('settings-modal'); openAdminP
 function populateSettings() {
   if (!myProfile) return;
   $('set-username').value = myProfile.username;
+  $('change-password-username').value = myProfile.username;   // lets password managers file the new password under the right account
   $('autocorrect-toggle').checked = isAutocorrectEnabled();
   $('custom-keyboard-toggle').checked = useCustomKeyboard();
   $('quick-buttons-toggle').checked = showQuickButtons();
@@ -9549,16 +9828,41 @@ $('code-reveal-copy').onclick = () => {
   navigator.clipboard.writeText($('code-reveal-text').textContent).then(() => toast('Code copied.')).catch(() => {});
 };
 
+// Pays for a Premium code and creates it in one transaction: the Orbs are checked and taken at the same moment the code is
+// made, so clicking twice (or two open tabs) can't spend the same Orbs twice or push the balance below zero.
+let premiumPurchaseBusy = false;
+async function buyPremiumCode(days) {
+  if (premiumPurchaseBusy) throw new Error('busy');
+  premiumPurchaseBusy = true;
+  try {
+    const userRef = db.collection('users').doc(myUid);
+    let code = null;
+    for (let tries = 0; tries < 5 && !code; tries++) {
+      const candidate = genRedeemCode();
+      const codeRef = db.collection('redeemCodes').doc(candidate);
+      code = await db.runTransaction(async tx => {
+        const [me, existing] = await Promise.all([tx.get(userRef), tx.get(codeRef)]);
+        if (existing.exists) return null;                  // that random code is taken: try another
+        if (((me.data() || {}).orbs || 0) < PREMIUM_COST_ORBS) throw new Error('not-enough-orbs');
+        tx.update(userRef, { orbs: FieldValue.increment(-PREMIUM_COST_ORBS) });
+        tx.set(codeRef, { code: candidate, type: 'premium', value: days, createdBy: myUid, redeemedBy: null, createdAt: FieldValue.serverTimestamp(), redeemedAt: null });
+        return candidate;
+      });
+    }
+    if (!code) throw new Error('Could not make a code. Try again.');
+    return code;
+  } finally { premiumPurchaseBusy = false; }
+}
 async function subscribeToPremium() {
-  const fresh = (await db.collection('users').doc(myUid).get()).data();
-  if ((fresh.orbs || 0) < PREMIUM_COST_ORBS) { toast('Not enough Orbs. Play games to earn more.'); return; }
   const days = Math.round(PREMIUM_DURATION_MS / 86400000);
   try {
-    await db.collection('users').doc(myUid).update({ orbs: FieldValue.increment(-PREMIUM_COST_ORBS) });
-    const code = await createRedeemCode('premium', days, myUid);
+    const code = await buyPremiumCode(days);
     closeModal('premium-modal');
     showCodeModal(code, `This code adds ${days} days of Frixion Premium. Redeem it any time from Codes.`);
-  } catch (e) { toast('Something went wrong.', 'error'); }
+  } catch (e) {
+    if (e.message === 'busy') return;
+    toast(e.message === 'not-enough-orbs' ? 'Not enough Orbs. Play games to earn more.' : 'Something went wrong.', 'error');
+  }
 }
 
 async function giftPremiumTo(recipientUsername) {
@@ -9570,8 +9874,12 @@ async function giftPremiumTo(recipientUsername) {
     confirmLabel: 'Gift Premium', danger: false,
     onConfirm: async () => {
   try {
-    await db.collection('users').doc(myUid).update({ orbs: FieldValue.increment(-PREMIUM_COST_ORBS) });
-    const code = await createRedeemCode('premium', days, myUid);
+    let code;
+    try { code = await buyPremiumCode(days); } catch (e) {
+      if (e.message === 'busy') return;
+      toast(e.message === 'not-enough-orbs' ? `You need ${PREMIUM_COST_ORBS} Orbs to gift Premium.` : 'Something went wrong.', 'error');
+      return;
+    }
     const dmId = dmIdFor(myUid, recipientUsername);
     const ref = db.collection('dms').doc(dmId);
     const dsnap = await ref.get();
@@ -9588,29 +9896,41 @@ async function giftPremiumTo(recipientUsername) {
   });
 }
 
+// Checking the code, marking it used and giving the reward all happen in one transaction, so a code can only ever pay out
+// once, even if the button is pressed twice or two people try the same code at the same moment.
 async function redeemCode() {
   const code = ($('redeem-code-input').value || '').trim().toUpperCase();
+  const btn = $('redeem-code-btn');
   $('redeem-code-error').textContent = '';
   if (!code) { $('redeem-code-error').textContent = 'Enter a code.'; return; }
+  if (code.length > 64 || code.includes('/')) { $('redeem-code-error').textContent = 'That code is invalid.'; return; }
+  if (btn.disabled) return;
+  btn.disabled = true;
   try {
     const ref = db.collection('redeemCodes').doc(code);
-    const snap = await ref.get();
-    if (!snap.exists) { $('redeem-code-error').textContent = 'That code is invalid.'; return; }
-    const data = snap.data();
-    if (data.redeemedBy) { $('redeem-code-error').textContent = 'That code has already been redeemed.'; return; }
-    if (data.type === 'orbs') {
-      await db.collection('users').doc(myUid).update({ orbs: FieldValue.increment(data.value) });
-      toast(`+${data.value} Orbs redeemed!`);
-    } else if (data.type === 'premium') {
-      const fresh = (await db.collection('users').doc(myUid).get()).data();
-      const base = isPremium(fresh) ? fresh.premiumUntil : Date.now();
-      await db.collection('users').doc(myUid).update({ premiumUntil: base + data.value * 86400000 });
-      toast(`Frixion Premium extended by ${data.value} days!`);
-    }
-    await ref.update({ redeemedBy: myUid, redeemedAt: FieldValue.serverTimestamp() });
+    const userRef = db.collection('users').doc(myUid);
+    const result = await db.runTransaction(async tx => {
+      const [snap, me] = await Promise.all([tx.get(ref), tx.get(userRef)]);
+      if (!snap.exists) return { error: 'That code is invalid.' };
+      const data = snap.data();
+      if (data.redeemedBy) return { error: 'That code has already been redeemed.' };
+      const value = Math.max(0, Math.floor(Number(data.value) || 0));
+      if (data.type === 'orbs') {
+        tx.update(userRef, { orbs: FieldValue.increment(value) });
+      } else if (data.type === 'premium') {
+        const fresh = me.data() || {};
+        const base = isPremium(fresh) ? fresh.premiumUntil : Date.now();
+        tx.update(userRef, { premiumUntil: base + value * 86400000 });
+      } else return { error: 'That code is invalid.' };
+      tx.update(ref, { redeemedBy: myUid, redeemedAt: FieldValue.serverTimestamp() });
+      return { type: data.type, value };
+    });
+    if (result.error) { $('redeem-code-error').textContent = result.error; return; }
+    toast(result.type === 'orbs' ? `+${result.value} Orbs redeemed!` : `Frixion Premium extended by ${result.value} days!`);
     $('redeem-code-input').value = '';
     renderCodesView();
   } catch (e) { $('redeem-code-error').textContent = 'Something went wrong.'; }
+  finally { btn.disabled = false; }
 }
 
 function openPremiumModal() {
@@ -9870,15 +10190,27 @@ function musicSync(id) {
   });
   if (musicEnv || track.bars) musicShakeRaf = requestAnimationFrame(musicShakeTick);
 }
+function resumeMusicLoop() {
+  if (musicAudio && !musicShakeRaf && !pageHidden() && (musicEnv || (musicTrack && musicTrack.bars))) musicShakeRaf = requestAnimationFrame(musicShakeTick);
+}
 // Shakes the whole page in time with the music. The loudness envelope was measured from the
 // track ahead of time, so it stays in sync with audio.currentTime and works from any hosting.
 function musicShakeTick(now) {
+  // Nobody can see the page (a background tab, or the app window in the tray): stop drawing until it shows again.
+  // resumeMusicLoop() restarts it. The music itself keeps playing.
+  if (pageHidden()) {
+    musicShakeRaf = 0;
+    if (document.body.style.transform) resetScreenShake();
+    if (musicBarsEl) musicBarsEl.style.visibility = 'hidden';
+    musicBarsLast = 0;
+    return;
+  }
   musicShakeRaf = requestAnimationFrame(musicShakeTick);
   const a = musicAudio;
   if (!a) return;
   musicBarsTick(a, now);
   if (!musicEnv) return;
-  if (!shakeAllowed() || a.paused || document.hidden || cutsceneActive) { if (document.body.style.transform) resetScreenShake(); return; }
+  if (!shakeAllowed() || a.paused || cutsceneActive) { if (document.body.style.transform) resetScreenShake(); return; }
   const pos = (a.currentTime * 30) % musicEnv.length, i = Math.floor(pos), f = pos - i;
   const e = (musicEnv[i] * (1 - f) + musicEnv[(i + 1) % musicEnv.length] * f) / 255;
   const s = Math.pow(e, 1.5);                         // quiet stretches barely move; the loudest hits reach the maximum
@@ -9928,7 +10260,7 @@ function musicBarsTick(a, now) {
   const cues = musicTrack && musicTrack.bars;
   if (!cues) return;
   const dt = Math.min(0.1, Math.max(0, (now - (musicBarsLast || now)) / 1000)); musicBarsLast = now;
-  const live = !a.paused && !document.hidden && !cutsceneActive;
+  const live = !a.paused && !pageHidden() && !cutsceneActive;
   const cue = live && !epilepsyMode() ? cues.find(c => a.currentTime >= c.from && a.currentTime < c.to) : null;
   musicBarsH += ((cue ? 1 : 0) - musicBarsH) * Math.min(1, dt * (cue ? 9 : 6));   // 0 = away, 1 = in place
   if (musicBarsH < 0.01 && !cue) { if (musicBarsEl) musicBarsEl.style.visibility = 'hidden'; return; }
@@ -10020,7 +10352,7 @@ function orbIconSVG(size) { return `<svg viewBox="0 0 24 24" width="${size}" hei
 function shopItemPreviewHTML(key, item) {
   if (key === 'decorations') return `<div class="sic-deco-stage">${avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, item.id)}</div>`;
   if (key === 'masks') return `<div class="sic-deco-stage">${avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, null, undefined, item.id)}</div>`;
-  if (key === 'music') return `<div class="sic-music-preview${item.fx ? ' fx-bg-' + esc(item.fx) : ''}${item.banner ? ' has-banner' : ''}${myProfile && myProfile.equippedMusic === item.id ? ' is-playing' : ''}"${item.banner ? ` style="background-image:url('${esc(item.banner)}')${item.bannerPos ? ';background-position:' + esc(item.bannerPos) : ''}"` : ''}><div class="smp-eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>${item.fx ? fxTextHTML(item.name, item.fx) : `<span class="smp-title">${esc(item.name)}</span>`}</div>`;
+  if (key === 'music') return `<div class="sic-music-preview${item.fx ? ' fx-bg-' + esc(item.fx) : ''}${item.banner ? ' has-banner' : ''}${myProfile && myProfile.equippedMusic === item.id ? ' is-playing' : ''}"${item.banner ? ` style="background-image:${esc(cssUrl(item.banner))}${item.bannerPos ? ';background-position:' + esc(item.bannerPos) : ''}"` : ''}><div class="smp-eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>${item.fx ? fxTextHTML(item.name, item.fx) : `<span class="smp-title">${esc(item.name)}</span>`}</div>`;
   if (key === 'banners') return `<div class="sic-banner-preview">
     <div class="sic-banner-strip${item.animated ? ' banner-anim' : ''}" style="background:${esc(bannerGradientCSS(item))};"></div>
     <div class="sic-banner-avatar">${avatarHTML(44, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl)}</div>
@@ -10271,41 +10603,98 @@ $('save-account-btn').onclick = async () => {
   $('set-username').value = myProfile.username;
 };
 
-// ============================================================
-// ADMIN PANEL (Toblox-style: password hash in Firestore, OPs skip it)
-// ============================================================
-async function getAdminHash() {
+// Changing the password asks for the current one first: Firebase only allows it right after proving who you are.
+$('change-password-form').addEventListener('submit', async () => {
+  const current = $('current-password').value, next = $('new-password').value;
+  const out = $('change-password-error'), btn = $('change-password-btn');
+  out.textContent = '';
+  if (!current || !next) { out.textContent = 'Fill in both passwords.'; return; }
+  if (next.length < 6) { out.textContent = 'The new password must be at least 6 characters.'; return; }
+  const user = fbAuth.currentUser;
+  if (!user || btn.disabled) return;
+  btn.disabled = true;
   try {
-    const d = await db.collection('config').doc('admin').get();
-    if (d.exists && d.data().passHash) return d.data().passHash;
-    await db.collection('config').doc('admin').set({ passHash: ADMIN_HASH });
-  } catch (e) { console.warn('admin config', e); }
-  return ADMIN_HASH;
-}
+    await user.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(user.email, authPassFor(current)));
+    await user.updatePassword(authPassFor(next));
+    $('current-password').value = ''; $('new-password').value = '';
+    toast('Password changed.');
+  } catch (e) {
+    out.textContent = /invalid-credential|wrong-password|invalid-login/.test(e.code || '') ? 'Your current password is wrong.' : friendlyAuthError(e);
+  } finally { btn.disabled = false; }
+});
 
+// Owner tool: moves every account that still has a saved password over to Firebase sign-in in one go (each keeps its
+// password), then deletes the saved copy. Run it before switching on the new database rules (see SECURITY-SETUP.md).
+// It signs in on a separate, throwaway Firebase connection, so the owner stays signed in as themself the whole time.
+async function secureAllAccounts() {
+  if (!isOwner) { toast('Only the owner can do this.', 'error'); return; }
+  let snap;
+  try { snap = await db.collection('users').get(); } catch (e) { toast('Could not load accounts.', 'error'); return; }
+  const todo = snap.docs.filter(d => typeof d.data().password === 'string');
+  if (!todo.length) { toast('Every account is already secured.'); return; }
+  confirmAction({
+    title: 'Secure all accounts',
+    body: `${todo.length} account${todo.length === 1 ? '' : 's'} still have a saved password. Each one is moved over to Firebase sign-in with the same password, and the saved copy is deleted. Keep this tab open until it finishes.`,
+    confirmLabel: 'Secure accounts', danger: false,
+    onConfirm: async () => {
+      let helper, fresh = false;
+      try { helper = firebase.app('account-mover'); } catch (e) { helper = firebase.initializeApp(firebaseConfig, 'account-mover'); fresh = true; }
+      const helperAuth = helper.auth();
+      if (fresh && USE_EMULATORS) helperAuth.useEmulator(AUTH_EMULATOR_URL);   // same place as the main connection
+      try { await helperAuth.setPersistence(firebase.auth.Auth.Persistence.NONE); } catch (e) {}
+      const btn = $('secure-accounts-btn');
+      if (btn) btn.disabled = true;
+      let moved = 0, stopReason = '';
+      const clashes = [], failed = [];
+      for (let i = 0; i < todo.length; i++) {
+        const d = todo[i], name = d.id, pw = d.data().password;
+        if (btn) btn.textContent = `Securing ${i + 1} of ${todo.length}…`;
+        try {
+          let cred;
+          try { cred = await helperAuth.createUserWithEmailAndPassword(authEmailFor(name), authPassFor(pw)); }
+          catch (e) {
+            if (e.code !== 'auth/email-already-in-use') throw e;
+            // A sign-in account already exists. Only finish the move if this account's saved password opens it.
+            try { cred = await helperAuth.signInWithEmailAndPassword(authEmailFor(name), authPassFor(pw)); }
+            catch (e2) { clashes.push(name); continue; }
+          }
+          const u = cred.user;
+          if (u.displayName && u.displayName !== name) { clashes.push(name); await helperAuth.signOut(); continue; }   // belongs to "Bob" while this is "bob"
+          if (!u.displayName) await u.updateProfile({ displayName: name });
+          await helperAuth.signOut();
+          await d.ref.update({ password: FieldValue.delete() });
+          moved++;
+        } catch (e) {
+          if (e.code === 'auth/too-many-requests' || e.code === 'auth/quota-exceeded') {
+            stopReason = 'Firebase limits how many sign-in accounts can be made per hour, so run this again in an hour.';
+            failed.push(...todo.slice(i).map(x => x.id)); break;
+          }
+          if (e.code === 'auth/operation-not-allowed' || e.code === 'auth/configuration-not-found' || e.code === 'auth/admin-restricted-operation') {
+            stopReason = friendlyAuthError(e);
+            failed.push(...todo.slice(i).map(x => x.id)); break;
+          }
+          console.warn('Could not secure', name, e);
+          failed.push(name);
+        }
+      }
+      if (btn) { btn.disabled = false; btn.textContent = 'Secure all accounts'; }
+      openInfoModal('Secure all accounts', `<p>${moved} account${moved === 1 ? '' : 's'} secured.</p>`
+        + (clashes.length ? `<p><b>Name clashes (${clashes.length}):</b> ${esc(clashes.join(', '))}. Another account already uses each of these names in different capitals, so these can't log in until they get a new name (see SECURITY-SETUP.md).</p>` : '')
+        + (failed.length ? `<p><b>Not done yet (${failed.length}):</b> ${esc(failed.join(', '))}. ${esc(stopReason || 'Something went wrong with these. Run this again; the browser console (F12) has the details.')}</p>` : ''));
+    },
+  });
+}
+if ($('secure-accounts-btn')) $('secure-accounts-btn').onclick = secureAllAccounts;
+
+// ============================================================
+// ADMIN PANEL
+// Staff are the accounts with op, coowner or owner on their user doc, and the database rules (firestore.rules) check
+// the same fields. There is no separate admin password any more: a password typed into the page can't prove anything
+// to the database, so it only ever unlocked buttons whose changes the database would refuse.
+// ============================================================
 function openAdminEntry() {
-  if (isAdmin) { openAdminPanel(); return; }
-  $('admin-pass-input').value = '';
-  $('admin-login-error').textContent = '';
-  openModal('admin-login-modal');
-  setTimeout(() => $('admin-pass-input').focus(), 60);
-}
-
-$('admin-login-submit').onclick = submitAdminLogin;
-$('admin-pass-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitAdminLogin(); });
-
-async function submitAdminLogin() {
-  $('admin-login-error').textContent = 'Checking...';
-  const entered = await sha256($('admin-pass-input').value);
-  const stored = await getAdminHash();
-  if (entered === stored) {
-    isAdmin = true;
-    applyAdminVisibility();
-    closeModal('admin-login-modal');
-    openAdminPanel();
-  } else {
-    $('admin-login-error').textContent = 'Wrong password.';
-  }
+  if (isAdmin || isOwner) { openAdminPanel(); return; }
+  toast('The Admin Panel is for Frixion staff.', 'error');
 }
 
 let adminSelectedUser = null;
@@ -10675,7 +11064,7 @@ async function renderAdminStickerList() {
     const items = [];
     snap.forEach(d => items.push(d.data()));
     wrap.innerHTML = items.length
-      ? items.map(s => `<div class="admin-emoji-chip" data-n="${esc(s.name)}"><img src="${s.dataUrl}" alt="" style="width:32px;height:32px;"><span>${esc(s.name)}</span><span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
+      ? items.map(s => `<div class="admin-emoji-chip" data-n="${esc(s.name)}"><img src="${esc(safeUrl(s.dataUrl, 'image'))}" alt="" style="width:32px;height:32px;"><span>${esc(s.name)}</span><span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
       : '<div class="empty">No stickers yet.</div>';
     wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
       btn.onclick = async () => { await db.collection('stickers').doc(btn.closest('.admin-emoji-chip').dataset.n).delete(); renderAdminStickerList(); };
@@ -10741,7 +11130,7 @@ function renderAdminEmojiList() {
   const wrap = $('admin-emoji-list');
   const names = Object.keys(customEmojis).sort();
   wrap.innerHTML = names.length
-    ? names.map(n => `<div class="admin-emoji-chip" data-n="${esc(n)}"><img src="${customEmojis[n].dataUrl}" alt=""><span>:${esc(n)}:</span><span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
+    ? names.map(n => `<div class="admin-emoji-chip" data-n="${esc(n)}"><img src="${esc(customEmojis[n].dataUrl)}" alt=""><span>:${esc(n)}:</span><span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
     : '<div class="empty">No custom emojis yet.</div>';
   wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
     btn.onclick = async () => { await db.collection('customEmojis').doc(btn.closest('.admin-emoji-chip').dataset.n).delete(); };
@@ -11469,9 +11858,9 @@ const SHOP_EDIT_TYPES = {
   nameplates: { label: 'Nameplate', collection: 'shopNameplates', builtins: NAMEPLATES, custom: () => customNameplates, render: () => renderAdminNameplateList() },
   profile_effects: { label: 'Profile Effect', collection: 'shopProfileEffects', builtins: PROFILE_EFFECTS, custom: () => customProfileEffects, render: () => renderAdminProfileEffectList() },
   profile_frames: { label: 'Profile Frame', collection: 'shopProfileFrames', builtins: PROFILE_FRAMES, custom: () => customProfileFrames, render: () => renderAdminProfileFrameList() },
-  // Built-in music tracks need code (audio, cutscenes, bars), so staff can only change their price and whether they are
-  // featured; the editor locks the name and description for those. Songs staff add themselves (customMusicTracks) can also be
-  // renamed and deleted. They are stored in config/customMusic rather than their own collection, so no new Firestore rule is needed.
+  // Any staff can change a song's name, description, price and Featured, and disable one they added. Only the Owner and Co-Owners
+  // (isOwner) can change a song's files (audio, banner, animations) or delete a staff-made song. Built-in songs keep their files in code,
+  // so file changes to those are stored as overrides in config/shopOverrides. Staff-made songs live in config/customMusic.
   music: { label: 'Music', collection: null, builtins: MUSIC_TRACKS, custom: () => customMusicTracks, render: () => renderAdminMusicList(), priceFeaturedOnly: true },
 };
 function renderAdminMusicList() {
@@ -11509,14 +11898,26 @@ function applyShopOverrides() {
   Object.entries(SHOP_EDIT_TYPES).forEach(([type, def]) => {
     def.builtins.forEach(item => {
       const key = shopOverrideKey(type, item.id);
-      if (!builtinShopOriginals.has(key)) builtinShopOriginals.set(key, { name: item.name, desc: item.desc, price: item.price, featured: !!item.featured, ...(type === 'music' ? { banner: item.banner || null, bannerPos: item.bannerPos || null } : {}) });
+      if (!builtinShopOriginals.has(key)) builtinShopOriginals.set(key, { name: item.name, desc: item.desc, price: item.price, featured: !!item.featured, ...(type === 'music' ? { banner: item.banner || null, bannerPos: item.bannerPos || null, src: item.src, cutscenes: item.cutscenes || null, shake: !!item.shake, bars: item.bars || null } : {}) });
       Object.assign(item, builtinShopOriginals.get(key), shopOverrides[key] || {});
+      // The shake and the bars are timed to the original recording, so they stop if the audio file is replaced.
+      if (type === 'music' && shopOverrides[key] && shopOverrides[key].src) { item.shake = false; item.bars = null; }
     });
   });
 }
 function subscribeShopOverrides() {
   db.collection('config').doc('shopOverrides').onSnapshot(doc => {
-    shopOverrides = (doc.exists && doc.data()) || {};
+    // Only these fields may be changed on a built-in item, and they are cleaned like any staff-made item.
+    const allowed = ['name', 'desc', 'price', 'featured', 'banner', 'bannerPos', 'src', 'cutscenes', 'disabled'];
+    shopOverrides = {};
+    Object.entries((doc.exists && doc.data()) || {}).forEach(([key, v]) => {
+      if (!v || typeof v !== 'object') return;
+      const picked = {};
+      allowed.forEach(k => { if (k in v) picked[k] = v[k]; });
+      const c = cleanCatalogItem(picked);
+      if (!c.src) delete c.src;                         // a bad replacement file must not wipe out the song's own audio
+      shopOverrides[key] = c;
+    });
     applyShopOverrides();
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) Object.values(SHOP_EDIT_TYPES).forEach(d => d.render());
@@ -11528,8 +11929,40 @@ function builtinChipVisual(type, item) {
   if (type === 'themes') return `<span class="admin-theme-chip-swatch" style="background:linear-gradient(135deg, ${item.bg[0]}, ${item.bg[1]}, ${item.bg[2]});"></span>`;
   return '';
 }
+// ---- Who made a shop item, and who may change it ----
+// Every item staff publish records createdBy. Only that person, or someone of a strictly higher rank (Owner > Co-Owner > Admin),
+// can edit, disable or delete it. Items with no creator on record (the built-in ones, and very old ones) stay open to all staff.
+const shopItemCreator = item => (item && typeof item.createdBy === 'string' && item.createdBy) ? item.createdBy : null;
+function canEditShopItem(item) {
+  const by = shopItemCreator(item);
+  if (!by || by === myUid) return true;
+  const theirs = profileCache[by];
+  if (!theirs) return false;                       // their rank isn't known yet: stay locked until it is
+  return platformRank(myProfile) > platformRank(theirs);
+}
+const shopCreatorName = by => { const p = profileCache[by]; return (p && displayNameOf(p)) || by; };
+const shopCreatorRequested = new Set();
+// Looks up the creators of a list's items once, then draws the list again so the "by" names and locks are right.
+function loadShopCreators(type, items) {
+  const need = [...new Set(items.map(shopItemCreator).filter(Boolean))].filter(u => !profileCache[u] && !shopCreatorRequested.has(u));
+  if (!need.length) return;
+  need.forEach(u => shopCreatorRequested.add(u));
+  Promise.all(need.map(getProfile)).then(() => { if (!$('admin-panel-modal').classList.contains('hidden')) SHOP_EDIT_TYPES[type].render(); });
+}
 function finishAdminShopList(wrap, type) {
   const def = SHOP_EDIT_TYPES[type];
+  loadShopCreators(type, def.custom());
+  wrap.querySelectorAll('.admin-emoji-chip[data-id]:not([data-builtin])').forEach(chip => {
+    const item = def.custom().find(x => x.id === chip.dataset.id);
+    const by = shopItemCreator(item);
+    if (!by) return;
+    const allowed = canEditShopItem(item);
+    const tag = document.createElement('span');
+    tag.className = 'admin-chip-by';
+    tag.textContent = `by ${shopCreatorName(by)}`;
+    chip.querySelector('.rm') ? chip.insertBefore(tag, chip.querySelector('.rm')) : chip.append(tag);
+    if (!allowed) { chip.classList.add('locked'); const rm = chip.querySelector('.rm'); if (rm) rm.remove(); }
+  });
   if (def.builtins.length) {
     wrap.insertAdjacentHTML('beforeend', `<div class="admin-builtin-label">Built-in</div>` + def.builtins.map(item =>
       `<div class="admin-emoji-chip editable" data-id="${esc(item.id)}" data-builtin="1">${builtinChipVisual(type, item)}<span>${esc(item.name)}</span><span class="admin-chip-tag">${esc(Number(item.price).toLocaleString())}${item.featured ? ' · Featured' : ''}</span></div>`
@@ -11545,17 +11978,21 @@ const getByPath = (obj, path) => path.split('.').reduce((o, k) => (o == null ? u
 let shopEditTarget = null;
 let shopEditBannerUrl = null;
 
-function openShopItemEditor(type, id) {
+async function openShopItemEditor(type, id) {
   if (!isAdmin && !isOwner) return;
   const def = SHOP_EDIT_TYPES[type];
   const custom = def.custom().find(x => x.id === id);
   const item = custom || def.builtins.find(x => x.id === id);
   if (!item) return;
+  if (custom && shopItemCreator(custom)) {
+    await getProfile(shopItemCreator(custom));
+    if (!canEditShopItem(custom)) { toast(`${shopCreatorName(shopItemCreator(custom))} made this, so only they or a higher rank can change it.`, 'error'); return; }
+  }
   shopEditTarget = { type, id, isCustom: !!custom };
   $('shop-edit-title').textContent = `Edit ${item.name}`;
   const locked = !!def.priceFeaturedOnly && !custom;
   $('shop-edit-name').disabled = false; $('shop-edit-desc').disabled = false;   // built-in songs can be renamed and re-described too (audio and cutscenes stay as coded)
-  $('shop-edit-kind').textContent = custom ? def.label : locked ? `${def.label} · Built-in (name, description, price, featured and banner can be changed)` : `${def.label} · Built-in (name, description, price and featured can be changed)`;
+  $('shop-edit-kind').textContent = custom ? def.label + (shopItemCreator(custom) ? ` · Created by ${shopCreatorName(shopItemCreator(custom))}` : '') : locked ? `${def.label} · Built-in (name, description, price, featured and banner can be changed)` : `${def.label} · Built-in (name, description, price and featured can be changed)`;
   $('shop-edit-name').value = item.name || '';
   $('shop-edit-desc').value = item.desc || '';
   $('shop-edit-price').value = Number.isFinite(Number(item.price)) ? item.price : 0;
@@ -11576,28 +12013,58 @@ function openShopItemEditor(type, id) {
     if (maskBox) maskBox.addEventListener('change', () => h._editor.setMask(maskBox.checked));
   });
   if (type === 'music') {
-    $('shop-edit-extra').insertAdjacentHTML('beforeend', `<div class="field full shop-edit-banner"><label>Banner (shown behind the name on its Shop card)</label><div id="shop-edit-banner-preview"></div><input type="file" id="shop-edit-banner-file" accept="image/*" class="music-file-input">${!custom && shopOverrides[shopOverrideKey(type, id)] && 'banner' in shopOverrides[shopOverrideKey(type, id)] ? '<button type="button" class="btn-secondary slim" id="shop-edit-banner-restore">Restore original</button>' : ''}</div>${custom ? `<label class="shop-edit-check field full"><input type="checkbox" id="shop-edit-disabled"${item.disabled ? ' checked' : ''}> Disabled (hidden from the Shop, nobody can buy it)</label>` : ''}`);
-    const refresh = () => {
-      const f = $('shop-edit-banner-file').files[0];
-      if (shopEditBannerUrl) { URL.revokeObjectURL(shopEditBannerUrl); shopEditBannerUrl = null; }
-      if (f && f.type.startsWith('image/')) shopEditBannerUrl = URL.createObjectURL(f);
-      const banner = shopEditBannerUrl || item.banner || null;
-      $('shop-edit-banner-preview').innerHTML = shopItemPreviewHTML('music', { ...item, name: $('shop-edit-name').value || item.name, banner, bannerPos: shopEditBannerUrl ? null : item.bannerPos, fx: null });
-    };
-    $('shop-edit-banner-file').onchange = refresh;
-    const restoreBtn = $('shop-edit-banner-restore');
-    if (restoreBtn) restoreBtn.onclick = async () => {
-      restoreBtn.disabled = true;
-      try {
-        // Dropping the staff override puts back the banner written in MUSIC_TRACKS (the Banners folder).
-        await db.collection('config').doc('shopOverrides').set({ [shopOverrideKey(type, id)]: { banner: FieldValue.delete(), bannerPos: FieldValue.delete() } }, { merge: true });
-        closeModal('shop-edit-modal');
-        toast('Original banner restored.');
-      } catch (e) { restoreBtn.disabled = false; toast(e.message || 'Could not restore the banner.', 'error'); }
-    };
-    refresh();
+    const canFiles = isOwner;   // Owner and Co-Owners only: audio, banner and animations (and deleting a song)
+    const ovr = shopOverrides[shopOverrideKey(type, id)];
+    const fileName = u => { try { return decodeURIComponent(String(u || '').split('?')[0].split('/').pop()) || 'file'; } catch (e) { return 'file'; } };
+    $('shop-edit-extra').insertAdjacentHTML('beforeend', (canFiles
+      ? `<div class="field full shop-edit-files"><label>Song audio</label>
+           <div class="sef-note">Now playing: <b>${esc(fileName(item.src))}</b>${!custom ? ' (built in)' : ''}. Choose a file to replace it.${!custom ? ' If you replace a built-in song\'s audio, its screen shake and bars switch off, because they were timed to the original recording.' : ''}</div>
+           <input type="file" id="shop-edit-audio-file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus" class="music-file-input"></div>
+         <div class="field full shop-edit-banner"><label>Banner (shown behind the name on its Shop card)</label><div id="shop-edit-banner-preview"></div><input type="file" id="shop-edit-banner-file" accept="image/*" class="music-file-input">${!custom && ovr && 'banner' in ovr ? '<button type="button" class="btn-secondary slim" id="shop-edit-banner-restore">Restore original</button>' : ''}</div>
+         <div class="field full shop-edit-files"><label>Animations (up to ${MUSIC_MAX_ANIMATIONS}, played one after another when someone first buys it)</label>
+           <div id="shop-edit-anims"></div>
+           <button type="button" class="btn-secondary slim" id="shop-edit-anim-add">+ Add animation</button></div>`
+      : `<div class="field full sef-locked">Only the Owner and Co-Owners can change a song's audio, banner or animations, or delete it. You can still change the name, description, price and Featured, and disable songs you added.</div>`)
+      + (custom ? `<label class="shop-edit-check field full"><input type="checkbox" id="shop-edit-disabled"${item.disabled ? ' checked' : ''}> Disabled (hidden from the Shop, nobody can buy it)</label>` : ''));
+    if (canFiles) {
+      const refresh = () => {
+        const f = $('shop-edit-banner-file').files[0];
+        if (shopEditBannerUrl) { URL.revokeObjectURL(shopEditBannerUrl); shopEditBannerUrl = null; }
+        if (f && f.type.startsWith('image/')) shopEditBannerUrl = URL.createObjectURL(f);
+        const banner = shopEditBannerUrl || item.banner || null;
+        $('shop-edit-banner-preview').innerHTML = shopItemPreviewHTML('music', { ...item, name: $('shop-edit-name').value || item.name, banner, bannerPos: shopEditBannerUrl ? null : item.bannerPos, fx: null });
+      };
+      $('shop-edit-banner-file').onchange = refresh;
+      const restoreBtn = $('shop-edit-banner-restore');
+      if (restoreBtn) restoreBtn.onclick = async () => {
+        restoreBtn.disabled = true;
+        try {
+          // Dropping the staff override puts back the banner written in MUSIC_TRACKS (the Banners folder).
+          await db.collection('config').doc('shopOverrides').set({ [shopOverrideKey(type, id)]: { banner: FieldValue.delete(), bannerPos: FieldValue.delete() } }, { merge: true });
+          closeModal('shop-edit-modal');
+          toast('Original banner restored.');
+        } catch (e) { restoreBtn.disabled = false; toast(e.message || 'Could not restore the banner.', 'error'); }
+      };
+      refresh();
+      // Animation rows: a name, the current video (kept unless a new file is chosen) and a remove button.
+      const animWrap = $('shop-edit-anims');
+      const syncAnimAdd = () => { $('shop-edit-anim-add').classList.toggle('hidden', animWrap.children.length >= MUSIC_MAX_ANIMATIONS); };
+      const addAnimRow = (label, src) => {
+        if (animWrap.children.length >= MUSIC_MAX_ANIMATIONS) return;
+        const row = document.createElement('div');
+        row.className = 'music-anim-row sef-anim-row';
+        row.dataset.src = src || '';
+        row.innerHTML = `<input type="text" class="fld-input music-anim-name" maxlength="20" placeholder="Name, e.g. Animation" value="${esc(label || '')}"><input type="file" class="music-anim-file" accept="video/*,.mp4,.webm,.mov"><button type="button" class="btn-secondary slim music-anim-rm" title="Remove this animation">&times;</button>
+          <div class="sef-note">${src ? `Current video: <b>${esc(fileName(src))}</b>. Leave the file empty to keep it.` : 'Choose a video file.'}</div>`;
+        row.querySelector('.music-anim-rm').onclick = () => { row.remove(); syncAnimAdd(); };
+        animWrap.append(row); syncAnimAdd();
+      };
+      itemCutscenes(item).forEach(c => addAnimRow(c.label, c.src));
+      $('shop-edit-anim-add').onclick = () => addAnimRow('', '');
+      syncAnimAdd();
+    }
   }
-  $('shop-edit-delete-btn').classList.toggle('hidden', !custom || type === 'music');
+  $('shop-edit-delete-btn').classList.toggle('hidden', !custom || (type === 'music' && !isOwner));   // only the Owner and Co-Owners can delete a song; everyone else can only disable it
   $('shop-edit-reset-btn').classList.toggle('hidden', !!custom || !shopOverrides[shopOverrideKey(type, id)]);
   openModal('shop-edit-modal');
 }
@@ -11606,6 +12073,7 @@ $('shop-edit-save-btn').onclick = async () => {
   if (!shopEditTarget || (!isAdmin && !isOwner)) return;
   const { type, id, isCustom } = shopEditTarget;
   const def = SHOP_EDIT_TYPES[type];
+  if (isCustom && !canEditShopItem(def.custom().find(x => x.id === id))) { toast('You can not change this item.', 'error'); return; }
   const priceFeaturedOnly = !!def.priceFeaturedOnly && !isCustom;
   const name = $('shop-edit-name').value.trim();
   const desc = $('shop-edit-desc').value.trim();
@@ -11618,7 +12086,31 @@ $('shop-edit-save-btn').onclick = async () => {
     if (type === 'music') {
       const f = $('shop-edit-banner-file') && $('shop-edit-banner-file').files[0];
       if (f && (!f.type.startsWith('image/') || f.size > MAX_FILE_MB * 1024 * 1024)) { toast(`The banner has to be an image under ${MAX_FILE_MB}MB.`, 'error'); return; }
-      if (f) { $('shop-edit-save-btn').disabled = true; toast('Uploading the banner…'); try { update.banner = await uploadImageToCloudinary(f); update.bannerPos = null; } finally { $('shop-edit-save-btn').disabled = false; } }
+      const canFiles = isOwner && !!$('shop-edit-anims');
+      if (canFiles) {
+        const audio = $('shop-edit-audio-file').files[0];
+        if (audio && (!isMediaFile(audio) || (audio.type && !audio.type.startsWith('audio/') && !AUDIO_FILE_EXT.test(audio.name)))) { toast('The song has to be an audio file (mp3, wav, ogg, m4a...).', 'error'); return; }
+        if (audio && audio.size > MAX_MEDIA_MB * 1024 * 1024) { toast(`The song is over ${MAX_MEDIA_MB}MB.`, 'error'); return; }
+        const rows = [...$('shop-edit-anims').children].map(r => ({ label: r.querySelector('.music-anim-name').value.trim(), file: r.querySelector('.music-anim-file').files[0], src: r.dataset.src }));
+        for (const [i, r] of rows.entries()) {
+          if (!r.label) { toast(`Animation ${i + 1} needs a name.`); return; }
+          if (!r.file && !r.src) { toast(`Animation ${i + 1} needs a video file.`); return; }
+          if (r.file && (!isMediaFile(r.file) || r.file.size > MAX_MEDIA_MB * 1024 * 1024)) { toast(`Animation ${i + 1} has to be a video under ${MAX_MEDIA_MB}MB.`, 'error'); return; }
+        }
+        $('shop-edit-save-btn').disabled = true;
+        try {
+          if (f) { toast('Uploading the banner…'); update.banner = await uploadImageToCloudinary(f); update.bannerPos = null; }
+          if (audio) { toast('Uploading the song…'); update.src = await uploadFileToCloudinary(audio, () => {}); }
+          const cuts = [];
+          for (const [i, r] of rows.entries()) {
+            if (r.file) toast(`Uploading animation ${i + 1} of ${rows.length}…`);
+            cuts.push({ src: r.file ? await uploadFileToCloudinary(r.file, () => {}) : r.src, label: r.label.slice(0, 20) });
+          }
+          const before = JSON.stringify(itemCutscenes(def.custom().find(x => x.id === id) || def.builtins.find(x => x.id === id) || {}).map(c => [c.label, c.src]));
+          // A built-in song only stores what was actually changed; its original files stay as the fallback.
+          if (isCustom || JSON.stringify(cuts.map(c => [c.label, c.src])) !== before) update.cutscenes = cuts;
+        } finally { $('shop-edit-save-btn').disabled = false; }
+      }
     }
     if (isCustom) {
       const item = def.custom().find(x => x.id === id) || {};
@@ -11655,10 +12147,26 @@ $('shop-edit-reset-btn').onclick = async () => {
   } catch (e) { toast(e.message || 'Could not reset.', 'error'); }
 };
 $('shop-edit-delete-btn').onclick = () => {
-  if (!shopEditTarget || !shopEditTarget.isCustom || shopEditTarget.type === 'music') return;   // songs are disabled, never deleted
+  if (!shopEditTarget || !shopEditTarget.isCustom) return;
   const { type, id } = shopEditTarget;
   const def = SHOP_EDIT_TYPES[type];
   const item = def.custom().find(x => x.id === id);
+  if (!canEditShopItem(item)) { toast('You can not delete this item.', 'error'); return; }
+  if (type === 'music') {
+    // Songs added by staff are stored in one config document. Only the Owner and Co-Owners can delete one; other staff can only disable it.
+    if (!isOwner) { toast('Only the Owner and Co-Owners can delete a song. You can disable it instead.', 'error'); return; }
+    confirmAction({
+      title: 'Delete song', body: `Delete "${item ? item.name : 'this song'}" for good? It disappears from the Shop and from everyone who bought it, and this cannot be undone. To only hide it from the Shop, disable it instead.`, confirmLabel: 'Delete song',
+      onConfirm: async () => {
+        try {
+          await db.collection('config').doc('customMusic').set({ [id]: FieldValue.delete() }, { merge: true });
+          closeModal('shop-edit-modal');
+          toast('Song deleted.');
+        } catch (e) { toast(e.message || 'Could not delete the song.', 'error'); }
+      },
+    });
+    return;
+  }
   confirmAction({
     title: `Delete ${def.label}`, body: `Remove "${item ? item.name : 'this item'}" from the shop? People who bought it will lose it.`, confirmLabel: 'Delete',
     onConfirm: async () => {

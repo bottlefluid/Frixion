@@ -12,7 +12,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=81">
+<link rel="stylesheet" href="style.css?v=85">
 </head>
 <body>
 
@@ -107,7 +107,7 @@
     <!-- REGISTER -->
     <div id="register-view" class="hidden">
       <h1>Create an account</h1>
-      <p class="sub">Pick a username and password. No email needed.</p>
+      <p class="sub">Pick a username and a password of 6 or more characters. No email needed.</p>
       <div class="auth-error" id="register-error"></div>
       <div class="field"><label>Username</label><input type="text" id="reg-username" maxlength="24" autocomplete="username"></div>
       <div class="field"><label>Password</label><input type="password" id="reg-password" autocomplete="new-password"></div>
@@ -120,6 +120,15 @@
 
 <!-- ============ MAIN APP ============ -->
 <div id="app" class="hidden">
+
+  <!-- Phone only: Discord-style bottom bar (Home, Notifications, You) and the two pages it opens. -->
+  <div id="mobile-notif-page" class="mpage hidden" aria-label="Notifications"></div>
+  <div id="mobile-you-page" class="mpage hidden" aria-label="You"></div>
+  <nav id="mobile-tabbar" aria-label="Main">
+    <button type="button" class="mtab active" data-mtab="home"><span class="mtab-ico"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 3.2 3 10.6V20a1 1 0 0 0 1 1h5.5v-6.5h5V21H20a1 1 0 0 0 1-1v-9.400L12 3.200Z"/></svg></span><span class="mtab-label">Home</span></button>
+    <button type="button" class="mtab" data-mtab="notif"><span class="mtab-ico"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 22a2.500 2.500 0 0 0 2.400-1.800H9.600A2.500 2.500 0 0 0 12 22Zm7-5.500V11a7 7 0 0 0-5.200-6.800V3.500a1.800 1.800 0 0 0-3.600 0v.700A7 7 0 0 0 5 11v5.500l-1.700 1.700V19h17.400v-.800L19 16.500Z"/></svg><span class="mtab-badge hidden" id="mtab-notif-badge">0</span></span><span class="mtab-label">Notifications</span></button>
+    <button type="button" class="mtab" data-mtab="you"><span class="mtab-ico mtab-you" id="mtab-you-ico"></span><span class="mtab-label">You</span></button>
+  </nav>
 
   <!-- server rail -->
   <div id="server-rail">
@@ -830,6 +839,15 @@
           <div class="color-swatches" id="avatar-color-swatches"></div>
         </div>
         <button class="btn-accent-inline" id="save-account-btn">Save Changes</button>
+
+        <h3 class="settings-subhead">Password</h3>
+        <form id="change-password-form" autocomplete="on" onsubmit="return false">
+          <input type="text" id="change-password-username" autocomplete="username" hidden>
+          <div class="field"><label for="current-password">Current password</label><input type="password" id="current-password" autocomplete="current-password"></div>
+          <div class="field"><label for="new-password">New password</label><input type="password" id="new-password" autocomplete="new-password" minlength="6"></div>
+          <div class="auth-error" id="change-password-error" role="status"></div>
+          <button type="submit" class="btn-accent-inline" id="change-password-btn">Change Password</button>
+        </form>
       </div>
 
       <div class="settings-pane hidden" id="pane-activity">
@@ -1007,20 +1025,6 @@
       <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5l7-7a3.5 3.5 0 0 1 5 5l-8.5 8.5a5 5 0 0 1-7-7l7.5-7.5"/></svg></span><div><div class="t">Bigger Uploads</div><div class="d">Higher attachment size limit (coming soon)</div></div></div>
     </div>
     <div id="premium-modal-action-area"></div>
-  </div>
-</div>
-
-<!-- ============ MODAL: admin password gate ============ -->
-<div class="modal-overlay hidden" id="admin-login-modal">
-  <div class="modal-box">
-    <div class="modal-header-row"><h2>Admin Panel</h2><span class="x" data-close="admin-login-modal">✕</span></div>
-    <p class="desc">Enter the admin password to continue.</p>
-    <div class="auth-error" id="admin-login-error"></div>
-    <div class="field"><label>Password</label><input type="password" id="admin-pass-input"></div>
-    <div class="modal-actions">
-      <button class="btn-secondary" data-close="admin-login-modal">Cancel</button>
-      <button class="btn-accent-inline" id="admin-login-submit">Enter</button>
-    </div>
   </div>
 </div>
 
@@ -1469,6 +1473,7 @@
       <div class="admin-layout">
         <div class="admin-left">
           <input class="fld-input" id="system-hub-search" placeholder="Search users" autocomplete="off">
+          <button type="button" class="btn-secondary slim" id="secure-accounts-btn" title="Moves accounts that still have a saved password over to Firebase sign-in">Secure all accounts</button>
           <div class="admin-user-list" id="system-hub-user-list"></div>
         </div>
         <div class="admin-right" id="system-hub-actions"><div class="empty">Select a user to manage.</div></div>
@@ -1564,7 +1569,6 @@
 
 <div id="toast-stack"></div>
 
-<!-- Firebase compat SDK (Firestore, Realtime Database for presence, Storage for uploads — no Firebase Auth, username/password lives in Firestore) -->
 <!-- ============ MODAL: edit a shop item (admin/owner) ============ -->
 <div class="modal-overlay hidden" id="shop-edit-modal">
   <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="shop-edit-title">
@@ -1587,8 +1591,9 @@
 
 <!-- All scripts are deferred: the page (and the loading screen) paints first, then they run in order. Firebase Storage is not loaded because nothing uses it. -->
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=81"></script>
+<script defer src="script.js?v=85"></script>
 </body>
 </html>

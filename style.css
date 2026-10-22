@@ -993,6 +993,8 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 #settings-nav .nav-label { font-size: 13px; text-transform: uppercase; color: var(--text-faint); font-weight: 700; padding: 18px 14px 6px; }
 #settings-content { flex: 1; padding: 44px 60px; overflow-y: auto; position: relative; }
 #settings-content h2 { font-size: 28px; margin-bottom: 24px; text-transform: uppercase; letter-spacing: .3px; }
+.settings-subhead { font-size: 13px; text-transform: uppercase; color: var(--text-faint); font-weight: 700; margin: 32px 0 12px; padding-top: 24px; border-top: 1px solid var(--divider); }
+#change-password-form .auth-error:empty { display: none; }
 .settings-close { position: absolute; top: 24px; right: 24px; }
 
 /* ---- update log ---- */
@@ -4190,3 +4192,66 @@ body.is-mobile #settings-content { padding: 16px 16px 28px; }
 .app-dl-others a { color: var(--text-link, #00a8fc); }
 .app-prompt-actions { justify-content: space-between; flex-wrap: wrap; }
 #pane-app .setting-row { margin-top: 18px; }
+
+/* ============================================================
+   PHONE: Discord-style bottom bar and its pages
+   ============================================================ */
+#mobile-tabbar, .mpage { display: none; }
+body.is-mobile #user-panel { display: none; }
+body.is-mobile #mobile-tabbar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 90; height: calc(58px + env(safe-area-inset-bottom)); padding: 0 6px env(safe-area-inset-bottom); background: var(--bg-secondary, #232428); border-top: 1px solid rgba(255,255,255,.07); }
+body.is-mobile #app.mobile-show-chat > #mobile-tabbar, body.is-mobile #app.mobile-show-chat > .mpage { display: none; }
+body.is-mobile .mtab { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; color: var(--text-muted); -webkit-tap-highlight-color: transparent; }
+body.is-mobile .mtab-ico { position: relative; display: flex; align-items: center; justify-content: center; width: 58px; height: 30px; border-radius: 15px; transition: background .18s ease; }
+body.is-mobile .mtab:active .mtab-ico { background: rgba(255,255,255,.08); }
+body.is-mobile .mtab.active { color: var(--text-header, #fff); }
+body.is-mobile .mtab.active .mtab-ico { background: rgba(255,255,255,.14); }
+body.is-mobile .mtab-label { font-size: 11px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.is-mobile .mtab-you .avatar { width: 28px !important; height: 28px !important; font-size: 12px !important; }
+body.is-mobile .mtab-badge { position: absolute; top: -3px; right: 8px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #f23f43; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px var(--bg-secondary, #232428); }
+/* The lists need room so the last row is not hidden behind the bar. */
+body.is-mobile #app:not(.mobile-show-chat) #side-panel, body.is-mobile #app:not(.mobile-show-chat) #server-rail { padding-bottom: calc(58px + env(safe-area-inset-bottom)); box-sizing: border-box; }
+
+body.is-mobile .mpage:not(.hidden) { display: flex; flex-direction: column; position: fixed; left: 0; right: 0; top: 0; bottom: calc(58px + env(safe-area-inset-bottom)); z-index: 80; background: var(--bg-primary, #313338); }
+body.is-mobile .mpage-title { flex: none; padding: max(14px, env(safe-area-inset-top)) 20px 8px; font-size: 26px; font-weight: 800; letter-spacing: -.01em; color: var(--text-header, #fff); }
+body.is-mobile .mpage-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 4px 14px 48px; }
+body.is-mobile .mpage-label { margin: 18px 8px 8px; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+body.is-mobile .mpage-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 60px 24px; color: var(--text-muted); font-size: 14px; }
+body.is-mobile .mpage-empty svg { color: var(--online, #23a55a); margin-bottom: 6px; }
+body.is-mobile .mpage-empty b { color: var(--text-normal); font-size: 16px; }
+body.is-mobile .mnotif-row { display: flex; align-items: center; gap: 12px; padding: 12px; margin-bottom: 8px; border-radius: 16px; background: rgba(255,255,255,.05); }
+body.is-mobile .mnotif-text { flex: 1; min-width: 0; }
+body.is-mobile .mnotif-name { font-weight: 700; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.is-mobile .mnotif-sub { font-size: 13px; color: var(--text-muted); }
+body.is-mobile .mnotif-btn { flex: none; padding: 9px 14px; border-radius: 18px; background: rgba(255,255,255,.1); font-weight: 600; font-size: 14px; }
+body.is-mobile .mnotif-btn.yes { background: var(--accent, #5865f2); color: #fff; }
+body.is-mobile .myou-card { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 16px; border-radius: 20px; background: rgba(255,255,255,.06); }
+body.is-mobile .myou-card:active { background: rgba(255,255,255,.1); }
+body.is-mobile .myou-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+body.is-mobile .myou-name { font-size: 20px; font-weight: 800; color: var(--text-header, #fff); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.is-mobile .myou-user { font-size: 14px; color: var(--text-normal); }
+body.is-mobile .myou-status { font-size: 13px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.is-mobile .myou-chev { flex: none; color: var(--text-muted); }
+body.is-mobile .myou-group { border-radius: 18px; background: rgba(255,255,255,.05); overflow: hidden; }
+body.is-mobile .myou-out { margin-top: 20px; }
+body.is-mobile .myou-row { display: flex; align-items: center; gap: 14px; width: 100%; padding: 15px 16px; text-align: left; font-size: 16px; font-weight: 500; color: var(--text-normal); border-top: 1px solid rgba(255,255,255,.05); }
+body.is-mobile .myou-row:first-child { border-top: 0; }
+body.is-mobile .myou-row:active { background: rgba(255,255,255,.08); }
+body.is-mobile .myou-ico { flex: none; display: inline-flex; width: 24px; height: 24px; color: var(--text-muted); }
+body.is-mobile .myou-ico svg { width: 24px; height: 24px; }
+body.is-mobile .myou-label { flex: 1; }
+body.is-mobile .myou-row.danger, body.is-mobile .myou-row.danger .myou-ico { color: #f87171; }
+
+/* Settings opened on a phone: calm sentence-case heading instead of a huge all-caps one. */
+body.is-mobile #settings-content h2 { font-size: 22px; text-transform: none; letter-spacing: -.01em; margin-bottom: 12px; }
+
+/* Song editor: files section (Owner and Co-Owners) */
+.shop-edit-files .sef-note, .sef-anim-row .sef-note, .sef-locked { font-size: 12.5px; color: var(--text-muted); line-height: 1.4; margin: 2px 0 6px; }
+.sef-locked { padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,.05); }
+.sef-anim-row { flex-wrap: wrap; margin-bottom: 8px; }
+.sef-anim-row .sef-note { flex: 1 1 100%; margin: 2px 0 0; }
+#shop-edit-anim-add { margin-top: 4px; }
+
+/* Who made a shop item */
+.admin-chip-by { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.admin-emoji-chip.locked { opacity: .7; }
+.admin-emoji-chip.locked::after { content: '\1F512'; font-size: 11px; margin-left: 2px; }

@@ -1,0 +1,267 @@
+rules_version = '2';
+
+// Frixion's Firestore rules. Paste them into Firebase Console > Firestore Database > Rules and press Publish.
+// Do the steps in SECURITY-SETUP.md first, or people with older accounts won't be able to log in.
+//
+// Who is asking comes from Firebase Authentication. Every Frixion account signs in with the made-up email
+// <lowercase username>@frixion.example.com and has its username as its display name (see AUTH_EMAIL_DOMAIN in
+// script.js). If you change that domain in script.js, change it here and in database.rules.json too.
+//
+// What these rules can't do: Orbs and Premium are earned by games that run in the browser, so a determined player can
+// still give themselves Orbs. Server roles (who may kick, delete messages, manage channels) are checked by the app;
+// here every member of a server may change it, but nobody outside it can, and nobody can take over a server.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- who is asking ----------
+    function signedIn() {
+      return request.auth != null
+        && request.auth.token.name is string
+        && request.auth.token.email is string
+        && request.auth.token.email == request.auth.token.name.lower() + '@frixion.example.com';
+    }
+    function me() { return request.auth.token.name; }
+    function isMe(name) { return signedIn() && me() == name; }
+    function myPath() { return /databases/$(database)/documents/users/$(me()); }
+    function myData() { return get(myPath()).data; }
+    // Owner 3 > Co-Owner 2 > Admin 1 > everyone 0, the same order as platformRank() in script.js.
+    function rankOf(u) {
+      return u.get('owner', false) == true ? 3 : (u.get('coowner', false) == true ? 2 : (u.get('op', false) == true ? 1 : 0));
+    }
+    function myRank() { return (signedIn() && exists(myPath())) ? rankOf(myData()) : 0; }
+    function isStaff() { return myRank() >= 1; }
+    // Banned and muted accounts can still sign in and read, but can't post.
+    function canPost() {
+      let u = myData();
+      let now = request.time.toMillis();
+      let bannedUntil = u.get('bannedUntil', null);
+      let mutedUntil = u.get('mutedUntil', null);
+      return !(u.get('banned', false) == true && (bannedUntil == null || bannedUntil > now))
+        && (mutedUntil == null || mutedUntil <= now);
+    }
+
+    // ---------- what is changing ----------
+    function changedKeys() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function onlyChanged(keys) { return changedKeys().hasOnly(keys); }
+    // The list `field` gained (or lost) the person asking, and nothing else changed in it.
+    function onlyMeAdded(field) {
+      return request.resource.data.get(field, []).toSet() == resource.data.get(field, []).toSet().union([me()].toSet());
+    }
+    function onlyMeRemoved(field) {
+      return request.resource.data.get(field, []).toSet() == resource.data.get(field, []).toSet().difference([me()].toSet());
+    }
+
+    // ---------- accounts ----------
+    match /users/{username} {
+      allow get: if signedIn();
+      allow list: if isStaff();                                     // Admin Panel > Players / System Hub
+      allow create: if isMe(username)
+        && request.resource.data.get('username', '') == username
+        && !request.resource.data.keys().hasAny(['password', 'owner', 'coowner', 'terminated', 'redirectUrl', 'redirectNonce', 'mutedUntil', 'muteReason'])
+        && request.resource.data.get('op', false) == false
+        && request.resource.data.get('banned', false) == false
+        && request.resource.data.get('premiumUntil', null) == null
+        && request.resource.data.get('orbs', 0) <= 50;
+      allow update: if signedIn() && (selfEdit(username) || staffEdit(username) || friendEdit());
+      // Delete Account: the owner flags the account and its own app removes it at the end of the sequence.
+      allow delete: if (isMe(username) && resource.data.get('terminated', {}).get('mode', '') == 'real') || myRank() >= 2;
+
+      // Notes about this person that only their author can see.
+      match /privateNotes/{author} {
+        allow read, write: if isMe(author);
+      }
+    }
+    // Your own profile: anything except your rank, bans and mutes. A few admin-set fields may only be cleared.
+    function selfEdit(username) {
+      let keys = changedKeys();
+      return isMe(username)
+        && !keys.hasAny(['op', 'owner', 'coowner', 'mutedUntil', 'muteReason', 'username', 'createdAt'])
+        && (!keys.hasAny(['banned', 'banReason', 'bannedUntil']) || clearingExpiredBan())
+        && (!keys.hasAny(['redirectUrl', 'redirectNonce']) || !request.resource.data.keys().hasAny(['redirectUrl', 'redirectNonce']))
+        && (!keys.hasAny(['terminated']) || !('terminated' in request.resource.data))
+        && (!keys.hasAny(['password']) || !('password' in request.resource.data));
+    }
+    function clearingExpiredBan() {
+      return resource.data.get('banned', false) == true
+        && resource.data.get('bannedUntil', null) is number
+        && resource.data.bannedUntil <= request.time.toMillis()
+        && request.resource.data.get('banned', true) == false;
+    }
+    // Staff on someone else: Admins can change Orbs, Premium, bans and mutes; Co-Owners and the Owner anything except
+    // ownership. Nobody can touch an equal or higher Co-Owner/Owner (canManagePlatformUser() in script.js).
+    function staffEdit(username) {
+      let r = myRank();
+      let theirs = rankOf(resource.data);
+      let keys = changedKeys();
+      return r >= 1
+        && (isMe(username) || (theirs >= 2 ? r > theirs : true))
+        && !keys.hasAny(['owner', 'username', 'createdAt'])
+        && (!keys.hasAny(['coowner']) || r == 3)
+        && (r >= 2 || keys.hasOnly(['premiumUntil', 'orbs', 'banned', 'banReason', 'bannedUntil', 'mutedUntil', 'muteReason']));
+    }
+    // Friend requests change both accounts. On the other person's account you may only add or remove yourself, and you
+    // may only add yourself to their friends while their request to you is still there (script.js sends these together).
+    function friendEdit() {
+      let keys = changedKeys();
+      return keys.hasOnly(['incomingRequests', 'outgoingRequests', 'friends'])
+        && (!keys.hasAny(['incomingRequests']) || onlyMeAdded('incomingRequests') || onlyMeRemoved('incomingRequests'))
+        && (!keys.hasAny(['outgoingRequests']) || onlyMeRemoved('outgoingRequests'))
+        && (!keys.hasAny(['friends']) || onlyMeRemoved('friends')
+            || (onlyMeAdded('friends') && me() in resource.data.get('outgoingRequests', [])));
+    }
+
+    // ---------- things staff publish ----------
+    match /config/{docId}            { allow read: if signedIn(); allow write: if isStaff(); }
+    match /customEmojis/{id}         { allow read: if signedIn(); allow write: if isStaff(); }
+    match /stickers/{id}             { allow read: if signedIn(); allow write: if isStaff(); }
+    match /shopDecorations/{id}      { allow read: if signedIn(); allow write: if isStaff(); }
+    match /shopThemes/{id}           { allow read: if signedIn(); allow write: if isStaff(); }
+    match /shopNameplates/{id}       { allow read: if signedIn(); allow write: if isStaff(); }
+    match /shopBanners/{id}          { allow read: if signedIn(); allow write: if isStaff(); }
+    match /shopProfileEffects/{id}   { allow read: if signedIn(); allow write: if isStaff(); }
+    match /shopProfileFrames/{id}    { allow read: if signedIn(); allow write: if isStaff(); }
+    match /gardenSeeds/{id}          { allow read: if signedIn(); allow write: if isStaff(); }
+    match /gardenSprinklers/{id}     { allow read: if signedIn(); allow write: if isStaff(); }
+    match /gardenPets/{id}           { allow read: if signedIn(); allow write: if isStaff(); }
+
+    // ---------- codes ----------
+    match /redeemCodes/{code} {
+      allow get: if signedIn();                                     // redeeming: you have to know the code
+      allow list, delete: if isStaff();
+      // Staff make any code. Anyone can buy a Premium code, in the same transaction that takes 1400 of their Orbs.
+      allow create: if isStaff() || (signedIn()
+        && request.resource.data.type == 'premium'
+        && request.resource.data.value is int && request.resource.data.value > 0 && request.resource.data.value <= 31
+        && request.resource.data.createdBy == me()
+        && request.resource.data.redeemedBy == null
+        && getAfter(myPath()).data.get('orbs', 0) <= myData().get('orbs', 0) - 1400);
+      allow update: if signedIn()
+        && resource.data.get('redeemedBy', null) == null
+        && request.resource.data.redeemedBy == me()
+        && onlyChanged(['redeemedBy', 'redeemedAt']);
+    }
+
+    // ---------- device bans ----------
+    match /devices/{id} {
+      allow get: if true;                                           // the ban check runs before anyone signs in
+      allow list: if myRank() >= 2 || (signedIn() && me() in resource.data.accounts);
+      allow create: if signedIn() && request.resource.data.get('id', '') == id
+        && request.resource.data.get('banned', false) == false
+        && me() in request.resource.data.get('accounts', []);
+      // Anyone may record their visit or ban a device (the ban-evasion check bans itself); only the Owner unbans.
+      allow update: if myRank() >= 2 || (signedIn() && (
+        !changedKeys().hasAny(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned', 'unbannedBy', 'unbannedAt'])
+        || (resource.data.get('banned', false) == false && request.resource.data.get('banned', false) == true
+            && changedKeys().hasOnly(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned']))));
+      allow delete: if myRank() >= 2;
+    }
+
+    // ---------- messages (shared by servers, DMs and group DMs) ----------
+    function newMessageAuthorOk() {
+      let uid = request.resource.data.get('uid', null);
+      return uid == me() || uid in ['bot-sapphire', 'bot-wordle'];  // Sapphire and Wordle post as themselves
+    }
+    // Someone else's message: react, vote, pin, play its Wordle, or (moderation) clear its text or remove attachments.
+    function othersMessageUpdateOk() {
+      let keys = changedKeys();
+      return keys.hasOnly(['reactions', 'poll', 'pinned', 'wordle', 'text', 'edited', 'attachments', 'attachment'])
+        && (!keys.hasAny(['text']) || request.resource.data.get('text', '') == '')
+        && (!keys.hasAny(['edited']) || request.resource.data.get('edited', false) == false)
+        && (!keys.hasAny(['attachments']) || request.resource.data.get('attachments', []).size()
+              < resource.data.get('attachments', []).size() + ('attachment' in resource.data ? 1 : 0))
+        && (!keys.hasAny(['attachment']) || !('attachment' in request.resource.data))
+        && (!keys.hasAny(['wordle']) || wordleOnlyMine());
+    }
+    function wordleOnlyMine() {
+      let before = resource.data.get('wordle', {});
+      let after = request.resource.data.get('wordle', {});
+      return after.diff(before).affectedKeys().hasOnly(['plays'])
+        && after.get('plays', {}).diff(before.get('plays', {})).affectedKeys().hasOnly([me()]);
+    }
+    function isMine() { return resource.data.get('uid', null) == me(); }
+    // Auto-delete: whoever opens a conversation sweeps messages older than 7 days.
+    function isOld() { return resource.data.get('createdAt', null) is timestamp && resource.data.createdAt < request.time - duration.value(7, 'd'); }
+
+    // ---------- servers ----------
+    function serverData(sid) { return get(/databases/$(database)/documents/servers/$(sid)).data; }
+    function inServer(sid) { return signedIn() && (me() in serverData(sid).get('members', []) || isStaff()); }
+    function notTimedOut(sid) { return serverData(sid).get('timeouts', {}).get(me(), 0) <= request.time.toMillis(); }
+
+    match /servers/{sid} {
+      allow read: if signedIn();                                    // Explore Servers lists every server
+      allow create: if signedIn() && request.resource.data.ownerId == me() && request.resource.data.members == [me()];
+      allow update: if signedIn()
+        && request.resource.data.get('ownerId', null) == resource.data.get('ownerId', null)
+        && request.resource.data.get('inviteCode', null) == resource.data.get('inviteCode', null)
+        && (me() in resource.data.get('members', [])
+            || isStaff()
+            || (onlyChanged(['members']) && onlyMeAdded('members') && !(me() in resource.data.get('bannedUsers', []))));   // joining
+      allow delete: if signedIn() && (resource.data.get('ownerId', null) == me() || myRank() >= 2);
+
+      match /categories/{cid} { allow read, write: if inServer(sid); }
+      match /channels/{cid} {
+        allow read, write: if inServer(sid);
+        match /messages/{mid} {
+          allow read: if inServer(sid);
+          allow create: if inServer(sid) && canPost() && notTimedOut(sid) && newMessageAuthorOk();
+          allow update: if inServer(sid) && (isMine() || othersMessageUpdateOk());
+          allow delete: if inServer(sid);                           // moderators (checked by role in the app) and auto-delete
+        }
+        match /typing/{name} {
+          allow read: if inServer(sid);
+          allow write: if isMe(name) && inServer(sid);
+        }
+      }
+    }
+
+    // ---------- direct messages ----------
+    function inDM(did) { return signedIn() && me() in get(/databases/$(database)/documents/dms/$(did)).data.participants; }
+
+    match /dms/{did} {
+      allow get: if signedIn() && (resource == null || me() in resource.data.participants || isStaff());
+      allow list: if signedIn() && (me() in resource.data.participants || isStaff());
+      // A DM's id is its two usernames, sorted and joined with "_" (dmIdFor() in script.js).
+      allow create: if signedIn()
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 2
+        && me() in request.resource.data.participants
+        && (did == request.resource.data.participants[0] + '_' + request.resource.data.participants[1]
+            || did == request.resource.data.participants[1] + '_' + request.resource.data.participants[0]);
+      allow update: if signedIn()
+        && request.resource.data.participants == resource.data.participants
+        && (me() in resource.data.participants || isStaff());
+
+      match /messages/{mid} {
+        allow read: if inDM(did);
+        allow create: if inDM(did) && canPost() && newMessageAuthorOk();
+        allow update: if inDM(did) && (isMine() || othersMessageUpdateOk());
+        allow delete: if (inDM(did) && (isMine() || isOld())) || isStaff();
+      }
+      match /typing/{name} {
+        allow read: if inDM(did);
+        allow write: if isMe(name) && inDM(did);
+      }
+    }
+
+    // ---------- group DMs ----------
+    function inGroup(gid) { return signedIn() && me() in get(/databases/$(database)/documents/groupDMs/$(gid)).data.participants; }
+
+    match /groupDMs/{gid} {
+      allow get: if signedIn() && (resource == null || me() in resource.data.participants || isStaff());
+      allow list: if signedIn() && (me() in resource.data.participants || isStaff());
+      allow create: if signedIn() && request.resource.data.participants is list && me() in request.resource.data.participants;
+      allow update: if signedIn() && (me() in resource.data.participants || isStaff());
+
+      match /messages/{mid} {
+        allow read: if inGroup(gid);
+        allow create: if inGroup(gid) && canPost() && newMessageAuthorOk();
+        allow update: if inGroup(gid) && (isMine() || othersMessageUpdateOk());
+        allow delete: if (inGroup(gid) && (isMine() || isOld())) || isStaff();
+      }
+      match /typing/{name} {
+        allow read: if inGroup(gid);
+        allow write: if isMe(name) && inGroup(gid);
+      }
+    }
+  }
+}

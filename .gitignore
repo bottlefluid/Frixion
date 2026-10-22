@@ -1,0 +1,4 @@
+# The desktop app is its own repository (bottlefluid/frx)
+FrxDesktop/
+# Local tools
+.claude/

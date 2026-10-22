@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "presence": {
+      ".read": "auth != null",
+      "$name": {
+        ".write": "auth != null && auth.token.name === $name && auth.token.email === $name.toLowerCase() + '@frixion.example.com'"
+      }
+    }
+  }
+}
