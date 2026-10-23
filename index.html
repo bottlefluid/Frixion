@@ -12,7 +12,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=86">
+<link rel="stylesheet" href="style.css?v=87">
 </head>
 <body>
 
@@ -900,7 +900,7 @@
         <div class="setting-row ov-setting" style="margin-top:20px;">
           <div class="setting-row-text">
             <div class="setting-row-title">Overlay shortcut</div>
-            <div class="setting-row-desc">Opens your friends, DMs and servers on top of anything, including Quests games. Drag a window's top bar to move it and drag its edges to resize it. Click the shortcut, then press the new keys. Default is Shift + ` (the ~ key).</div>
+            <div class="setting-row-desc">Opens your friends, DMs and servers on top of anything, including Quests games. In the Frixion computer app it also works over other programs and games, like Minecraft or Roblox (a shortcut without Ctrl or Alt only works there while a game is running, so the key still types everywhere else). Drag a window's top bar to move it and drag its edges to resize it. Click the shortcut, then press the new keys. Default is Shift + ` (the ~ key).</div>
           </div>
           <div class="ov-bind-ctl">
             <button type="button" class="ov-bind-btn" id="overlay-bind-btn" title="Change shortcut"></button>
@@ -1328,6 +1328,11 @@
           </select>
           <input class="fld-input" id="gen-code-value" type="number" min="1" placeholder="Amount">
         </div>
+        <div class="ab-row gen-code-uses-row">
+          <label class="fld-label" for="gen-code-uses">Times it can be redeemed</label>
+          <input class="fld-input" id="gen-code-uses" type="number" min="0" step="1" value="1">
+          <small class="hint">0 = unlimited. Each account can redeem a code once.</small>
+        </div>
         <div class="ab-row" style="margin-top:8px;">
           <input class="fld-input" id="gen-code-custom" placeholder="Custom code (optional — leave blank to random-generate)" style="text-transform:uppercase;" maxlength="24">
           <button class="btn-accent-inline slim" id="gen-code-btn">Generate</button>
@@ -1583,6 +1588,6 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=86"></script>
+<script defer src="script.js?v=87"></script>
 </body>
 </html>

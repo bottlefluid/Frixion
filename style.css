@@ -1348,6 +1348,9 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 .admin-block:last-child { border-bottom: none; }
 .ab-title { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; letter-spacing: .3px; }
 .ab-row { display: flex; gap: 8px; align-items: center; }
+.gen-code-uses-row { margin-top: 8px; flex-wrap: wrap; }
+.gen-code-uses-row .fld-label, .gen-code-uses-row .hint { margin: 0; }
+.gen-code-uses-row .fld-input { width: 90px; flex: none; }
 .ab-note { flex: 1; font-size: 13px; color: var(--text-muted); }
 .btn-secondary.slim, .btn-accent-inline.slim, .btn-danger.slim { padding: 6px 12px; font-size: 13px; }
 
@@ -4253,3 +4256,9 @@ body.is-mobile #settings-content h2 { font-size: 22px; text-transform: none; let
 .admin-chip-by { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 .admin-emoji-chip.locked { opacity: .7; }
 .admin-emoji-chip.locked::after { content: '\1F512'; font-size: 11px; margin-left: 2px; }
+
+/* The computer app's overlay window (script.js OVERLAY_WINDOW): see-through, and only the overlay shows. */
+html.ov-window, html.ov-window body { background: transparent !important; }
+/* A dark color-scheme makes Chromium fill an empty page background with dark grey, which would hide the game. */
+html.ov-window { color-scheme: normal !important; }
+html.ov-window #boot-screen, html.ov-window #title-bar, html.ov-window #page-body { display: none !important; }

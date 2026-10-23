@@ -451,6 +451,12 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.29', date: '2026-10-22', title: 'Overlay over games, and multi-use codes',
+    notes: [
+      'In the Frixion computer app, the overlay shortcut now opens the overlay on top of other programs and games, like Minecraft or Roblox.',
+      'If your shortcut has no Ctrl or Alt (like the default Shift + `), the app only uses it while a game is running, so it still types normally everywhere else.',
+      'Staff can choose how many times a code can be redeemed (0 means no limit). Each account can redeem a code once.',
+    ] },
   { v: '4.28', date: '2026-10-22', title: 'Friends on the app, and fixes',
     notes: [
       'Friends using the Frixion computer app now show as Online even when it is in the tray, and Idle only after 10 minutes away.',
@@ -1747,7 +1753,7 @@ function updateMyConnection() {
   try { myPresenceConnRef.update(myConnectionState()); } catch (e) {}
 }
 function initPresence() {
-  if (!rtdb || !myUid) return;
+  if (!rtdb || !myUid || OVERLAY_WINDOW) return;   // the app's main window is the one that says you're online
   try {
     const myRef = rtdb.ref('presence/' + myUid);
     if (presenceConnectedCb) rtdb.ref('.info/connected').off('value', presenceConnectedCb);
@@ -1844,6 +1850,11 @@ const ACTIVITY_TYPES = { playing: 'Playing', listening: 'Listening to', watching
 // The Frixion desktop app (see frixion-desktop) puts window.frixionDesktop on the page. In a normal browser this is undefined and nothing below runs.
 const DESKTOP = (window.frixionDesktop && window.frixionDesktop.isDesktop) ? window.frixionDesktop : null;
 if (DESKTOP) document.documentElement.classList.add('is-electron');
+// The computer app also opens this page as a see-through window that only shows the overlay, so the overlay shortcut
+// works on top of other programs and games (?overlay=1, see FrxDesktop/main.js). That window shares the sign-in with the
+// main window, and leaves presence, activity, music and the games to the main window.
+const OVERLAY_WINDOW = !!DESKTOP && new URLSearchParams(location.search).get('overlay') === '1';
+if (OVERLAY_WINDOW) document.documentElement.classList.add('ov-window');
 let desktopActivity = null, desktopDetectSent = null;   // desktopActivity: the game / Spotify song the app found on this computer
 let myActivityPublished = null, activityDebounce = 0, musicStartedAt = 0, rpcGameStartedAt = 0, rpcMedia = null;   // rpcMedia: { el, type, name, startedAt } for a chat file that is playing
 const rpcStr = (v, n) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n) : '');
@@ -1897,6 +1908,7 @@ if (DESKTOP) {
   try { if (typeof DESKTOP.onWindowVisibility === 'function') DESKTOP.onWindowVisibility(visible => { desktopWindowHidden = !visible; resumeMusicLoop(); }); } catch (e) {}
 }
 function publishActivity() {
+  if (OVERLAY_WINDOW) return;                       // the main window shares your activity
   syncDesktopDetection();
   if (!myUid) return;
   const act = computeMyActivity();
@@ -2674,17 +2686,19 @@ function showAuthScreen() {
   $('app').classList.add('hidden');
   $('login-view').classList.remove('hidden');
   $('register-view').classList.add('hidden');
+  if (OVERLAY_WINDOW) desktopOverlayReady(false);   // nobody is signed in: the app opens its main window instead
 }
 
 function enterApp() {
   if (deviceBan.banned) return;
-  registerDevice(myUid);
+  if (!OVERLAY_WINDOW) registerDevice(myUid);
   $('boot-screen').classList.add('hidden');
   $('auth-screen').classList.add('hidden');
   $('app').classList.remove('hidden');
   staffFlagsFromProfile(myProfile);
   applyAdminVisibility();
   initAppForUser();
+  if (OVERLAY_WINDOW) desktopOverlayReady(true);
 }
 
 // ============================================================
@@ -3003,6 +3017,15 @@ function initAppForUser() {
     if (!snap.exists) return;
     myProfile = snap.data();
     profileCache[myUid] = myProfile;
+    if (OVERLAY_WINDOW) {
+      // Only what the overlay shows. Bans, account deletion, redirects, music and games are the main window's job.
+      staffFlagsFromProfile(myProfile);
+      applyTheme(myProfile.theme || 'default');
+      applyShopTheme(myProfile.equippedTheme);
+      ovRenderBindSetting();
+      if (banStatus(myProfile).banned || myProfile.terminated) ovClose();
+      return;
+    }
     if (terminationActive) return;
     if (myProfile.terminated) {
       const tm = myProfile.terminated;
@@ -9736,14 +9759,24 @@ function genRedeemCode() {
   const seg = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
   return `FRX-${seg()}-${seg()}`;
 }
-async function createRedeemCode(type, value, createdBy, customCode) {
+// maxUses: how many times the code can be redeemed in total (0 = no limit). Each account can redeem a code once.
+// usedBy lists who has redeemed it; redeemedBy is the latest one (older code only looked at that).
+async function createRedeemCode(type, value, createdBy, customCode, maxUses = 1) {
   const code = (customCode || '').trim().toUpperCase() || genRedeemCode();
   const existing = await db.collection('redeemCodes').doc(code).get();
   if (existing.exists) throw new Error('That code is already in use.');
   await db.collection('redeemCodes').doc(code).set({
-    code, type, value, createdBy, redeemedBy: null, createdAt: FieldValue.serverTimestamp(), redeemedAt: null,
+    code, type, value, createdBy, maxUses, uses: 0, usedBy: [], redeemedBy: null, createdAt: FieldValue.serverTimestamp(), redeemedAt: null,
   });
   return code;
+}
+// Codes made before limits existed could be redeemed once, by whoever is in redeemedBy.
+function codeUsage(data) {
+  const n = Number(data && data.maxUses);
+  const maxUses = Number.isFinite(n) && n >= 0 ? Math.floor(n) : 1;
+  const usedBy = Array.isArray(data && data.usedBy) ? data.usedBy : (data && data.redeemedBy ? [data.redeemedBy] : []);
+  const uses = Math.max(Number(data && data.uses) || 0, usedBy.length);
+  return { maxUses, usedBy, uses, usedUp: maxUses > 0 && uses >= maxUses };
 }
 function showCodeModal(code, description) {
   $('code-reveal-text').textContent = code;
@@ -9771,7 +9804,7 @@ async function buyPremiumCode(days) {
         if (existing.exists) return null;                  // that random code is taken: try another
         if (((me.data() || {}).orbs || 0) < PREMIUM_COST_ORBS) throw new Error('not-enough-orbs');
         tx.update(userRef, { orbs: FieldValue.increment(-PREMIUM_COST_ORBS) });
-        tx.set(codeRef, { code: candidate, type: 'premium', value: days, createdBy: myUid, redeemedBy: null, createdAt: FieldValue.serverTimestamp(), redeemedAt: null });
+        tx.set(codeRef, { code: candidate, type: 'premium', value: days, createdBy: myUid, maxUses: 1, uses: 0, usedBy: [], redeemedBy: null, createdAt: FieldValue.serverTimestamp(), redeemedAt: null });
         return candidate;
       });
     }
@@ -9839,7 +9872,9 @@ async function redeemCode() {
       const [snap, me] = await Promise.all([tx.get(ref), tx.get(userRef)]);
       if (!snap.exists) return { error: 'That code is invalid.' };
       const data = snap.data();
-      if (data.redeemedBy) return { error: 'That code has already been redeemed.' };
+      const usage = codeUsage(data);
+      if (usage.usedBy.includes(myUid)) return { error: 'You have already redeemed this code.' };
+      if (usage.usedUp) return { error: usage.maxUses === 1 ? 'That code has already been redeemed.' : 'That code has been used up.' };
       const value = Math.max(0, Math.floor(Number(data.value) || 0));
       if (data.type === 'orbs') {
         tx.update(userRef, { orbs: FieldValue.increment(value) });
@@ -9848,7 +9883,7 @@ async function redeemCode() {
         const base = isPremium(fresh) ? fresh.premiumUntil : Date.now();
         tx.update(userRef, { premiumUntil: base + value * 86400000 });
       } else return { error: 'That code is invalid.' };
-      tx.update(ref, { redeemedBy: myUid, redeemedAt: FieldValue.serverTimestamp() });
+      tx.update(ref, { uses: usage.uses + 1, usedBy: [...usage.usedBy, myUid], redeemedBy: myUid, redeemedAt: FieldValue.serverTimestamp() });
       return { type: data.type, value };
     });
     if (result.error) { $('redeem-code-error').textContent = result.error; return; }
@@ -10827,12 +10862,15 @@ $('gen-code-btn').onclick = async () => {
   const type = $('gen-code-type').value;
   const value = parseInt($('gen-code-value').value || '0', 10);
   const custom = $('gen-code-custom').value.trim();
+  const maxUses = Number($('gen-code-uses').value);
   if (!value || value < 1) { toast('Enter an amount.'); return; }
+  if (!Number.isInteger(maxUses) || maxUses < 0) { toast('Enter how many times the code can be redeemed (0 = unlimited).'); return; }
   try {
-    const code = await createRedeemCode(type, value, myUid, custom);
-    toast(`Generated ${code}`);
+    const code = await createRedeemCode(type, value, myUid, custom, maxUses);
+    toast(`Generated ${code} (${maxUses === 0 ? 'unlimited uses' : maxUses === 1 ? 'one use' : maxUses + ' uses'})`);
     $('gen-code-value').value = '';
     $('gen-code-custom').value = '';
+    $('gen-code-uses').value = '1';
     renderAdminCodesList();
   } catch (e) { toast(e.message || 'Could not generate code.', 'error'); }
 };
@@ -10921,11 +10959,16 @@ async function renderAdminCodesList() {
     const snap = await db.collection('redeemCodes').orderBy('createdAt', 'desc').limit(50).get();
     const rows = [];
     snap.forEach(d => rows.push(d.data()));
+    const usageLabel = r => {
+      const u = codeUsage(r);
+      if (u.maxUses === 1) return u.uses ? 'Used by ' + esc(u.usedBy[0] || r.redeemedBy || '?') : 'Unused';
+      return u.maxUses === 0 ? `${u.uses} used · unlimited` : `${u.uses}/${u.maxUses} used`;
+    };
     wrap.innerHTML = rows.length ? rows.map(r => `
-      <div class="admin-row" style="cursor:default;">
+      <div class="admin-row" style="cursor:default;"${codeUsage(r).usedBy.length > 1 ? ` title="${esc('Redeemed by ' + codeUsage(r).usedBy.join(', '))}"` : ''}>
         <span class="ar-name" style="font-family:monospace;">${esc(r.code)}</span>
-        <span class="ab-note">${r.type === 'premium' ? r.value + 'd Premium' : r.value + ' Orbs'}</span>
-        <span class="${r.redeemedBy ? 'ban-tag' : 'op-tag'}">${r.redeemedBy ? ('Used by ' + esc(r.redeemedBy)) : 'Unused'}</span>
+        <span class="ab-note">${r.type === 'premium' ? esc(r.value) + 'd Premium' : esc(r.value) + ' Orbs'}</span>
+        <span class="${codeUsage(r).usedUp ? 'ban-tag' : 'op-tag'}">${usageLabel(r)}</span>
       </div>`).join('') : '<div class="empty">No codes generated yet.</div>';
   } catch (e) { wrap.innerHTML = '<div class="empty">Could not load codes.</div>'; }
 }
@@ -14851,6 +14894,7 @@ function ovRenderBindSetting() {
   if (foot) foot.innerHTML = html;
   const reset = $('overlay-bind-reset');
   if (reset) reset.classList.toggle('hidden', !(myProfile && myProfile.overlayKeybind));
+  if (!ovCapturing) syncDesktopOverlayBind();
 }
 
 // ---------- settings: click the shortcut, press the new combo ----------
@@ -14861,6 +14905,7 @@ async function ovSaveBind(b) {
 function ovStartCapture() {
   if (ovCapturing || !myUid) return;
   ovCapturing = true;
+  syncDesktopOverlayBind(true);   // let the old shortcut through while you press the new one
   const btn = $('overlay-bind-btn');
   btn.classList.add('capturing');
   btn.textContent = 'Press a shortcut…';
@@ -14930,15 +14975,43 @@ function ovShow() {
   else ovRoot.querySelector('.ov-search').focus();
 }
 function ovClose() {
-  if (!ovOpen) return;
-  ovOpen = false;
-  ovRoot.hidden = true;
-  clearInterval(ovTimer);
-  ovChats.slice().forEach(c => ovCloseChat(c, false));
-  ovStopBrowsing();
-  if (ovPrevFocus && document.contains(ovPrevFocus) && ovPrevFocus.focus) ovPrevFocus.focus();
-  ovPrevFocus = null;
+  if (ovOpen) {
+    ovOpen = false;
+    ovRoot.hidden = true;
+    clearInterval(ovTimer);
+    ovChats.slice().forEach(c => ovCloseChat(c, false));
+    ovStopBrowsing();
+    if (ovPrevFocus && document.contains(ovPrevFocus) && ovPrevFocus.focus) ovPrevFocus.focus();
+    ovPrevFocus = null;
+  }
+  if (OVERLAY_WINDOW) desktopHideOverlay();          // the see-through window goes away with it
 }
+
+// ---------- the computer app: the overlay on top of other programs ----------
+// The app registers the shortcut with the computer itself, so it works while a game or any other program is in front,
+// and shows this page in a see-through window on top (OVERLAY_WINDOW). In Frixion's own window it opens the overlay here.
+function desktopOverlayReady(signedIn) { try { if (DESKTOP && DESKTOP.overlayReady) DESKTOP.overlayReady(!!signedIn); } catch (e) {} }
+function desktopHideOverlay() { try { if (DESKTOP && DESKTOP.hideOverlay) DESKTOP.hideOverlay(); } catch (e) {} }
+let desktopBindSent = null;
+function syncDesktopOverlayBind(paused) {          // paused: while Settings is waiting for a new shortcut
+  if (!DESKTOP || typeof DESKTOP.setOverlayShortcut !== 'function' || !myUid) return;
+  const b = paused ? null : ovGetBind();
+  const s = JSON.stringify(b);
+  if (s === desktopBindSent) return;
+  desktopBindSent = s;
+  try { DESKTOP.setOverlayShortcut(b); } catch (e) {}
+}
+if (DESKTOP && typeof DESKTOP.onOverlay === 'function') {
+  try {
+    DESKTOP.onOverlay(what => {
+      if (OVERLAY_WINDOW && what === 'show') { if (!ovOpen) ovShow(); else { const s = ovRoot.querySelector('.ov-search'); if (s) s.focus(); } }
+      else if (OVERLAY_WINDOW && what === 'hide') ovClose();
+      else if (!OVERLAY_WINDOW && what === 'toggle') { if (ovOpen) ovClose(); else ovShow(); }
+    });
+  } catch (e) {}
+}
+// The overlay window uses whoever is signed in on the main window, so it starts over when that changes.
+if (OVERLAY_WINDOW) window.addEventListener('storage', e => { if (e.key === SESSION_KEY) location.reload(); });
 function ovReset() { ovClose(); ovLastChat = null; ovQuery = ''; ovTab = 'friends'; ovBrowseSid = null; }
 
 // ---------- movable / resizable windows ----------
