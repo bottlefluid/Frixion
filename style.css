@@ -4286,6 +4286,12 @@ html.ov-window, html.ov-window body { background: transparent !important; }
 /* A dark color-scheme makes Chromium fill an empty page background with dark grey, which would hide the game. */
 html.ov-window { color-scheme: normal !important; }
 html.ov-window #boot-screen, html.ov-window #title-bar, html.ov-window #page-body { display: none !important; }
+/* Over a game it's see-through like Discord's overlay: a Shop theme's full-screen picture isn't drawn behind it (it covered
+   the whole game), and the game is only lightly dimmed, not blurred. The panels keep their theme. */
+html.ov-window body::before, html.ov-window body::after { display: none !important; }
+html.ov-window #ov-root { background: rgba(0,0,0,.3); -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* a see-through Shop theme colour sits on a dark base so the windows stay readable over a bright game */
+html.ov-window .ov-panel, html.ov-window .ov-chat { background: linear-gradient(var(--bg-floating), var(--bg-floating)) rgba(17, 18, 20, .88); }
 
 /* ============================================================
    PHONE: Discord's app look. Sizes and colours were measured from a screenshot of Discord's phone app (iPhone, 2026);
@@ -4455,3 +4461,26 @@ body.is-mobile .friend-row [data-msg] .fr-msg-label { display: none; }
 body.is-mobile .mnotif-row { gap: 12px; padding: 10px 8px; margin: 0 -4px 2px; background: transparent; border-radius: 12px; }
 body.is-mobile .mnotif-btn { width: 40px; height: 40px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--m-btn); color: var(--m-soft); }
 body.is-mobile .mnotif-btn.yes { background: var(--accent, #5865f2); color: #fff; }
+
+/* ============================================================
+   Discord's text formatting in messages (script.js renderMessageText)
+   ============================================================ */
+.md-code { padding: 0 .25em; border-radius: 4px; background: color-mix(in srgb, var(--text-normal) 11%, transparent); font-family: Consolas, "Cascadia Mono", Menlo, monospace; font-size: .875em; }
+.md-pre { display: block; max-width: 100%; margin: 4px 0; padding: 8px 10px; overflow-x: auto; white-space: pre; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--text-normal) 12%, transparent); background: color-mix(in srgb, #000 22%, var(--bg-secondary)); }
+.md-pre code { font-family: Consolas, "Cascadia Mono", Menlo, monospace; font-size: .85em; line-height: 1.45; }
+.md-quote { display: block; margin: 2px 0; padding-left: 12px; border-left: 4px solid color-mix(in srgb, var(--text-normal) 30%, transparent); border-radius: 2px; }
+.md-h { display: block; margin: 6px 0 2px; font-weight: 700; line-height: 1.3; color: var(--text-header, var(--text-normal)); }
+.md-h1 { font-size: 1.5em; }
+.md-h2 { font-size: 1.25em; }
+.md-h3 { font-size: 1.1em; }
+.md-sub { display: block; font-size: .8em; color: var(--text-muted); }
+.md-li { display: block; position: relative; padding-left: 18px; }
+.md-li::before { content: ''; position: absolute; left: 6px; top: .62em; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.md-li2 { padding-left: 34px; }
+.md-li2::before { left: 22px; background: transparent; border: 1px solid currentColor; box-sizing: border-box; }
+/* a spoiler is a dark bar until it's clicked */
+.md-spoiler { border-radius: 4px; color: transparent; background: color-mix(in srgb, var(--text-normal) 24%, #1e1f22); cursor: pointer; transition: background .15s ease; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.md-spoiler:hover { background: color-mix(in srgb, var(--text-normal) 32%, #1e1f22); }
+.md-spoiler * { visibility: hidden; pointer-events: none; }
+.md-spoiler.revealed { color: inherit; cursor: auto; background: color-mix(in srgb, var(--text-normal) 10%, transparent); }
+.md-spoiler.revealed * { visibility: visible; pointer-events: auto; }

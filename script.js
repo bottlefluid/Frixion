@@ -451,6 +451,12 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.32', date: '2026-10-26', title: 'Text formatting, and a see-through game overlay',
+    notes: [
+      'Messages can be formatted like Discord: **bold**, *italic*, __underline__, ~~strikethrough~~, `code`, ```code blocks```, > quotes, # headings, -# small text and - lists.',
+      'Hide spoilers with ||two bars|| on each side. Click a spoiler to show it. Spoilers stay hidden in message previews.',
+      'In the Frixion computer app, the overlay over a game is now see-through like Discord\'s, so you can still see your game. Shop themes no longer cover the screen.',
+    ] },
   { v: '4.31', date: '2026-10-26', title: 'Roomier server list',
     notes: [
       'Servers in the left bar now have a small gap between them, like Discord, instead of touching.',
@@ -1087,10 +1093,79 @@ function subscribeCustomProfileFrames() {
 // [label](https://link) shows as a clickable "label". /hyperlink writes this form, and
 // anyone can type it too. The destination is always visible on hover.
 const MASKED_LINK_RE = /\[([^\[\]\n]{1,120})\]\((https?:\/\/[^\s()<>"']{1,500})\)/gi;
+// ---------- Discord's text formatting ----------
+// **bold**  *italic* or _italic_  __underline__  ~~strike~~  `code`  ```code block```  ||spoiler||, and at the start of a
+// line: > quote, >>> (quotes the rest), # ## ### headings, -# small text, - list. Code is cut out first so nothing inside
+// it is formatted, and links are set aside while the marks are read so a link with _ or * in it stays whole.
+// _Underscores_ only count at the edges of words, so snake_case names and :emoji_names: are left alone.
+const MD_CODE_RE = /```(?:([a-z0-9+#-]{1,20})\n)?([\s\S]*?)```|`([^`\n]+)`/gi;
+const MD_URL_RE = /\b(?:https?:\/\/|www\.)(?:(?!&quot;|&#39;)[^\s<>"'])+/gi;
+function mdInline(s) {
+  return s
+    .replace(/\*\*\*(?=\S)([^\n]*?\S)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^\w])__(?=\S)([^\n]*?\S)__(?!\w)/g, '$1<u>$2</u>')
+    .replace(/\*(?=[^\s*])([^\n*]*?[^\s*])\*/g, '<em>$1</em>')
+    .replace(/(^|[^\w])_(?=[^\s_])([^\n_]*?[^\s_])_(?!\w)/g, '$1<em>$2</em>')
+    .replace(/~~(?=\S)([^\n]*?\S)~~/g, '<s>$1</s>')
+    .replace(/\|\|(?=\S)([^\n]*?\S)\|\|/g, '<span class="md-spoiler" role="button" tabindex="0" title="Spoiler">$1</span>');
+}
+// Line by line: quotes, headings, small text and list items become their own blocks (which start their own line, so the
+// line break next to them is dropped); every other line keeps its break.
+function mdBlocks(safe) {
+  const lines = safe.split('\n'), out = [];
+  let quote = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    let m;
+    if ((m = /^&gt;&gt;&gt; (.*)$/.exec(line))) { out.push({ block: true, html: `<span class="md-quote">${[m[1], ...lines.slice(i + 1)].map(mdInline).join('\n')}</span>` }); break; }
+    if ((m = /^&gt; (.*)$|^&gt;$/.exec(line))) {
+      if (quote) quote.lines.push(mdInline(m[1] || ''));
+      else { quote = { block: true, lines: [mdInline(m[1] || '')] }; out.push(quote); }
+      continue;
+    }
+    quote = null;
+    if ((m = /^(#{1,3}) (.+)$/.exec(line))) out.push({ block: true, html: `<span class="md-h md-h${m[1].length}">${mdInline(m[2])}</span>` });
+    else if ((m = /^-# (.+)$/.exec(line))) out.push({ block: true, html: `<span class="md-sub">${mdInline(m[1])}</span>` });
+    else if ((m = /^( *)[-*] (.+)$/.exec(line))) out.push({ block: true, html: `<span class="md-li${m[1].length >= 2 ? ' md-li2' : ''}">${mdInline(m[2])}</span>` });
+    else if (/^\uE004\d+\uE005$/.test(line)) out.push({ block: true, html: line });
+    else out.push({ block: false, html: mdInline(line) });
+  }
+  return out.map((seg, i) => (i > 0 && !seg.block && !out[i - 1].block ? '\n' : '') +
+    (seg.lines ? `<span class="md-quote">${seg.lines.join('\n')}</span>` : seg.html)).join('');
+}
+// Plain text for previews, replies and notifications: the marks come off and spoilers stay hidden.
+function mdPlain(s) {
+  return String(s || '')
+    .replace(/```(?:[a-z0-9+#-]{1,20}\n)?([\s\S]*?)```/gi, '$1').replace(/`([^`\n]+)`/g, '$1')
+    .replace(/\|\|[^\n]*?\|\|/g, '[spoiler]')
+    .replace(/^(?:>>> |> |#{1,3} |-# )/gm, '')
+    .replace(/\*\*|__|~~/g, '')
+    .replace(/(^|[^\w*])\*(?=[^\s*])([^\n*]*?[^\s*])\*/g, '$1$2')
+    .replace(/(^|[^\w])_(?=[^\s_])([^\n_]*?[^\s_])_(?!\w)/g, '$1$2');
+}
+// Click (or Enter on) a spoiler to show it. Until then a link inside it can't be clicked.
+document.addEventListener('click', e => {
+  const s = e.target.closest && e.target.closest('.md-spoiler:not(.revealed)');
+  if (!s) return;
+  e.preventDefault(); e.stopPropagation();
+  s.classList.add('revealed');
+}, true);
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('md-spoiler')) { e.preventDefault(); e.target.classList.add('revealed'); }
+});
+
 function renderMessageText(rawText) {
+  const codes = [];
+  const src = String(rawText).replace(MD_CODE_RE, (_, lang, block, inline) => {
+    if (inline != null) { codes.push(`<code class="md-code">${esc(inline)}</code>`); return `\uE002${codes.length - 1}\uE003`; }
+    codes.push(`<pre class="md-pre"><code>${esc(block.replace(/^\n+|\n+$/g, ''))}</code></pre>`);
+    return `\uE004${codes.length - 1}\uE005`;
+  });
   const masked = [];
-  const stripped = String(rawText).replace(MASKED_LINK_RE, (_, label, url) => { masked.push({ label, url }); return `\uE000${masked.length - 1}\uE001`; });
-  const safe = esc(stripped);
+  const stripped = src.replace(MASKED_LINK_RE, (_, label, url) => { masked.push({ label, url }); return `\uE000${masked.length - 1}\uE001`; });
+  const urls = [];
+  const safe = mdBlocks(esc(stripped).replace(MD_URL_RE, u => { urls.push(u); return `\uE006${urls.length - 1}\uE007`; }));
   const withEmoji = safe.replace(/:([a-z0-9_]+):/gi, (whole, name) => {
     const key = name.toLowerCase();
     if (customEmojis[key]) return `<img class="custom-emoji" src="${esc(customEmojis[key].dataUrl)}" alt=":${esc(key)}:" title=":${esc(key)}:">`;
@@ -1113,10 +1188,10 @@ function renderMessageText(rawText) {
     const cls = 'mention-pill mention-glow' + (name === myUid ? ' mention-self' : '');
     return `${lead}<span class="${cls}">@${esc(name)}</span>`;
   });
-  return linkifyText(withMentions).replace(/\uE000(\d+)\uE001/g, (_, i) => {
+  return linkifyText(withMentions.replace(/\uE006(\d+)\uE007/g, (_, i) => urls[+i])).replace(/\uE000(\d+)\uE001/g, (_, i) => {
     const { label, url } = masked[+i];
     return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="msg-link" title="${esc(url)}">${esc(label)}</a>`;
-  });
+  }).replace(/\uE002(\d+)\uE003|\uE004(\d+)\uE005/g, (_, a, b) => codes[+(a != null ? a : b)]);
 }
 // Same matching rules as the @mention renderer above, kept in sync
 // deliberately — this decides whether a message plays a ping sound for the
@@ -1228,6 +1303,7 @@ let currentChannelId = null;
 let currentDMId = null;
 let currentDMOtherUid = null;
 let currentGroupDMId = null;
+let currentThreadId = null, currentThreadData = null;   // threads (not switched on yet)
 let currentView = 'none';    // 'none' | 'channel' | 'dm' | 'groupdm' | 'friends' | 'quests' | 'codes'
 let lastRawMessages = [];
 let lastChannelsList = [];
@@ -3694,7 +3770,7 @@ function groupDMDisplayName(g) {
 function previewForMessage(message, includeAuthor = false) {
   if (!message) return 'No messages yet';
   if (typeof message === 'string') return message;
-  let text = (message.text || '').replace(MASKED_LINK_RE, '$1').trim();
+  let text = mdPlain((message.text || '').replace(MASKED_LINK_RE, '$1')).trim();
   if (!text && message.attachments && message.attachments.length) {
     text = message.attachments.length > 1
       ? `Sent ${message.attachments.length} photos`
@@ -3758,7 +3834,13 @@ function loadLastRead() {
   return lastRead;
 }
 function saveLastRead() { try { localStorage.setItem(lastReadKey(), JSON.stringify(lastRead)); } catch (e) {} }
-function markConversationRead(id) { if (!myUid || !id) return; loadLastRead()[id] = Date.now(); saveLastRead(); }
+// at: the newest message's time, so a computer clock that runs a little slow can't leave it looking unread
+function markConversationRead(id, at) {
+  if (!myUid || !id) return;
+  const read = loadLastRead(), t = Math.max(Date.now(), at || 0);
+  if ((read[id] || 0) >= t) return;
+  read[id] = t; saveLastRead();
+}
 function isConversationUnread(conv) {
   if (!myUid || !conv) return false;
   if (conv.id === currentDMId || conv.id === currentGroupDMId) { markConversationRead(conv.id); return false; }   // open right now
@@ -3766,6 +3848,239 @@ function isConversationUnread(conv) {
   const from = conv.lastMessage && conv.lastMessage.username;
   return !!from && from !== (myProfile && myProfile.username) && timeValue(conv.updatedAt) > (read[conv.id] || read._since || 0);
 }
+
+// ---------- unread dots on servers and channels, and red @mention numbers (like Discord) ----------
+// Each message sent in a channel also stamps the channel with its newest message (lastMessageAt / lastMessage), and
+// everyone it mentions or replies to gets a note in users/{name}/mentions. A channel is unread when its newest message
+// came after you last opened it here, and a server is unread when any channel you can see is. Mention notes are deleted
+// when you open the channel (or thread), so the red numbers clear on all your devices.
+const serverChannels = {};           // server id -> { channel id -> channel }
+const serverChannelUnsubs = {};
+let myMentions = [];
+const BASE_TITLE = document.title;
+const chReadKey = (sid, cid) => `ch:${sid}/${cid}`;
+const serverById = sid => (window.__myServers || []).find(s => s.id === sid) || null;
+const lookingAtChannel = (sid, cid) => currentView === 'channel' && currentServerId === sid && currentChannelId === cid && !currentThreadId;
+function isChannelUnread(sid, c) {
+  if (!myUid || !c || !c.lastMessage || !c.lastMessageAt || c.lastMessage.uid === myUid || isConversationMuted('ch', c.id)) return false;
+  const server = serverById(sid);
+  if (!server || !canViewChannel(c, server, myUid)) return false;
+  const at = timeValue(c.lastMessageAt);
+  if (lookingAtChannel(sid, c.id)) { markConversationRead(chReadKey(sid, c.id), at); return false; }
+  const read = loadLastRead();
+  return at > (read[chReadKey(sid, c.id)] || read._since || 0);
+}
+// @everyone / @here counts once while the channel is unread
+const channelMentionCount = (sid, c, tid) => myMentions.filter(m => m.sid === sid && m.cid === c.id && (tid === undefined || (m.tid || null) === tid)).length +
+  (tid === undefined && c.lastMessage && c.lastMessage.everyone && isChannelUnread(sid, c) ? 1 : 0);
+function serverUnreadState(sid) {
+  let unread = false, mentions = 0;
+  Object.values(serverChannels[sid] || {}).forEach(c => { if (isChannelUnread(sid, c)) unread = true; mentions += channelMentionCount(sid, c); });
+  return { unread, mentions };
+}
+function unreadDMCount() {
+  return (window.__myDMs || []).filter(c => !isConversationMuted('dm', c.id) && isConversationUnread(c)).length +
+    (window.__myGroupDMs || []).filter(c => !isConversationMuted('gdm', c.id) && isConversationUnread(c)).length;
+}
+function setCountBadge(el, n, cls) {
+  let b = el.querySelector(':scope > .' + cls);
+  if (!n) { if (b) b.remove(); return; }
+  if (!b) { b = document.createElement('span'); b.className = cls; el.appendChild(b); }
+  b.textContent = n > 99 ? '99+' : String(n);
+}
+// Called whenever something that changes the dots happens. Batched, and a timer rather than a frame so it still runs
+// while the tab is in the background (the tab title shows the count).
+let unreadTimer = 0;
+function refreshUnread() {
+  if (unreadTimer || OVERLAY_WINDOW) return;
+  unreadTimer = setTimeout(() => {
+    unreadTimer = 0;
+    if (!myUid) { document.title = BASE_TITLE; return; }
+    let total = 0;
+    document.querySelectorAll('#server-rail-list .rail-item[data-id]').forEach(el => {
+      const { unread, mentions } = serverUnreadState(el.dataset.id);
+      total += mentions;
+      el.classList.toggle('unread', unread || mentions > 0);
+      setCountBadge(el, mentions, 'rail-badge');
+    });
+    const dms = unreadDMCount();
+    total += dms;
+    setCountBadge($('rail-home'), dms, 'rail-badge');
+    updateChannelRowBadges();
+    document.title = (total ? `(${total > 99 ? '99+' : total}) ` : '') + BASE_TITLE;
+  }, 60);
+}
+function updateChannelRowBadges() {
+  if (!currentServerId) return;
+  const chans = serverChannels[currentServerId] || {};
+  document.querySelectorAll('#channel-rows .channel-row[data-cid]').forEach(row => {
+    const c = chans[row.dataset.cid] || lastChannelsList.find(x => x.id === row.dataset.cid);
+    const n = c ? channelMentionCount(currentServerId, c) : 0;
+    row.classList.toggle('unread', !!c && (n > 0 || isChannelUnread(currentServerId, c)));
+    setCountBadge(row, n, 'ch-badge');
+  });
+  document.querySelectorAll('#channel-rows .thread-row[data-tid]').forEach(row => {
+    const c = chans[row.dataset.cid];
+    setCountBadge(row, c ? channelMentionCount(currentServerId, c, row.dataset.tid) : 0, 'ch-badge');
+  });
+}
+// One listener per server you're in, on its channels, for the dots (and @everyone notifications).
+function syncServerChannelListeners(servers) {
+  if (OVERLAY_WINDOW) return;
+  const ids = new Set(servers.map(s => s.id));
+  Object.keys(serverChannelUnsubs).forEach(sid => {
+    if (ids.has(sid)) return;
+    serverChannelUnsubs[sid](); delete serverChannelUnsubs[sid]; delete serverChannels[sid];
+  });
+  servers.forEach(s => {
+    if (serverChannelUnsubs[s.id]) return;
+    let first = true;
+    serverChannelUnsubs[s.id] = db.collection('servers').doc(s.id).collection('channels').onSnapshot(snap => {
+      const prev = serverChannels[s.id] || {}, map = {};
+      snap.forEach(d => { map[d.id] = { id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }; });
+      serverChannels[s.id] = map;
+      if (!first) Object.values(map).forEach(c => maybeNotifyEveryone(s.id, c, prev[c.id]));
+      first = false;
+      refreshUnread();
+    }, () => {});
+  });
+  refreshUnread();
+}
+function stopServerChannelListeners() {
+  Object.keys(serverChannelUnsubs).forEach(sid => { serverChannelUnsubs[sid](); delete serverChannelUnsubs[sid]; delete serverChannels[sid]; });
+  myMentions = [];
+}
+function subscribeMentions() {
+  if (OVERLAY_WINDOW) return;
+  if (unsub.mentions) unsub.mentions();
+  let first = true;
+  unsub.mentions = db.collection('users').doc(myUid).collection('mentions').orderBy('at', 'desc').limit(100).onSnapshot(snap => {
+    myMentions = snap.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }));
+    if (!first) snap.docChanges().forEach(ch => { if (ch.type === 'added') onNewMention({ id: ch.doc.id, ...ch.doc.data({ serverTimestamps: 'estimate' }) }); });
+    first = false;
+    refreshUnread();
+  }, () => {});
+}
+function clearMentions(match) {
+  const gone = myMentions.filter(match);
+  if (!gone.length || !myUid) return;
+  myMentions = myMentions.filter(m => !match(m));
+  const batch = db.batch();
+  gone.slice(0, 400).forEach(m => batch.delete(db.collection('users').doc(myUid).collection('mentions').doc(m.id)));
+  batch.commit().catch(() => {});
+  refreshUnread();
+}
+function markChannelRead(sid, cid) {
+  const c = (serverChannels[sid] || {})[cid];
+  markConversationRead(chReadKey(sid, cid), c ? timeValue(c.lastMessageAt) : 0);
+  clearMentions(m => m.sid === sid && m.cid === cid && !m.tid);
+  refreshUnread();
+}
+// Sending in a channel or thread: stamp the channel and leave a note for everyone mentioned or replied to.
+function noteChannelMessage(sid, cid, payload, ref, tid) {
+  if (!sid || !cid || !ref) return;
+  const server = sid === currentServerId ? currentServerData : serverById(sid);
+  const channel = (serverChannels[sid] || {})[cid] || lastChannelsList.find(c => c.id === cid) || {};
+  const text = previewForMessage(payload).slice(0, 200);
+  const raw = payload.text || '';
+  const everyone = /(^|[\s(>])@(everyone|here)\b/i.test(raw) && payload.everyoneBlocked !== true;
+  if (!tid) db.collection('servers').doc(sid).collection('channels').doc(cid).update({ lastMessageAt: FieldValue.serverTimestamp(), lastMessage: { uid: myUid, text, everyone, mid: ref.id } }).catch(() => {});
+  const members = new Set((server && server.members) || []);
+  const targets = new Set();
+  let m;
+  const re = /(^|[\s(>])@([A-Za-z0-9_]{3,24})\b/g;
+  while ((m = re.exec(raw))) if (members.has(m[2])) targets.add(m[2]);
+  if (payload.replyTo && payload.replyTo.uid && members.has(payload.replyTo.uid)) targets.add(payload.replyTo.uid);
+  targets.delete(myUid);
+  [...targets].slice(0, 25).forEach(u => db.collection('users').doc(u).collection('mentions').add({
+    sid, cid, tid: tid || null, mid: ref.id, from: myUid, text, at: FieldValue.serverTimestamp(),
+    server: (server && server.name) || '', channel: channel.name || '', thread: tid ? (currentThreadData && currentThreadData.name) || '' : '',
+  }).catch(() => {}));
+}
+
+// ---------- notifications ----------
+// Like Discord: a DM, a group message, or a message that mentions you (or @everyone) shows a notification while you
+// aren't looking at Frixion. Muted chats stay quiet. In the computer app it pops up over the game you're playing
+// (see FrxDesktop/main.js); in a browser it's the browser's own notification, once you allow them in Settings.
+const NOTIFY_KEY = 'frixion.notify', NOTIFY_GAME_KEY = 'frixion.notifyGame';
+const notifyOn = () => { try { return localStorage.getItem(NOTIFY_KEY) !== '0'; } catch (e) { return true; } };
+const notifyInGame = () => { try { return localStorage.getItem(NOTIFY_GAME_KEY) !== '0'; } catch (e) { return true; } };
+const appNotifies = () => !!(DESKTOP && typeof DESKTOP.notify === 'function');
+const lookingAtFrixion = () => document.visibilityState === 'visible' && document.hasFocus();
+const notifiedKeys = new Set();       // a message mentioning you and @everyone notifies once
+function notifyMessage(n, force) {
+  if (OVERLAY_WINDOW || !n || (!force && (!notifyOn() || lookingAtFrixion()))) return;
+  if (n.key) { if (notifiedKeys.has(n.key)) return; notifiedKeys.add(n.key); }
+  const body = String(n.body || '').slice(0, 180), title = String(n.title || 'Frixion').slice(0, 100);
+  if (appNotifies()) { DESKTOP.notify({ title, body, icon: n.icon || '', open: n.open || null, inGame: notifyInGame() }); return; }
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const note = new Notification(title, { body, icon: n.icon || DEFAULT_AVATAR_URL, tag: n.key || undefined, silent: true });
+    note.onclick = () => { try { window.focus(); } catch (e) {} openNotifyTarget(n.open); note.close(); };
+  } catch (e) {}   // phones' browsers only allow notifications from an installed app
+}
+// The sender's picture and name are looked up first.
+function notifyFrom(uid, build) {
+  getProfile(uid).then(p => notifyMessage(build(p, displayNameOf(p) || uid, p.avatarUrl || DEFAULT_AVATAR_URL))).catch(() => {});
+}
+const freshMessage = at => !!at && Date.now() - at < 120000;
+function notifyConversation(kind, id, data) {
+  const lm = data.lastMessage;
+  if ((kind === 'dm' ? currentDMId : currentGroupDMId) === id && lookingAtFrixion()) return;
+  const open = kind === 'dm' ? { type: 'dm', id, other: (data.participants || []).find(p => p !== myUid) } : { type: 'gdm', id };
+  notifyFrom(lm.username, (p, name, icon) => kind === 'dm'
+    ? { key: `c:${id}:${timeValue(data.updatedAt)}`, title: name, body: lm.text, icon, open }
+    : { key: `c:${id}:${timeValue(data.updatedAt)}`, title: groupDMDisplayName({ id, ...data }), body: `${name}: ${lm.text || ''}`, icon, open });
+}
+function onNewMention(m) {
+  if (!freshMessage(timeValue(m.at))) return;          // an old note coming back into view, not a new message
+  const open = m.tid ? currentThreadId === m.tid : lookingAtChannel(m.sid, m.cid);
+  if (open) clearMentions(x => x.id === m.id);
+  if (isConversationMuted('ch', m.cid)) return;
+  if (!open) playPingSound();                           // the open chat already pings for its own mentions
+  const where = m.thread ? `${m.thread} in #${m.channel}` : `#${m.channel || 'channel'}`;
+  notifyFrom(m.from, (p, name, icon) => ({ key: 'msg:' + m.mid, title: `${name} (${where}, ${m.server || 'server'})`, body: m.text, icon,
+    open: { type: 'ch', sid: m.sid, cid: m.cid, tid: m.tid || null } }));
+}
+function maybeNotifyEveryone(sid, c, prev) {
+  const lm = c.lastMessage, at = timeValue(c.lastMessageAt);
+  if (!lm || !lm.everyone || lm.uid === myUid || !freshMessage(at) || (prev && timeValue(prev.lastMessageAt) >= at)) return;
+  const server = serverById(sid);
+  if (!server || !canViewChannel(c, server, myUid) || isConversationMuted('ch', c.id)) return;
+  if (!lookingAtChannel(sid, c.id)) playPingSound();
+  notifyFrom(lm.uid, (p, name, icon) => ({ key: 'msg:' + lm.mid, title: `${name} (#${c.name}, ${server.name})`, body: lm.text, icon, open: { type: 'ch', sid, cid: c.id } }));
+}
+// Clicking a notification opens that chat. A channel in another server opens once that server's channels have loaded.
+let pendingChannelOpen = null;
+function openNotifyTarget(o) {
+  if (!o || !myUid) return;
+  setMobileTab('home');
+  if (o.type === 'dm' || o.type === 'gdm') {
+    if (currentServerId) showHomeView();
+    if (o.type === 'dm') selectDM(o.id, o.other); else selectGroupDM(o.id);
+    return;
+  }
+  const server = serverById(o.sid);
+  if (!server) return;
+  if (currentServerId === o.sid && lastChannelsList.some(c => c.id === o.cid)) { openChannelTarget(o); return; }
+  pendingChannelOpen = o;
+  selectServer(server);
+}
+function openChannelTarget(o) {
+  const c = lastChannelsList.find(x => x.id === o.cid);
+  if (!c) return;
+  selectChannel(c);
+  if (o.tid) openThreadById(o.tid);
+}
+if (DESKTOP && typeof DESKTOP.onNotifyOpen === 'function') DESKTOP.onNotifyOpen(o => {
+  if (!o || typeof o !== 'object') return;
+  if (OVERLAY_WINDOW) {          // answering from the overlay over a game: open that chat in the overlay
+    if (o.type === 'dm' && o.other) ovLastChat = { kind: 'dm', uid: o.other };
+    else if (o.type === 'ch') ovLastChat = { kind: 'ch', sid: o.sid, cid: o.cid };
+    return;
+  }
+  openNotifyTarget(o);
+});
 function renderDMRows() {
   const wrap = $('dm-rows');
   wrap.innerHTML = '';
@@ -7317,7 +7632,7 @@ function setReplyTarget(msgId) {
   const preview = m.sticker ? `Sent a sticker: ${m.sticker.name}` : m.gifUrl ? 'Sent a GIF' :
     m.poll ? `📊 Poll: ${m.poll.question}` :
     m.wordle ? '🟩 Wordle game' :
-    atts.length > 1 ? `Sent ${atts.length} files` : atts.length ? `Sent a file: ${atts[0].name || ''}` : (m.text || '');
+    atts.length > 1 ? `Sent ${atts.length} files` : atts.length ? `Sent a file: ${atts[0].name || ''}` : mdPlain((m.text || '').replace(MASKED_LINK_RE, '$1'));
   replyTarget = { id: m.id, uid: m.uid, username: uname, text: preview.slice(0, 150) };
   $('reply-bar-username').textContent = uname;
   $('reply-bar').classList.remove('hidden');
