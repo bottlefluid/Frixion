@@ -451,6 +451,16 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.30', date: '2026-10-26', title: 'Phones look like Discord\'s app',
+    notes: [
+      'On a phone, Frixion now has the same layout as Discord\'s app: the chat-bubble Messages button, a bold Messages header with Search and Add Friends, bigger conversation rows, and a floating profile bar at the bottom.',
+      'Tap your profile bar for the You page (Friends, Shop, Quests, Codes and Settings). Tap the bell for friend requests.',
+      'Conversations with new messages show in white; ones you have read turn grey.',
+      'Chats have a cleaner header with the person\'s picture. Tap their name to see their profile, or a channel\'s name for members, pins, mute and search.',
+      'The message bar has a round + button, a round text box, and a send button that appears while you type.',
+      'Messages now use the whole width of the screen instead of wrapping early.',
+      'Fixed the You page being see-through with some Shop themes, and the member list now has a back button.',
+    ] },
   { v: '4.29', date: '2026-10-22', title: 'Overlay over games, and multi-use codes',
     notes: [
       'In the Frixion computer app, the overlay shortcut now opens the overlay on top of other programs and games, like Minecraft or Roblox.',
@@ -1819,6 +1829,7 @@ function subscribePresence(uid) {
       activityCache[uid] = act; activityCacheSig[uid] = actSig;
       renderCurrentView();
       renderDMRows();
+      if (uid === currentDMOtherUid) renderChatHeaderAvatar();
       renderSelfPanel();
       renderHomeActivity();
       if (currentView === 'friends') renderFriendsView();
@@ -3152,7 +3163,7 @@ function renderSelfPanel() {
   const st = STATUSES.find(s => s.key === computeDisplayStatus(myUid));
   const myAct = computeMyActivity();
   $('self-status-label').textContent = myAct ? activityLine(myAct) : (st ? st.label : 'Online') + (st && st.key !== 'offline' ? (isOnMobile(myUid) ? ' · Mobile' : DESKTOP ? ' · App' : '') : '');
-  updateMobileTabbar();
+  updateMobileUserPill();
 }
 
 // ============================================================
@@ -3610,7 +3621,7 @@ function openHomeMainView(which) {
   $('chat-view').classList.add('hidden');
   hideHeaderActions();
   hideMainPageViews();
-  $('chat-header-hash').textContent = '';
+  setChatHeaderHash('');
   if (which === 'friends') { currentView = 'friends'; $('chat-header-title').textContent = 'Friends'; $('friends-view').classList.remove('hidden'); renderFriendsView(); }
   else if (which === 'quests') { currentView = 'quests'; $('chat-header-title').textContent = 'Quests'; $('quests-view').classList.remove('hidden'); renderQuests(); }
   else if (which === 'codes') { currentView = 'codes'; $('chat-header-title').textContent = 'Codes'; $('codes-view').classList.remove('hidden'); }
@@ -3730,6 +3741,27 @@ function shortAgo(ms) {
   if (m < 10080) return Math.floor(m / 1440) + 'd';
   return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
+// Which conversations have something new since you last opened them, kept in this browser. The phone layout shows
+// those rows in white and the rest in grey, like Discord. Conversations never opened here count from when this
+// browser first started keeping track, so nothing old suddenly looks unread.
+let lastRead = null, lastReadFor = null;
+const lastReadKey = () => 'frixion.lastRead.' + myUid;
+function loadLastRead() {
+  if (lastReadFor === myUid && lastRead) return lastRead;
+  lastReadFor = myUid;
+  try { lastRead = JSON.parse(localStorage.getItem(lastReadKey()) || 'null'); } catch (e) { lastRead = null; }
+  if (!lastRead || typeof lastRead !== 'object') { lastRead = { _since: Date.now() }; saveLastRead(); }
+  return lastRead;
+}
+function saveLastRead() { try { localStorage.setItem(lastReadKey(), JSON.stringify(lastRead)); } catch (e) {} }
+function markConversationRead(id) { if (!myUid || !id) return; loadLastRead()[id] = Date.now(); saveLastRead(); }
+function isConversationUnread(conv) {
+  if (!myUid || !conv) return false;
+  if (conv.id === currentDMId || conv.id === currentGroupDMId) { markConversationRead(conv.id); return false; }   // open right now
+  const read = loadLastRead();
+  const from = conv.lastMessage && conv.lastMessage.username;
+  return !!from && from !== (myProfile && myProfile.username) && timeValue(conv.updatedAt) > (read[conv.id] || read._since || 0);
+}
 function renderDMRows() {
   const wrap = $('dm-rows');
   wrap.innerHTML = '';
@@ -3739,8 +3771,8 @@ function renderDMRows() {
     const p = profileCache[otherUid] || { username: otherUid, avatarColor: '#5865f2', status: 'offline' };
     const row = document.createElement('div');
     const nameplate = nameplateById(p.equippedNameplate);
-    row.className = 'dm-row' + (currentDMId === dm.id ? ' active' : '') + (nameplate ? ' has-nameplate' : '');
-    row.innerHTML = (nameplate ? `<div class="dm-row-nameplate-bg${nameplate.cssClass ? ' ' + nameplate.cssClass : ''}${(nameplate.animated && !nameplate.cssClass) ? ' nameplate-shimmer' : ''}" style="${nameplate.colors ? `background:linear-gradient(135deg, ${esc(nameplate.colors[0])}, ${esc(nameplate.colors[1])});` : ''}"></div>` : '') +
+    row.className = 'dm-row' + (currentDMId === dm.id ? ' active' : '') + (isConversationUnread(dm) ? ' unread' : '') + (nameplate ? ' has-nameplate' : '');
+    row.innerHTML = nameplateBgHTML(nameplate) +
       avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(otherUid), p.avatarUrl, p.equippedDecoration, otherUid, p.equippedMask) +
       `<div class="dm-copy"><span class="dm-name">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div><span class="dm-time">${esc(shortAgo(timeValue(dm.updatedAt) || timeValue((dm.lastMessage || {}).createdAt)))}</span>`;
     row.onclick = () => selectDM(dm.id, otherUid);
@@ -3750,7 +3782,7 @@ function renderDMRows() {
   groups.forEach(g => {
     const name = groupDMDisplayName(g);
     const row = document.createElement('div');
-    row.className = 'dm-row' + (currentGroupDMId === g.id ? ' active' : '');
+    row.className = 'dm-row' + (currentGroupDMId === g.id ? ' active' : '') + (isConversationUnread(g) ? ' unread' : '');
     row.innerHTML = `<div class="avatar group-avatar" style="width:32px;height:32px;">${icon('people')}</div><div class="dm-copy"><span class="dm-name">${esc(name)}</span><span class="dm-preview">${esc(previewForMessage(g.lastMessage || conversationPreviewCache.get(`groupDMs:${g.id}`), true))}</span></div><span class="dm-time">${esc(shortAgo(timeValue(g.updatedAt)))}</span>`;
     row.onclick = () => selectGroupDM(g.id);
     wrap.appendChild(row);
@@ -3824,12 +3856,53 @@ $('confirm-new-dm').onclick = async () => {
   } catch (e) { $('new-dm-error').textContent = e.message; }
 };
 
+// The chat header: '#' for a channel, '@' for a DM. On a phone a DM shows the person's picture there instead (like
+// Discord's app), and tapping the name opens their profile, or the member list in a channel or group.
+function setChatHeaderHash(text, kind) {
+  $('chat-header-hash').textContent = text;
+  const header = $('chat-header');
+  if (kind) header.dataset.kind = kind; else delete header.dataset.kind;
+  renderChatHeaderAvatar();
+}
+function renderChatHeaderAvatar() {
+  const uid = $('chat-header').dataset.kind === 'dm' ? currentDMOtherUid : null;
+  const p = uid && profileCache[uid];
+  $('chat-header-avatar').innerHTML = p ? avatarHTML(28, p.avatarColor, initials(p.username), computeDisplayStatus(uid), p.avatarUrl, null, uid) : '';
+}
+['chat-header-avatar', 'chat-header-hash', 'chat-header-title', 'chat-header-chev'].forEach(id => $(id).addEventListener('click', () => {
+  const kind = $('chat-header').dataset.kind;
+  if (!isMobile() || !kind) return;
+  if (kind === 'dm') { if (currentDMOtherUid) openProfileModal(currentDMOtherUid); }
+  else openConversationSheet(kind);
+}));
+// Phone: a channel or group shows only search and members in its header; the rest (pins, mute, add friends, leave) are in
+// this sheet, like Discord's channel details. Each row presses the matching header button, so they behave the same.
+function openConversationSheet(kind) {
+  closeActionSheet();
+  const rows = [['members-toggle', 'Members'], ['add-member-toggle', 'Add Friends'], ['pins-toggle', 'Pinned Messages'],
+    ['mute-toggle', isMuted() ? 'Unmute' : 'Mute'], ['search-toggle', 'Search'], ['leave-group-toggle', 'Leave Group']]
+    .filter(([id]) => !$(id).classList.contains('hidden'));
+  const title = (kind === 'channel' ? '#' : '') + $('chat-header-title').textContent;
+  const backdrop = document.createElement('div');
+  backdrop.className = 'action-sheet-backdrop';
+  backdrop.innerHTML = `<div class="action-sheet"><div class="as-title">${esc(title)}</div><div class="as-actions">${rows.map(([id, label]) => {
+    const svg = $(id).querySelector('svg:not(.hidden)') || $(id).querySelector('svg');
+    return `<button type="button" class="as-item${id === 'leave-group-toggle' ? ' as-danger' : ''}" data-btn="${id}">${svg ? svg.outerHTML : ''}<span>${esc(label)}</span></button>`;
+  }).join('')}</div></div>`;
+  document.body.appendChild(backdrop);
+  document.body.classList.add('action-sheet-open');
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) closeActionSheet(); });
+  backdrop.querySelectorAll('.as-item').forEach(b => { b.onclick = () => { closeActionSheet(); $(b.dataset.btn).click(); }; });
+  openActionSheet = backdrop;
+}
+
 async function selectDM(id, otherUid) {
   clearReplyTarget();
   clearMyTypingDoc();
   currentServerId = null; currentServerData = null; currentChannelId = null; currentGroupDMId = null;
   exitCommandMode();
   currentView = 'dm'; currentDMId = id; currentDMOtherUid = otherUid;
+  markConversationRead(id);
   clearHomeNavActive();
   subscribeTyping();
   document.querySelectorAll('#server-rail-list .rail-item').forEach(e => e.classList.remove('active'));
@@ -3838,7 +3911,7 @@ async function selectDM(id, otherUid) {
   $('app').classList.remove('member-list-open');
   hideMainPageViews();
   const p = await getProfile(otherUid);
-  $('chat-header-hash').textContent = '@';
+  setChatHeaderHash('@', 'dm');
   $('chat-header-title').textContent = p.username;
   $('composer-input').placeholder = `Message @${p.username}`;
   refreshChannelComposerState();
@@ -3864,6 +3937,7 @@ async function selectGroupDM(id) {
   currentDMId = null; currentDMOtherUid = null;
   exitCommandMode();
   currentView = 'groupdm'; currentGroupDMId = id;
+  markConversationRead(id);
   clearHomeNavActive();
   subscribeTyping();
   document.querySelectorAll('#server-rail-list .rail-item').forEach(e => e.classList.remove('active'));
@@ -3871,7 +3945,7 @@ async function selectGroupDM(id) {
   hideMainPageViews();
   const g = (window.__myGroupDMs || []).find(x => x.id === id);
   const name = g ? groupDMDisplayName(g) : 'Group';
-  $('chat-header-hash').textContent = '';
+  setChatHeaderHash('', 'group');
   $('chat-header-title').textContent = name;
   $('composer-input').placeholder = `Message ${name}`;
   refreshChannelComposerState();
@@ -4368,6 +4442,7 @@ function previewDraftAttachment(id) {
   }
 }
 function renderAttachmentDraft() {
+  updateComposerSendBtn();
   const wrap = $('attachment-draft');
   if (!draftAttachments.length) { wrap.classList.add('hidden'); wrap.innerHTML = ''; return; }
   wrap.classList.remove('hidden');
@@ -4577,7 +4652,8 @@ function friendRowHTML(username, kind) {
   const p = profileCache[username] || { username, avatarColor: '#5865f2', status: 'offline' };
   let actions = '';
   if (kind === 'friend') {
-    actions = `<button class="btn-secondary slim" data-msg="${esc(username)}">Message</button><span class="hover-icon-btn" data-remove="${esc(username)}" title="Remove Friend">${icon('trash')}</span>`;
+    // On a phone the Message button is a round chat-bubble button, as in Discord's app.
+    actions = `<button class="btn-secondary slim" data-msg="${esc(username)}" aria-label="Message"><svg class="fr-msg-ico" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M12 2.5c5.5 0 10 3.8 10 8.6s-4.5 8.6-10 8.6c-1.3 0-2.6-.2-3.7-.6L3.6 21a.6.6 0 0 1-.8-.7l1.1-3.9C2.7 15 2 13.1 2 11.1 2 6.3 6.5 2.5 12 2.5Z"/></svg><span class="fr-msg-label">Message</span></button><span class="hover-icon-btn" data-remove="${esc(username)}" title="Remove Friend">${icon('trash')}</span>`;
   } else if (kind === 'incoming') {
     actions = `<button class="btn-accent-inline slim" data-accept="${esc(username)}">Accept</button><button class="btn-secondary slim" data-decline="${esc(username)}">Decline</button>`;
   } else {
@@ -5768,6 +5844,7 @@ function refreshChannelComposerState() {
     $('sticker-btn').classList.remove('hidden');
     $('gif-btn').classList.remove('hidden');
     $('slowmode-indicator').classList.add('hidden'); $('chat-header-topic').classList.add('hidden');
+    updateComposerSendBtn();
     return;
   }
   const channel = currentChannelObj();
@@ -5786,6 +5863,7 @@ function refreshChannelComposerState() {
   $('chat-header-topic').title = channel.topic || '';
   $('chat-header-topic').classList.toggle('hidden', !channel.topic);
   renderSlowmodeIndicator();
+  updateComposerSendBtn();
 }
 
 // ---- channel settings (Discord-style overview + permission overrides) ----
@@ -6014,7 +6092,7 @@ function selectChannel(channel) {
   currentView = 'channel';
   channelOpenedAt = Date.now();
   subscribeTyping();
-  $('chat-header-hash').textContent = '#';
+  setChatHeaderHash('#', 'channel');
   $('chat-header-title').textContent = channel.name;
   $('composer-input').placeholder = `Message #${channel.name}`;
   refreshChannelComposerState();
@@ -6436,6 +6514,7 @@ $('members-toggle').onclick = () => {
   memberListManualOverride = isMobile() ? null : true;   // on a phone it is only open while you are looking at it
   $('app').classList.add('member-list-open');
 };
+$('member-panel-back').onclick = () => closeMemberPanel(true);
 // Phone: drag the member list to the right to put it away. It follows the finger and slides off, or snaps back.
 (function setupMemberPanelSwipe() {
   const panel = $('member-panel');
@@ -6550,7 +6629,7 @@ function showWelcome() {
   $('loading-view').classList.add('hidden');
   $('welcome-view').classList.remove('hidden');
   $('chat-view').classList.add('hidden');
-  $('chat-header-hash').textContent = '';
+  setChatHeaderHash('');
   $('chat-header-title').textContent = 'Select a conversation';
   $('members-toggle').classList.add('hidden');
   hideHeaderActions();
@@ -6570,7 +6649,7 @@ function showLoadingView() {
   $('loading-view').classList.remove('hidden');
   $('members-toggle').classList.add('hidden');
   hideHeaderActions();
-  $('chat-header-hash').textContent = '';
+  setChatHeaderHash('');
   $('chat-header-title').textContent = '';
 }
 
@@ -7870,6 +7949,7 @@ function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(e
 const COMPOSER_MAX_LENGTH = 1000;
 const COMPOSER_COUNT_SHOW_AT = 100; // only surface it once you're within 100 chars of the cap
 function updateComposerCharCount() {
+  updateComposerSendBtn();
   const counter = $('composer-char-count');
   if (!counter) return;
   const len = $('composer-input').value.length;
@@ -7880,6 +7960,17 @@ function updateComposerCharCount() {
   counter.classList.toggle('over-limit', over);
   counter.textContent = over ? `-${Math.abs(remaining)}` : `${remaining}`;
 }
+// Phone: Discord's round send button, shown once there's something to send (the keyboard's return key still sends too).
+// While you type, the gift, GIF and sticker buttons step aside to give the text room, as they do in Discord's app.
+function updateComposerSendBtn() {
+  const input = $('composer-input'), composer = $('composer');
+  const has = !input.disabled && (input.value.trim() !== '' || draftAttachments.length > 0);
+  if (composer.classList.contains('has-text') === has) return;
+  composer.classList.toggle('has-text', has);
+  if (isMobile()) autoResize(input);   // the field just got wider or narrower, so its height may change
+}
+$('composer-send-btn').onmousedown = e => e.preventDefault();   // keep the keyboard up
+$('composer-send-btn').onclick = () => { ckWordBoundaryCheck($('composer-input')); sendMessage(); };
 
 // ---------- typing indicator ----------
 // Presence is a small doc per-user under a `typing` subcollection on
@@ -9591,25 +9682,28 @@ function populateAppPane() {
   if ($('app-remind-toggle')) $('app-remind-toggle').onchange = e => setAppPromptOff(!e.target.checked);
 }
 // ============================================================
-// PHONE: Discord-style bottom bar. Home is the normal screens; Notifications and You are full pages on top of them.
-// "You" is where Settings lives: tapping a row opens that part of Settings.
+// PHONE: like Discord's app, Home is the list screens with a floating profile bar at the bottom. Tapping your
+// name opens You (Settings and the rest of Frixion); the bell opens Notifications. Both are full pages on top of
+// Home with a back button.
 // ============================================================
 let mobileTab = 'home';
 function setMobileTab(t) {
   mobileTab = t;
-  document.querySelectorAll('#mobile-tabbar .mtab').forEach(b => b.classList.toggle('active', b.dataset.mtab === t));
+  $('app').classList.toggle('mobile-page-open', t !== 'home');
   $('mobile-notif-page').classList.toggle('hidden', t !== 'notif');
   $('mobile-you-page').classList.toggle('hidden', t !== 'you');
   if (t === 'notif') renderMobileNotif();
   if (t === 'you') renderMobileYou();
-  if (t === 'home') document.querySelectorAll('#mobile-tabbar .mtab[data-mtab="home"]').forEach(b => b.blur());
 }
-document.querySelectorAll('#mobile-tabbar .mtab').forEach(b => b.onclick = () => setMobileTab(b.dataset.mtab));
+$('mup-me').onclick = () => setMobileTab('you');
+$('mup-bell').onclick = () => setMobileTab('notif');
+const MPAGE_BACK = '<button type="button" class="mpage-back" data-mpage-back aria-label="Back"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>';
+document.addEventListener('click', e => { if (e.target.closest && e.target.closest('[data-mpage-back]')) setMobileTab('home'); });
 async function renderMobileNotif() {
   const box = $('mobile-notif-page');
   if (!myProfile) return;
   const incoming = myProfile.incomingRequests || [];
-  box.innerHTML = `<div class="mpage-title">Notifications</div><div class="mpage-body"><div class="mpage-empty">Loading…</div></div>`;
+  box.innerHTML = `<div class="mpage-title">${MPAGE_BACK}<span>Notifications</span></div><div class="mpage-body"><div class="mpage-empty">Loading…</div></div>`;
   await Promise.all(incoming.map(u => getProfile(u)));
   if (mobileTab !== 'notif') return;
   const body = box.querySelector('.mpage-body');
@@ -9621,7 +9715,7 @@ async function renderMobileNotif() {
     const p = profileCache[u] || { username: u };
     return `<div class="mnotif-row"><span data-openprofile="${esc(u)}">${avatarHTML(44, p.avatarColor, initials(p.username || u), null, p.avatarUrl, p.equippedDecoration, u, p.equippedMask)}</span>
       <div class="mnotif-text"><div class="mnotif-name">${esc(displayNameOf(p) || u)}</div><div class="mnotif-sub">Sent you a friend request</div></div>
-      <button type="button" class="mnotif-btn yes" data-accept="${esc(u)}">Accept</button><button type="button" class="mnotif-btn" data-decline="${esc(u)}">Ignore</button></div>`;
+      <button type="button" class="mnotif-btn yes" data-accept="${esc(u)}" title="Accept" aria-label="Accept"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button><button type="button" class="mnotif-btn" data-decline="${esc(u)}" title="Ignore" aria-label="Ignore"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`;
   }).join('');
   body.querySelectorAll('[data-accept]').forEach(b => b.onclick = () => respondFriendRequest(b.dataset.accept, true));
   body.querySelectorAll('[data-decline]').forEach(b => b.onclick = () => respondFriendRequest(b.dataset.decline, false));
@@ -9639,6 +9733,9 @@ const YOU_ICONS = {
   updates: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4a1 1 0 0 0 1 1h2l5 4V5L6 9H4a1 1 0 0 0-1 1Zm13.500 2a4.500 4.500 0 0 0-2.500-4v8a4.500 4.500 0 0 0 2.500-4ZM14 3.200v2.100a7 7 0 0 1 0 13.400v2.100a9 9 0 0 0 0-17.600Z"/></svg>',
   shield: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 4 5.500V11c0 5 3.400 9.300 8 11 4.600-1.700 8-6 8-11V5.500L12 2Z"/></svg>',
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H5v16h4M15 8l4 4-4 4M19 12H9"/></svg>',
+  friends: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="8" r="3.600"/><path d="M2.500 20c0-3.700 2.900-6.300 6.500-6.300s6.500 2.600 6.500 6.300H2.500Z"/><circle cx="17.200" cy="9" r="2.700"/><path d="M16.800 13.800c2.800.2 4.700 2.600 4.700 6.200h-4.300c0-2.400-.8-4.500-2.200-5.800.5-.3 1.200-.4 1.800-.4Z"/></svg>',
+  shop: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.500 7V6a3.500 3.500 0 0 1 7 0v1H19a1 1 0 0 1 1 1l-1 12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1L4 8a1 1 0 0 1 1-1h3.500Zm2 0h3V6a1.500 1.500 0 0 0-3 0v1Z"/></svg>',
+  codes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.500 5.500l-3 13"/></svg>',
 };
 function renderMobileYou() {
   const box = $('mobile-you-page');
@@ -9651,14 +9748,19 @@ function renderMobileYou() {
   const staff = [];
   if (!$('open-owner-panel').classList.contains('hidden')) staff.push(`<button type="button" class="myou-row" data-ystaff="owner"><span class="myou-ico">${YOU_ICONS.shield}</span><span class="myou-label">Owner Panel</span><svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>`);
   else if (!$('open-admin-panel').classList.contains('hidden')) staff.push(`<button type="button" class="myou-row" data-ystaff="admin"><span class="myou-ico">${YOU_ICONS.shield}</span><span class="myou-label">Admin Panel</span><svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>`);
-  box.innerHTML = `<div class="mpage-title">You</div><div class="mpage-body">
+  // Friends, the Shop, Quests and Codes sit here on a phone, the way Discord keeps its extras out of the Messages screen.
+  const reqs = (p.incomingRequests || []).length;
+  const page = (view, label, icon, badge) => `<button type="button" class="myou-row" data-yview="${view}"><span class="myou-ico">${YOU_ICONS[icon]}</span><span class="myou-label">${label}</span>${badge ? `<span class="myou-badge">${badge > 9 ? '9+' : badge}</span>` : ''}<svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>`;
+  box.innerHTML = `<div class="mpage-title">${MPAGE_BACK}<span>You</span></div><div class="mpage-body">
     <button type="button" class="myou-card" id="myou-card">
       ${avatarHTML(72, p.avatarColor, initials(p.username), computeDisplayStatus(myUid), p.avatarUrl, p.equippedDecoration, myUid, p.equippedMask)}
       <span class="myou-who"><span class="myou-name">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}</span><span class="myou-user">${esc(p.username)}</span><span class="myou-status">${esc(sub)}</span></span>
       <svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
     </button>
+    <div class="mpage-label">Frixion</div>
+    <div class="myou-group">${page('friends', 'Friends', 'friends', reqs)}${page('shop', 'Shop', 'shop')}${page('quests', 'Quests', 'quests')}${page('codes', 'Codes', 'codes')}</div>
     <div class="mpage-label">Settings</div>
-    <div class="myou-group">${row('pane-account', 'My Account', 'account')}${row('pane-activity', 'Activity Status', 'activity')}${row('pane-premium', 'Frixion Premium', 'premium')}${row('pane-quests', 'Quests', 'quests')}${row('pane-themes', 'Themes', 'themes')}${row('pane-accessibility', 'Accessibility', 'access')}${row('pane-keyboard', 'Keyboard', 'keyboard')}</div>
+    <div class="myou-group">${row('pane-account', 'My Account', 'account')}${row('pane-activity', 'Activity Status', 'activity')}${row('pane-premium', 'Frixion Premium', 'premium')}${row('pane-themes', 'Themes', 'themes')}${row('pane-accessibility', 'Accessibility', 'access')}${row('pane-keyboard', 'Keyboard', 'keyboard')}</div>
     <div class="mpage-label">App</div>
     <div class="myou-group">${row('pane-app', 'Frixion App', 'app')}${row('pane-updates', 'Update Log', 'updates')}</div>
     ${staff.length ? `<div class="mpage-label">Staff</div><div class="myou-group">${staff.join('')}</div>` : ''}
@@ -9671,17 +9773,45 @@ function renderMobileYou() {
     if (nav) nav.click();
   });
   box.querySelectorAll('[data-ystaff]').forEach(b => b.onclick = () => $(b.dataset.ystaff === 'owner' ? 'open-owner-panel' : 'open-admin-panel').click());
+  box.querySelectorAll('[data-yview]').forEach(b => b.onclick = () => {
+    const view = b.dataset.yview;
+    setMobileTab('home');
+    if (currentServerId) showHomeView();
+    clearHomeNavActive();
+    const nav = document.querySelector(`.home-nav-item[data-home-view="${view}"]`);
+    if (nav) nav.classList.add('active');
+    document.querySelectorAll('#dm-rows .dm-row.active').forEach(r => r.classList.remove('active'));
+    openHomeMainView(view);
+  });
   $('myou-logout').onclick = () => confirmAction({ title: 'Log Out', body: 'Log out of Frixion?', confirmLabel: 'Log Out', onConfirm: () => { setMobileTab('home'); $('logout-btn').click(); } });
 }
-// Keeps the bar in step with the profile: your picture on "You", the number on the bell, and whichever page is open.
+// The background art of a nameplate, as used behind DM rows and the phone's profile bar.
+function nameplateBgHTML(nameplate, cls = 'dm-row-nameplate-bg') {
+  if (!nameplate) return '';
+  return `<div class="${cls}${nameplate.cssClass ? ' ' + nameplate.cssClass : ''}${(nameplate.animated && !nameplate.cssClass) ? ' nameplate-shimmer' : ''}" style="${nameplate.colors ? `background:linear-gradient(135deg, ${esc(nameplate.colors[0])}, ${esc(nameplate.colors[1])});` : ''}"></div>`;
+}
+// Keeps the phone's profile bar in step with you: picture, name, what you're doing, your nameplate, and the number on
+// the bell. renderSelfPanel() calls it whenever presence or activity changes; profile changes also refresh the pages.
 function updateMobileTabbar() {
-  if (!myProfile || !$('mtab-you-ico')) return;
-  $('mtab-you-ico').innerHTML = avatarHTML(28, myProfile.avatarColor, initials(myProfile.username), computeDisplayStatus(myUid), myProfile.avatarUrl, myProfile.equippedDecoration, myUid, myProfile.equippedMask);
-  const n = (myProfile.incomingRequests || []).length;
-  $('mtab-notif-badge').classList.toggle('hidden', n === 0);
-  $('mtab-notif-badge').textContent = n > 9 ? '9+' : String(n);
+  if (!updateMobileUserPill()) return;
   if (mobileTab === 'notif') renderMobileNotif();
   if (mobileTab === 'you') renderMobileYou();
+}
+function updateMobileUserPill() {
+  if (!myProfile || !$('mup-avatar')) return false;
+  const p = myProfile, st = computeDisplayStatus(myUid);
+  $('mup-avatar').innerHTML = avatarHTML(56, p.avatarColor, initials(p.username), st, p.avatarUrl, p.equippedDecoration, myUid, p.equippedMask);
+  $('mup-name').textContent = displayNameOf(p);
+  const act = computeMyActivity();
+  const label = (STATUSES.find(x => x.key === st) || {}).label || 'Online';
+  $('mup-status').textContent = act ? activityLine(act) : label;
+  const np = nameplateById(p.equippedNameplate);
+  $('mup-plate').innerHTML = nameplateBgHTML(np, 'mup-plate-art');
+  $('mobile-user-pill').classList.toggle('has-nameplate', !!np);
+  const n = (p.incomingRequests || []).length;
+  $('mup-badge').classList.toggle('hidden', n === 0);
+  $('mup-badge').textContent = n > 9 ? '9+' : String(n);
+  return true;
 }
 // ============================================================
 // SETTINGS MODAL

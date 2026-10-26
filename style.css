@@ -630,6 +630,11 @@ body.action-sheet-open { overflow: hidden; }
 }
 .composer-char-count.over-limit { color: #fff; background: #da373c; }
 .composer-right-icons { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+/* The field wrapper only takes shape on a phone; here its parts sit in the bar as before, the gift button with the icons on the right. */
+.composer-field { display: contents; }
+#composer > #gift-btn { order: 1; margin-right: -2px; }
+#composer .composer-right-icons { order: 2; }
+.composer-send-btn { display: none; }
 .composer-icon-btn {
   display: flex; align-items: center; justify-content: center; width: 34px; height: 34px;
   color: var(--text-muted); border-radius: 6px; flex-shrink: 0; font-size: 11px; font-weight: 800;
@@ -4161,7 +4166,7 @@ body.is-mobile .mht-title { font-size: 30px; letter-spacing: -.01em; }
 /* The server list gets Discord's white marker on the left edge for the selected server. */
 body.is-mobile #server-rail { overflow-x: visible; }
 body.is-mobile .rail-item { position: relative; overflow: visible; }
-body.is-mobile .rail-item::before { display: block; content: ''; position: absolute; left: -6px; top: 50%; width: 4px; height: 0; border-radius: 0 4px 4px 0; background: var(--text-header, #fff); transform: translateY(-50%); transition: height .18s ease; pointer-events: none; }
+body.is-mobile .rail-item::before { display: block; content: ''; position: absolute; left: -6px; top: 50%; width: 4px; height: 0; border-radius: 0 4px 4px 0; background: var(--m-text, #fff); transform: translateY(-50%); transition: height .18s ease; pointer-events: none; }
 body.is-mobile .rail-item.active::before { height: 28px; }
 /* The message box: one tidy line. A long "Message @name" used to wrap and get cut off. */
 body.is-mobile #composer textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -4195,25 +4200,42 @@ body.is-mobile #settings-content { padding: 16px 16px 28px; }
 #pane-app .setting-row { margin-top: 18px; }
 
 /* ============================================================
-   PHONE: Discord-style bottom bar and its pages
+   PHONE: the floating profile bar (like Discord's app) and the You / Notifications pages it opens
    ============================================================ */
-#mobile-tabbar, .mpage { display: none; }
+#mobile-user-pill, .mpage { display: none; }
 body.is-mobile #user-panel { display: none; }
-body.is-mobile #mobile-tabbar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 90; height: calc(58px + env(safe-area-inset-bottom)); padding: 0 6px env(safe-area-inset-bottom); background: var(--bg-secondary, #232428); border-top: 1px solid rgba(255,255,255,.07); }
-body.is-mobile #app.mobile-show-chat > #mobile-tabbar, body.is-mobile #app.mobile-show-chat > .mpage { display: none; }
-body.is-mobile .mtab { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; color: var(--text-muted); -webkit-tap-highlight-color: transparent; }
-body.is-mobile .mtab-ico { position: relative; display: flex; align-items: center; justify-content: center; width: 58px; height: 30px; border-radius: 15px; transition: background .18s ease; }
-body.is-mobile .mtab:active .mtab-ico { background: rgba(255,255,255,.08); }
-body.is-mobile .mtab.active { color: var(--text-header, #fff); }
-body.is-mobile .mtab.active .mtab-ico { background: rgba(255,255,255,.14); }
-body.is-mobile .mtab-label { font-size: 11px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-body.is-mobile .mtab-you .avatar { width: 28px !important; height: 28px !important; font-size: 12px !important; }
-body.is-mobile .mtab-badge { position: absolute; top: -3px; right: 8px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #f23f43; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px var(--bg-secondary, #232428); }
-/* The lists need room so the last row is not hidden behind the bar. */
-body.is-mobile #app:not(.mobile-show-chat) #side-panel, body.is-mobile #app:not(.mobile-show-chat) #server-rail { padding-bottom: calc(58px + env(safe-area-inset-bottom)); box-sizing: border-box; }
+body.is-mobile #mobile-user-pill {
+  display: flex; align-items: center; position: fixed; z-index: 85;
+  left: 40px; right: 24px; bottom: max(14px, env(safe-area-inset-bottom)); height: 56px; border-radius: 28px;
+  background: var(--m-pill); box-shadow: 0 8px 24px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.04);
+}
+body.is-mobile #app.mobile-show-chat > #mobile-user-pill, body.is-mobile #app.mobile-page-open > #mobile-user-pill { display: none; }
+.mup-plate { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+/* Your nameplate shows behind the bar, fading in from the left so the name stays readable. */
+.mup-plate-art { position: absolute; inset: 0; -webkit-mask-image: linear-gradient(90deg, transparent 15%, #000 70%); mask-image: linear-gradient(90deg, transparent 15%, #000 70%); }
+.mup-me { position: relative; flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; padding: 0 8px 0 61px; text-align: left; color: inherit; -webkit-tap-highlight-color: transparent; }
+.mup-avatar { position: absolute; left: -20px; top: -9px; width: 56px; height: 56px; border-radius: 50%; box-shadow: 0 0 0 4px var(--m-panel); }
+.mup-who { min-width: 0; display: flex; flex-direction: column; }
+.mup-name { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 21px; line-height: 26px; font-weight: 700; color: var(--m-text); }
+.mup-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mup-name svg { flex: none; color: var(--m-muted); }
+.mup-status { font-size: 14px; line-height: 18px; color: var(--m-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mup-bell { position: relative; flex: none; width: 40px; height: 40px; margin-right: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.28); color: #fff; -webkit-tap-highlight-color: transparent; }
+.mup-bell:active, .mup-me:active .mup-who { opacity: .75; }
+.mup-badge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #f23f43; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 3px var(--m-pill); }
+.mup-badge.hidden { display: none; }
+/* The lists scroll under the bar, so they leave room for it at the end. */
+body.is-mobile #channel-list, body.is-mobile #dm-list { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+body.is-mobile #server-rail { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 
-body.is-mobile .mpage:not(.hidden) { display: flex; flex-direction: column; position: fixed; left: 0; right: 0; top: 0; bottom: calc(58px + env(safe-area-inset-bottom)); z-index: 80; background: var(--bg-primary, #313338); }
-body.is-mobile .mpage-title { flex: none; padding: max(14px, env(safe-area-inset-top)) 20px 8px; font-size: 26px; font-weight: 800; letter-spacing: -.01em; color: var(--text-header, #fff); }
+/* The pages are solid. (With a Shop theme the panel colours are see-through, so the theme's own backdrop goes under them;
+   before, the Home screen showed through the You page.) */
+body.is-mobile .mpage:not(.hidden) { display: flex; flex-direction: column; position: fixed; inset: 0; z-index: 80; background: var(--m-panel); }
+body.is-mobile.shop-theme-active .mpage:not(.hidden) { background: linear-gradient(var(--m-panel), var(--m-panel)), var(--shop-theme-bg); }
+body.is-mobile .mpage-title { flex: none; display: flex; align-items: center; gap: 2px; padding: max(10px, env(safe-area-inset-top)) 16px 6px 6px; font-size: 21px; line-height: 28px; font-weight: 800; color: var(--m-text); }
+body.is-mobile .mpage-back { width: 40px; height: 40px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--m-text); -webkit-tap-highlight-color: transparent; }
+body.is-mobile .mpage-back:active { background: var(--m-row); }
+body.is-mobile .myou-badge { flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #f23f43; color: #fff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 body.is-mobile .mpage-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 4px 14px 48px; }
 body.is-mobile .mpage-label { margin: 18px 8px 8px; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
 body.is-mobile .mpage-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 60px 24px; color: var(--text-muted); font-size: 14px; }
@@ -4228,7 +4250,7 @@ body.is-mobile .mnotif-btn.yes { background: var(--accent, #5865f2); color: #fff
 body.is-mobile .myou-card { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 16px; border-radius: 20px; background: rgba(255,255,255,.06); }
 body.is-mobile .myou-card:active { background: rgba(255,255,255,.1); }
 body.is-mobile .myou-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-body.is-mobile .myou-name { font-size: 20px; font-weight: 800; color: var(--text-header, #fff); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.is-mobile .myou-name { font-size: 20px; font-weight: 800; color: var(--m-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.is-mobile .myou-user { font-size: 14px; color: var(--text-normal); }
 body.is-mobile .myou-status { font-size: 13px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.is-mobile .myou-chev { flex: none; color: var(--text-muted); }
@@ -4262,3 +4284,172 @@ html.ov-window, html.ov-window body { background: transparent !important; }
 /* A dark color-scheme makes Chromium fill an empty page background with dark grey, which would hide the game. */
 html.ov-window { color-scheme: normal !important; }
 html.ov-window #boot-screen, html.ov-window #title-bar, html.ov-window #page-body { display: none !important; }
+
+/* ============================================================
+   PHONE: Discord's app look. Sizes and colours were measured from a screenshot of Discord's phone app (iPhone, 2026);
+   one iPhone point is one pixel here. The default Dark theme uses Discord's exact colours; the other themes (and Shop
+   themes) keep their own colours in the same layout.
+   ============================================================ */
+body.is-mobile {
+  --m-rail: var(--bg-deepest); --m-panel: var(--bg-secondary);
+  --m-row: color-mix(in srgb, var(--text-normal) 8%, var(--m-panel));
+  --m-btn: color-mix(in srgb, var(--text-normal) 15%, var(--m-panel));
+  --m-card: color-mix(in srgb, var(--text-normal) 3%, var(--m-panel));
+  --m-card-in: color-mix(in srgb, var(--text-normal) 9%, var(--m-panel));
+  --m-icon: color-mix(in srgb, var(--text-normal) 7%, var(--m-rail));
+  --m-pill: color-mix(in srgb, var(--text-normal) 10%, var(--m-panel));
+  --m-text: var(--text-header, var(--text-normal)); --m-soft: var(--text-normal); --m-muted: var(--text-muted); --m-faint: var(--text-faint);
+  --m-chat: var(--bg-primary); --m-field: color-mix(in srgb, var(--text-normal) 8%, var(--m-chat));
+}
+body.is-mobile:not(.theme-light):not(.theme-ash):not(.theme-onyx):not(.shop-theme-active) {
+  --m-rail: #131217; --m-panel: #1b1c20; --m-row: #26282c; --m-btn: #383c41; --m-card: #212229; --m-card-in: #32323b;
+  --m-icon: #25262e; --m-pill: #2c2b32; --m-text: #f2f3f5; --m-soft: #d0d1da; --m-muted: #8e8f99; --m-faint: #72747a;
+  --m-chat: #1b1c20; --m-field: #26272d;
+}
+
+/* rail: 72 wide, 48px icons 8 apart, the white marker on the screen edge, a blurple chat-bubble button on top */
+body.is-mobile #app, body.is-mobile #app.member-list-open { grid-template-columns: 72px minmax(0, 1fr); background: var(--m-rail); }
+body.is-mobile #server-rail { width: 72px; background: var(--m-rail); padding-top: 4px; gap: 8px; }
+body.is-mobile .rail-item { width: 48px; height: 48px; font-size: 16px; font-weight: 600; background: var(--m-icon); color: var(--m-soft); }
+body.is-mobile .rail-item:hover { background: var(--m-icon); }
+body.is-mobile .rail-item.active, body.is-mobile .rail-item.dm-item.active { border-radius: 16px; background: var(--accent); color: #fff; }
+body.is-mobile .rail-item::before { left: -12px; width: 4px; }
+body.is-mobile .rail-item.active::before { height: 40px; }
+.rail-home-phone { display: none; }
+body.is-mobile .rail-home-desk { display: none; }
+body.is-mobile .rail-home-phone { display: block; }
+body.is-mobile .rail-divider { width: 32px; height: 2px; margin: 0; background: color-mix(in srgb, var(--text-normal) 12%, var(--m-rail)); }
+body.is-mobile .rail-item.action { color: var(--online); }
+body.is-mobile .rail-item.explore-btn { color: var(--m-soft); }
+
+/* the panel: one rounded corner where it meets the rail */
+body.is-mobile #side-panel { background: var(--m-panel); border-radius: 24px 0 0 0; box-shadow: none; }
+body.is-mobile #channel-list, body.is-mobile #dm-list { padding-left: 8px; padding-right: 8px; padding-top: 0; }
+
+/* Messages header: a 21px title, then a 32px row of search, Add Friends and + */
+body.is-mobile #mobile-home-top { padding: 19px 9px 0; }
+body.is-mobile .mht-title { font-size: 21px; line-height: 28px; font-weight: 800; letter-spacing: 0; padding: 0; margin: 0 0 10px; color: var(--m-text); }
+body.is-mobile .mht-actions { gap: 9px; padding: 0 0 16px; }
+body.is-mobile .mht-round, body.is-mobile .mht-pill { height: 32px; border-radius: 16px; gap: 6px; background: var(--m-btn); color: var(--m-soft); font-size: 14px; font-weight: 600; }
+body.is-mobile .mht-round { width: 32px; }
+body.is-mobile .mht-round svg { width: 18px; height: 18px; }
+body.is-mobile .mht-pill svg { width: 17px; height: 17px; }
+body.is-mobile .mht-round.accent { background: var(--accent); color: #fff; }
+body.is-mobile .mht-search-row { padding: 0 0 14px; }
+body.is-mobile .mht-search-row input { height: 36px; border-radius: 18px; background: var(--m-btn); font-size: 15px; padding: 0 14px; }
+body.is-mobile .mht-menu { top: 92px; right: 8px; border-radius: 16px; background: var(--m-card-in); }
+/* Friends, Shop, Quests and Codes live on the You page on a phone */
+body.is-mobile #home-nav { display: none; }
+
+/* cards across the top (what friends are doing): 265 x 88, a 71px picture, 8 apart */
+body.is-mobile .home-activity:not(.hidden) { gap: 8px; margin: 0 -8px; padding: 0 16px 8px; scroll-padding-left: 16px; }
+body.is-mobile .rpc-home-card { flex: 0 0 265px; height: 88px; padding: 0 12px 0 9px; gap: 13px; border-radius: 16px; background: var(--m-card); }
+body.is-mobile .rpc-home-card:active { background: var(--m-row); }
+body.is-mobile .rpch-art { width: 71px; height: 71px; border-radius: 12px; background-color: var(--m-card-in); }
+body.is-mobile .rpch-who { font-size: 18px; line-height: 22px; font-weight: 700; color: var(--m-text); }
+body.is-mobile .rpch-act { font-size: 14px; line-height: 18px; color: var(--m-soft); }
+body.is-mobile .rpch-sub { font-size: 14px; line-height: 18px; color: var(--m-muted); }
+
+/* conversation rows: 68 tall, 32px avatar, grey once read, white while unread or open */
+body.is-mobile .dm-row { height: 68px; min-height: 68px; margin: 0; padding: 0 13px 0 8px; gap: 10px; border-radius: 12px; align-items: center; }
+body.is-mobile .dm-row:active { background: var(--m-row); transform: none; }
+body.is-mobile .dm-row.active { background: var(--m-row); }
+body.is-mobile .dm-row .avatar { transform: none; margin: 0; }
+body.is-mobile .dm-row .dm-copy { gap: 1px; }
+body.is-mobile .dm-row .dm-name { font-size: 18px; line-height: 23px; font-weight: 600; color: var(--m-muted); }
+body.is-mobile .dm-row .dm-preview { font-size: 15px; line-height: 19px; font-weight: 500; color: var(--m-muted); }
+body.is-mobile .dm-row.active .dm-name, body.is-mobile .dm-row.active .dm-preview,
+body.is-mobile .dm-row.unread .dm-name, body.is-mobile .dm-row.unread .dm-preview { color: var(--m-text); }
+body.is-mobile .dm-row .dm-time { align-self: flex-start; margin-top: 15px; font-size: 14px; line-height: 17px; font-weight: 500; color: var(--m-faint); }
+body.is-mobile .dm-row.has-nameplate .dm-name, body.is-mobile .dm-row.has-nameplate .dm-preview { color: #fff; }
+/* Discord shows "offline" as a hollow ring */
+body.is-mobile .status-dot.offline { background: transparent; border: 3px solid var(--offline); box-sizing: border-box; }
+
+/* a server's channel list: a flat bold title like "Messages", then Discord-sized channel rows */
+body.is-mobile #side-header { height: auto; margin: 0; padding: 19px 17px 12px; border-radius: 0; background: transparent; box-shadow: none; justify-content: flex-start; gap: 4px; font-size: 21px; line-height: 28px; font-weight: 800; color: var(--m-text); }
+body.is-mobile #side-header:hover { background: transparent; }
+body.is-mobile #side-header-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.is-mobile #side-header-chevron { flex: none; width: 18px; height: 18px; color: var(--m-muted); }
+body.is-mobile #channel-list .side-section-label, body.is-mobile .category-header { padding: 14px 8px 6px; font-size: 13px; font-weight: 700; letter-spacing: .02em; color: var(--m-muted); }
+body.is-mobile .channel-row { min-height: 40px; padding: 0 10px; margin: 0 0 2px; gap: 8px; border-radius: 10px; font-size: 16px; font-weight: 500; color: var(--m-muted); }
+body.is-mobile .channel-row .hash { font-size: 20px; opacity: .8; }
+body.is-mobile .channel-row.active { background: var(--m-row); color: var(--m-text); }
+
+/* the chat screen: a flat header (back, their picture or #, the bold name and a ›), then Discord's message bar:
+   round + and gift buttons, a round field with the GIF, sticker and emoji buttons inside, and a send button once you type */
+body.is-mobile:not(.shop-theme-active) #main-col, body.is-mobile:not(.shop-theme-active) #composer-wrap { background: var(--m-chat); }
+body.is-mobile #chat-header { height: 56px; margin: 0; padding: 0 6px 0 4px; gap: 6px; border-radius: 0; background: transparent; box-shadow: 0 1px 0 color-mix(in srgb, var(--text-normal) 7%, transparent); }
+body.is-mobile #chat-header .mobile-back-btn { width: 40px; height: 40px; margin: 0; border-radius: 50%; color: var(--m-text); }
+body.is-mobile #chat-header .mobile-back-btn svg { width: 24px; height: 24px; }
+.chat-header-avatar, .chat-header-chev { display: none; }
+body.is-mobile #chat-header[data-kind="dm"] .chat-header-avatar { display: block; flex: none; }
+body.is-mobile #chat-header[data-kind="dm"] .hash { display: none; }
+body.is-mobile #chat-header .hash { font-size: 24px; line-height: 1; font-weight: 500; color: var(--m-muted); margin-left: 4px; }
+body.is-mobile #chat-header .title { min-width: 0; font-size: 17px; line-height: 22px; font-weight: 700; color: var(--m-text); }
+body.is-mobile #chat-header[data-kind] .chat-header-chev { display: block; flex: none; margin-left: -3px; color: var(--m-muted); }
+body.is-mobile #chat-header[data-kind] :is(.chat-header-avatar, .hash, .title, .chat-header-chev) { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+body.is-mobile .chat-header-actions { gap: 2px; }
+body.is-mobile #chat-header .hdr-icon-btn, body.is-mobile #chat-header .members-toggle { width: 40px; height: 40px; color: var(--m-soft); }
+body.is-mobile #chat-header .hdr-icon-btn svg, body.is-mobile #chat-header .members-toggle svg { width: 22px; height: 22px; }
+
+/* messages: 40px pictures 16 from the edge, 16px names and text */
+body.is-mobile .msg-group { padding: 2px 16px; gap: 12px; }
+body.is-mobile .msg-meta .author { font-size: 16px; }
+body.is-mobile .msg-text { font-size: 16px; line-height: 22px; }
+/* Phones have no hover toolbar (they use the long-press sheet), so text uses the full width instead of stopping 138px short. */
+body.is-mobile .msg-row-wrap { padding-right: 0; min-width: 0; }
+
+/* the message bar */
+body.is-mobile #composer-wrap { padding-top: 8px; padding-left: 12px; padding-right: 12px; }
+body.is-mobile #composer { min-height: 40px; padding: 0; gap: 8px; border-radius: 0; background: transparent; align-items: flex-end; }
+body.is-mobile #composer > .composer-icon-btn { width: 40px; height: 40px; border-radius: 50%; background: var(--m-field); color: var(--m-soft); }
+body.is-mobile #composer > .composer-icon-btn svg { width: 22px; height: 22px; }
+body.is-mobile #composer > #gift-btn { order: 0; margin: 0; }
+body.is-mobile .composer-field { display: flex; align-items: flex-end; flex: 1; min-width: 0; min-height: 40px; padding: 0 4px 0 16px; border-radius: 20px; background: var(--m-field); position: relative; }
+body.is-mobile #composer textarea { min-height: 40px; padding: 9px 0; font-size: 16px; line-height: 22px; color: var(--m-text); }
+body.is-mobile #composer textarea::placeholder { color: var(--m-muted); }
+body.is-mobile .composer-field .composer-icon-btn { width: 34px; height: 40px; background: transparent; color: var(--m-muted); }
+body.is-mobile .composer-field .composer-icon-btn svg { width: 22px; height: 22px; }
+body.is-mobile .composer-char-count { right: 6px; bottom: calc(100% + 6px); }
+body.is-mobile #composer.has-text :is(#gift-btn, #gif-btn, #sticker-btn) { display: none; }
+body.is-mobile #composer.has-text .composer-send-btn { display: flex; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: #fff; }
+body.is-mobile .composer-send-btn:active { transform: scale(.92); }
+
+/* Liquid Glass keeps its floating glass bars */
+html[data-liquid-glass] body.is-mobile #chat-header { margin: 8px 10px 0; border-radius: 26px; }
+html[data-liquid-glass] body.is-mobile #side-header { margin: 10px 10px 4px; padding: 9px 14px; border-radius: 18px; }
+/* Discord's + is a plain plus in the round button */
+body.is-mobile #attach-btn svg circle { display: none; }
+body.is-mobile #attach-btn svg path { transform: scale(1.75); transform-origin: 12px 12px; stroke-width: 1.4; }
+
+/* phone: a channel or group keeps only search and members up top; tapping its name opens the rest in a sheet */
+body.is-mobile #chat-header:is([data-kind="channel"], [data-kind="group"]) :is(#mute-toggle, #pins-toggle, #add-member-toggle, #leave-group-toggle) { display: none; }
+.as-title { padding: 2px 14px 10px; font-size: 18px; font-weight: 800; color: var(--text-header, var(--text-normal)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.as-item > svg { flex: none; width: 20px; height: 20px; }
+/* Discord's selected server has no glow */
+body.is-mobile .rail-item.active { box-shadow: none; }
+body.is-mobile #chat-header .hash:empty { display: none; }
+
+/* phone: the member list gets a back button and a title, like Discord's Members page */
+.mp-phone-head { display: none; }
+body.is-mobile .mp-phone-head { display: flex; align-items: center; gap: 2px; margin: -6px -4px 8px; font-size: 21px; line-height: 28px; font-weight: 800; color: var(--m-text); }
+body.is-mobile:not(.shop-theme-active) #app.member-list-open #member-panel { background: var(--m-chat); }
+/* phone: message search is a round field like the message bar */
+body.is-mobile #search-bar { margin: 8px 12px 0; padding: 0 6px 0 14px; min-height: 40px; border-radius: 20px; background: var(--m-field); color: var(--m-muted); }
+body.is-mobile #search-bar input { font-size: 16px; color: var(--m-text); }
+body.is-mobile #search-bar .hdr-icon-btn { width: 32px; height: 32px; }
+
+/* phone Friends list: plain rows with round message and remove buttons, like Discord's app */
+.fr-msg-ico { display: none; }
+body.is-mobile #friends-view .mp-header > span:first-child { display: none; }
+body.is-mobile .friend-row { margin: 0 4px; padding: 10px 8px; gap: 12px; border: 0; border-radius: 12px; background: transparent; }
+body.is-mobile .friend-row:active { background: var(--m-row); }
+body.is-mobile .friend-row-name { font-size: 16px; font-weight: 700; color: var(--m-text); }
+body.is-mobile .friend-row-act { font-size: 14px; color: var(--m-muted); }
+body.is-mobile .friend-row :is([data-msg], [data-remove]) { width: 40px; height: 40px; min-height: 40px; padding: 0; border: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--m-btn); color: var(--m-soft); }
+body.is-mobile .friend-row [data-msg] .fr-msg-ico { display: block; }
+body.is-mobile .friend-row [data-msg] .fr-msg-label { display: none; }
+/* phone Notifications: plain rows with round accept / ignore buttons */
+body.is-mobile .mnotif-row { gap: 12px; padding: 10px 8px; margin: 0 -4px 2px; background: transparent; border-radius: 12px; }
+body.is-mobile .mnotif-btn { width: 40px; height: 40px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--m-btn); color: var(--m-soft); }
+body.is-mobile .mnotif-btn.yes { background: var(--accent, #5865f2); color: #fff; }
