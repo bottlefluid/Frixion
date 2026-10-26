@@ -451,6 +451,10 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.31', date: '2026-10-26', title: 'Roomier server list',
+    notes: [
+      'Servers in the left bar now have a small gap between them, like Discord, instead of touching.',
+    ] },
   { v: '4.30', date: '2026-10-26', title: 'Phones look like Discord\'s app',
     notes: [
       'On a phone, Frixion now has the same layout as Discord\'s app: the chat-bubble Messages button, a bold Messages header with Search and Add Friends, bigger conversation rows, and a floating profile bar at the bottom.',

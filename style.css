@@ -279,6 +279,8 @@ a { color: var(--text-link); text-decoration: none; }
   display: flex; flex-direction: column; align-items: center;
   padding: 12px 0; gap: 8px; overflow-y: auto;
 }
+/* the servers get the same 8px gap as everything else in the rail (they were touching) */
+#server-rail-list { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .rail-item {
   width: 48px; height: 48px; border-radius: 50%; background: var(--bg-secondary);
   display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px;
