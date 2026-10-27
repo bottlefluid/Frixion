@@ -4538,3 +4538,57 @@ body.is-mobile .thread-row.active { background: var(--m-row); color: var(--m-tex
 .dm-row.unread .dm-name { color: var(--text-header, var(--text-normal)); font-weight: 600; }
 body.is-mobile .thread-curve { top: -14px; height: 32px; }
 #pane-notifications .setting-row { margin-bottom: 16px; }
+
+/* Like Discord, pictures, files and GIFs sit under the message text, not beside it: an invisible full-width item
+   ends the text's line, and everything that isn't text comes after it. */
+.msg-row-wrap:has(> .msg-text)::before { content: ''; order: 1; flex-basis: 100%; height: 0; }
+.msg-row-wrap:has(> .msg-text) > :not(.msg-text):not(.edited-tag):not(.msg-hover-actions) { order: 2; }
+.msg-row-wrap:has(> .msg-text) { row-gap: 2px; }
+
+/* Server icons: a picture instead of the two letters (Server Settings → Upload Image) */
+.server-icon-img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; pointer-events: none; }
+.rail-item.has-icon, .rail-item.has-icon:hover, .rail-item.has-icon.active, body.is-mobile .rail-item.has-icon, body.is-mobile .rail-item.has-icon.active { background: transparent; }
+.ov-srv-ico .server-icon-img { border-radius: inherit; }
+.ss-icon-col { display: flex; flex-direction: column; align-items: center; gap: 8px; flex: none; }
+.ss-icon-preview { overflow: hidden; }
+.ss-icon-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ss-icon-btns { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.ss-icon-btns.hidden { display: none; }
+.ss-icon-btn { font-size: 12px; padding: 6px 10px; white-space: nowrap; }
+.ss-icon-remove { background: none; border: 0; color: var(--text-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.ss-icon-remove:hover { color: var(--danger, #f23f43); text-decoration: underline; }
+.invite-icon { overflow: hidden; }
+
+/* ============================================================
+   Games page: the Overcontrol RNG banner, as wide as a row of games
+   ============================================================ */
+.fg-feature {
+  grid-column: 1 / -1; position: relative; display: flex; align-items: center; gap: 18px; min-height: 150px; padding: 24px 28px;
+  overflow: hidden; text-align: left; color: #fff; cursor: pointer; border: 1px solid rgba(255,255,255,.12); border-radius: 16px;
+  background: radial-gradient(120% 140% at 85% 20%, #3b1d7a 0%, #160b33 45%, #070512 100%);
+  box-shadow: 0 10px 30px rgba(20,8,60,.45), inset 0 1px 0 rgba(255,255,255,.12); transition: transform .15s ease, box-shadow .15s ease;
+}
+.fg-feature:hover { transform: translateY(-2px); box-shadow: 0 16px 40px rgba(60,20,160,.5), inset 0 1px 0 rgba(255,255,255,.16); }
+.fgf-sky { position: absolute; inset: 0; pointer-events: none; background:
+  radial-gradient(2px 2px at 12% 30%, #fff8, transparent 60%), radial-gradient(1.5px 1.5px at 28% 70%, #fff7, transparent 60%),
+  radial-gradient(1.5px 1.5px at 45% 22%, #fff6, transparent 60%), radial-gradient(2px 2px at 62% 80%, #fff7, transparent 60%),
+  radial-gradient(1.5px 1.5px at 75% 40%, #fff8, transparent 60%), radial-gradient(1px 1px at 90% 65%, #fff6, transparent 60%); }
+.fgf-ring { position: absolute; right: 70px; top: 50%; width: 150px; height: 150px; margin-top: -75px; border-radius: 50%; border: 2px solid rgba(255,255,255,.18); box-shadow: 0 0 40px rgba(140,90,255,.5), inset 0 0 30px rgba(140,90,255,.35); animation: fgfSpin 9s linear infinite; }
+.fgf-orb { position: absolute; top: 50%; right: 137px; width: 22px; height: 22px; margin-top: -11px; border-radius: 50%; animation: fgfOrbit 4s linear infinite; transform-origin: 8px 50%; }
+.fgf-orb.a { background: #fff; box-shadow: 0 0 18px 6px rgba(255,255,255,.7); }
+.fgf-orb.b { background: #000; box-shadow: 0 0 0 2px rgba(255,255,255,.55), 0 0 18px 4px rgba(150,120,255,.5); animation-delay: -2s; }
+@keyframes fgfSpin { to { transform: rotate(360deg); } }
+@keyframes fgfOrbit { from { transform: rotate(0deg) translateX(-64px) rotate(0deg); } to { transform: rotate(360deg) translateX(-64px) rotate(-360deg); } }
+.fgf-copy { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.fgf-kicker { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #c9b8ff; }
+.fgf-title { font-size: 34px; line-height: 1.05; font-weight: 900; letter-spacing: .01em; background: linear-gradient(90deg, #fff, #d7c8ff 55%, #9e86ff); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: 0 0 30px rgba(160,120,255,.35); }
+.fgf-sub { font-size: 14px; color: rgba(255,255,255,.75); max-width: 460px; }
+.fgf-play { position: relative; z-index: 1; flex: none; margin-right: 150px; padding: 12px 26px; border-radius: 999px; font-weight: 900; letter-spacing: .08em; background: linear-gradient(180deg, #fff, #ddd3ff); color: #24105a; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+@media (max-width: 700px) {
+  .fg-feature { flex-direction: column; align-items: flex-start; min-height: 0; padding: 20px; }
+  .fgf-ring { right: -40px; width: 120px; height: 120px; margin-top: -60px; }
+  .fgf-orb { right: 0; }
+  .fgf-title { font-size: 26px; }
+  .fgf-play { margin-right: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .fgf-ring, .fgf-orb { animation: none; } }

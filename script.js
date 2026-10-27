@@ -16,11 +16,13 @@
    Database product enabled on this Firebase project (separate
    from Firestore — Console > Build > Realtime Database >
    Create Database). Once enabled, its rules need to allow the
-   presence path:
+   presence path, and the ocrng path for Overcontrol RNG's shared
+   lobby (games/ocrng/net.js; without it the game plays solo):
 
    {
      "rules": {
-       "presence": { ".read": true, "$uid": { ".write": true } }
+       "presence": { ".read": true, "$uid": { ".write": true } },
+       "ocrng": { ".read": true, ".write": true }
      }
    }
 
@@ -453,6 +455,19 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.35', date: '2026-10-26', title: 'Overcontrol RNG',
+    notes: [
+      'New game: Overcontrol RNG! A 3D aura-rolling game, inspired by Sol\'s RNG, with one shared lobby where everyone rolls together. Press the big banner on the Games page.',
+      'Roll for 50+ auras, each with its own effects, from Common to 『EQUINOX』 and 『EQUILIBRIUM INCARNATE』. Very rare rolls get a cutscene, and the whole lobby hears about them. Auras can mutate: Shiny, Corrupted and Glitched.',
+      'Day and night swap every 10 minutes, and weather rolls in: Rain, Snow, Hell, Heaven, Null and Solar, each with auras you can only get then (Solar by day, Lunar at night).',
+      'Potions: Lucky, Speed, Fortune I to III, Haste I to III, Heavenly, Godlike, Warp, Diver and more. Fish at the dock for F (blue coins) and Void Coins, and trade 5 Void Coins with the Jester (every 4 hours) for an Oblivion Potion: +1,000,000 luck.',
+      'Auto Roll comes with Frixion Premium. Quick Roll skips the animation and unlocks for 5,000 Orbs. Turn PvP on to use your aura\'s attack on other players with PvP on.',
+      'Explore the studded map: the Mixer\'s potion shop, the Jester\'s tent, the pond, the waterfall, the tower… and 5 secrets.',
+      'Quests is now called Games.',
+      'Pictures in messages now sit under the text, like Discord.',
+      'Servers can have a picture instead of two letters: Server Settings → Upload Image.',
+      'Server invite codes can be 4 to 6 letters or numbers.',
+    ] },
   { v: '4.34', date: '2026-10-26', title: '/spoiler, and Sapphire runs /vanish and /sfmode',
     notes: [
       'New /spoiler command: type /spoiler and your message, and it is sent hidden behind a spoiler until someone clicks it.',
@@ -1385,6 +1400,9 @@ function cssUrl(u) {
   return s ? `url("${s.replace(/["\\\n\r()]/g, ch => '\\' + ch.charCodeAt(0).toString(16) + ' ')}")` : 'none';
 }
 function initials(name) { return name ? name.trim().charAt(0).toUpperCase() : '?'; }
+// A server's picture (Server Settings → Upload Image), or null to show its two letters.
+function serverIconUrl(s) { return (s && safeUrl(s.iconUrl, 'image')) || null; }
+function serverIconInner(s) { const u = serverIconUrl(s); return u ? `<img class="server-icon-img" src="${esc(u)}" alt="" draggable="false">` : esc(serverInitials(s && s.name)); }
 function serverInitials(name) {
   if (!name) return '?';
   const words = name.trim().split(/\s+/);
@@ -2246,7 +2264,7 @@ function renderExploreServers(servers) {
       const row = document.createElement('div');
       row.className = 'explore-server-row';
       row.innerHTML = `
-        <div class="rail-item explore-server-icon">${esc(serverInitials(s.name))}</div>
+        <div class="rail-item explore-server-icon${serverIconUrl(s) ? ' has-icon' : ''}">${serverIconInner(s)}</div>
         <div class="explore-server-info">
           <div class="explore-server-name">${esc(s.name || 'Unnamed server')}</div>
           <div class="explore-server-meta">${memberCount} member${memberCount === 1 ? '' : 's'}</div>
@@ -3280,10 +3298,10 @@ function renderServerRail(servers) {
   servers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   servers.forEach(s => {
     const el = document.createElement('div');
-    el.className = 'rail-item' + (currentServerId === s.id ? ' active' : '');
+    el.className = 'rail-item' + (currentServerId === s.id ? ' active' : '') + (serverIconUrl(s) ? ' has-icon' : '');
     el.title = s.name;
     el.dataset.id = s.id;
-    el.textContent = serverInitials(s.name);
+    el.innerHTML = serverIconInner(s);
     el.onclick = () => selectServer(s);
     list.appendChild(el);
   });
@@ -3301,7 +3319,7 @@ $('confirm-create-server').onclick = async () => {
   const code = $('new-server-code').value.trim().toLowerCase();
   $('create-server-error').textContent = '';
   if (!name) { $('create-server-error').textContent = 'Please enter a server name.'; return; }
-  if (!/^[a-z0-9]{5}$/.test(code)) { $('create-server-error').textContent = 'The invite code must be exactly 5 letters or numbers.'; return; }
+  if (!/^[a-z0-9]{4,6}$/.test(code)) { $('create-server-error').textContent = 'The invite code must be 4 to 6 letters or numbers.'; return; }
   try {
     if (await findServerByInvite(code)) { $('create-server-error').textContent = `The code "${code}" is already taken. Pick another one.`; return; }
     const ref = await db.collection('servers').add({
@@ -3318,12 +3336,12 @@ $('confirm-create-server').onclick = async () => {
 };
 
 // Invite links look like https://equilibrium-incarnate.pages.dev/abc12 (new servers use a
-// 5-character code; older servers keep their 6-character one). Older ?invite= links still work.
+// 4 to 6 character code; older servers keep theirs). Older ?invite= links still work.
 const INVITE_BASE = 'https://equilibrium-incarnate.pages.dev/';
-const INVITE_CODE_RE = /^[a-z0-9]{5,6}$/i;
+const INVITE_CODE_RE = /^[a-z0-9]{4,6}$/i;
 $('new-server-code').addEventListener('input', () => {
   const el = $('new-server-code');
-  el.value = el.value.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5);
+  el.value = el.value.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 6);
   updateNewServerCodePreview();
 });
 function updateNewServerCodePreview() {
@@ -3333,7 +3351,7 @@ function updateNewServerCodePreview() {
 function parseInviteCode(input) {
   const v = (input || '').trim();
   const m = /[?&#]invite=([a-z0-9]+)/i.exec(v) || /\/invite\/([a-z0-9]+)/i.exec(v)
-    || /^(?:https?:\/\/)?[^\/\s]+\/([a-z0-9]{5,6})\/?(?:[?#].*)?$/i.exec(v);
+    || /^(?:https?:\/\/)?[^\/\s]+\/([a-z0-9]{4,6})\/?(?:[?#].*)?$/i.exec(v);
   return (m ? m[1] : v).toLowerCase();
 }
 function inviteLinkFor(code) { return INVITE_BASE + encodeURIComponent(code); }
@@ -3382,7 +3400,7 @@ async function openInvitePreview(code) {
     const data = doc.data();
     if ((data.members || []).includes(myUid)) { selectServer({ id: doc.id, ...data }); return; }
     pendingInviteDoc = doc;
-    $('invite-icon').textContent = initials(data.name);
+    $('invite-icon').innerHTML = serverIconInner(data);   // the server's picture, or its letters
     $('invite-name').textContent = data.name;
     $('invite-desc').textContent = data.description || '';
     const n = (data.members || []).length;
@@ -3730,7 +3748,7 @@ function openHomeMainView(which) {
   hideMainPageViews();
   setChatHeaderHash('');
   if (which === 'friends') { currentView = 'friends'; $('chat-header-title').textContent = 'Friends'; $('friends-view').classList.remove('hidden'); renderFriendsView(); }
-  else if (which === 'quests') { currentView = 'quests'; $('chat-header-title').textContent = 'Quests'; $('quests-view').classList.remove('hidden'); renderQuests(); }
+  else if (which === 'quests') { currentView = 'quests'; $('chat-header-title').textContent = 'Games'; $('quests-view').classList.remove('hidden'); renderQuests(); }
   else if (which === 'codes') { currentView = 'codes'; $('chat-header-title').textContent = 'Codes'; $('codes-view').classList.remove('hidden'); }
   else if (which === 'shop') { currentView = 'shop'; $('chat-header-title').textContent = 'Shop'; $('shop-view').classList.remove('hidden'); openShop(); }
   setMobilePane('chat');
@@ -5355,7 +5373,8 @@ function openServerSettings(tab) {
   $('edit-server-name').disabled = !hasServerPerm(currentServerData, myUid, 'manageServer');
   $('save-server-btn').classList.toggle('hidden', !hasServerPerm(currentServerData, myUid, 'manageServer'));
   $('server-invite-display').value = inviteLinkFor(currentServerData.inviteCode);
-  $('ss-icon-preview').textContent = initials(currentServerData.name);
+  renderServerIconPreview();
+  $('ss-icon-btns').classList.toggle('hidden', !hasServerPerm(currentServerData, myUid, 'manageServer'));
   // Only the server's owner (or the Frixion owner) ever sees Delete Server —
   // Manage Server / Administrator alone can't erase it out from under its owner.
   $('delete-server-btn').classList.toggle('hidden', !isServerOwnerLevel(currentServerData, myUid));
@@ -5409,8 +5428,43 @@ async function renderBansList() {
 $('bans-search').addEventListener('input', () => renderBansList());
 
 $('edit-server-name').addEventListener('input', () => {
-  $('ss-icon-preview').textContent = initials($('edit-server-name').value || '?');
+  if (!(currentServerData && serverIconUrl(currentServerData))) $('ss-icon-preview').textContent = initials($('edit-server-name').value || '?');
 });
+// Server icon: a picture instead of the two letters. It is saved as soon as it is uploaded or removed.
+function renderServerIconPreview() {
+  const box = $('ss-icon-preview'), url = currentServerData && serverIconUrl(currentServerData);
+  box.innerHTML = url ? `<img src="${esc(url)}" alt="">` : esc(initials(($('edit-server-name').value || (currentServerData && currentServerData.name) || '?')));
+  box.classList.toggle('has-icon', !!url);
+  $('ss-icon-remove').classList.toggle('hidden', !url);
+}
+$('ss-icon-upload').onclick = () => $('ss-icon-file').click();
+$('ss-icon-file').onchange = async e => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file || !currentServerId || !currentServerData) return;
+  if (!hasServerPerm(currentServerData, myUid, 'manageServer')) { toast('You need Manage Server permission to do that.', 'error'); return; }
+  if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) { toast('Pick a PNG, JPG, GIF or WebP picture.', 'error'); return; }
+  if (file.size > 8 * 1024 * 1024) { toast('That picture is too big. Pick one under 8 MB.', 'error'); return; }
+  const btn = $('ss-icon-upload');
+  btn.disabled = true; btn.textContent = 'Uploading…';
+  try {
+    const url = await uploadImageToCloudinary(file);
+    await db.collection('servers').doc(currentServerId).update({ iconUrl: url });
+    currentServerData.iconUrl = url;
+    renderServerIconPreview();
+    toast('Server icon updated.');
+  } catch (err) { toast(err.message || 'Could not upload that picture.', 'error'); }
+  finally { btn.disabled = false; btn.textContent = 'Upload Image'; }
+};
+$('ss-icon-remove').onclick = async () => {
+  if (!currentServerId || !currentServerData || !hasServerPerm(currentServerData, myUid, 'manageServer')) return;
+  try {
+    await db.collection('servers').doc(currentServerId).update({ iconUrl: null });
+    currentServerData.iconUrl = null;
+    renderServerIconPreview();
+    toast('Server icon removed.');
+  } catch (err) { toast('Could not remove the icon.', 'error'); }
+};
 $('copy-invite-btn').onclick = async () => {
   const code = $('server-invite-display').value;
   try { await navigator.clipboard.writeText(code); toast('Invite link copied.'); }
@@ -10329,7 +10383,7 @@ function renderMobileYou() {
       <svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
     </button>
     <div class="mpage-label">Frixion</div>
-    <div class="myou-group">${page('friends', 'Friends', 'friends', reqs)}${page('shop', 'Shop', 'shop')}${page('quests', 'Quests', 'quests')}${page('codes', 'Codes', 'codes')}</div>
+    <div class="myou-group">${page('friends', 'Friends', 'friends', reqs)}${page('shop', 'Shop', 'shop')}${page('quests', 'Games', 'activity')}${page('codes', 'Codes', 'codes')}</div>
     <div class="mpage-label">Settings</div>
     <div class="myou-group">${row('pane-account', 'My Account', 'account')}${row('pane-activity', 'Activity Status', 'activity')}${row('pane-premium', 'Frixion Premium', 'premium')}${row('pane-themes', 'Themes', 'themes')}${row('pane-accessibility', 'Accessibility', 'access')}${row('pane-notifications', 'Notifications', 'notify')}${row('pane-keyboard', 'Keyboard', 'keyboard')}</div>
     <div class="mpage-label">App</div>
@@ -15529,15 +15583,50 @@ function mountGameHubs() {
       '<div class="fg-head"><div><h3 class="fg-heading">Play games, earn Orbs</h3>' +
       '<p class="fg-sub">Every game pays out in Orbs when a run ends. Spend them on Frixion Premium.</p></div>' +
       '<span class="fg-chip"><span class="orb-ic"></span><b class="fg-orbs">0</b></span></div>' +
-      '<div class="fg-grid">' + GAME_TILES.map(g =>
+      '<div class="fg-grid">' +
+      // Overcontrol RNG: the big multiplayer game gets a banner as wide as three games
+      '<button type="button" class="fg-feature" data-ocrng="1"><span class="fgf-sky" aria-hidden="true"><span class="fgf-orb a"></span><span class="fgf-orb b"></span><span class="fgf-ring"></span></span>' +
+      '<span class="fgf-copy"><span class="fgf-kicker">3D · Multiplayer · Roll for auras</span><span class="fgf-title">Overcontrol RNG</span>' +
+      '<span class="fgf-sub">Join the lobby, roll for 50+ auras, fish, trade with the Jester and chase EQUINOX.</span></span>' +
+      '<span class="fgf-play">PLAY</span></button>' +
+      GAME_TILES.map(g =>
         `<button class="fg-tile" data-game="${g.id}"><span class="fg-thumb" style="background:linear-gradient(135deg,${g.c},${lighten(g.c, 45)})">` +
         `<span class="fg-ic">${g.ic}</span></span><span class="fg-name">${g.title}</span></button>`).join('') + '</div>';
     root.onclick = e => {
+      if (e.target.closest('.fg-feature')) { openOcrng(); return; }
       const tile = e.target.closest('.fg-tile');
       if (tile) openGame(tile.dataset.game);
     };
   });
   refreshCaps();
+}
+
+// ---------- Overcontrol RNG (games/ocrng/) ----------
+// The 3D aura-rolling game lives in its own files and only loads when someone presses Play. It gets what it needs from
+// Frixion through window.FrixionGameAPI: the database, who you are, your rank and Premium, and spending Orbs.
+let ocrngModule = null;
+function openOcrng() {
+  if (!myUid || !myProfile) return;
+  window.FrixionGameAPI = {
+    db, rtdb, firebase, FieldValue, esc, toast, isMobile,
+    me: () => ({ uid: myUid, name: (myProfile && displayNameOf(myProfile)) || myUid, profile: myProfile }),
+    rank: () => (sfMode ? 0 : platformRank(myProfile)),        // 3 Owner, 2 Co-Owner, 1 Admin (0 in sfmode)
+    premium: () => isPremium(myProfile),
+    orbs: () => (myProfile && myProfile.orbs) || 0,
+    // Takes n Orbs if you have them. Resolves true when paid.
+    spendOrbs: n => db.runTransaction(async tx => {
+      const ref = db.collection('users').doc(myUid), d = await tx.get(ref);
+      if (((d.data() || {}).orbs || 0) < n) return false;
+      tx.update(ref, { orbs: FieldValue.increment(-n) });
+      return true;
+    }),
+  };
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=1');
+  ocrngModule.then(m => m.open()).catch(err => {
+    ocrngModule = null;
+    console.error(err);
+    toast('Overcontrol RNG could not load. Check your connection and try again.', 'error');
+  });
 }
 
 
@@ -15943,7 +16032,7 @@ function ovServersListHTML() {
     if (!list.length) return `<div class="ov-empty">${servers.length ? `No servers match “${esc(ovQuery.trim())}”.` : 'You are not in any servers yet.'}</div>`;
     return list.map(s => {
       const n = visibleMemberCount(s);
-      return `<button type="button" class="ov-row" data-sid="${esc(s.id)}"><span class="ov-srv-ico">${esc(serverInitials(s.name))}</span>` +
+      return `<button type="button" class="ov-row" data-sid="${esc(s.id)}"><span class="ov-srv-ico">${serverIconInner(s)}</span>` +
         `<span class="ov-row-copy"><span class="ov-row-name">${esc(s.name)}</span><span class="ov-row-sub">${n} member${n === 1 ? '' : 's'}</span></span></button>`;
     }).join('');
   }
@@ -16074,7 +16163,7 @@ async function ovOpenChat(target) {
     const server = ovServerById(target.sid);
     if (!server) { toast('You are not in that server.', 'error'); return; }
     chat.id = target.cid;
-    headHTML = `<span class="ov-srv-ico small">${esc(serverInitials(server.name))}</span>` +
+    headHTML = `<span class="ov-srv-ico small">${serverIconInner(server)}</span>` +
       `<div class="ov-chat-who"><div class="ov-chat-name">#<span class="ov-chan-name">…</span></div>` +
       `<div class="ov-chat-status">${esc(server.name)}</div></div>`;
     placeholder = 'Message #channel';

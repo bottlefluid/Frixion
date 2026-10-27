@@ -1,0 +1,77 @@
+// Overcontrol RNG: the one shared lobby, on Firebase's Realtime Database.
+//   ocrng/roster/{name}  who is in the lobby: name, aura, shirt colour, PvP. Small, and only written when it changes.
+//   ocrng/pos/{name}     where each player is. Only sent while at least 2 people are in, so playing alone costs nothing.
+//   ocrng/hits/{name}    aura attacks aimed at someone (applied only if both of you have PvP on).
+//   ocrng/fx             attack effects for everyone to see. Each one deletes itself after a few seconds.
+//   ocrng/announce       "X HAS FOUND EQUINOX" for very rare rolls.
+//   ocrng/world          what staff started from the admin panel: weather, day or night, the Jester.
+// Everyone leaves the roster automatically when they disconnect.
+export function createNet(rtdb, firebase, uid, on) {
+  const ref = p => rtdb.ref('ocrng/' + p);
+  const roster = {}, offs = [];
+  const myRoster = ref('roster/' + uid), myPos = ref('pos/' + uid);
+  let streaming = false, posOff = null, lastSent = 0, lastKey = '', joinedAt = Date.now();
+  const listen = (r, ev, fn) => { r.on(ev, fn); offs.push(() => r.off(ev, fn)); };
+
+  function startStreaming() {
+    if (streaming) return;
+    streaming = true;
+    const pr = ref('pos');
+    const add = s => { if (s.key !== uid) on.pos(s.key, s.val()); };
+    const rem = s => on.posGone(s.key);
+    pr.on('child_added', add); pr.on('child_changed', add); pr.on('child_removed', rem);
+    posOff = () => { pr.off('child_added', add); pr.off('child_changed', add); pr.off('child_removed', rem); };
+    lastKey = '';
+  }
+  function stopStreaming() {
+    if (!streaming) return;
+    streaming = false;
+    if (posOff) posOff(); posOff = null;
+    myPos.remove().catch(() => {});
+  }
+  const checkStreaming = () => (Object.keys(roster).length >= 2 ? startStreaming() : stopStreaming());
+
+  return {
+    get streaming() { return streaming; },
+    get count() { return Object.keys(roster).length; },
+    roster,
+    join(info) {
+      joinedAt = Date.now();
+      myRoster.onDisconnect().remove(); myPos.onDisconnect().remove();
+      ref('hits/' + uid).onDisconnect().remove();
+      ref('hits/' + uid).remove().catch(() => {});
+      // Refused means the database rules don't have the ocrng section yet: the game then plays solo.
+      myRoster.set({ ...info, t: firebase.database.ServerValue.TIMESTAMP }).catch(err => { if (on.denied) on.denied(err); });
+      const rr = ref('roster');
+      listen(rr, 'child_added', s => { roster[s.key] = s.val(); if (s.key !== uid) on.joined(s.key, s.val()); checkStreaming(); });
+      listen(rr, 'child_changed', s => { roster[s.key] = s.val(); if (s.key !== uid) on.changed(s.key, s.val()); });
+      listen(rr, 'child_removed', s => { delete roster[s.key]; if (s.key !== uid) on.left(s.key); checkStreaming(); });
+      listen(ref('hits/' + uid), 'child_added', s => { const h = s.val(); s.ref.remove().catch(() => {}); if (h && Date.now() - (h.t || 0) < 5000) on.hit(h); });
+      listen(ref('fx').limitToLast(8), 'child_added', s => { const f = s.val(); if (f && f.uid !== uid && Date.now() - (f.t || 0) < 4000) on.fx(f); });
+      listen(ref('announce').limitToLast(1), 'child_added', s => { const a = s.val(); if (a && (a.t || 0) > joinedAt - 15000) on.announce(a); });
+      listen(ref('world'), 'value', s => on.world(s.val() || {}));
+    },
+    update(partial) { myRoster.update(partial).catch(() => {}); },
+    // Where you are, at most 10 times a second, and only when something changed.
+    sendPos(p) {
+      if (!streaming) return;
+      const now = Date.now();
+      if (now - lastSent < 100) return;
+      const key = `${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)},${p.r.toFixed(2)},${p.a},${p.hp}`;
+      if (key === lastKey && now - lastSent < 3000) return;
+      lastSent = now; lastKey = key;
+      myPos.set({ x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2), r: +p.r.toFixed(3), a: p.a, hp: p.hp, t: now }).catch(() => {});
+    },
+    hit(target, h) { ref('hits/' + target).push({ ...h, from: uid, t: Date.now() }).catch(() => {}); },
+    fx(f) { const r = ref('fx').push({ ...f, uid, t: Date.now() }); setTimeout(() => r.remove().catch(() => {}), 4000); },
+    announce(a) { ref('announce').push({ ...a, uid, t: Date.now() }).catch(() => {}); },
+    setWorld(partial) { return ref('world').update(partial); },
+    clearWorld() { return ref('world').remove(); },
+    leave() {
+      offs.forEach(f => f()); offs.length = 0;
+      stopStreaming();
+      myRoster.remove().catch(() => {}); myPos.remove().catch(() => {});
+      myRoster.onDisconnect().cancel(); myPos.onDisconnect().cancel();
+    },
+  };
+}
