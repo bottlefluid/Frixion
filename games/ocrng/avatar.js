@@ -86,12 +86,13 @@ export function titleStyle(g, aura, x, y, w) {
   return aura.c;
 }
 export function makeNameTag(name, key) {
-  const c = document.createElement('canvas'); c.width = 768; c.height = 192;
+  const c = document.createElement('canvas'); c.width = 768; c.height = 240;
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
-  sprite.scale.set(7.2, 1.8, 1);
+  sprite.scale.set(7.2, 2.25, 1);
   sprite.renderOrder = 10;
-  sprite.userData.draw = (nm, k, hp) => {
+  // extra: { title, afk } - a title under the name (from achievements), and AFK when someone has gone quiet
+  sprite.userData.draw = (nm, k, hp, extra = {}) => {
     const { aura, mut, name: auraName } = auraKey(k);
     const g = c.getContext('2d');
     g.clearRect(0, 0, c.width, c.height);
@@ -108,13 +109,16 @@ export function makeNameTag(name, key) {
     g.fillStyle = titleStyle(g, aura, 384, 78, w);
     g.fillText(auraName, 384, 78, 740);
     // name
-    g.font = '700 42px "Segoe UI", system-ui, sans-serif';
-    g.lineWidth = 7; g.strokeStyle = 'rgba(0,0,0,.8)'; g.strokeText(nm, 384, 140, 700);
-    g.fillStyle = '#ffffff'; g.fillText(nm, 384, 140, 700);
+    g.font = '700 42px Montserrat, "Segoe UI", system-ui, sans-serif';
+    const shown = extra.afk ? nm + '  AFK' : nm;
+    g.lineWidth = 7; g.strokeStyle = 'rgba(0,0,0,.8)'; g.strokeText(shown, 384, 140, 700);
+    g.fillStyle = extra.afk ? '#bdbdbd' : '#ffffff'; g.fillText(shown, 384, 140, 700);
+    if (extra.title) { g.font = '700 30px Montserrat, "Segoe UI", sans-serif'; g.lineWidth = 6; g.strokeText(extra.title, 384, 182, 680); g.fillStyle = '#ffd54f'; g.fillText(extra.title, 384, 182, 680); }
     // health while PvP is on
     if (hp != null) {
-      g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(234, 158, 300, 18);
-      g.fillStyle = hp > 50 ? '#43d17a' : hp > 25 ? '#ffc107' : '#ff4d4d'; g.fillRect(237, 161, 294 * Math.max(0, hp) / 100, 12);
+      const hy = extra.title ? 200 : 158;
+      g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(234, hy, 300, 18);
+      g.fillStyle = hp > 50 ? '#43d17a' : hp > 25 ? '#ffc107' : '#ff4d4d'; g.fillRect(237, hy + 3, 294 * Math.max(0, hp) / 100, 12);
     }
     tex.needsUpdate = true;
   };
@@ -139,7 +143,7 @@ export function buildAvatar(name, shirt) {
   const legL = limb(-0.5, 2, pants), legR = limb(0.5, 2, pants), armL = limb(-1.5, 4, skin), armR = limb(1.5, 4, skin);
   const headMats = [skin, skin, skin, skin, new THREE.MeshStandardMaterial({ map: faceTex(SKIN), roughness: 0.7 }), skin];
   const head = mk(1.25, 1.25, 1.25, headMats); head.position.y = 4.65; body.add(head);
-  const tag = makeNameTag(name, 'common'); tag.position.y = 6.9; root.add(tag);
+  const tag = makeNameTag(name, 'common'); tag.position.y = 7.1; root.add(tag);
   const fxHolder = new THREE.Group(); root.add(fxHolder);
   let walk = 0, clock = 0;
   return {

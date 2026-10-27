@@ -393,62 +393,140 @@ body.ocrng-open { overflow: hidden; }
 .oc-rotate-phone .ic { width: 90px; height: 90px; }
 @keyframes ocTurn { 0%, 20% { transform: rotate(0); } 50%, 80% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
 
-/* on touch screens the chat sits up top and the moves move left of the jump button */
-#ocrng.oc-touch .oc-br { right: 110px; bottom: 14px; }
-#ocrng.oc-touch .oc-chat.idle { opacity: .45; }
+/* the Menu button opens a list, like Sol's */
+.oc-more { position: absolute; left: 52px; bottom: 0; display: flex; flex-direction: column; gap: 4px; min-width: 176px; }
+.oc-more button { position: relative; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px !important; border: 1.5px solid var(--line) !important; border-radius: 2px; background: rgba(0, 0, 0, .62) !important; font-size: 13.5px; font-weight: 700; text-align: left; }
+.oc-more button .ic { width: 20px; height: 20px; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .8)); }
+.oc-more button:hover { background: rgba(255, 255, 255, .12) !important; }
+.oc-more .oc-dot { position: absolute; top: -4px; right: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 6px var(--gold); }
+.oc-more .oc-admin-btn .ic { color: var(--gold); }
 
-/* short screens (phones held sideways) */
+/* the raid health bar */
+.oc-raidbar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: min(520px, 56vw); display: flex; flex-direction: column; align-items: center; gap: 3px; pointer-events: none !important; }
+.oc-raidbar b { font-size: 16px; font-weight: 800; letter-spacing: .3em; color: #f0c87a; }
+.oc-raid-hp { position: relative; width: 100%; height: 16px; border: 1.5px solid var(--line); background: rgba(60, 20, 10, .75); }
+.oc-raid-hp i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #ff7043, #ffca28); transition: width .25s; }
+.oc-raid-hp span { position: relative; display: block; text-align: center; font-size: 11px; line-height: 13px; font-weight: 700; }
+.oc-raidbar small { font-size: 11.5px; color: #e6e6e6; }
+
+/* bits for the new screens */
+.oc-tile.fav { box-shadow: inset 0 0 0 1px rgba(255, 213, 79, .8); }
+.oc-tile.fav::before { content: 'LOCKED'; position: absolute; top: 3px; right: 4px; font-size: 7.5px; font-weight: 800; letter-spacing: .04em; color: var(--gold); }
+.oc-pill.token, .oc-price.token { color: #ffb74d; }
+.oc-owned { margin-left: 4px; font-size: 11px; color: #9cf29c; }
+.oc-titletag { margin-left: 6px; font-size: 10.5px; font-weight: 700; color: var(--gold); }
+.oc-titleart { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 38px; height: 38px; border: 1.5px solid var(--gold); color: var(--gold); font-weight: 800; }
+.oc-quest.got { border-color: rgba(95, 224, 138, .5); }
+.oc-dim { font-size: 11.5px; color: #a8a8b0; }
+.oc-set-row select { height: 30px; padding: 0 8px; border: 1px solid var(--line-dim); background: rgba(0, 0, 0, .55); outline: none; font-size: 13px; }
+.oc-set-row select option { background: #15151a; }
+.oc-server { color: var(--gold); }
+.oc-info-line.lore { font-style: italic; }
+.oc-pass-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; font-size: 15px; }
+.oc-bar.big { height: 20px; margin-bottom: 6px; }
+.oc-bar.big em { line-height: 18px; font-size: 12px; }
+.oc-pass { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: thin; }
+.oc-pass-lv { flex: none; width: 150px; display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--line-dim); opacity: .55; }
+.oc-pass-lv.reached { opacity: 1; border-color: var(--line); }
+.oc-pass-lv > b { font-size: 18px; text-align: center; }
+.oc-pass-cell { display: flex; flex-direction: column; justify-content: space-between; gap: 6px; min-height: 92px; padding: 6px; background: rgba(255, 255, 255, .04); font-size: 11.5px; font-weight: 600; }
+.oc-pass-cell.prem { background: rgba(255, 213, 79, .08); }
+.oc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.oc-chip { padding: 6px 12px !important; border: 1px solid var(--line-dim) !important; border-radius: 2px; background: rgba(0, 0, 0, .4) !important; font-size: 12.5px; font-weight: 800; text-shadow: 0 1px 2px #000; }
+.oc-chip.on { border-color: #fff !important; background: rgba(255, 255, 255, .15) !important; }
+
+/* ---------------- phones ---------------- */
+#ocrng.oc-touch .oc-players { display: none; }
+#ocrng.oc-touch .oc-act { display: none !important; }
+/* on phones the prompt itself is the button: tap "Talk to Stella" */
+#ocrng.oc-touch .oc-prompt { pointer-events: auto !important; cursor: pointer; padding: 5px 16px 5px 5px; border: 1.5px solid var(--gold); border-radius: 24px; background: rgba(0, 0, 0, .62); }
+#ocrng.oc-touch .oc-prompt kbd { border-color: var(--gold); border-radius: 50%; color: var(--gold); }
+#ocrng.oc-touch .oc-chat.idle { opacity: .5; }
+
 @media (max-height: 520px) {
-  .oc-topleft { top: 6px; left: 6px; }
+  .oc-topleft { top: 6px; left: 8px; }
   .oc-sq { width: 34px; height: 34px; }
   .oc-sq .ic { width: 18px; height: 18px; }
-  .oc-menu { left: 82px; top: 6px; bottom: auto; flex-direction: row; gap: 3px; }
+  .oc-menu { left: 8px; top: 48px; bottom: auto; gap: 4px; }
   .oc-menu .oc-sq { width: 36px; height: 36px; }
-  .oc-chat { top: 46px; left: 6px; width: min(300px, 38vw); }
-  .oc-chat-log { max-height: 92px; font-size: 12px; }
+  .oc-more { left: 44px; top: 0; bottom: auto; min-width: 150px; }
+  .oc-more button { height: 34px; font-size: 12px; }
+  .oc-chat { top: 6px; left: 92px; width: min(300px, 36vw); }
+  .oc-chat-log { max-height: 64px; padding: 3px 6px; font-size: 11px; }
   .oc-chat-bar input { height: 26px; font-size: 12px; }
-  .oc-players { width: 220px; font-size: 11px; }
-  .oc-bl { left: auto; right: 8px; bottom: auto; top: 6px; align-items: flex-end; }
+  .oc-chat.idle .oc-chat-bar { display: none; }
+  .oc-bl { left: auto; right: 10px; bottom: auto; top: 6px; align-items: flex-end; gap: 1px; }
+  .oc-bl .oc-pvp-btn { pointer-events: auto; margin-top: 4px; padding: 3px 10px !important; font-size: 11px; }
   .oc-biome { font-size: 15px; }
+  .oc-biome small { font-size: 10.5px; }
   .oc-daytime { font-size: 11px; }
   .oc-luckline { font-size: 10.5px; }
-  .oc-pill { font-size: 11px; padding: 2px 7px; }
-  .oc-buffs { justify-content: flex-end; max-width: 230px; }
+  .oc-pill { padding: 2px 7px; font-size: 11px; }
+  .oc-buffs { justify-content: flex-end; max-width: 240px; margin-bottom: 2px; }
   .oc-buff { width: 30px; }
   .oc-buff .oc-potion { width: 26px; height: 26px; }
   .oc-rollbar { bottom: 8px; gap: 8px; }
-  .oc-roll { width: 150px; height: 54px; }
+  .oc-roll { width: 148px; height: 54px; }
   .oc-roll b { font-size: 22px; }
-  .oc-toggle { width: 82px; height: 40px; }
+  .oc-roll small { font-size: 10.5px; }
+  .oc-toggle { width: 80px; height: 40px; }
   .oc-toggle span { font-size: 10px; }
   .oc-toggle b { font-size: 10.5px; }
-  #ocrng.oc-touch .oc-br { right: 96px; bottom: 70px; flex-direction: row-reverse; align-items: flex-end; }
-  .oc-ab { width: 48px; height: 48px; }
-  .oc-ab span { font-size: 8px; }
-  .oc-ab kbd { font-size: 12px; }
-  .oc-hp { width: 120px; }
-  .oc-prompt { bottom: 70px; font-size: 13px; }
-  .oc-toasts { bottom: 68px; }
-  .oc-joy { left: 16px; bottom: 12px; width: 100px; height: 100px; }
-  .oc-jump { bottom: 12px; right: 14px; width: 60px; height: 60px; }
-  .oc-act { bottom: 80px; right: 22px; width: 46px; height: 46px; }
-  .oc-rolltext { top: 30%; }
-  .oc-rt-name { font-size: 34px; }
-  .oc-announce { top: 14%; }
-  .oc-fishbar { bottom: 70px; }
-  .oc-panel { padding: 6px; }
-  .oc-panel-box { max-height: 100%; }
-  .oc-panel-head { padding: 6px 44px; }
+  .oc-joy { left: 22px; bottom: 14px; width: 104px; height: 104px; }
+  .oc-jump { bottom: 16px; right: 16px; width: 66px; height: 66px; font-size: 12px; }
+  /* aura moves sit in an arc around the jump button, like a mobile game */
+  #ocrng.oc-touch .oc-br { right: 0; bottom: 0; width: 230px; height: 190px; display: block; pointer-events: none !important; }
+  #ocrng.oc-touch .oc-abilities { position: absolute; inset: 0; pointer-events: none; }
+  #ocrng.oc-touch .oc-ab { position: absolute; width: 52px; height: 52px; padding: 0 !important; justify-content: center; border-radius: 50%; border-top-width: 1.5px !important; box-shadow: inset 0 0 0 2px var(--c, #fff); pointer-events: auto; }
+  #ocrng.oc-touch .oc-ab kbd { position: static; font-size: 14px; }
+  #ocrng.oc-touch .oc-ab span { display: none; }
+  #ocrng.oc-touch .oc-ab .cd { border-radius: 50%; }
+  #ocrng.oc-touch .oc-ab[data-move="z"] { right: 92px; bottom: 16px; }
+  #ocrng.oc-touch .oc-ab[data-move="x"] { right: 84px; bottom: 76px; }
+  #ocrng.oc-touch .oc-ab[data-move="c"] { right: 24px; bottom: 92px; }
+  #ocrng.oc-touch .oc-ab[data-move="v"] { right: 152px; bottom: 30px; }
+  #ocrng.oc-touch .oc-ab[data-move="f"] { right: 142px; bottom: 92px; }
+  #ocrng.oc-touch .oc-hp { position: absolute; right: 16px; bottom: 156px; width: 120px; }
+  .oc-prompt { bottom: 72px; font-size: 13px; }
+  .oc-toasts { bottom: auto; top: 108px; }
+  .oc-toast { padding: 3px 10px; font-size: 11.5px; }
+  .oc-rolltext { top: 34%; }
+  .oc-rt-name { font-size: 32px; }
+  .oc-rt-sub { font-size: 13px; }
+  .oc-announce { top: 18%; }
+  .oc-announce .oc-ann-name { font-size: 24px; }
+  .oc-raidbar { top: auto; bottom: 70px; width: min(300px, 40vw); }
+  .oc-raidbar b { font-size: 11px; }
+  .oc-raidbar small { font-size: 10px; }
+  .oc-fishbar { bottom: 70px; width: min(360px, 60vw); padding: 8px 10px; gap: 6px; }
+  .oc-lockmark { display: none; }
+  /* panels fill the whole screen on a phone */
+  .oc-panel { padding: 0; }
+  .oc-panel-box { width: 100%; height: 100%; max-height: 100%; border: 0; }
+  .oc-panel-box::before, .oc-panel-box::after { display: none; }
+  .oc-panel-head { padding: 4px 50px; }
   .oc-panel-head h2 { font-size: 15px; }
-  .oc-panel-body { padding: 10px 12px 12px; }
-  .oc-store { min-height: 0; gap: 10px; }
-  .oc-info { width: 180px; }
-  .oc-info-name { font-size: 18px !important; }
-  .oc-grid { grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); }
-  .oc-tile-name { font-size: 11px !important; }
+  .oc-panel-head .oc-panel-x { width: 40px; height: 34px; }
+  .oc-panel-body { padding: 8px 12px 12px; font-size: 12.5px; }
+  .oc-store { min-height: 0; gap: 8px; }
+  .oc-info { width: 34%; max-width: 230px; }
+  .oc-info-body { padding: 8px; gap: 4px; }
+  .oc-info-name { font-size: 17px !important; }
+  .oc-info-art { width: 52px; height: 52px; }
+  .oc-info-actions .oc-btn { min-height: 34px; }
+  .oc-grid { grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 5px; }
+  .oc-tile-name { font-size: 10.5px !important; }
+  .oc-tabs button { padding: 6px 10px !important; font-size: 12px; }
+  .oc-btn { min-height: 32px; }
+  .oc-btn.sm { min-height: 30px; }
+  .oc-row { padding: 6px 8px; gap: 8px; }
+  .oc-row .oc-potion { width: 32px; height: 32px; }
+  .oc-row-text b { font-size: 13px; }
+  .oc-row-text span { font-size: 11px; }
+  .oc-slider { grid-template-columns: 120px 1fr 40px; }
   .oc-logo.big-logo .big { font-size: 64px; }
   .oc-title { gap: 16px; }
-  .oc-slider { grid-template-columns: 130px 1fr 40px; }
+  .oc-pass-lv { width: 128px; }
 }
 @media (max-width: 700px) and (min-height: 521px) {
   .oc-store { flex-direction: column; }

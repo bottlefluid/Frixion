@@ -455,6 +455,21 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.38', date: '2026-10-27', title: 'Overcontrol RNG 2.1: gears, raids, Halloween and a real island',
+    notes: [
+      'The map is an island now, like Sol\'s: dirt cliffs, sandy beaches and the ocean all the way out. The mountain is brown dirt and grey rock with snow on top, and there are a lot more trees.',
+      'Gears: Jake\'s Workshop, north of the plaza, builds gears from your auras. Wear one in each hand. Right hand gears give luck and speed (Luck Glove, Solar Device, Exo Gauntlet, up to the Heavenly Device). Left hand gears change the bonus roll (Darkshader, Gravitational Device, The Thing and more).',
+      'Raids: during Sandstorms, The Crawler bursts out of the sand in the Pit, east of the plaza. Everyone fights it together. Aura moves hurt it, anyone can punch it, and dodge the red rings. Beating it gives Raid Potions and maybe a Potion of the Dune.',
+      'Achievements (40) with rewards and titles. Every 10 achievements give +5% luck forever. Pick a title in Settings, Miscellaneous, and it shows under your name.',
+      'Season Pass: Season of the Pumpkin Moon, 30 levels of rewards from rolling, fishing, quests and secrets. Frixion Premium unlocks a second row.',
+      'Halloween is here until November 10: Pumpkin Moon, Graveyard and Blood Rain biomes with their own auras (up to 『HALLOWED』), pumpkins everywhere, and Jack at the graveyard trading Pumpkin Tokens for Pump King\'s Blood and the Pump Punch gear.',
+      'Runes like Sol\'s: the Jester sells a Rune for each biome and the Strange Controller, and Mari sells the Biome Randomizer. They start a biome for everyone. Potion Chests open into random potions.',
+      'Mari has three special deals that change every 15 minutes, including Lucky Pennies and Void Coins.',
+      'Aura Storage: lock auras so they can\'t be removed or used in crafting, remove the ones you don\'t want, and read every aura\'s lore.',
+      'The admin panel can turn on server luck (x2, x3, x10) and summon The Crawler.',
+      '14 new secrets, including three more rubber ducks, a tiny island out at sea, a room under the tower with a jukebox that plays every aura\'s song, and a black door to Limbo, where Limbo auras can be rolled.',
+      'Phones look a lot better: a cleaner menu, aura moves around the Jump button, a tap-to-talk button, and full-screen menus.',
+    ] },
   { v: '4.37', date: '2026-10-27', title: 'Overcontrol RNG 2.0: rebuilt like Sol\'s RNG',
     notes: [
       'Overcontrol RNG now looks and plays like Sol\'s RNG: dark panels with thin borders, the biome and time of day in the bottom-left corner, and a Roll button that counts to your bonus roll (4/10).',
@@ -15647,7 +15662,7 @@ function openOcrng() {
       return true;
     }),
   };
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=3');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=4');
   ocrngModule.then(m => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);

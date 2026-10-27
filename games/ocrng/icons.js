@@ -23,6 +23,12 @@ export const IC = {
   sword: svg(`<path d="M14.5 3.5H20v5.5L9 20l-5.5-5.5z" ${S}/><path d="M7 13l4 4M4 20l2-2" ${S}/>`),
   trophy: svg(`<path d="M8 4h8v5a4 4 0 0 1-8 0z" ${S}/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4" ${S}/>`),
   cauldron: svg(`<path d="M4 9h16l-1.5 8a3 3 0 0 1-3 2.5h-7a3 3 0 0 1-3-2.5z" ${S}/><path d="M3 9h18M8 5.5c0-1 1-1.5 1.5-1M12.5 6c.5-1.5 2-1.5 2.5-2" ${S}/>`),
+  pass: svg(`<path d="M4 6.5h16v4a2 2 0 0 0 0 3v4H4v-4a2 2 0 0 0 0-3z" ${S}/><path d="M14 6.5v11" ${S} stroke-dasharray="2 2"/>`),
+  hammer: svg(`<path d="M14 4l6 6-3 3-6-6zM11 7l-7.5 7.5a1.8 1.8 0 0 0 0 2.5l.5.5a1.8 1.8 0 0 0 2.5 0L14 10" ${S}/>`),
+  sword2: svg(`<path d="M5 19l9-9M14 4h6v6l-9 9-6-6zM4 20l2-2" ${S}/>`),
+  music: svg(`<path d="M9 18V6l11-2v12" ${S}/><circle cx="6.5" cy="18" r="2.5" ${S}/><circle cx="17.5" cy="16" r="2.5" ${S}/>`),
+  eye: svg(`<path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z" ${S}/><circle cx="12" cy="12" r="3" ${S}/>`),
+  pin: svg(`<path d="M7 11V6.5h10V11l2 3H5zM12 14v6" ${S}/>`),
 };
 
 // ---------------- potion bottles ----------------
@@ -50,7 +56,16 @@ const SHAPES = {
   hourglass: { body: 'M13 12h22v3c0 5-6 7-8 9 2 2 8 4 8 9v3H13v-3c0-5 6-7 8-9-2-2-8-4-8-9z', liquid: 30, neck: null, frame: true },
   dark: { body: 'M19 17h10v3l7 6v13a6 6 0 0 1-6 6H18a6 6 0 0 1-6-6V26l7-6z', liquid: 27, neck: [19, 10, 10, 8], spikes: true },
 };
+// things that aren't bottles
+function specialArt(p, cls) {
+  const c = p.color, light = SHADE(c, 0.45), dark = SHADE(c, -0.4), o = 'stroke="#0d0d10" stroke-width="1.8" stroke-linejoin="round"';
+  if (p.shape === 'chest') return `<svg class="${cls}" viewBox="0 0 48 48" aria-hidden="true"><path d="M8 22h32v17a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2z" fill="${c}" ${o}/><path d="M8 22c0-6 4-10 10-10h12c6 0 10 4 10 10z" fill="${light}" ${o}/><path d="M8 22h32" ${o}/><rect x="21" y="19" width="6" height="8" rx="1" fill="#ffd54f" ${o}/><path d="M14 22v19M34 22v19" stroke="${dark}" stroke-width="2"/></svg>`;
+  if (p.shape === 'rune') return `<svg class="${cls}" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 4l14 9v22l-14 9-14-9V13z" fill="#3a3f4a" ${o}/><path d="M24 9l10 6.5v17L24 39l-10-6.5v-17z" fill="#4b5260"/><path d="M24 14v20M18 19l12 10M30 19L18 29" stroke="${c}" stroke-width="2.6" stroke-linecap="round"/><circle cx="24" cy="24" r="14" fill="${c}" opacity=".18"/></svg>`;
+  if (p.shape === 'device') return `<svg class="${cls}" viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="10" width="30" height="28" rx="6" fill="#263238" ${o}/><rect x="14" y="15" width="20" height="12" rx="2" fill="${c}" ${o}/><circle cx="18" cy="32" r="2.4" fill="${light}"/><circle cx="30" cy="32" r="2.4" fill="#ff5252"/><path d="M17 21h6l2-3 2 6 2-3h2" fill="none" stroke="#0d0d10" stroke-width="1.4"/></svg>`;
+  return `<svg class="${cls}" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="16" fill="${c}" ${o}/><circle cx="24" cy="24" r="11" fill="none" stroke="${light}" stroke-width="1.6"/><path d="M20 27c0 2 2 3 4 3s4-1 4-3-2-2.5-4-3-4-1-4-3 2-3 4-3 4 1 4 3M24 15v18" fill="none" stroke="#0d0d10" stroke-width="1.6"/></svg>`;
+}
 export function potionArt(p, cls = 'oc-potion') {
+  if (['chest', 'rune', 'device', 'coin'].includes(p.shape)) return specialArt(p, cls);
   const sh = SHAPES[p.shape] || SHAPES.round, c = p.color, id = 'pc' + (++uid);
   const light = SHADE(c, 0.45), dark = SHADE(c, -0.35);
   let out = `<svg class="${cls}" viewBox="0 0 48 48" aria-hidden="true"><defs><clipPath id="${id}"><path d="${sh.body}"/></clipPath>`
@@ -78,6 +93,11 @@ export function potionArt(p, cls = 'oc-potion') {
       : `<rect x="${x}" y="${y}" width="${w}" height="5" rx="1.2" fill="#a1887f" stroke="#0d0d10" stroke-width="1.6"/>`;
   }
   return out + '</svg>';
+}
+export function handGearArt(g, cls = 'oc-potion') {
+  const c = g.color, light = SHADE(c, 0.45), dark = SHADE(c, -0.35), o = 'stroke="#0d0d10" stroke-width="1.8" stroke-linejoin="round"';
+  if (g.hand === 'left') return `<svg class="${cls}" viewBox="0 0 48 48" aria-hidden="true"><path d="M13 22V12a3 3 0 0 1 6 0v8V9a3 3 0 0 1 6 0v11-9a3 3 0 0 1 6 0v11-5a3 3 0 0 1 6 0v12c0 8-6 14-13 14s-12-5-12-11l-3-6a3 3 0 0 1 5-3z" fill="${c}" ${o}/><rect x="14" y="34" width="20" height="6" rx="2" fill="${dark}" ${o}/><circle cx="24" cy="27" r="3.4" fill="${light}" ${o}/></svg>`;
+  return `<svg class="${cls}" viewBox="0 0 48 48" aria-hidden="true"><rect x="8" y="14" width="32" height="22" rx="5" fill="${c}" ${o}/><rect x="12" y="18" width="14" height="14" rx="7" fill="${light}" ${o}/><circle cx="19" cy="25" r="3" fill="${dark}"/><path d="M30 20h6M30 25h6M30 30h4" stroke="#0d0d10" stroke-width="2" stroke-linecap="round"/><path d="M16 14v-4h16v4" fill="none" ${o}/></svg>`;
 }
 export function gearArt(item, cls = 'oc-potion') {
   const c = item.color, light = SHADE(c, 0.4);

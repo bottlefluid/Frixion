@@ -11,7 +11,9 @@ import {
   AURAS, AURA, auraKey, rollAura, POTIONS, POTION, ITEMS, ITEM, WEATHERS, tierOf, tierIndex, STRANGE, POTION_RENAMES,
   timeOfDay, dayProgress, weatherAt, weatherEndsAt, jesterHere, fmt, fmtTime, zalgo, movesFor, elementOf,
   FISH, FISHES, FISHING_SPOTS, catchFish, dailyStock, dayIndex, PICKUPS, DAILY_QUESTS, dailyQuests, SIDE_QUEST, BUILTIN_CODES,
+  GEARS, GEAR, ACHIEVEMENTS, CHEST_POOLS, SEASON, PASS_REWARDS, JACK_SHOP, mariDeals, MARI_SLOT_MS, RAID, loreOf, isHalloween, HALLOWEEN_BIOMES, WEATHER_SLOT_MS,
 } from './data.js';
+import { createCrawler } from './raid.js';
 import { buildAvatar, AuraFX, shirtColorFor } from './avatar.js';
 import { createWorld, potionModel } from './world.js';
 import { createNet } from './net.js';
@@ -19,9 +21,9 @@ import { createChat } from './chat.js';
 import { createMusic } from './music.js';
 import { castFx, hitTest } from './moves.js';
 import { glowTex } from './avatar.js';
-import { IC, potionArt, gearArt, fishArt, coinArt, starArt } from './icons.js';
+import { IC, potionArt, gearArt, handGearArt, fishArt, coinArt, starArt } from './icons.js';
 
-const VERSION = '2.0';
+const VERSION = '2.1';
 const API = () => window.FrixionGameAPI;
 const WALK = 16, JUMP = 24, GRAVITY = 72, STEP = 1.25, R = 0.6, H = 5;
 const ROLL_ANIM_MS = 2600, ROLL_COOLDOWN_MS = 600;
@@ -148,10 +150,16 @@ function buildShell() {
       <button type="button" class="oc-sq" data-open="collection" title="Collection">${IC.collection}</button>
       <button type="button" class="oc-sq" data-open="inventory" title="Inventory">${IC.inventory}</button>
       <button type="button" class="oc-sq" data-open="quests" title="Quests">${IC.quests}<i class="oc-dot hidden"></i></button>
-      <button type="button" class="oc-sq" data-open="stats" title="Stats">${IC.stats}</button>
-      <button type="button" class="oc-sq" data-open="settings" title="Settings">${IC.settings}</button>
-      <button type="button" class="oc-sq oc-admin-btn hidden" data-open="admin" title="Admin">${IC.admin}</button>
+      <button type="button" class="oc-sq oc-menu-btn" title="Menu">${IC.menu}<i class="oc-dot hidden"></i></button>
+      <div class="oc-more hidden">
+        <button type="button" data-open="achievements">${IC.trophy}<span>Achievements</span><i class="oc-dot hidden"></i></button>
+        <button type="button" data-open="pass">${IC.pass}<span>Season Pass</span><i class="oc-dot hidden"></i></button>
+        <button type="button" data-open="stats">${IC.stats}<span>Stats</span></button>
+        <button type="button" data-open="settings">${IC.settings}<span>Settings</span></button>
+        <button type="button" class="oc-admin-btn hidden" data-open="admin">${IC.admin}<span>Admin</span></button>
+      </div>
     </div>
+    <div class="oc-raidbar hidden"><b>THE CRAWLER</b><div class="oc-raid-hp"><i></i><span></span></div><small></small></div>
     <div class="oc-players"></div>
     <div class="oc-bl">
       <div class="oc-buffs"></div>
@@ -227,8 +235,11 @@ const blankSave = () => ({
   v: 3, name: '', coins: 0, f: 0, void: 0, rolls: 0, auras: { common: 0 }, equipped: 'common', potions: {}, items: {}, fish: {}, quickRoll: false,
   settings: { auto: false, quick: false, autoEquip: true, cutscenes: 'all', pvp: false, bubbles: true, sens: 1, vol: { music: 0.45, mine: 0.7, others: 0.5, sfx: 0.7 } },
   eggs: {}, effects: [], queued: [], rollBuffs: [], daily: { day: 0, bought: [] }, best: 'common', bestRarity: 2,
-  quests: { day: 0, prog: {}, claimed: [], side: {} }, stats: { fish: 0, pickups: 0, potions: 0, kos: 0, moves: 0, playSecs: 0 }, found: {}, redeemed: {}, ownerGear: {},
+  quests: { day: 0, prog: {}, claimed: [], side: {} }, stats: { fish: 0, pickups: 0, potions: 0, kos: 0, moves: 0, playSecs: 0, raids: 0, crafted: 0, dailies: 0 }, found: {}, redeemed: {}, ownerGear: {},
   lastObby: 0, lastBell: 0, chest: false,
+  // gears worn in each hand, and the ones you own; auras you locked; achievements, titles, the season pass
+  gears: {}, hands: { left: null, right: null }, locked: {}, achievements: {}, titles: [], title: '', pass: { xp: 0, free: [], prem: [] },
+  tokens: 0, keys: {}, biomes: {}, caught: {}, flags: {}, qblockDay: 0, bestTier: 0,
 });
 async function loadSave() {
   const api = API();
@@ -240,7 +251,9 @@ async function loadSave() {
   if (data.settings && data.settings.sound === false) s.settings.vol.sfx = 0;
   s.quests = { ...b.quests, ...(data.quests || {}) }; s.quests.side = s.quests.side || {};
   s.stats = { ...b.stats, ...(data.stats || {}) };
-  ['auras', 'fish', 'potions', 'items', 'eggs', 'found', 'redeemed', 'ownerGear'].forEach(k => { s[k] = s[k] || {}; });
+  ['auras', 'fish', 'potions', 'items', 'eggs', 'found', 'redeemed', 'ownerGear', 'gears', 'locked', 'achievements', 'keys', 'biomes', 'caught', 'flags'].forEach(k => { s[k] = s[k] || {}; });
+  s.hands = { left: null, right: null, ...(s.hands || {}) }; s.pass = { ...b.pass, ...(s.pass || {}) }; s.titles = s.titles || [];
+  s.bestTier = Math.max(s.bestTier || 0, tierIndex(auraKey(s.best).rarity));
   s.daily = s.daily || { day: 0, bought: [] };
   // older versions: the balance auras merged, a few potions were renamed
   for (const [k, n] of Object.entries(s.auras)) { const nk = auraKey(k).key; if (nk !== k) { s.auras[nk] = (s.auras[nk] || 0) + n; delete s.auras[k]; } }
@@ -250,7 +263,7 @@ async function loadSave() {
   G.save = s;
   G.effects = (s.effects || []).filter(e => e.until > now() && POTION[e.id]);
   G.queued = (s.queued || []).filter(id => POTION[id]);
-  G.rollBuffs = (s.rollBuffs || []).filter(r => POTION[r.id] && r.left > 0);
+  G.rollBuffs = (s.rollBuffs || []).filter(r => (POTION[r.id] || r.id === 'gem') && r.left > 0);
   if (!s.auras[s.equipped] && !G.me.owner && s.equipped !== 'common') s.equipped = 'common';
   checkDay();
 }
@@ -282,13 +295,14 @@ function buildPlayer() {
   a.root.position.copy(G.player.pos);
   equip(G.save.equipped, true);
 }
+const drawMyTag = () => G.player.avatar.tag.userData.draw(G.me.name, G.save.equipped, G.player.pvp ? G.player.hp : null, { title: G.save.title, afk: G.afk });
 function equip(key, silent) {
   const p = G.player;
   if (p.fx) p.fx.dispose();
   p.fx = new AuraFX(key, G.quality === 'low');
   p.avatar.fxHolder.add(p.fx.group);
   G.save.equipped = key;
-  p.avatar.tag.userData.draw(G.me.name, key, p.pvp ? p.hp : null);
+  drawMyTag();
   G.moves = movesFor(key);
   renderAbilities();
   if (G.net) G.net.update({ aura: key });
@@ -373,7 +387,14 @@ function setupInput() {
     });
     on($q('.oc-jump'), 'touchstart', e => { e.preventDefault(); G.input.keys[' '] = true; setTimeout(() => { if (G) G.input.keys[' '] = false; }, 150); }, { passive: false });
     on($q('.oc-act'), 'click', () => interact());
+    on($q('.oc-prompt'), 'click', () => interact());   // on phones the prompt itself is the button
+    $q('.oc-bl').appendChild($q('.oc-pvp-btn'));
   }
+  // AFK: nothing pressed for 5 minutes
+  const awake = () => { G.lastInput = now(); if (G.afk) { G.afk = false; drawMyTag(); if (G.net) G.net.update({ afk: null }); } };
+  ['keydown', 'mousedown', 'touchstart', 'wheel'].forEach(ev => on(window, ev, awake, { passive: true }));
+  G.lastInput = now();
+  on($q('.oc-menu-btn'), 'click', () => $q('.oc-more').classList.toggle('hidden'));
   on($q('.oc-exit'), 'click', () => close());
   on($q('.oc-title-exit'), 'click', () => close());
   on($q('.oc-play'), 'click', () => play());
@@ -388,7 +409,7 @@ function setupInput() {
   const endOffer = () => { G.offer = null; $q('.oc-rt-actions').classList.add('hidden'); $q('.oc-rolltext').classList.add('hidden'); };
   on($q('[data-eq]'), 'click', () => { if (G.offer) equip(G.offer); endOffer(); });
   on($q('[data-skip]'), 'click', endOffer);
-  G.root.querySelectorAll('[data-open]').forEach(b => on(b, 'click', () => openPanel(b.dataset.open)));
+  G.root.querySelectorAll('[data-open]').forEach(b => on(b, 'click', () => { $q('.oc-more').classList.add('hidden'); openPanel(b.dataset.open); }));
 }
 function setShiftLock(onOff) {
   const cvs = $q('.oc-canvas');
@@ -436,13 +457,14 @@ function play() {
     fx: f => { const fxo = castFx(G.scene, f); if (fxo) G.fxObjects.push(fxo); },
     announce: a => announce(a),
     world: w => { G.worldState = w; },
+    raid: r => onRaid(r),
     denied: () => {
       if (!G || G.netDenied) return;
       G.netDenied = true;
       toast(G.me.staff ? 'Multiplayer is off: the Realtime Database rules need an "ocrng" section. You can still play solo.' : 'The lobby is closed right now, so you\'re playing solo. Your progress still saves.', 'warn');
     },
   });
-  G.net.join({ name: G.me.name, aura: G.save.equipped, shirt: shirtColorFor(G.me.name), pvp: false, rolls: G.save.rolls });
+  G.net.join({ name: G.me.name, aura: G.save.equipped, shirt: shirtColorFor(G.me.name), pvp: false, rolls: G.save.rolls, ...(G.save.title ? { title: G.save.title } : {}) });
   G.music = G.audio ? createMusic(G.audio) : null;
   refreshToggles();
   updateHud();
@@ -467,7 +489,7 @@ function updateOther(uid, d) {
   const o = G.others.get(uid); if (!o) return addOther(uid, d);
   o.data = d;
   if (d.aura !== o.key) { if (o.fx) o.fx.dispose(); o.key = auraKey(d.aura || 'common').key; o.fx = new AuraFX(o.key, true); o.avatar.fxHolder.add(o.fx.group); }
-  o.avatar.tag.userData.draw(d.name || uid, o.key, d.pvp ? (o.hp ?? 100) : null);
+  o.avatar.tag.userData.draw(d.name || uid, o.key, d.pvp ? (o.hp ?? 100) : null, { title: d.title, afk: d.afk });
   o.lastHp = o.hp;
 }
 function removeOther(uid) {
@@ -484,6 +506,7 @@ function loop() {
   const env = G.env, ws = G.worldState || {};
   const time = timeOfDay(n, ws), weather = weatherAt(n, ws), jester = jesterHere(n, ws);
   if (G.playing) {
+    if (G.save) G.save.biomes[weather] = true;
     if (weather !== env.weather) announceWeather(weather, env.weather);
     if (jester && !env.jester) { G.chat && G.chat.system('[Server]: The Jester has arrived. His tent is to the east.', '#d6a8ff'); sound('jester'); }
     if (!jester && env.jester) G.chat && G.chat.system('[Server]: The Jester has left.', '#d6a8ff');
@@ -497,9 +520,10 @@ function loop() {
   p.avatar.root.rotation.y = p.yaw;
   const want = p.sizeUntil > n ? p.sizeTo : 1; p.scale += (want - p.scale) * Math.min(1, dt * 4); p.avatar.root.scale.setScalar(p.scale);
   p.fx && p.fx.update(dt, t);
-  G.world.update(dt, t, { ...env, camPos: G.camera.position, player: p.pos });
+  G.world.update(dt, t, { ...env, weather: G.world.inLimbo(p.pos) ? 'limbo' : env.weather, camPos: G.camera.position, player: p.pos });
   G.fxObjects = G.fxObjects.filter(f => f.update(dt));
   if (G.fishing) fishingTick(dt);
+  if (G.crawler) updateRaid(dt, t);
   if (G.playing) {
     if (G.save.settings.auto && canAuto() && !G.rolling && !G.cutting && n >= G.nextRollAt) rollOnce();
     if (G.net) G.net.sendPos({ x: p.pos.x, y: p.pos.y, z: p.pos.z, r: p.yaw, a: p.moving ? 1 : 0, hp: p.pvp ? p.hp : -1 });
@@ -521,7 +545,15 @@ function slowTick() {
   renderPlayers();
   if (G.net && Math.abs((G.lastRollsSent || 0) - G.save.rolls) >= 25) { G.lastRollsSent = G.save.rolls; G.net.update({ rolls: G.save.rolls }); }
   if ((G.boardTick = (G.boardTick || 0) + 1) >= 120) { G.boardTick = 0; loadBoard(); }
+  if (G.raid) renderRaidBar();
+  if (G.crawler && (G.player.pos.distanceTo(G.world.arena) < 60) !== !!G.nearArena) renderAbilities();
   if (G.player.emoteUntil && G.player.emoteUntil < now()) { G.player.emote = null; G.player.emoteUntil = 0; if (G.net) G.net.update({ emote: null }); }
+  // AFK after 5 minutes of nothing, like Roblox; a secret after 10
+  const idle = now() - (G.lastInput || now());
+  if (idle > 300000 && !G.afk) { G.afk = true; drawMyTag(); if (G.net) G.net.update({ afk: true }); }
+  if (idle > 600000) findEgg('afk');
+  if ((G.achTick = (G.achTick || 0) + 1) >= 4) { G.achTick = 0; checkAchievements(); }
+  maybeStartRaid();
 }
 
 function movePlayer(dt) {
@@ -555,6 +587,9 @@ function movePlayer(dt) {
   if (!p.noclip) collide(p, prevY);
   const pit = G.world.pit;
   if (p.pos.x > pit.min.x && p.pos.x < pit.max.x && p.pos.z > pit.min.z && p.pos.z < pit.max.z && p.pos.y < pit.max.y) { p.pos.copy(pit.back); p.vel.set(0, 0, 0); toast('You fell into the dark. Back to the corridor.'); }
+  // into the sea: back to the last dry place you stood on
+  if (p.onGround && p.pos.y > -1 && Math.abs(p.pos.z) < 140 && Math.abs(p.pos.x) < 300) G.safe = p.pos.clone();
+  if (p.pos.y < -4 && Math.abs(p.pos.z) < 140 && Math.abs(p.pos.x) < 300) { p.pos.copy(G.safe || G.world.spawn); p.vel.set(0, 0, 0); toast('Splash! Back to dry land.'); sound('splash'); }
   if (p.pos.y < -60) { p.pos.copy(G.world.spawn); p.vel.set(0, 0, 0); toast('You fell out of the world. Back to spawn.'); }
   p.avatar.animate(dt, Math.hypot(p.vel.x, p.vel.z), !p.onGround && !flying, p.emote);
 }
@@ -627,7 +662,7 @@ function updateOthers(dt, t) {
     const sp = before.distanceTo(o.pos) / Math.max(dt, 0.001);
     o.avatar.animate(dt, o.anim ? Math.max(sp, 8) : 0, o.target.y - o.pos.y > 0.5, o.data && o.data.emote);
     if (o.fx) o.fx.update(dt, t);
-    if (o.data && o.data.pvp && o.hp !== o.lastHp) { o.lastHp = o.hp; o.avatar.tag.userData.draw(o.data.name || o.uid, o.key, o.hp < 0 ? 100 : o.hp); }
+    if (o.data && o.data.pvp && o.hp !== o.lastHp) { o.lastHp = o.hp; o.avatar.tag.userData.draw(o.data.name || o.uid, o.key, o.hp < 0 ? 100 : o.hp, { title: o.data.title, afk: o.data.afk }); }
   }
 }
 
@@ -655,12 +690,17 @@ function updateBubbles() {
 }
 function chatCommand(cmd, args) {
   const p = G.player;
-  const emote = name => { p.emote = name; p.emoteUntil = now() + 6000; if (G.net) G.net.update({ emote: name }); return true; };
-  if (cmd === 'help') { G.chat.system('/e dance, /e wave: emotes. /clear: clear the chat. Press Tab for the player list.', '#bdbdbd'); return true; }
+  const emote = name => {
+    p.emote = name; p.emoteUntil = now() + 6000; if (G.net) G.net.update({ emote: name });
+    const b = G.world.places.bell.pos; if (name === 'dance' && Math.hypot(p.pos.x - b.x, p.pos.z - b.z) < 12 && Math.abs(p.pos.y - b.y) < 5) findEgg('summitdance');
+    return true;
+  };
+  if (cmd === 'help') { G.chat.system('/e dance, /e wave: emotes. /title: your titles. /clear: clear the chat. Press Tab for the player list.', '#bdbdbd'); return true; }
   if (cmd === 'e' || cmd === 'emote') { const e = (args[0] || '').toLowerCase(); if (e === 'dance' || e === 'wave') return emote(e); G.chat.system('Emotes: /e dance, /e wave', '#bdbdbd'); return true; }
   if (cmd === 'dance' || cmd === 'wave') return emote(cmd);
   if (cmd === 'clear') { G.chat.el.querySelector('.oc-chat-log').innerHTML = ''; return true; }
-  if (cmd === 'sol') { G.chat.system('[???]: The sun remembers every roll.', '#ffca28'); return true; }
+  if (cmd === 'sol') { G.chat.system('[???]: The sun remembers every roll.', '#ffca28'); findEgg('solchat'); return true; }
+  if (cmd === 'title') { G.chat.system(G.save.titles.length ? 'Your titles: ' + G.save.titles.join(', ') + '. Pick one in Settings, Miscellaneous.' : 'No titles yet. Achievements give them.', '#bdbdbd'); return true; }
   return false;
 }
 
@@ -672,6 +712,7 @@ function placeActive(id) {
   if (id === 'portal_stella' || id === 'portal_back') return side.stella === 'done';
   if (id === 'chest') return !G.save.chest;
   if (id.startsWith('card')) return side.cards && side.cards.state === 'active' && !(side.cards.found || []).includes(id);
+  if (id === 'jack') return isHalloween();
   return true;
 }
 function checkPlaces() {
@@ -679,7 +720,12 @@ function checkPlaces() {
   let near = null;
   for (const [id, pl] of Object.entries(G.world.places)) {
     if (Math.hypot(p.x - pl.pos.x, p.z - pl.pos.z) >= pl.r || Math.abs(p.y - pl.pos.y) >= 4 || !placeActive(id)) continue;
-    if (pl.auto) { if (id === 'obby') finishObby(); continue; }
+    if (pl.auto) {
+      if (id === 'obby') finishObby();
+      if (id === 'jukebox_exit') glitchToOnce(G.world.rooms.tower, 'Back at the tower.');
+      if (id === 'limbo_exit') glitchToOnce(G.world.rooms.limboDoor, 'You found your way back.');
+      continue;
+    }
     near = id; break;
   }
   if (near !== G.near) {
@@ -701,23 +747,38 @@ function interact() {
   if (id === 'chest') return openChest();
   if (id.startsWith('card')) return pickCard(id);
   if (id === 'questboard') return openPanel('quests');
+  if (id === 'towerdoor') return glitchTo(G.world.rooms.jukebox, 'A little room under the tower. Music is playing.');
+  if (id === 'limbodoor') {
+    if (!G.save.keys.void) { toast('The black door is locked. Something from the deepest water might open it.', 'warn'); sound('hurt'); return; }
+    return glitchTo(G.world.rooms.limbo, 'The Void Key turns. You are in Limbo. Rolls here can find Limbo auras.');
+  }
+  if (id === 'qblock') return hitQBlock();
   openPanel(id);
 }
-const EGGS = ['duck', 'cave', 'tower', 'glitch', 'sun', 'summit', 'crystal', 'graveyard', 'moonsun', 'konami', 'devpc'];
+const EGGS = ['duck', 'cave', 'tower', 'glitch', 'sun', 'summit', 'crystal', 'graveyard', 'moonsun', 'konami', 'devpc',
+  'duck2', 'duck3', 'duck4', 'ducks', 'islet', 'jukebox', 'limbo', 'qblock', 'bellringer', 'summitdance', 'boots', 'unlucky', 'solchat', 'afk'];
 const EGG_INFO = {
   duck: ['the rubber duck', { coins: 500 }], cave: ['the Dev Room', { coins: 1500 }], tower: ['the top of the tower', { coins: 2500 }], glitch: ['the glitch', { void: 1 }],
   sun: ['the sun statue', { coins: 1000 }], summit: ['the top of the mountain', { potions: { fortune2: 1 } }], crystal: ['the hidden crystal room', { coins: 3000 }],
   graveyard: ['the graveyard at night', { potions: { zombie: 1 } }], moonsun: ['the sun asleep at night', { potions: { fortune1: 2 } }], konami: ['an old cheat code', { potions: { lucky: 5 } }],
   devpc: ['secret.exe', { coins: 1337 }],
+  duck2: ['a duck in the creek', { coins: 500 }], duck3: ['a duck behind Mari\'s shop', { coins: 500 }], duck4: ['a duck on the tiny island', { coins: 500 }],
+  ducks: ['the whole duck family', { void: 1, potions: { chest2: 1 } }], islet: ['the edge of the world', { coins: 2500 }], jukebox: ['the room under the tower', { potions: { chest1: 2 } }],
+  limbo: ['Limbo', { potions: { chest3: 1 } }], qblock: ['the ? block', { coins: 777 }], bellringer: ['a very loud bell (10 rings)', { potions: { haste2: 2 } }],
+  summitdance: ['a dance on top of the world', { potions: { fortune3: 1 } }], boots: ['ten old boots', { potions: { diver: 2 } }], unlucky: ['ten Commons in a row', { potions: { heavenly1: 1 } }],
+  solchat: ['a word to the sun', { potions: { lucky: 7 } }], afk: ['a very long nap', { potions: { chest1: 1 } }],
 };
+const DUCKS = ['duck', 'duck2', 'duck3', 'duck4'];
 function findEgg(id) {
   if (!G || G.save.eggs[id]) return;
   G.save.eggs[id] = true;
   const [name, reward] = EGG_INFO[id];
   const got = giveReward(reward);
   toast(`Secret found: ${name} (${Object.keys(G.save.eggs).filter(e => EGGS.includes(e)).length}/${EGGS.length}). ${got}`, 'gold');
-  sound(id === 'duck' ? 'quack' : 'secret');
+  sound(DUCKS.includes(id) ? 'quack' : 'secret');
+  addXp(100);
   markDirty();
+  if (DUCKS.includes(id) && DUCKS.every(d => G.save.eggs[d])) setTimeout(() => findEgg('ducks'), 1200);
 }
 function checkEggs() {
   const p = G.player.pos, eggs = G.world.eggs;
@@ -733,6 +794,8 @@ function checkEggs() {
   }
   if (G.inNull && p.distanceTo(G.world.nullRoom.portal) < 3.5) { G.inNull = false; glitchTo(G.world.spawn, 'Back to reality.'); }
 }
+// for the automatic exits: only once, until you have walked away
+function glitchToOnce(where, msg) { if (G.lastGlitch && now() - G.lastGlitch < 1500) return; G.lastGlitch = now(); glitchTo(where, msg); }
 function glitchTo(where, msg) {
   const el = G.root;
   el.classList.add('oc-glitching');
@@ -748,6 +811,8 @@ function giveReward(r, label = true) {
   if (r.void) { G.save.void += r.void; out.push(`+${r.void} Void Coin${r.void > 1 ? 's' : ''}`); }
   for (const [id, n] of Object.entries(r.potions || {})) if (POTION[id]) { G.save.potions[id] = potionCount(id) + n; out.push(`+${n} ${POTION[id].name}`); }
   for (const id of r.items || []) if (ITEM[id]) { G.save.items[id] = true; out.push(ITEM[id].name); }
+  for (const id of r.gears || []) if (GEAR[id]) { G.save.gears[id] = (G.save.gears[id] || 0) + 1; out.push(GEAR[id].name); }
+  if (r.title && !G.save.titles.includes(r.title)) { G.save.titles.push(r.title); out.push(`the title ${r.title}`); }
   markDirty(); updateHud();
   return label ? out.join(', ') : out;
 }
@@ -767,6 +832,8 @@ function finishObby() {
 function ringBell() {
   const n = now();
   G.world.ringBell(); sound('bell');
+  G.bellRings = [...(G.bellRings || []).filter(x => n - x < 20000), n];
+  if (G.bellRings.length >= 10) findEgg('bellringer');
   if (G.chat) G.chat.system(`${G.me.name} rang the bell on the mountain.`, '#ffe082');
   const side = G.save.quests.side;
   if (side.summit === 'active') { side.summit = 'done'; toast('Side quest done: The Bell at the Top. ' + giveReward({ potions: { fortune2: 3 } }), 'gold'); }
@@ -791,6 +858,7 @@ function pickCard(id) {
 }
 function refreshWorldFlags() {
   const side = G.save.quests.side, cards = side.cards || {};
+  G.world.setHalloween(isHalloween());
   G.world.setPortals(side.stella === 'done');
   G.world.setChest(!!G.save.chest);
   const vis = {}; if (cards.state === 'active') ['card1', 'card2', 'card3'].forEach(id => { vis[id] = !(cards.found || []).includes(id); });
@@ -801,12 +869,14 @@ function refreshWorldFlags() {
 function pickupKind(def) {
   if (def.kind === 'potion') return { model: () => potionModel(POTION[def.id].color, 1), color: POTION[def.id].color };
   if (def.kind === 'star') return { model: () => { const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.7), new THREE.MeshStandardMaterial({ color: '#e3f2ff', emissive: '#9fd0ff', emissiveIntensity: 1 })); return m; }, color: def.color };
+  if (def.kind === 'token') return { model: () => { const g = new THREE.Group(); const m = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 8), new THREE.MeshStandardMaterial({ color: '#ff7a00', emissive: '#ff6d00', emissiveIntensity: 0.4 })); m.scale.y = 0.8; g.add(m); const s = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.3, 6), new THREE.MeshStandardMaterial({ color: '#4e7a2a' })); s.position.y = 0.55; g.add(s); return g; }, color: def.color };
   return { model: () => { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.18, 20), new THREE.MeshStandardMaterial({ color: def.color, emissive: def.color, emissiveIntensity: 0.4, metalness: 0.7, roughness: 0.3 })); m.rotation.x = Math.PI / 2; const g = new THREE.Group(); g.add(m); return g; }, color: def.color };
 }
+const TOKEN = { id: 'token', kind: 'token', w: 22, color: '#ff9800', name: 'Pumpkin Token' };
 function spawnPickup(forceId, near) {
-  const env = G.env, side = G.save.quests.side;
-  const pool = PICKUPS.filter(d => (!d.weather || d.weather === env.weather) && (!d.night || env.time === 'night') && (d.id !== 'stellastar' || side.stella === 'active'));
-  let def = forceId ? PICKUPS.find(d => d.id === forceId) : null;
+  const env = G.env, side = G.save.quests.side, all = [...PICKUPS, ...(isHalloween() ? [TOKEN] : [])];
+  const pool = all.filter(d => (!d.weather || d.weather === env.weather) && (!d.night || env.time === 'night') && (d.id !== 'stellastar' || side.stella === 'active'));
+  let def = forceId ? all.find(d => d.id === forceId) : null;
   if (!def) { let r = Math.random() * pool.reduce((s, d) => s + d.w, 0); def = pool.find(d => (r -= d.w) <= 0) || pool[0]; }
   const used = new Set(G.pickups.map(p => p.spot));
   const spots = G.world.itemSpots.map((s, i) => i).filter(i => !used.has(i));
@@ -840,7 +910,8 @@ function collect(def) {
   if (def.kind === 'coins') { const c = Math.round((def.min + Math.random() * (def.max - def.min)) * buffs().coin); G.save.coins += c; toast(`+${fmt(c)} coins`, 'gold'); sound('coin'); }
   else if (def.kind === 'potion') { G.save.potions[def.id] = potionCount(def.id) + 1; toast(`You picked up a ${POTION[def.id].name}.`, 'gold'); sound('potion'); }
   else if (def.kind === 'star') { const side = G.save.quests.side; if (side.stella === 'active') { side.stella = 'star'; toast('You found a Stella\'s Star. Bring it to Stella in the mountain cave.', 'gold'); sound('secret'); } }
-  G.save.stats.pickups++; progress('pickups'); markDirty(); updateHud();
+  else if (def.kind === 'token') { const n = 1 + Math.floor(Math.random() * 3); G.save.tokens += n; toast(`+${n} Pumpkin Token${n > 1 ? 's' : ''}. Jack at the graveyard trades them.`, 'gold'); sound('coin'); }
+  G.save.stats.pickups++; progress('pickups'); addXp(5); markDirty(); updateHud();
 }
 
 // ---------------- buffs: potions and gear added up ----------------
@@ -863,15 +934,34 @@ function buffs() {
   };
   for (const e of activeEffects()) add(e.out || POTION[e.id]);
   for (const it of ITEMS) if (hasItem(it.id)) add(it);
-  for (const r of G.rollBuffs) { const p = POTION[r.id]; if (p.rollSpeed) b.speed += p.rollSpeed.speed; }
-  b.luck = Math.max(0.1, b.luck); b.speed = Math.max(0.25, b.speed);
+  for (const r of G.rollBuffs) { const p = POTION[r.id]; if (!p) { if (r.luck) b.luck += r.luck; if (r.speed) b.speed += r.speed; continue; } if (p.rollSpeed) b.speed += p.rollSpeed.speed; }
+  // gears in your hands
+  let base = 1;
+  for (const g of wornGears()) {
+    add(g);
+    if (g.wLuck && g.wLuck.w.includes(env.weather)) b.luck += g.wLuck.l;
+    if (g.wSpeed && g.wSpeed.w.includes(env.weather)) b.speed += g.wSpeed.s;
+    if (g.baseLuck) base *= g.baseLuck;
+  }
+  // +5% luck for every 10 achievements, like Sol's
+  b.luck += 0.05 * Math.floor(Object.keys(G.save.achievements).length / 10);
+  b.luck = Math.max(0.1, b.luck) * base; b.speed = Math.max(0.25, b.speed);
+  const sl = (G.worldState || {}).luck; b.server = sl && sl.until > now() ? sl.mult : 1;
   return b;
 }
-const tenthRoll = () => (G.save.rolls + 1) % 10 === 0;
+const hasGear = id => (G.save.gears[id] || 0) > 0 || isOwner();
+const wornGears = () => [G.save.hands.left, G.save.hands.right].filter(id => id && GEAR[id] && hasGear(id)).map(id => GEAR[id]);
+// the bonus roll: every 10th roll is 2x as lucky, unless a left-hand gear changes it
+function bonusInfo() {
+  const g = GEAR[G.save.hands.left], ok = g && hasGear(g.id);
+  return { every: ok && g.bonusEvery || 10, mult: ok && g.bonusMult || 2, all: ok && g.bonusAll || 0, none: ok && !!g.noBonus };
+}
+const tenthRoll = () => { const bi = bonusInfo(); return bi.none ? false : bi.all ? true : (G.save.rolls + 1) % bi.every === 0; };
 function luckNow(b = buffs()) {
-  let luck = b.luck * (tenthRoll() ? 2 : 1);
-  for (const r of G.rollBuffs) { const p = POTION[r.id]; if (p.boost) luck += p.boost.l; }
-  return luck;
+  const bi = bonusInfo();
+  let luck = b.luck * (tenthRoll() ? (bi.all || bi.mult) : 1);
+  for (const r of G.rollBuffs) { const p = POTION[r.id]; if (p && p.boost) luck += p.boost.l; }
+  return luck * b.server;
 }
 function addEffect(id, out) {
   const p = POTION[id], cur = G.effects.find(e => e.id === id && !e.out);
@@ -892,6 +982,147 @@ function progress(stat, n = 1) {
   const dot = $q('[data-open="quests"] .oc-dot'); if (dot) dot.classList.toggle('hidden', !ready);
 }
 
+// ---------------- achievements and titles ----------------
+function achieveStats() {
+  const s = G.save, st = s.stats, side = Object.values(s.quests.side);
+  return {
+    rolls: s.rolls, bestTier: s.bestTier || 0, found: s.found, foundCount: Object.keys(s.found).filter(id => AURA[id]).length, glitchMut: !!s.flags.glitchMut,
+    biomes: s.biomes, eggs: s.eggs, playSecs: st.playSecs, fish: st.fish, caught: s.caught, secrets: Object.keys(s.eggs).filter(e => EGGS.includes(e)).length, secretsTotal: EGGS.length,
+    sideDone: side.filter(v => v === 'done' || (v && v.state === 'done')).length, sideTotal: Object.keys(SIDE_QUEST).length, kos: st.kos, raids: st.raids || 0, crafted: st.crafted || 0,
+    potions: st.potions, dailies: st.dailies || 0, passLevel: passLevel().level,
+  };
+}
+function checkAchievements() {
+  if (!G || !G.save) return;
+  const s = achieveStats(), got = G.save.achievements;
+  let any = false;
+  for (const a of ACHIEVEMENTS) {
+    if (got[a.id]) continue;
+    let ok = false; try { ok = !!a.test(s); } catch (e) {}
+    if (!ok) continue;
+    got[a.id] = now(); any = true;
+    const reward = giveReward({ ...a.reward, ...(a.title ? { title: a.title } : {}) });
+    toast(`Achievement: ${a.name}. ${reward}`, 'gold');
+    if (G.chat) G.chat.system(`[Achievement] ${a.name}: ${a.desc}`, '#ffd54f');
+    addXp(50);
+    sound('secret');
+  }
+  if (any) { markDirty(); dotFor('achievements', true); }
+}
+const dotFor = (panel, onOff) => { const d = $q(`[data-open="${panel}"] .oc-dot`); if (d) d.classList.toggle('hidden', !onOff); const m = $q('.oc-menu-btn .oc-dot'); if (m) m.classList.toggle('hidden', !G.root.querySelector('.oc-more .oc-dot:not(.hidden)')); };
+
+// ---------------- the Season Pass ----------------
+function passLevel() {
+  let xp = G.save.pass.xp || 0, level = 0;
+  while (level < SEASON.levels && xp >= SEASON.xpFor(level + 1)) { xp -= SEASON.xpFor(level + 1); level++; }
+  return { level, xp, need: level < SEASON.levels ? SEASON.xpFor(level + 1) : 0 };
+}
+function addXp(n) {
+  if (!G || !G.save) return;
+  const before = passLevel().level;
+  G.save.pass.xp = (G.save.pass.xp || 0) + n;
+  const after = passLevel().level;
+  if (after > before) { toast(`Season Pass: level ${after}! A reward is waiting.`, 'gold'); dotFor('pass', true); sound('secret'); }
+}
+
+// ---------------- the ? block on the tiny island: one prize a day ----------------
+function hitQBlock() {
+  const day = dayIndex(now());
+  findEgg('qblock');
+  if (G.save.qblockDay === day) { toast('The ? block is empty. Come back tomorrow.'); return; }
+  G.save.qblockDay = day;
+  const r = Math.random();
+  const prize = r < 0.02 ? { void: 1 } : r < 0.25 ? { potions: { chest1: 1 } } : r < 0.5 ? { potions: { fortune1: 1, haste1: 1 } } : { coins: 500 + Math.floor(Math.random() * 4500) };
+  toast('? block: ' + giveReward(prize), 'gold'); sound('coin');
+}
+
+// ---------------- the raid: The Crawler ----------------
+// The lobby's Realtime Database holds its health (ocrng/raid), so everyone fights the same worm. Each player's screen
+// draws it and makes it attack them; hits from aura moves (and punches) go into the shared health.
+function maybeStartRaid() {
+  if (!G.net || G.netDenied) return;
+  const n = now(), r = G.raid, slot = Math.floor(n / WEATHER_SLOT_MS);
+  if (G.env.weather !== 'sandstorm' || (r && !r.dead && !r.gone && r.until > n) || G.raidTriedSlot === slot) return;
+  G.raidTriedSlot = slot;
+  if (r && r.slot === slot) return;
+  startRaid(slot);
+}
+function startRaid(slot, by) {
+  const players = Math.max(1, G.net.count || 1), max = Math.max(RAID.hpMin, RAID.hpPer * players), n = now();
+  G.net.raidStart({ boss: RAID.id, hp: max, max, start: n, until: n + RAID.mins * 60000, slot: slot ?? -1, by: by || 'the sand' }).catch(() => {});
+}
+function onRaid(r) {
+  const was = G.raid, n = now();
+  G.raid = r && r.boss ? r : null;
+  const live = G.raid && !G.raid.dead && !G.raid.gone && G.raid.until > n;
+  if (live && !G.crawler) {
+    G.crawler = createCrawler(G.scene, G.world.arena);
+    G.raidDmg = 0; G.raidStart = G.raid.start; G.nextSlam = n + 4000; G.player.raidHp = 100;
+    if (G.chat) G.chat.system('[Server]: THE CRAWLER has burst out of the sand in the Pit, east of the plaza! Everyone, fight it!', '#f0c87a');
+    sound('announce');
+  }
+  if (G.raid && G.raid.dead && G.crawler && !G.crawler.dying) { G.crawler.die(); G.crawler.dying = true; raidOver(true); }
+  if (G.raid && G.raid.gone && G.crawler && !G.crawler.dying) { G.crawler.die(); G.crawler.dying = true; raidOver(false); }
+  if (!G.raid && G.crawler && !G.crawler.dying) { G.crawler.die(); G.crawler.dying = true; }
+  if (G.raid && G.raid.hp <= 0 && !G.raid.dead && G.raidDmg > 0) G.net.raidUpdate({ dead: true, killedAt: n });
+  renderRaidBar();
+  renderAbilities();
+}
+function raidOver(won) {
+  if (G.chat) G.chat.system(won ? '[Server]: THE CRAWLER has been defeated!' : '[Server]: THE CRAWLER burrowed back under the sand.', won ? '#f0c87a' : '#bdbdbd');
+  if (won && G.raidDmg > 0 && G.raidRewarded !== G.raidStart) {
+    G.raidRewarded = G.raidStart;
+    G.save.stats.raids = (G.save.stats.raids || 0) + 1;
+    const extra = Math.random() < RAID.duneChance ? { dune: 1 } : {};
+    toast(`You helped defeat The Crawler (${fmt(G.raidDmg)} damage). ` + giveReward({ ...RAID.reward, potions: { ...RAID.reward.potions, ...extra } }), 'gold');
+    addXp(300); sound('secret'); checkAchievements();
+  }
+  G.raidDmg = 0;
+}
+function updateRaid(dt, t) {
+  const n = now(), r = G.raid, p = G.player;
+  const near = p.pos.distanceTo(G.world.arena) < 60;
+  if (!G.crawler.update(dt, t, near ? p.pos : null)) { G.crawler.dispose(); G.crawler = null; renderRaidBar(); renderAbilities(); return; }
+  if (!r || r.dead || r.gone || G.crawler.dying) return;
+  if (r.until < n) { if (G.raidDmg > 0) G.net.raidUpdate({ gone: true }); return; }
+  // the worm slams where you are standing (only on your own screen: everyone dodges their own slams)
+  if (near && n > G.nextSlam && !G.portraitBlock) {
+    G.nextSlam = n + 2600 + Math.random() * 1600;
+    const at = p.pos.clone(), rad = 6.5;
+    G.crawler.telegraph(at.x, at.z, rad, 1.15, () => {
+      if (!G) return;
+      sound('slam');
+      const d = Math.hypot(G.player.pos.x - at.x, G.player.pos.z - at.z);
+      if (d > rad || G.player.pos.y - at.y > 5) return;
+      G.player.raidHp = (G.player.raidHp ?? 100) - 22;
+      G.player.knock = { x: (G.player.pos.x - at.x) / (d || 1) * 30, z: (G.player.pos.z - at.z) / (d || 1) * 30 }; G.player.vel.y = 16; G.player.onGround = false;
+      G.root.classList.remove('oc-hurt'); void G.root.offsetWidth; G.root.classList.add('oc-hurt');
+      if (G.player.raidHp <= 0) { G.player.raidHp = 100; G.player.pos.copy(G.world.spawn); G.player.vel.set(0, 0, 0); toast('The Crawler got you. Back to spawn.', 'warn'); }
+      renderRaidBar();
+    });
+  }
+}
+// How much of a move hits the worm. It is big, so it counts as a circle around where it stands.
+function raidHitFrom(f, dmg) {
+  if (!G.crawler || !G.raid || G.raid.dead || !dmg) return;
+  const a = G.world.arena;
+  const ring = [[0, 0], [2.8, 0], [-2.8, 0], [0, 2.8], [0, -2.8]].map(([dx, dz]) => ({ uid: 'b', pos: { x: a.x + dx, z: a.z + dz } }));
+  const pts = f.kind === 'punch' ? (Math.hypot(G.player.pos.x - a.x, G.player.pos.z - a.z) < 12 ? 1 : 0) : hitTest(f, ring).length;
+  if (!pts) return;
+  const total = Math.round(dmg * (f.kind === 'punch' ? 1 : 3));
+  G.raidDmg = (G.raidDmg || 0) + total;
+  G.crawler.flash();
+  G.net.raidHit(total).catch(() => {});
+}
+function renderRaidBar() {
+  const bar = $q('.oc-raidbar'), r = G.raid, live = r && !r.dead && !r.gone && r.until > now() && G.crawler;
+  bar.classList.toggle('hidden', !live);
+  if (!live) return;
+  bar.querySelector('i').style.width = Math.max(0, r.hp / r.max * 100) + '%';
+  bar.querySelector('.oc-raid-hp span').textContent = `${fmt(Math.max(0, r.hp))} / ${fmt(r.max)}`;
+  bar.querySelector('small').textContent = `Your HP ${Math.max(0, Math.round(G.player.raidHp ?? 100))}  |  ${fmtTime(r.until - now())} left`;
+}
+
 // ---------------- rolling ----------------
 async function rollOnce() {
   if (!G || !G.playing || G.rolling || G.cutting || G.portraitBlock || now() < G.nextRollAt) return;
@@ -900,9 +1131,24 @@ async function rollOnce() {
   let luck = luckNow(b), used = null;
   if (G.queued.length) { used = G.queued.shift(); luck += POTION[used].oneRoll; }
   G.rollBuffs.forEach(r => { r.left--; }); G.rollBuffs = G.rollBuffs.filter(r => r.left > 0);
-  const res = rollAura(luck, G.env.time, G.env.weather, { gem: b.gem, mut: b.mut, anyWeather: b.anyWeather });
+  // in Limbo you roll Limbo's auras; the Tide Gauntlet lets bonus rolls find Rainy auras anywhere
+  const worn = wornGears(), bonus = tenthRoll();
+  const anyWeather = [...b.anyWeather, ...(bonus && worn.some(g => g.tide) ? ['rain'] : [])];
+  const rollWeather = G.world.inLimbo(G.player.pos) ? 'limbo' : G.env.weather;
+  const res = rollAura(luck, G.env.time, rollWeather, { gem: b.gem, mut: b.mut, anyWeather });
   const s = G.save;
   s.rolls++;
+  s.bestTier = Math.max(s.bestTier || 0, tierIndex(res.rarity));
+  if (res.mut && res.mut.id === 'glitched') s.flags.glitchMut = true;
+  s.flags.commonRow = res.aura.id === 'common' ? (s.flags.commonRow || 0) + 1 : 0;
+  if (s.flags.commonRow >= 10) findEgg('unlucky');
+  if (res.aura.id === 'jackpot' && worn.some(g => g.jackpotCoins)) { s.coins += 77; toast('Jackpot Gauntlet: +77 coins', 'gold'); }
+  if (s.rolls % 10 === 0 && worn.some(g => g.gem)) {   // the Gemstone Gauntlet: a gem lights up for the next 10 rolls
+    const luckGem = Math.random() < 0.5, amt = Math.round(Math.random() * 30) / 100;
+    G.rollBuffs.push({ id: 'gem', left: 10, ...(luckGem ? { luck: amt } : { speed: amt }) });
+    toast(`Gemstone Gauntlet: +${Math.round(amt * 100)}% ${luckGem ? 'luck' : 'roll speed'} for 10 rolls.`);
+  }
+  addXp(1);
   s.auras[res.key] = (s.auras[res.key] || 0) + 1;
   s.found[res.aura.id] = true;
   if (Math.random() < 1 / 1500) { s.void++; toast('A Void Coin fell out of your roll.', 'gold'); }
@@ -925,6 +1171,7 @@ async function rollOnce() {
       if (rarer && s.settings.autoEquip) equip(res.key, true);
       else if (rarer && !s.settings.auto) offerEquip(res.key);
       if (res.rarity >= 100000 && G.net) G.net.announce({ name: G.me.name, key: res.key, rarity: res.rarity });
+      checkAchievements();
       G.nextRollAt = now() + ROLL_COOLDOWN_MS / b.speed;
       G.rolling = false;
       updateHud();
@@ -1025,21 +1272,22 @@ function updateHud() {
   const s = G.save, env = G.env, n = now(), b = buffs(), ws = G.worldState || {};
   const luck = luckNow(b);
   // bottom left, like Sol's: the biome in brackets, the time of day, then money
-  const w = WEATHERS[env.weather] || WEATHERS.clear;
-  const left = env.weather !== 'clear' ? weatherEndsAt(n, ws) - n : 0;
+  const limbo = G.world.inLimbo(G.player.pos), w = limbo ? WEATHERS.limbo : WEATHERS[env.weather] || WEATHERS.clear;
+  const left = env.weather !== 'clear' && !limbo ? weatherEndsAt(n, ws) - n : 0;
   $q('.oc-biome').innerHTML = `<span style="color:${w.color}">[ ${w.name.toUpperCase()} ]</span>${left > 0 ? `<small>${fmtTime(left)}</small>` : ''}`;
   $q('.oc-daytime').textContent = env.time === 'day' ? 'DAYTIME' : 'NIGHTTIME';
-  $q('.oc-luckline').innerHTML = `Luck <b>${x2(luck)}x</b><span class="sep"></span>Speed <b>${x2(b.speed)}x</b>`;
+  const sl = ws.luck && ws.luck.until > n ? ws.luck : null;
+  $q('.oc-luckline').innerHTML = `Luck <b>${x2(luck)}x</b><span class="sep"></span>Speed <b>${x2(b.speed)}x</b>${sl ? `<span class="sep"></span><b class="oc-server">SERVER LUCK x${sl.mult} ${fmtTime(sl.until - n)}</b>` : ''}`;
   $q('.oc-money').innerHTML = `<span class="oc-pill coin">$ ${fmt(s.coins)}</span><span class="oc-pill f">F ${fmt(s.f)}</span>${s.void ? `<span class="oc-pill void">V ${fmt(s.void)}</span>` : ''}`;
   const chips = activeEffects().filter((e, i, arr) => arr.findIndex(x => x.id === e.id && !x.out === !e.out) === i).map(e => { const p = POTION[e.id]; return `<div class="oc-buff" title="${esc(e.out ? p.name + ': ' + e.out.name : p.name)}">${potionArt(p)}<b>${fmtTime(e.until - n)}</b></div>`; });
   G.queued.forEach(id => chips.push(`<div class="oc-buff next" title="${esc(POTION[id].name)}">${potionArt(POTION[id])}<b>next</b></div>`));
-  G.rollBuffs.forEach(r => chips.push(`<div class="oc-buff next" title="${esc(POTION[r.id].name)}">${potionArt(POTION[r.id])}<b>${fmt(r.left)}</b></div>`));
+  G.rollBuffs.forEach(r => { const p = POTION[r.id] || { name: 'Gemstone Gauntlet', color: '#ff6ec7', shape: 'gem' }; chips.push(`<div class="oc-buff next" title="${esc(p.name)}">${potionArt(p)}<b>${fmt(r.left)}</b></div>`); });
   const buffsEl = $q('.oc-buffs'), html = chips.join('');
   if (buffsEl.dataset.h !== html) { buffsEl.innerHTML = html; buffsEl.dataset.h = html; }
-  // the Roll button counts towards the bonus roll: 9/10 means the next one is twice as lucky
-  const c = s.rolls % 10;
-  $q('.oc-roll-count').textContent = `${c}/10`;
-  $q('.oc-roll').classList.toggle('bonus', c === 9);
+  // the Roll button counts towards the bonus roll: 9/10 means the next one is twice as lucky (gears can change it)
+  const bi = bonusInfo(), c = s.rolls % bi.every;
+  $q('.oc-roll-count').textContent = bi.none ? 'No bonus roll' : bi.all ? `Every roll x${bi.all}` : `${c}/${bi.every}${bi.mult !== 2 ? ` (x${bi.mult})` : ''}`;
+  $q('.oc-roll').classList.toggle('bonus', !bi.none && !bi.all && c === bi.every - 1);
 }
 function renderPlayers() {
   const el = $q('.oc-players');
@@ -1092,6 +1340,9 @@ function pickMusic() {
   const n = now();
   let id, v;
   if (G.cutting && G.cutKey) { id = 'aura:' + G.cutKey; v = Math.max(vol('mine'), 0.6); }
+  else if (G.jukebox && G.player.pos.distanceTo(G.world.rooms.jukebox) < 30) { id = G.jukebox; v = Math.max(vol('music'), 0.5); }
+  else if (G.crawler && !G.crawler.dying && G.player.pos.distanceTo(G.world.arena) < 70) { id = 'biome:raid'; v = Math.max(vol('music'), 0.45); }
+  else if (G.world.inLimbo(G.player.pos)) { id = 'biome:limbo'; v = Math.max(vol('music'), 0.4); }
   else {
     let best = null;
     const mine = auraKey(G.save.equipped);
@@ -1108,16 +1359,20 @@ function pickMusic() {
 }
 
 // ---------------- aura moves: Z X C V attack, F moves you ----------------
+// near The Crawler, anyone without a Z move can punch it
+const PUNCH = { key: 'z', kind: 'punch', name: 'Punch', cd: 0.55, dmg: 6, color: '#ffffff', tier: 0 };
+function shownMoves() { const near = G.crawler && !G.crawler.dying && G.player.pos.distanceTo(G.world.arena) < 60; return near && !G.moves.some(m => m.key === 'z') ? [PUNCH, ...G.moves] : G.moves; }
 function renderAbilities() {
   const el = $q('.oc-abilities');
   if (!el) return;
-  el.innerHTML = G.moves.map(m => `<button type="button" class="oc-ab" data-move="${m.key}" style="--c:${m.color}"><kbd>${m.key.toUpperCase()}</kbd><span>${esc(m.name)}</span><i class="cd"></i></button>`).join('');
-  el.classList.toggle('hidden', !G.moves.length);
+  const list = shownMoves(); G.nearArena = list !== G.moves;
+  el.innerHTML = list.map(m => `<button type="button" class="oc-ab" data-move="${m.key}" style="--c:${m.color}"><kbd>${m.key.toUpperCase()}</kbd><span>${esc(m.name)}</span><i class="cd"></i></button>`).join('');
+  el.classList.toggle('hidden', !list.length);
 }
 function updateAbilityCds() {
   const n = now();
   G.root.querySelectorAll('.oc-ab').forEach(b => {
-    const m = G.moves.find(x => x.key === b.dataset.move); if (!m) return;
+    const m = shownMoves().find(x => x.key === b.dataset.move); if (!m) return;
     const left = Math.max(0, (G.moveCd[m.key] || 0) - n), k = left / (m.cd * 1000);
     b.classList.toggle('cooling', left > 0);
     b.querySelector('.cd').style.transform = `scaleY(${k})`;
@@ -1125,13 +1380,13 @@ function updateAbilityCds() {
 }
 function useMove(key) {
   if (!G || !G.playing || G.portraitBlock) return;
-  const m = G.moves.find(x => x.key === key);
+  const m = shownMoves().find(x => x.key === key);
   if (!m) return;
   const n = now();
   if ((G.moveCd[key] || 0) > n) return;
   G.moveCd[key] = n + m.cd * 1000;
   const p = G.player, yaw = p.yaw, d = { x: Math.sin(yaw), z: Math.cos(yaw) };
-  const f = { kind: m.kind, x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +yaw.toFixed(3), c: m.color, tier: m.tier, r: m.r, len: m.len, w: m.w, dist: m.dist, n: m.n, range: m.range, dur: m.dur, seed: Math.floor(Math.random() * 1e6) };
+  const f = { kind: m.kind === 'punch' ? 'burst' : m.kind, r: m.kind === 'punch' ? 2.4 : m.r, x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +yaw.toFixed(3), c: m.color, tier: m.tier, len: m.len, w: m.w, dist: m.dist, n: m.n, range: m.range, dur: m.dur, seed: Math.floor(Math.random() * 1e6) };
   if (m.kind === 'dash') { p.dash = { x: d.x * m.dist * 4, z: d.z * m.dist * 4, t: 0.22 }; Object.assign(f, { x2: p.pos.x + d.x * m.dist, y2: p.pos.y, z2: p.pos.z + d.z * m.dist }); }
   if (m.kind === 'blink') { const to = p.pos.clone().add(new THREE.Vector3(d.x * m.dist, 0.5, d.z * m.dist)); Object.assign(f, { x2: to.x, y2: to.y, z2: to.z }); p.pos.copy(to); p.vel.set(0, 0, 0); }
   if (m.kind === 'leap') { p.vel.y = Math.sqrt(2 * GRAVITY * m.h); p.onGround = false; p.dash = { x: d.x * m.dist * 1.6, z: d.z * m.dist * 1.6, t: 0.6 }; Object.assign(f, { x2: p.pos.x + d.x * m.dist, y2: p.pos.y + m.h, z2: p.pos.z + d.z * m.dist }); }
@@ -1145,6 +1400,7 @@ function useMove(key) {
       for (const h of hitTest(f, targets)) G.net.hit(h.uid, { dmg: m.dmg, kx: h.kx, kz: h.kz, by: G.me.name, aura: auraKey(G.save.equipped).name, move: m.name });
     }
   }
+  raidHitFrom(m.kind === 'punch' ? { kind: 'punch' } : f, m.dmg);
   G.save.stats.moves++; progress('moves');
   sound('attack', m.tier);
   updateAbilityCds();
@@ -1155,7 +1411,7 @@ function togglePvp() {
   const b = $q('.oc-pvp-btn'); b.textContent = p.pvp ? 'PvP: On' : 'PvP: Off'; b.classList.toggle('on', p.pvp);
   $q('.oc-hp').classList.toggle('hidden', !p.pvp);
   updateHp();
-  p.avatar.tag.userData.draw(G.me.name, G.save.equipped, p.pvp ? p.hp : null);
+  drawMyTag();
   if (G.net) G.net.update({ pvp: p.pvp });
   toast(p.pvp ? 'PvP on. Your aura\'s moves (Z, X, C, V) hit other players who have PvP on.' : 'PvP off. Nobody can hit you.');
 }
@@ -1179,12 +1435,13 @@ function takeHit(h) {
     p.hp = 100; p.pos.copy(G.world.spawn); p.vel.set(0, 0, 0); p.knock = null;
   }
   updateHp();
-  p.avatar.tag.userData.draw(G.me.name, G.save.equipped, p.hp);
+  drawMyTag();
 }
 
 // ---------------- panels ----------------
 const TITLES = { storage: 'Aura Storage', collection: 'Collection', inventory: 'Inventory', quests: 'Quests', stats: 'Stats', settings: 'Settings', admin: 'Admin',
-  mari: 'Mari', jester: 'The Jester', finn: 'Old Finn', marlin: 'Marlin\'s Fish Market', nova: 'Nova\'s Daily Shop', stella: 'Stella', ghost: 'The Ghost', devpc: 'Terminal' };
+  mari: 'Mari', jester: 'The Jester', finn: 'Old Finn', marlin: 'Marlin\'s Fish Market', nova: 'Nova\'s Daily Shop', stella: 'Stella', ghost: 'The Ghost', devpc: 'Terminal',
+  jake: 'Jake\'s Workshop', jack: 'Jack the Pumpkin', achievements: 'Achievements', pass: 'Season Pass', jukebox: 'Jukebox' };
 function openPanel(id) {
   if (G.fishing) stopFishing();
   G.panel = id;
@@ -1194,7 +1451,9 @@ function openPanel(id) {
   box.querySelector('h2').textContent = TITLES[id] || '';
   body.scrollTop = 0;
   ({ storage: renderStorage, collection: renderCollection, inventory: renderInventory, quests: renderQuests, stats: renderStats, settings: renderSettings, admin: renderAdmin,
-    mari: () => renderShop('mari'), jester: () => renderShop('jester'), finn: () => renderShop('finn'), marlin: renderMarlin, nova: renderDaily, stella: renderStella, ghost: renderGhost, devpc: renderTerminal })[id](body);
+    mari: () => renderShop('mari'), jester: () => renderShop('jester'), finn: () => renderShop('finn'), marlin: renderMarlin, nova: renderDaily, stella: renderStella, ghost: renderGhost, devpc: renderTerminal,
+    jake: renderJake, jack: renderJack, achievements: renderAchievements, pass: renderPass, jukebox: renderJukebox })[id](body);
+  if (id === 'achievements' || id === 'pass') dotFor(id, false);
 }
 function closePanel() {
   if (!G) return;
@@ -1216,7 +1475,7 @@ function storageLayout(body, { tabs, tab, tiles, info, onTab, after, search = tr
   let sel = G.sel && tiles.find(t => t.id === G.sel) ? G.sel : tiles[0] && tiles[0].id;
   const draw = (q = '') => {
     const list = tiles.filter(t => !q || t.search.includes(q.toLowerCase()));
-    grid.innerHTML = list.length ? list.map(t => `<button type="button" class="oc-tile${t.id === sel ? ' sel' : ''}${t.eq ? ' eq' : ''}${t.locked ? ' locked' : ''}" data-id="${esc(t.id)}">${t.html}${t.count != null ? `<b class="oc-tile-n">${t.count}</b>` : ''}</button>`).join('') : '<p class="oc-empty">Nothing here yet.</p>';
+    grid.innerHTML = list.length ? list.map(t => `<button type="button" class="oc-tile${t.id === sel ? ' sel' : ''}${t.eq ? ' eq' : ''}${t.locked ? ' locked' : ''}${t.fav ? ' fav' : ''}" data-id="${esc(t.id)}">${t.html}${t.count != null ? `<b class="oc-tile-n">${t.count}</b>` : ''}</button>`).join('') : '<p class="oc-empty">Nothing here yet.</p>';
     grid.querySelectorAll('.oc-tile').forEach(b => b.onclick = () => { sel = G.sel = b.dataset.id; grid.querySelectorAll('.oc-tile').forEach(x => x.classList.toggle('sel', x === b)); showInfo(); });
     if (after) after(grid);
   };
@@ -1227,7 +1486,7 @@ function storageLayout(body, { tabs, tab, tiles, info, onTab, after, search = tr
 }
 function auraTile(key, opts = {}) {
   const r = auraKey(key);
-  return { id: r.key, search: r.name.toLowerCase(), eq: G.save.equipped === r.key, count: opts.count, locked: opts.locked, html: `<span class="oc-tile-name" data-paint="${esc(r.key)}"${opts.locked ? ' data-hide="1"' : ''}></span>`, r };
+  return { id: r.key, search: r.name.toLowerCase(), eq: G.save.equipped === r.key, fav: !!G.save.locked[r.key], count: opts.count, locked: opts.locked, html: `<span class="oc-tile-name" data-paint="${esc(r.key)}"${opts.locked ? ' data-hide="1"' : ''}></span>`, r };
 }
 function paintTiles(grid) {
   grid.querySelectorAll('[data-paint]').forEach(el => { const r = auraKey(el.dataset.paint); paintName(el, el.dataset.hide ? '???' : r.name, r, 'oc-tile-name'); });
@@ -1239,14 +1498,18 @@ function auraInfo(t, el, { owner } = {}) {
     ${a.sub && !hidden ? `<div class="oc-info-line dim">${esc(a.sub)}</div>` : ''}
     ${onlyText(a) ? `<div class="oc-info-line dim">${esc(onlyText(a))}</div>` : ''}
     ${!owner && !hidden ? `<div class="oc-info-line">Owned: <b>${fmt(auraCount(r.key))}</b></div>` : ''}
+    ${!hidden ? `<div class="oc-info-line dim lore">${esc(loreOf(a.id))}</div>` : ''}
     ${moves.length && !hidden ? `<div class="oc-moves">${moves.map(m => `<div><kbd>${m.key.toUpperCase()}</kbd>${esc(m.name)}${m.dmg ? `<small>${m.dmg} dmg</small>` : '<small>move</small>'}</div>`).join('')}</div>` : ''}
     <div class="oc-info-actions"></div>`;
   paintName(el.querySelector('.oc-info-name'), hidden ? '???' : r.name, r, 'oc-info-name');
   const actions = el.querySelector('.oc-info-actions');
   if ((auraCount(r.key) > 0 || owner) && !hidden) {
-    const eq = G.save.equipped === r.key;
-    actions.innerHTML = `<button type="button" class="oc-btn ${eq ? 'bad' : 'ok'}">${eq ? 'Unequip' : 'Equip'}</button>`;
-    actions.firstChild.onclick = () => { equip(eq ? 'common' : r.key); rerender(); };
+    const eq = G.save.equipped === r.key, locked = !!G.save.locked[r.key];
+    actions.innerHTML = `<button type="button" class="oc-btn ${eq ? 'bad' : 'ok'}" data-eq>${eq ? 'Unequip' : 'Equip'}</button>`
+      + (owner ? '' : `<button type="button" class="oc-btn" data-lock>${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="oc-btn bad" data-rm ${locked || eq ? 'disabled' : ''}>Remove 1</button>`);
+    actions.querySelector('[data-eq]').onclick = () => { equip(eq ? 'common' : r.key); rerender(); };
+    const lk = actions.querySelector('[data-lock]'); if (lk) lk.onclick = () => { if (locked) delete G.save.locked[r.key]; else G.save.locked[r.key] = true; toast(locked ? 'Unlocked. It can be removed or used in crafting.' : 'Locked. It can\'t be removed or used in crafting.'); markDirty(); rerender(); };
+    const rm = actions.querySelector('[data-rm]'); if (rm) rm.onclick = () => { if (G.save.locked[r.key]) return; G.save.auras[r.key]--; if (G.save.auras[r.key] <= 0) delete G.save.auras[r.key]; markDirty(); rerender(); };
   }
 }
 function renderStorage(body, tab = G.storeTab || 'storage') {
@@ -1256,6 +1519,7 @@ function renderStorage(body, tab = G.storeTab || 'storage') {
   const keys = tab === 'owner' ? AURAS.map(a => a.id) : Object.keys(G.save.auras).filter(k => G.save.auras[k] > 0);
   const tiles = keys.map(k => auraTile(k, { count: tab === 'owner' ? null : fmt(auraCount(k)) })).sort((a, b) => b.r.rarity - a.r.rarity);
   storageLayout(body, { tabs, tab, tiles, after: paintTiles, info: (t, el) => auraInfo(t, el, { owner: tab === 'owner' }), onTab: tb => renderStorage(body, tb) });
+  if (tab !== 'owner') body.querySelector('.oc-store-top').insertAdjacentHTML('beforeend', `<div class="oc-found">Storage [${fmt(Object.values(G.save.auras).reduce((a, b) => a + b, 0))}]</div>`);
 }
 function renderCollection(body) {
   const found = G.save.found;
@@ -1263,36 +1527,49 @@ function renderCollection(body) {
   storageLayout(body, { tiles, after: paintTiles, info: (t, el) => auraInfo(t, el, {}), onTab: () => {} });
   body.querySelector('.oc-store-top').insertAdjacentHTML('beforeend', `<div class="oc-found">Found ${Object.keys(found).filter(id => AURA[id]).length}/${AURAS.length}</div>`);
 }
-function renderInventory(body, tab = G.invTab || 'potions') {
+function renderInventory(body, tab = G.invTab || 'items') {
+  if (tab === 'potions') tab = 'items'; if (tab === 'gear') tab = 'gears';
+  if (tab === 'owner' && !isOwner()) tab = 'items';
   G.invTab = tab;
-  if (tab === 'owner' && !isOwner()) tab = 'potions';
-  const tabs = [['potions', 'Potions'], ['gear', 'Gear'], ['fish', 'Fish']];
+  const tabs = [['items', 'Items'], ['gears', 'Gears'], ['fish', 'Fish']];
   if (isOwner()) tabs.push(['owner', 'Owner']);
-  let tiles = [], info;
-  if (tab === 'potions' || tab === 'owner') {
-    const list = tab === 'owner' ? POTIONS.filter(p => !p.hidden) : POTIONS.filter(p => potionCount(p.id) > 0);
-    tiles = list.map(p => ({ id: 'p:' + p.id, search: p.name.toLowerCase(), count: tab === 'owner' ? '∞' : fmt(potionCount(p.id)), html: potionArt(p, 'oc-tile-art'), p }));
-    if (tab === 'owner') tiles.push(...ITEMS.map(i => ({ id: 'g:' + i.id, search: i.name.toLowerCase(), eq: !!G.save.ownerGear[i.id], html: gearArt(i, 'oc-tile-art'), g: i })));
-    info = (t, el) => {
-      if (t.g) {
-        const onNow = !!G.save.ownerGear[t.g.id];
-        el.innerHTML = `${gearArt(t.g, 'oc-info-art')}<div class="oc-info-title2">${esc(t.g.name)}</div><div class="oc-info-line dim">${esc(t.g.desc)}</div><div class="oc-info-actions"><button type="button" class="oc-btn ${onNow ? 'bad' : 'ok'}">${onNow ? 'Unequip' : 'Equip'}</button></div>`;
-        el.querySelector('button').onclick = () => { G.save.ownerGear[t.g.id] = !onNow; markDirty(); updateHud(); rerender(); };
-        return;
-      }
-      const p = t.p, free = tab === 'owner';
-      el.innerHTML = `${potionArt(p, 'oc-info-art')}<div class="oc-info-title2">${esc(p.name)}</div><div class="oc-info-line dim">${esc(p.desc)}</div>
-        ${free ? '' : `<div class="oc-info-line">Owned: <b>${fmt(potionCount(p.id))}</b></div>`}<div class="oc-info-actions"><button type="button" class="oc-btn ok" data-u="1">Use</button>${free || potionCount(p.id) >= 10 ? '<button type="button" class="oc-btn" data-u="10">Use 10</button>' : ''}</div>`;
-      el.querySelectorAll('[data-u]').forEach(b => b.onclick = () => { for (let i = 0; i < +b.dataset.u; i++) if (!usePotion(p.id, free)) break; rerender(); });
-    };
-  } else if (tab === 'gear') {
-    tiles = ITEMS.filter(i => G.save.items[i.id]).map(i => ({ id: 'g:' + i.id, search: i.name.toLowerCase(), html: gearArt(i, 'oc-tile-art'), g: i }));
-    info = (t, el) => { el.innerHTML = `${gearArt(t.g, 'oc-info-art')}<div class="oc-info-title2">${esc(t.g.name)}</div><div class="oc-info-line dim">${esc(t.g.desc)}</div><div class="oc-info-line ok">Active while you own it</div>`; };
-  } else {
-    tiles = FISH.filter(f => (G.save.fish[f.id] || 0) > 0).map(f => ({ id: 'f:' + f.id, search: f.name.toLowerCase(), count: fmt(G.save.fish[f.id]), html: fishArt(f.color, 'oc-tile-art'), f }));
-    info = (t, el) => { el.innerHTML = `${fishArt(t.f.color, 'oc-info-art')}<div class="oc-info-title2">${esc(t.f.name)}</div><div class="oc-info-line dim">${t.f.junk ? 'Worth nothing. Marlin takes it anyway.' : `Marlin pays ${t.f.value} F each.`}</div><div class="oc-info-line">Owned: <b>${fmt(G.save.fish[t.f.id])}</b></div>`; };
-  }
+  const potionTile = (p, free) => ({ id: 'p:' + p.id, search: p.name.toLowerCase(), count: free ? '∞' : fmt(potionCount(p.id)), html: potionArt(p, 'oc-tile-art'), p });
+  const gearTile = (g, free) => ({ id: 'gear:' + g.id, search: g.name.toLowerCase(), eq: G.save.hands[g.hand] === g.id, count: free ? null : fmt(G.save.gears[g.id] || 0), html: handGearArt(g, 'oc-tile-art'), gear: g });
+  const charmTile = (i, free) => ({ id: 'g:' + i.id, search: i.name.toLowerCase(), eq: free && !!G.save.ownerGear[i.id], html: gearArt(i, 'oc-tile-art'), g: i });
+  const potionInfo = (p, free, el) => {
+    const verb = p.chest ? 'Open' : 'Use';
+    el.innerHTML = `${potionArt(p, 'oc-info-art')}<div class="oc-info-title2">${esc(p.name)}</div><div class="oc-info-line dim">${esc(p.desc)}</div>
+      ${free ? '' : `<div class="oc-info-line">Owned: <b>${fmt(potionCount(p.id))}</b></div>`}<div class="oc-info-actions"><button type="button" class="oc-btn ok" data-u="1">${verb}</button>${!p.biome && (free || potionCount(p.id) >= 10) ? `<button type="button" class="oc-btn" data-u="10">${verb} 10</button>` : ''}</div>`;
+    el.querySelectorAll('[data-u]').forEach(b => b.onclick = () => { for (let i = 0; i < +b.dataset.u; i++) if (!usePotion(p.id, free)) break; rerender(); });
+  };
+  const gearInfo = (g, free, el) => {
+    const worn = G.save.hands[g.hand] === g.id;
+    el.innerHTML = `${handGearArt(g, 'oc-info-art')}<div class="oc-info-title2">${esc(g.name)}</div><div class="oc-info-line dim">${g.hand === 'left' ? 'Left hand' : 'Right hand'}</div><div class="oc-info-line dim">${esc(g.desc)}</div>
+      ${free ? '' : `<div class="oc-info-line">Owned: <b>${fmt(G.save.gears[g.id] || 0)}</b></div>`}<div class="oc-info-actions"><button type="button" class="oc-btn ${worn ? 'bad' : 'ok'}">${worn ? 'Unequip' : 'Equip'}</button></div>`;
+    el.querySelector('button').onclick = () => { G.save.hands[g.hand] = worn ? null : g.id; toast(worn ? `Took off ${g.name}.` : `${g.name} is on your ${g.hand} hand.`); markDirty(); updateHud(); rerender(); };
+  };
+  const charmInfo = (i, free, el) => {
+    const onNow = !!G.save.ownerGear[i.id];
+    el.innerHTML = `${gearArt(i, 'oc-info-art')}<div class="oc-info-title2">${esc(i.name)}</div><div class="oc-info-line dim">Charm</div><div class="oc-info-line dim">${esc(i.desc)}</div>${free ? `<div class="oc-info-actions"><button type="button" class="oc-btn ${onNow ? 'bad' : 'ok'}">${onNow ? 'Unequip' : 'Equip'}</button></div>` : '<div class="oc-info-line ok">Works while you own it</div>'}`;
+    const b = el.querySelector('button'); if (b) b.onclick = () => { G.save.ownerGear[i.id] = !onNow; markDirty(); updateHud(); rerender(); };
+  };
+  let tiles = [];
+  if (tab === 'items') tiles = POTIONS.filter(p => !p.hidden && potionCount(p.id) > 0).map(p => potionTile(p, false));
+  else if (tab === 'gears') tiles = [...GEARS.filter(g => (G.save.gears[g.id] || 0) > 0).map(g => gearTile(g, false)), ...ITEMS.filter(i => G.save.items[i.id]).map(i => charmTile(i, false))];
+  else if (tab === 'owner') tiles = [...POTIONS.filter(p => !p.hidden).map(p => potionTile(p, true)), ...GEARS.map(g => gearTile(g, true)), ...ITEMS.map(i => charmTile(i, true))];
+  else tiles = FISH.filter(f => (G.save.fish[f.id] || 0) > 0).map(f => ({ id: 'f:' + f.id, search: f.name.toLowerCase(), count: fmt(G.save.fish[f.id]), html: fishArt(f.color, 'oc-tile-art'), f }));
+  const free = tab === 'owner';
+  const info = (t, el) => {
+    if (t.p) return potionInfo(t.p, free, el);
+    if (t.gear) return gearInfo(t.gear, free, el);
+    if (t.g) return charmInfo(t.g, free, el);
+    el.innerHTML = `${fishArt(t.f.color, 'oc-info-art')}<div class="oc-info-title2">${esc(t.f.name)}</div><div class="oc-info-line dim">${t.f.junk ? 'Worth nothing. Marlin takes it anyway.' : `Marlin pays ${t.f.value} F each.`}</div><div class="oc-info-line">Owned: <b>${fmt(G.save.fish[t.f.id])}</b></div>`;
+  };
   storageLayout(body, { tabs, tab, tiles, info, onTab: tb => renderInventory(body, tb) });
+  if (tab === 'gears' || tab === 'owner') {
+    const name = id => (id && GEAR[id] ? GEAR[id].name : 'empty');
+    body.querySelector('.oc-store-top').insertAdjacentHTML('beforeend', `<div class="oc-found">Left hand: <b>${esc(name(G.save.hands.left))}</b>  |  Right hand: <b>${esc(name(G.save.hands.right))}</b></div>`);
+  }
 }
 // Using a potion. free: the Owner tab (nothing is used up).
 function usePotion(id, free = false) {
@@ -1302,7 +1579,14 @@ function usePotion(id, free = false) {
     const other = activeEffects().find(e => POTION[e.id].group === p.group && e.id !== id);
     if (other) { toast(`${POTION[other.id].name} is already working. Only one of those at a time.`, 'warn'); return false; }
   }
+  if (p.biome) return useBiomeItem(p, free);
   if (!free) G.save.potions[id] = potionCount(id) - 1;
+  if (p.chest) {   // a potion chest: a handful of random potions
+    const c = CHEST_POOLS[p.chest], got = {};
+    for (let i = 0; i < c.n; i++) { let r = Math.random() * c.pool.reduce((s2, x) => s2 + x[1], 0); const pick = c.pool.find(x => (r -= x[1]) <= 0) || c.pool[0]; got[pick[0]] = (got[pick[0]] || 0) + 1; }
+    toast(`${p.name}: ` + giveReward({ potions: got }), 'gold'); sound('secret'); markDirty(); updateHud();
+    return true;
+  }
   if (p.mystery) {   // ???: anything can happen
     const roll = Math.random();
     if (roll < 0.4) { G.queued.push('heavenly'); toast('??? turned into a Heavenly Potion for your next roll.', 'gold'); }
@@ -1324,9 +1608,9 @@ function usePotion(id, free = false) {
 
 // ---------------- shops and people ----------------
 const SHOPS = {
-  mari: { intro: 'Hello, dear. Potions for luck and speed, and gear that lasts.', potions: ['lucky', 'luckl', 'luckxl', 'speed', 'speedl', 'speedxl', 'spoid1', 'spoid2', 'spoid3', 'mixed'], items: ['gloves', 'boots', 'solarlens', 'moonlocket'] },
+  mari: { intro: 'Hello, dear. Potions for luck and speed, and charms that last. My special deals change every 15 minutes.', potions: ['lucky', 'luckl', 'luckxl', 'speed', 'speedl', 'speedxl', 'spoid1', 'spoid2', 'spoid3', 'mixed'], items: ['gloves', 'boots', 'solarlens', 'moonlocket'], rotating: true },
   finn: { intro: 'Rods and a brew for divers. I only take F.', potions: ['diver'], items: ['goldrod', 'voidlantern'], quest: 'summit' },
-  jester: { intro: 'Strange things for strange people. Five Void Coins, and I will give you something... oblivious.', potions: ['strange1', 'strange2', 'bound', 'heavenly', 'oblivion'], items: [], quest: 'cards' },
+  jester: { intro: 'Strange things for strange people. Five Void Coins, and I will give you something... oblivious.', potions: ['strange1', 'strange2', 'bound', 'heavenly', 'oblivion', 'controller', 'rune_wind', 'rune_frost', 'rune_rain', 'rune_sand', 'rune_hell', 'rune_galaxy', 'rune_corruption', 'rune_nothing'], items: [], quest: 'cards' },
 };
 const canAfford = pr => (pr.coins ? G.save.coins >= pr.coins : pr.f ? G.save.f >= pr.f : G.save.void >= pr.void);
 function shopRow(thing, isItem, price, button) {
@@ -1378,9 +1662,29 @@ function renderShop(id, body = $q('.oc-panel-body')) {
   const sh = SHOPS[id];
   const row = (thing, isItem) => { const owned = isItem && G.save.items[thing.id]; return shopRow(thing, isItem, thing.price, `<button type="button" class="oc-btn sm" data-buy="${isItem ? 'item' : 'potion'}:${thing.id}" ${owned || !canAfford(thing.price) ? 'disabled' : ''}>${owned ? 'Owned' : thing.price.void ? 'Trade' : 'Buy'}</button>`); };
   body.innerHTML = `<p class="oc-intro">${esc(sh.intro)}</p>${sh.quest ? questCard(sh.quest) : ''}${moneyRow()}
-    <div class="oc-list">${sh.potions.map(p => row(POTION[p], false)).join('')}${sh.items.map(i => row(ITEM[i], true)).join('')}</div>`;
+    ${sh.rotating ? mariDealsHtml() : ''}<div class="oc-list">${sh.potions.map(p => row(POTION[p], false)).join('')}${sh.items.map(i => row(ITEM[i], true)).join('')}</div>`;
+  body.querySelectorAll('[data-deal]').forEach(b => b.onclick = () => buyDeal(+b.dataset.deal, () => renderShop(id, body)));
   body.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => { const [kind, tid] = b.dataset.buy.split(':'); buy(kind, tid); renderShop(id, body); });
   wireQuestCards(body);
+}
+// Mari's specials: three deals that change every 15 minutes, one of each per player
+function mariDealsHtml() {
+  const n = now(), slot = Math.floor(n / MARI_SLOT_MS), deals = mariDeals(n), bought = G.save.mariSlot === slot ? G.save.mariBought || [] : [];
+  return `<h3>Special deals <small>new ones in ${fmtTime(MARI_SLOT_MS - (n % MARI_SLOT_MS))}</small></h3><div class="oc-list">${deals.map((o, i) => {
+    const thing = o.kind === 'void' ? { name: 'Void Coin', desc: 'Trade 5 with the Jester for an Oblivion Potion.', price: o.price } : POTION[o.id], price = o.price || thing.price, sold = bought.includes(i);
+    const btn = `<button type="button" class="oc-btn sm" data-deal="${i}" ${sold || !canAfford(price) ? 'disabled' : ''}>${sold ? 'Sold out' : 'Buy'}</button>`;
+    return o.kind === 'void' ? `<div class="oc-row">${coinArt('void')}<div class="oc-row-text"><b>Void Coin</b><span>${thing.desc}</span></div><span class="oc-price ${priceClass(price)}">${priceText(price)}</span>${btn}</div>` : shopRow(thing, false, price, btn);
+  }).join('')}</div><h3>Always in stock</h3>`;
+}
+function buyDeal(i, after) {
+  const n = now(), slot = Math.floor(n / MARI_SLOT_MS), o = mariDeals(n)[i];
+  if (G.save.mariSlot !== slot) { G.save.mariSlot = slot; G.save.mariBought = []; }
+  if (!o || G.save.mariBought.includes(i)) return;
+  const price = o.price || POTION[o.id].price;
+  if (!canAfford(price)) { toast('You can\'t afford that yet.', 'warn'); return; }
+  pay(price);
+  if (o.kind === 'void') G.save.void++; else G.save.potions[o.id] = potionCount(o.id) + 1;
+  G.save.mariBought.push(i); toast(`You got ${o.kind === 'void' ? 'a Void Coin' : POTION[o.id].name}.`, 'gold'); sound('coin'); markDirty(); updateHud(); after();
 }
 // Nova: five deals a day, one of each per player. Changes at midnight UTC.
 function renderDaily(body) {
@@ -1443,6 +1747,118 @@ function renderTerminal(body) {
   body.querySelector('[data-run]').onclick = () => { findEgg('devpc'); body.querySelector('.oc-term').insertAdjacentText('beforeend', '\n> secret.exe\n  access granted. thanks for playing.\n'); };
 }
 
+// ---------------- runes and biome changers: start a biome for everyone ----------------
+const NATURAL_BIOMES = ['windy', 'rain', 'snow', 'sandstorm', 'hell', 'starfall', 'heaven', 'corruption', 'null'];
+function useBiomeItem(p, free) {
+  if (!G.net || G.netDenied) { toast('Biome items need the lobby. Try again when you are online.', 'warn'); return false; }
+  const ws = G.worldState || {}, n = now();
+  if (ws.weather && ws.weather.until > n) { toast(`A biome someone started is still going (${fmtTime(ws.weather.until - n)} left).`, 'warn'); return false; }
+  let type = p.biome;
+  if (type === 'random') type = NATURAL_BIOMES[Math.floor(Math.random() * NATURAL_BIOMES.length)];
+  if (type === 'strange') type = Math.random() < 0.1 ? 'glitched' : NATURAL_BIOMES[Math.floor(Math.random() * NATURAL_BIOMES.length)];
+  if (!free) G.save.potions[p.id] = potionCount(p.id) - 1;
+  G.net.setWorld({ weather: { type, until: n + 5 * 60000, by: G.me.name } });
+  toast(`${p.name}: ${WEATHERS[type].name} is starting for everyone.`, 'gold');
+  sound('weather'); markDirty();
+  return true;
+}
+
+// ---------------- Jake's Workshop: craft gears from auras (locked auras are never used) ----------------
+function haveFor(kind, id) {
+  if (kind === 'auras') return G.save.locked[id] ? 0 : auraCount(id);
+  if (kind === 'gears') return (G.save.gears[id] || 0) - (G.save.hands.left === id || G.save.hands.right === id ? 1 : 0);
+  return potionCount(id);
+}
+const nameFor = (kind, id) => (kind === 'auras' ? AURA[id].name : kind === 'gears' ? GEAR[id].name : POTION[id].name);
+function recipeParts(recipe) {
+  return Object.entries(recipe).flatMap(([kind, list]) => Object.entries(list).map(([id, n]) => ({ kind, id, n, have: haveFor(kind, id), name: nameFor(kind, id) })));
+}
+function renderJake(body, hand = G.jakeHand || 'right') {
+  G.jakeHand = hand;
+  const list = GEARS.filter(g => g.recipe && g.hand === hand);
+  body.innerHTML = `<p class="oc-intro">Bring me auras and I'll build you something for your hands. One gear in each hand. Locked auras stay safe.</p>
+    ${tabsHtml([['right', 'Right hand: luck and speed'], ['left', 'Left hand: the bonus roll']], hand)}
+    <div class="oc-list">${list.map(g => {
+      const parts = recipeParts(g.recipe), ok = parts.every(x => x.have >= x.n), owned = G.save.gears[g.id] || 0;
+      return `<div class="oc-row recipe">${handGearArt(g)}<div class="oc-row-text"><b>${esc(g.name)}${owned ? ` <small class="oc-owned">x${owned}</small>` : ''}</b><span>${esc(g.desc)}</span>
+        <span class="oc-need">${parts.map(x => `<i class="${x.have >= x.n ? 'ok' : 'no'}">${fmt(Math.min(x.have, x.n))}/${fmt(x.n)} ${esc(x.name)}</i>`).join('')}</span></div>
+        <button type="button" class="oc-btn sm ok" data-craft="${g.id}" ${ok ? '' : 'disabled'}>Craft</button></div>`;
+    }).join('')}</div>`;
+  body.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => renderJake(body, b.dataset.tab));
+  body.querySelectorAll('[data-craft]').forEach(b => b.onclick = () => {
+    const g = GEAR[b.dataset.craft], parts = recipeParts(g.recipe);
+    if (!parts.every(x => x.have >= x.n)) return;
+    for (const x of parts) {
+      if (x.kind === 'auras') { G.save.auras[x.id] -= x.n; if (G.save.auras[x.id] <= 0) { delete G.save.auras[x.id]; if (G.save.equipped === x.id) equip('common', true); } }
+      else if (x.kind === 'gears') G.save.gears[x.id] -= x.n;
+      else G.save.potions[x.id] -= x.n;
+    }
+    G.save.gears[g.id] = (G.save.gears[g.id] || 0) + 1;
+    if (!G.save.hands[g.hand]) G.save.hands[g.hand] = g.id;
+    G.save.stats.crafted = (G.save.stats.crafted || 0) + 1;
+    toast(`Jake made you a ${g.name}.${G.save.hands[g.hand] === g.id ? ' It is on your ' + g.hand + ' hand.' : ' Equip it in the Inventory, under Gears.'}`, 'gold');
+    sound('anvil'); markDirty(); checkAchievements(); updateHud(); renderJake(body, hand);
+  });
+}
+
+// ---------------- Jack the Pumpkin (Halloween): Pumpkin Tokens for spooky things ----------------
+function renderJack(body) {
+  if (!isHalloween()) { body.innerHTML = '<p class="oc-empty">Jack only comes out for Halloween.</p>'; return; }
+  body.innerHTML = `<p class="oc-intro">Heh heh. Pumpkin Tokens fall all over the island this time of year. Bring them to me.</p>
+    <div class="oc-money-row"><span class="oc-pill token">Tokens ${fmt(G.save.tokens)}</span></div>
+    <div class="oc-list">${JACK_SHOP.map((o, i) => {
+      const thing = o.kind === 'potion' ? POTION[o.id] : o.kind === 'gear' ? GEAR[o.id] : { name: `Title: ${o.id}`, desc: 'Wear it under your name.' };
+      const art = o.kind === 'potion' ? potionArt(thing) : o.kind === 'gear' ? handGearArt(thing) : `<span class="oc-titleart">T</span>`;
+      const done = o.kind === 'title' && G.save.titles.includes(o.id);
+      return `<div class="oc-row">${art}<div class="oc-row-text"><b>${esc(thing.name)}</b><span>${esc(thing.desc)}</span></div><span class="oc-price token ${G.save.tokens >= o.tokens ? '' : 'no'}">${o.tokens} tokens</span><button type="button" class="oc-btn sm" data-j="${i}" ${G.save.tokens >= o.tokens && !done ? '' : 'disabled'}>${done ? 'Owned' : 'Trade'}</button></div>`;
+    }).join('')}</div>`;
+  body.querySelectorAll('[data-j]').forEach(b => b.onclick = () => {
+    const o = JACK_SHOP[+b.dataset.j]; if (G.save.tokens < o.tokens) return;
+    G.save.tokens -= o.tokens;
+    const got = o.kind === 'potion' ? giveReward({ potions: { [o.id]: 1 } }) : o.kind === 'gear' ? giveReward({ gears: [o.id] }) : giveReward({ title: o.id });
+    toast('Jack: ' + got, 'gold'); sound('coin'); renderJack(body);
+  });
+}
+
+// ---------------- achievements and the season pass ----------------
+function renderAchievements(body) {
+  const got = G.save.achievements, done = Object.keys(got).length;
+  const rewardText = r => [r.coins ? `$ ${fmt(r.coins)}` : '', r.void ? `${r.void} Void Coin${r.void > 1 ? 's' : ''}` : '', ...Object.entries(r.potions || {}).map(([id, n]) => `${n} ${POTION[id].name}`)].filter(Boolean).join(', ');
+  body.innerHTML = `<p class="oc-intro">${done}/${ACHIEVEMENTS.length} done. Every 10 achievements give +5% luck forever (you have +${5 * Math.floor(done / 10)}%).</p>
+    <div class="oc-list">${ACHIEVEMENTS.map(a => `<div class="oc-quest${got[a.id] ? ' got' : ''}"><div class="oc-q-text"><b>${esc(a.name)}${a.title ? ` <small class="oc-titletag">Title: ${esc(a.title)}</small>` : ''}</b><span>${esc(a.desc)}</span><span>Reward: ${esc(rewardText(a.reward))}</span></div><span class="oc-q-state ${got[a.id] ? 'ok' : ''}">${got[a.id] ? 'Done' : 'Locked'}</span></div>`).join('')}</div>`;
+}
+function renderPass(body) {
+  const lv = passLevel(), prem = API().premium(), P = G.save.pass;
+  const rewardText = r => [r.coins ? `$ ${fmt(r.coins)}` : '', r.void ? `${r.void} Void` : '', ...Object.entries(r.potions || {}).map(([id, n]) => `${n} ${POTION[id].name}`), ...(r.gears || []).map(id => GEAR[id].name + ' (gear)')].filter(Boolean).join(', ');
+  body.innerHTML = `<div class="oc-pass-head"><b>${esc(SEASON.name)}</b><span>Level ${lv.level}/${SEASON.levels}</span></div>
+    <div class="oc-bar big"><i style="width:${lv.need ? Math.round(lv.xp / lv.need * 100) : 100}%"></i><em>${lv.need ? `${fmt(lv.xp)} / ${fmt(lv.need)} XP` : 'Max level'}</em></div>
+    <p class="oc-empty">XP comes from rolling, fishing, picking things up, quests, secrets, achievements and raids. The second row is for Frixion Premium.</p>
+    <div class="oc-pass">${PASS_REWARDS.map(r => {
+      const reached = lv.level >= r.level, gotF = P.free.includes(r.level), gotP = P.prem.includes(r.level);
+      return `<div class="oc-pass-lv${reached ? ' reached' : ''}"><b>${r.level}</b>
+        <div class="oc-pass-cell">${esc(rewardText(r.free))}<button type="button" class="oc-btn sm ok" data-pf="${r.level}" ${reached && !gotF ? '' : 'disabled'}>${gotF ? 'Claimed' : 'Claim'}</button></div>
+        <div class="oc-pass-cell prem">${esc(rewardText(r.prem))}<button type="button" class="oc-btn sm" data-pp="${r.level}" ${reached && !gotP && prem ? '' : 'disabled'}>${gotP ? 'Claimed' : prem ? 'Claim' : 'Premium'}</button></div></div>`;
+    }).join('')}</div>`;
+  const claim = (row, level) => {
+    const r = PASS_REWARDS[level - 1]; if (!r || passLevel().level < level || P[row].includes(level)) return;
+    if (row === 'prem' && !API().premium()) return;
+    P[row].push(level);
+    toast(`Season Pass level ${level}: ` + giveReward(row === 'free' ? r.free : r.prem), 'gold'); sound('secret'); renderPass(body);
+  };
+  body.querySelectorAll('[data-pf]').forEach(b => b.onclick = () => claim('free', +b.dataset.pf));
+  body.querySelectorAll('[data-pp]').forEach(b => b.onclick = () => claim('prem', +b.dataset.pp));
+}
+// The jukebox under the tower: play the theme of any aura you have found.
+function renderJukebox(body) {
+  const found = AURAS.filter(a => G.save.found[a.id] && tierIndex(a.rarity) >= 1).sort((a, b) => b.rarity - a.rarity);
+  const biomes = ['clear-day', 'clear-night', ...Object.keys(WEATHERS).filter(w => w !== 'clear' && !WEATHERS[w].hidden)];
+  body.innerHTML = `<p class="oc-intro">Every aura from Shadowed up has a song. Pick one. ${G.jukebox ? '<button type="button" class="oc-btn sm bad" data-stop>Stop</button>' : ''}</p>
+    <h3>Auras you have found</h3><div class="oc-chips">${found.length ? found.map(a => `<button type="button" class="oc-chip${G.jukebox === 'aura:' + a.id ? ' on' : ''}" data-song="aura:${a.id}" style="color:${a.c}">${esc(a.name)}</button>`).join('') : '<p class="oc-empty">Roll a Shadowed aura or rarer first.</p>'}</div>
+    <h3>Biomes</h3><div class="oc-chips">${biomes.map(b => `<button type="button" class="oc-chip${G.jukebox === 'biome:' + b ? ' on' : ''}" data-song="biome:${b}">${esc(b === 'clear-day' ? 'Normal (day)' : b === 'clear-night' ? 'Normal (night)' : WEATHERS[b].name)}</button>`).join('')}</div>`;
+  body.querySelectorAll('[data-song]').forEach(b => b.onclick = () => { G.jukebox = b.dataset.song; pickMusic(); renderJukebox(body); });
+  const s = body.querySelector('[data-stop]'); if (s) s.onclick = () => { G.jukebox = null; pickMusic(); renderJukebox(body); };
+}
+
 // ---------------- quests, stats ----------------
 function renderQuests(body) {
   checkDay();
@@ -1461,7 +1877,7 @@ function renderQuests(body) {
   body.querySelectorAll('[data-claim]').forEach(b => b.onclick = () => {
     const d = DAILY_QUESTS.find(x => x.id === b.dataset.claim);
     if (!d || q.claimed.includes(d.id) || (q.prog[d.id] || 0) < d.goal) return;
-    q.claimed.push(d.id);
+    q.claimed.push(d.id); G.save.stats.dailies = (G.save.stats.dailies || 0) + 1; addXp(150);
     toast('Quest done: ' + giveReward(d.reward), 'gold'); sound('secret'); progress('none'); renderQuests(body);
   });
 }
@@ -1510,6 +1926,7 @@ function renderSettings(body, tab = G.setTab || 'rolling') {
   if (tab === 'controls') html = `<label class="oc-slider"><span>Camera Sensitivity</span><input type="range" min="25" max="300" value="${Math.round((s.sens || 1) * 100)}" data-sens><b>${(s.sens || 1).toFixed(2)}x</b></label>
     <div class="oc-keys"><b>Keys</b><span>WASD: move. Space: jump. Hold right mouse: turn the camera. Wheel: zoom. Shift: Shift Lock.</span><span>R: roll. E: talk, fish, use. Z X C V: aura moves. F: mobility move. /: chat. Tab: player list.</span></div>`;
   if (tab === 'misc') html = `${check('bubbles', 'Chat bubbles over heads')}
+    <div class="oc-set-row"><b>Title</b><select data-title><option value="">None</option>${G.save.titles.map(x => `<option value="${esc(x)}" ${G.save.title === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select><small class="oc-dim">${G.save.titles.length ? '' : 'Achievements give titles.'}</small></div>
     <div class="oc-set-row"><b>PvP Mode</b><button type="button" class="oc-btn sm ${G.player.pvp ? 'bad' : ''}" data-pvp>${G.player.pvp ? 'On' : 'Off'}</button></div>
     <div class="oc-set-row"><b>Graphics</b>${['low', 'medium', 'high'].map(q => `<button type="button" class="oc-btn sm ${q === G.quality ? 'ok' : ''}" data-q="${q}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div>
     <p class="oc-empty">Graphics changes apply the next time you open the game.</p>
@@ -1523,6 +1940,7 @@ function renderSettings(body, tab = G.setTab || 'rolling') {
   const sens = body.querySelector('[data-sens]'); if (sens) sens.oninput = () => { s.sens = sens.value / 100; sens.nextElementSibling.textContent = s.sens.toFixed(2) + 'x'; markDirty(); };
   const pvp = body.querySelector('[data-pvp]'); if (pvp) pvp.onclick = () => { togglePvp(); renderSettings(body); };
   body.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { try { localStorage.setItem('ocrng.quality', b.dataset.q); } catch (e) {} body.querySelectorAll('[data-q]').forEach(x => x.classList.toggle('ok', x === b)); });
+  const ts = body.querySelector('[data-title]'); if (ts) ts.onchange = () => { G.save.title = ts.value; drawMyTag(); if (G.net) G.net.update({ title: ts.value || null }); markDirty(); };
   const codeBtn = body.querySelector('[data-code]');
   if (codeBtn) codeBtn.onclick = () => { const box = body.querySelector('.oc-code'); box.classList.toggle('hidden'); box.querySelector('input').focus(); };
   const red = body.querySelector('[data-redeem]');
@@ -1564,6 +1982,8 @@ function renderAdmin(body) {
     <h3>Biome <small>5 minutes, for everyone</small></h3><div class="oc-admin-row">${Object.values(WEATHERS).filter(w => w.id !== 'clear').map(w => btn('w:' + w.id, w.name, ws.weather && ws.weather.type === w.id && ws.weather.until > n)).join('')}${btn('w:stop', 'Stop')}</div>
     <h3>Time <small>10 minutes</small></h3><div class="oc-admin-row">${btn('t:day', 'Force day', ws.time && ws.time.mode === 'day' && ws.time.until > n)}${btn('t:night', 'Force night', ws.time && ws.time.mode === 'night' && ws.time.until > n)}${btn('t:stop', 'Normal')}</div>
     <h3>Jester <small>15 minutes</small></h3><div class="oc-admin-row">${btn('j:on', 'Summon the Jester', ws.jesterUntil > n)}${btn('j:off', 'Send him away')}</div>
+    <h3>Server luck <small>10 minutes, for everyone</small></h3><div class="oc-admin-row">${btn('l:2', 'Luck x2', ws.luck && ws.luck.mult === 2 && ws.luck.until > n)}${btn('l:3', 'Luck x3', ws.luck && ws.luck.mult === 3 && ws.luck.until > n)}${btn('l:10', 'Luck x10', ws.luck && ws.luck.mult === 10 && ws.luck.until > n)}${btn('l:stop', 'Normal')}</div>
+    <h3>Raid <small>The Crawler, in the Pit</small></h3><div class="oc-admin-row">${btn('r:start', 'Summon The Crawler', G.crawler && !G.crawler.dying)}${btn('r:stop', 'Send it away')}</div>
     <h3>Movement <small>just you</small></h3><div class="oc-admin-row">${btn('m:fly', 'Fly', G.player.fly)}${btn('m:noclip', 'Noclip', G.player.noclip)}${btn('m:spawn', 'Spawn')}${btn('m:summit', 'Mountain top')}${btn('m:stella', 'Stella')}</div>
     <p class="oc-empty">Fly: Space goes up, Q goes down.</p>
     <div class="oc-admin-row">${btn('x:clear', 'End every event')}</div>
@@ -1619,6 +2039,8 @@ function adminAction(a) {
   if (k === 't') { net.setWorld({ time: v === 'stop' ? null : { mode: v, until: n + 10 * 60000, by: G.me.name } }); toast(v === 'stop' ? 'Time is back to normal.' : `It is ${v} for everyone now.`); }
   if (k === 'j') { net.setWorld({ jesterUntil: v === 'on' ? n + 15 * 60000 : 0 }); toast(v === 'on' ? 'The Jester has been summoned.' : 'The Jester has gone.'); }
   if (k === 'x') { net.clearWorld(); toast('Every event ended.'); }
+  if (k === 'r') { if (v === 'start') { startRaid(-1, G.me.name); toast('The Crawler is coming up in the Pit.'); } else { net.raidUpdate({ gone: true }); toast('The Crawler was sent away.'); } }
+  if (k === 'l') { net.setWorld({ luck: v === 'stop' ? null : { mult: +v, until: n + 10 * 60000, by: G.me.name } }); toast(v === 'stop' ? 'Server luck is back to normal.' : `Server luck x${v} for 10 minutes, for everyone.`); if (G.chat && v !== 'stop') G.chat.system(`[Server]: SERVER LUCK x${v} for 10 minutes!`, '#ffd54f'); }
 }
 
 // ---------------- fishing: cast, wait for a bite, then reel ----------------
@@ -1638,6 +2060,7 @@ function fishingTick(dt) {
     const b = buffs(), ghost = G.save.quests.side.ghost;
     const voidChance = (f.spot === 'void' ? 1 / 6 : 1 / 40) * b.voidLuck;
     if (ghost && ghost.state === 'active' && !ghost.locket && f.spot === 'creek' && G.env.time === 'night' && Math.random() < 0.3) f.catch = { locket: true, name: 'Old Locket', value: 300, color: '#cfd8dc' };
+    else if (f.spot === 'void' && !G.save.keys.void && Math.random() < 0.12) f.catch = { key: true, name: 'Void Key', value: 999, color: '#7c4dff' };
     else f.catch = Math.random() < voidChance ? { void: true, name: 'Void Coin', speed: 1.6 } : catchFish(f.spot, G.env.time, G.env.weather, b.fishLuck);
     const val = f.catch.void ? 200 : f.catch.value;
     f.speed = 0.8 + Math.min(1.6, Math.log10(1 + val) * 0.55);
@@ -1665,8 +2088,12 @@ function reelPress() {
     const c = f.catch;
     if (c.void) G.save.void++;
     else if (c.locket) { G.save.quests.side.ghost.locket = true; toast('The ghost\'s locket! Bring it to the graveyard at night.', 'gold'); }
-    else G.save.fish[c.id] = (G.save.fish[c.id] || 0) + 1;
-    G.save.stats.fish++; progress('fish');
+    else if (c.key) { G.save.keys.void = true; toast('A Void Key! It must open something dark.', 'gold'); }
+    else {
+      G.save.fish[c.id] = (G.save.fish[c.id] || 0) + 1; G.save.caught[c.id] = true;
+      if (c.id === 'boot') { G.save.flags.boots = (G.save.flags.boots || 0) + 1; if (G.save.flags.boots >= 10) findEgg('boots'); }
+    }
+    G.save.stats.fish++; progress('fish'); addXp(10);
     markDirty(); updateHud();
     renderFishResult(c);
     sound(c.void || c.locket || c.value >= 50 ? 'secret' : 'coin');
@@ -1693,7 +2120,7 @@ function renderFishResult(c) {
   if (!f) return;
   f.state = 'done';
   el.innerHTML = c
-    ? `<div class="oc-fb-title">${c.void ? coinArt('void') : fishArt(c.color)}<span>${c.void ? 'A Void Coin' : esc(c.name)}</span></div><div class="oc-fb-msg">${c.void ? 'Rare catch. Trade 5 with the Jester.' : c.locket ? 'It glows faintly. Someone is missing this.' : c.junk ? 'Worth nothing. Still counts.' : `Marlin pays ${c.value} F for it.`}</div>`
+    ? `<div class="oc-fb-title">${c.void ? coinArt('void') : fishArt(c.color)}<span>${c.void ? 'A Void Coin' : esc(c.name)}</span></div><div class="oc-fb-msg">${c.void ? 'Rare catch. Trade 5 with the Jester.' : c.key ? 'Cold and heavy. Somewhere there is a black door.' : c.locket ? 'It glows faintly. Someone is missing this.' : c.junk ? 'Worth nothing. Still counts.' : `Marlin pays ${c.value} F for it.`}</div>`
     : `<div class="oc-fb-title">${IC.fish}<span>It got away</span></div><div class="oc-fb-msg">Try again.</div>`;
   el.innerHTML += `<div class="oc-fb-row"><button type="button" class="oc-btn primary" data-again>Cast again</button><button type="button" class="oc-btn sm" data-stop>Done</button></div>`;
   el.querySelector('[data-again]').onclick = () => startFishing(f.spot);
@@ -1735,5 +2162,8 @@ function sound(kind, n = 0) {
     case 'announce': chord(196, [0, 7, 12, 16, 19], 1.6, 'triangle', 0.05); break;
     case 'join': chord(392, [0, 4, 7, 12], 0.4, 'triangle', 0.05); break;
     case 'bell': chord(880, [0, 12, 19, 24], 2.6, 'sine', 0.07); chord(440, [0, 7], 2.2, 'triangle', 0.05); break;
+    case 'splash': for (let i = 0; i < 5; i++) tone(300 + Math.random() * 500, 0.18, 'sine', 0.04, i * 0.03, 120); break;
+    case 'slam': tone(70, 0.5, 'sawtooth', 0.12, 0, 35); tone(140, 0.3, 'square', 0.05); break;
+    case 'anvil': tone(1600, 0.25, 'triangle', 0.06); tone(2400, 0.4, 'sine', 0.04, 0.05); tone(1600, 0.25, 'triangle', 0.05, 0.3); break;
   }
 }

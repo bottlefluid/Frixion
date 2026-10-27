@@ -149,6 +149,16 @@ export const AURAS = [
   A('singularity', 'Singularity', 600000000, '#7c4dff', [L.spiral('#b39dff', { n: 120, galaxy: 1 }), L.glow('#0a0014', 5, { dark: 1 }), L.ring('#7c4dff', { r: 3.6, runes: 1 }), L.pillar('#4527a0', { tall: 1 })], null, { violet: 1 }),
   A('overcontrol', 'OVERCONTROL', 777777777, '#9c6bff', [L.orbit('#c4b5ff', 8, { r: 3.2, trail: 1 }), L.ring('#8b5cff', { r: 3.4, runes: 1 }), L.pillar('#7c4dff', { tall: 1 }), L.spiral('#b39dff', { n: 100 }), L.bolts('#e1d6ff')], null, { violet: 1 }),
   A('genesis', 'GENESIS', 1500000000, '#fff4d6', [L.wings('#fff4d6', { big: 1, many: 1 }), L.pillar('#ffffff', { tall: 1 }), L.ring('#ffd77a', { r: 3.8, runes: 1, rays: 1 }), L.sparkle('#fffbe6', { n: 90 }), L.halo('#ffe9a6', { crown: 1 })], null, { gold: 1 }),
+  // ---- Halloween: only during the Pumpkin Moon, Graveyard and Blood Rain biomes ----
+  A('lantern', 'Jack-o\'-Lantern', 13000, '#ff8a00', [L.flames('#ff9800', '#4a1a00', { n: 26 }), L.halo('#ffb74d'), L.motes('#ffcc80', 16)], { weather: 'pumpkinmoon' }),
+  A('wraith', 'Wraith', 66666, '#cfd8dc', [L.motes('#eceff1', 50, { size: 0.7 }), L.wings('#90a4ae'), L.glow('#263238', 5, { dark: 1 })], { weather: 'graveyard' }),
+  A('undertaker', 'Undertaker', 300000, '#78909c', [L.fall('#37474f', { dark: 1, n: 40 }), L.halo('#b0bec5', { crown: 1 }), L.pillar('#546e7a')], { weather: 'graveyard' }),
+  A('bloodmoon', 'Blood Moon', 6660000, '#d50000', [L.halo('#ff1744', { r: 1.2, eclipse: 1 }), L.fall('#b71c1c', { rain: 1, n: 50 }), L.ring('#d50000', { r: 3, runes: 1 })], { weather: 'bloodrain' }),
+  A('pumpking', 'PUMP KING', 66666666, '#ff6f00', [L.halo('#ffab00', { crown: 1 }), L.flames('#ff6f00', '#3e1300', { big: 1 }), L.orbit('#ffb300', 7, { r: 3, trail: 1 }), L.pillar('#ff8f00')], { weather: 'pumpkinmoon' }, { gold: 1 }),
+  A('hallowed', '『HALLOWED』', 1313131313, '#ff6d00', [L.wings('#212121', { big: 1, many: 1 }), L.flames('#ff6d00', '#000000', { big: 1 }), L.ring('#ff6d00', { r: 3.8, runes: 1 }), L.pillar('#ff3d00', { tall: 1 }), L.motes('#000000', 40, { dark: 1 })], { weather: 'halloween' }),
+  // ---- Limbo: a place between places. These can only be rolled while you are there. ----
+  A('limbo', 'Limbo', 99999, '#e0e0e0', [L.motes('#ffffff', 40), L.ring('#9e9e9e', { r: 2.6, half: 1 }), L.glow('#000000', 5, { dark: 1 })], { weather: 'limbo' }),
+  A('unknown', 'The Unknown', 9999999, '#9e9e9e', [L.cubes('#ffffff', 10), L.cubes('#000000', 10, { dark: 1 }), L.halo('#ffffff', { eye: 1 }), L.pillar('#bdbdbd', { tall: 1 })], { weather: 'limbo' }),
   // One aura, like Sol's: 『EQUINOX』, the Equilibrium Incarnate. A white sun and a black sun in balance.
   A('equinox', '『EQUINOX』', 2500000000, '#ffffff', [L.yinyang({ r: 3, many: 1, big: 1 }), L.ring('#ffffff', { r: 3.8, half: 1, runes: 1 }), L.pillar('#ffffff', { tall: 1, split: 1 }), L.spiral('#ffffff', { n: 90, bw: 1 }), L.motes('#ffffff', 30), L.motes('#000000', 30, { dark: 1 })], null, { bw: 1 }, { sub: 'Equilibrium Incarnate' }),
 ];
@@ -188,7 +198,16 @@ export const WEATHERS = {
   corruption: { id: 'corruption', name: 'Corruption', color: '#c06bff', bt: 5, desc: 'Ink, Hazard and Corrosive are 5x as likely. Parasite and Monarch crawl out.' },
   null: { id: 'null', name: 'Null', color: '#9e9e9e', bt: 10, desc: 'Nothing is real. Nullified, Matrix and Paradox, and auras glitch more often.' },
   glitched: { id: 'glitched', name: 'Glitched', color: '#00ffd0', bt: 1, desc: 'Every biome\'s auras can be rolled at once. Fault and [ DELETED ] only exist here.' },
+  // Halloween only (mid October to early November)
+  pumpkinmoon: { id: 'pumpkinmoon', name: 'Pumpkin Moon', color: '#ff9100', bt: 1, event: true, desc: 'A Halloween night. Jack-o\'-Lantern and the PUMP KING come out, and so does 『HALLOWED』.' },
+  graveyard: { id: 'graveyard', name: 'Graveyard', color: '#9ccc9c', bt: 1, event: true, desc: 'The dead walk. Wraith and Undertaker rise, and so does 『HALLOWED』.' },
+  bloodrain: { id: 'bloodrain', name: 'Blood Rain', color: '#ff1744', bt: 1, event: true, desc: 'It rains red. Blood Moon can be rolled, and so can 『HALLOWED』.' },
+  // not a biome you can see: where you are when you stand in Limbo
+  limbo: { id: 'limbo', name: 'Limbo', color: '#e0e0e0', bt: 1, hidden: true, desc: 'Between places.' },
 };
+// The Halloween event: from October 15 to November 10, every year.
+export const isHalloween = (now = Date.now()) => { const d = new Date(now), m = d.getUTCMonth(), day = d.getUTCDate(); return (m === 9 && day >= 15) || (m === 10 && day <= 10); };
+export const HALLOWEEN_BIOMES = ['pumpkinmoon', 'graveyard', 'bloodrain'];
 
 // ---------------- rolling ----------------
 // Rarest first: each aura you could get right now succeeds with luck / rarity. If none do, you get Common.
@@ -202,7 +221,10 @@ export function rollAura(luck, time, weather, opts = {}, rand = Math.random) {
     if (a.id === 'common') continue;
     if (a.only) {
       if (a.only.time && a.only.time !== time) continue;
-      if (a.only.weather && a.only.weather !== weather && weather !== 'glitched' && !anyW.includes(a.only.weather)) continue;
+      const ow = a.only.weather;
+      if (ow === 'limbo') { if (weather !== 'limbo') continue; }
+      else if (ow === 'halloween') { if (!HALLOWEEN_BIOMES.includes(weather)) continue; }
+      else if (ow && ow !== weather && weather !== 'glitched' && !anyW.includes(ow)) continue;
     }
     let l = GEM_AURAS.has(a.id) ? luck * gem : luck;
     if (a.native && a.native === weather) l *= bt;
@@ -257,15 +279,15 @@ const ELEMENTS = {
 };
 const ELEMENT_OF = {};
 for (const [el, ids] of Object.entries({
-  fire: 'rage ember solaris eclipse bloodlust diaboli hades bleeding velvet',
+  fire: 'rage ember solaris eclipse bloodlust diaboli hades bleeding velvet lantern pumpking bloodmoon',
   ice: 'glacier frostbite blizzard crystallized quartz',
   storm: 'stormal tempest static magnetic',
   light: 'divinus aether seraphim celestial archangel dawnbreaker genesis gilded solar sovereign',
-  dark: 'ink raven spectre phantom lostsoul requiem forbidden undead lunar twilight',
+  dark: 'ink raven spectre phantom lostsoul requiem forbidden undead lunar twilight wraith undertaker hallowed',
   nature: 'natural flora uncommon honey jade emerald flutter',
   water: 'aquamarine leviathan sapphire',
   star: 'starlight sidereum comet galaxy nebula astral aurora starscourge overseer singularity',
-  void: 'nullified overcontrol',
+  void: 'nullified overcontrol limbo unknown',
   gem: 'topaz ruby precious kyawthuite prism jackpot exotic chromatic rare good common',
   wind: 'wind gale echo',
   earth: 'mirage pharaoh hazard',
@@ -274,7 +296,7 @@ for (const [el, ids] of Object.entries({
   balance: 'equinox',
 })) ids.split(' ').forEach(id => { ELEMENT_OF[id] = el; });
 export const elementOf = id => ELEMENT_OF[id] || 'arcane';
-const HAS_F = new Set('wind gale magnetic static comet phantom tempest leviathan aurora dawnbreaker starscourge singularity overcontrol genesis archangel seraphim aether paradox fault monarch pharaoh astral equinox'.split(' '));
+const HAS_F = new Set('wind gale magnetic static comet phantom tempest leviathan aurora dawnbreaker starscourge singularity overcontrol genesis archangel seraphim aether paradox fault monarch pharaoh astral equinox hallowed unknown wraith'.split(' '));
 // The moves an aura gives you: [{ key: 'z', kind, name, cd, dmg, ... }]
 export function movesFor(key) {
   const { aura, mut } = auraKey(key);
@@ -355,6 +377,23 @@ export const POTIONS = [
   P('sizemax', 'Sizemax Potion', '#ef9a9a', 'big', { size: 'max', secs: 300 }, { src: 'event' }, 'Makes you huge for 5 minutes.'),
   P('pumpking', 'Pump King\'s Blood', '#ff6f00', 'skull', { luck: 3, secs: 900, hellAnywhere: true }, { src: 'event' }, '+300% luck for 15 minutes, and Hell auras can be rolled anywhere.'),
   P('xyz', '???', '#00ffd0', 'swirl', { mystery: true, secs: 300 }, { src: 'event' }, 'Nobody knows what this does.'),
+  // ---- items you use, like Sol's: chests, runes and biome changers (they sit in the Items tab with the potions) ----
+  P('chest1', 'Potion Chest', '#a1887f', 'chest', { chest: 1 }, { src: 'achievement pass', cat: 'item' }, 'Opens into 3 random potions.'),
+  P('chest2', 'Rare Potion Chest', '#7e57c2', 'chest', { chest: 2 }, { src: 'achievement pass', cat: 'item' }, 'Opens into 4 better potions.'),
+  P('chest3', 'Mega Potion Chest', '#ffb300', 'chest', { chest: 3 }, { src: 'achievement pass', cat: 'item' }, 'Opens into 5 great potions, maybe a godly one.'),
+  P('rune_wind', 'Rune of Wind', '#bdf4ff', 'rune', { biome: 'windy' }, { src: 'jester', price: { coins: 30000 }, cat: 'item' }, 'Starts a Windy biome for everyone.'),
+  P('rune_frost', 'Rune of Frost', '#e3f6ff', 'rune', { biome: 'snow' }, { src: 'jester', price: { coins: 30000 }, cat: 'item' }, 'Starts a Snowy biome for everyone.'),
+  P('rune_rain', 'Rune of Rainstorm', '#8fb6ff', 'rune', { biome: 'rain' }, { src: 'jester', price: { coins: 30000 }, cat: 'item' }, 'Starts a Rainy biome for everyone.'),
+  P('rune_sand', 'Rune of Dust', '#f0c87a', 'rune', { biome: 'sandstorm' }, { src: 'jester', price: { coins: 60000 }, cat: 'item' }, 'Starts a Sandstorm for everyone.'),
+  P('rune_hell', 'Rune of Hell', '#ff4a2b', 'rune', { biome: 'hell' }, { src: 'jester', price: { coins: 120000 }, cat: 'item' }, 'Starts a Hell biome for everyone.'),
+  P('rune_galaxy', 'Rune of Galaxy', '#8fb0ff', 'rune', { biome: 'starfall' }, { src: 'jester', price: { coins: 120000 }, cat: 'item' }, 'Starts a Starfall for everyone.'),
+  P('rune_corruption', 'Rune of Corruption', '#c06bff', 'rune', { biome: 'corruption' }, { src: 'jester', price: { coins: 150000 }, cat: 'item' }, 'Starts a Corruption for everyone.'),
+  P('rune_nothing', 'Rune of Nothing', '#9e9e9e', 'rune', { biome: 'null' }, { src: 'jester', price: { coins: 200000 }, cat: 'item' }, 'Starts a Null biome for everyone.'),
+  P('rune_everything', 'Rune of Everything', '#ffffff', 'rune', { biome: 'random' }, { src: 'achievement', cat: 'item' }, 'Starts any biome at all, for everyone.'),
+  P('randomizer', 'Biome Randomizer', '#26a69a', 'device', { biome: 'random' }, { src: 'mari', price: { coins: 50000 }, cat: 'item' }, 'Starts a random biome for everyone.'),
+  P('controller', 'Strange Controller', '#00ffd0', 'device', { biome: 'strange' }, { src: 'jester', price: { coins: 90000 }, cat: 'item' }, 'Starts a random biome for everyone, with a 1 in 10 chance of Glitched.'),
+  P('penny', 'Lucky Penny', '#c77c3c', 'coin', { luck: 0.77, secs: 420 }, { src: 'mari', price: { coins: 77777 }, cat: 'item' }, '+77% luck for 7 minutes.'),
+  P('candy', 'Candy Corn Brew', '#ff9800', 'round', { luck: 0.5, speed: 0.1, secs: 300 }, { src: 'jack event', cat: 'potion' }, '+50% luck and +10% roll speed for 5 minutes. Halloween only.'),
   // not real potions: the bonuses for the Sky Parkour and the bell on the mountain
   P('parkour', 'Head in the Clouds', '#9fd8ff', 'round', { luck: 0.3, secs: 60 }, { hidden: true }, '+30% luck for 1 minute, for finishing the Sky Parkour.'),
   P('summit', 'Summit Blessing', '#ffffff', 'round', { luck: 0.5, secs: 120 }, { hidden: true }, '+50% luck for 2 minutes, for ringing the bell on the mountain.'),
@@ -514,6 +553,153 @@ export const BUILTIN_CODES = {
   hello_sol: { potions: { mixed: 2 } },
 };
 
+// ---------------- gears: crafted at Jake's Workshop, worn one in each hand (like Sol's) ----------------
+// Right hand: luck and roll speed. Left hand: changes to the bonus roll.
+//   luck, speed            always            wLuck {w: [biomes], l}  luck in those biomes   wSpeed {w, s}  speed in a biome
+//   bonusEvery             bonus roll every n rolls (instead of 10)       bonusMult  how lucky the bonus roll is (instead of 2x)
+//   bonusAll               every roll is a bonus roll, at this multiplier  noBonus    no bonus roll at all (base luck is better instead)
+//   gem                    every 10 rolls a random gem gives up to +30% luck or speed for 10 rolls
+//   tide                   bonus rolls can roll Rainy auras anywhere       jackpotCoins  coins when you roll Jackpot
+const GR = (id, name, hand, color, fx, recipe, desc, more = {}) => ({ id, name, hand, color, ...fx, recipe, desc, ...more });
+export const GEARS = [
+  GR('luckglove', 'Luck Glove', 'right', '#81c784', { luck: 0.25 }, { auras: { common: 25, uncommon: 10, good: 10, rare: 5 } }, '+25% luck.'),
+  GR('lunardevice', 'Lunar Device', 'right', '#9fa8da', { speed: 0.15 }, { auras: { rare: 1, divinus: 1, lunar: 1 } }, '+15% roll speed.'),
+  GR('solardevice', 'Solar Device', 'right', '#ffb300', { luck: 0.5 }, { auras: { rare: 1, divinus: 1, solar: 1 } }, '+50% luck.'),
+  GR('desireglove', 'Desire Glove', 'right', '#e91e63', { luck: 0.4 }, { auras: { rage: 1, ruby: 1, diaboli: 1, bleeding: 1 } }, '+40% luck.'),
+  GR('aquadevice', 'Aqua Device', 'right', '#26c6da', { speed: 0.1, wSpeed: { w: ['rain'], s: 0.9 } }, { auras: { aquamarine: 3, sapphire: 1 } }, '+10% roll speed, and +100% while it rains.'),
+  GR('shiningstar', 'Shining Star', 'right', '#c5d3ff', { luck: 0.5, wLuck: { w: ['starfall'], l: 2 } }, { auras: { starlight: 1, comet: 1 } }, '+50% luck, and +250% during Starfall.'),
+  GR('eclipsedevice', 'Eclipse Device', 'right', '#ff9100', { luck: 0.5, speed: 0.15 }, { gears: { solardevice: 1, lunardevice: 1 }, auras: { twilight: 1 } }, '+50% luck and +15% roll speed.'),
+  GR('exogauntlet', 'Exo Gauntlet', 'right', '#90a4ae', { luck: 1, speed: 0.2 }, { auras: { gilded: 3, precious: 2, magnetic: 2, sidereum: 1, undead: 1, exotic: 1 } }, '+100% luck and +20% roll speed.'),
+  GR('frozengauntlet', 'Frozen Gauntlet', 'right', '#b3e5fc', { luck: 1.5, speed: -0.25 }, { auras: { glacier: 1, blizzard: 1 } }, '+150% luck, but -25% roll speed.'),
+  GR('windstorm', 'Windstorm Device', 'right', '#e0f7fa', { luck: 1.15, speed: 0.25 }, { auras: { wind: 25, stormal: 1, aquamarine: 1, sidereum: 4, precious: 12 } }, '+115% luck and +25% roll speed.'),
+  GR('subzero', 'Subzero Device', 'right', '#80deea', { luck: 1.5, speed: 0.3 }, { auras: { blizzard: 2, crystallized: 300, glacier: 60, sidereum: 10, magnetic: 20, precious: 40 } }, '+150% luck and +30% roll speed.'),
+  GR('galactic', 'Galactic Device', 'right', '#8a63ff', { luck: 2.5, speed: 0.3 }, { gears: { eclipsedevice: 1 }, auras: { galaxy: 1, sapphire: 100, solar: 15, magnetic: 60, diaboli: 80, comet: 3, lunar: 15 } }, '+250% luck and +30% roll speed.'),
+  GR('volcanic', 'Volcanic Device', 'right', '#ff5722', { luck: 2.9, speed: 0.35 }, { gears: { solardevice: 1, windstorm: 1 }, auras: { hades: 1, diaboli: 140, rage: 1000, bleeding: 55 } }, '+290% luck and +35% roll speed.'),
+  GR('ragnaroker', 'Ragnaröker', 'right', '#ffd54f', { luck: 4.55, speed: 0.4, wLuck: { w: ['windy', 'rain', 'hell'], l: 0.45 } }, { potions: { zeus: 3, hades: 3, poseidon: 3 }, auras: { solar: 175, lunar: 175, lostsoul: 35, sidereum: 80, diaboli: 320, rage: 2300 } }, '+455% luck and +40% roll speed, and +45% more luck when it is Windy, Rainy or Hell.'),
+  GR('starshaper', 'Starshaper', 'right', '#b39dff', { luck: 7, speed: 0.5 }, { gears: { galactic: 1 }, auras: { starscourge: 1, galaxy: 3, comet: 90, solar: 150, lunar: 150, sidereum: 270, magnetic: 560 } }, '+700% luck and +50% roll speed.'),
+  GR('genesisdrive', 'Genesis Drive', 'right', '#fff4d6', { luck: 12, speed: 1 }, { gears: { starshaper: 1 }, auras: { genesis: 1, matrix: 2, chromatic: 2, aether: 20, exotic: 40 } }, '+1,200% luck and +100% roll speed.'),
+  GR('heavenlydevice', 'Heavenly Device', 'right', '#fffde7', { luck: 15, speed: 1.2 }, { gears: { genesisdrive: 1 }, auras: { archangel: 1, seraphim: 15, celestial: 10, divinus: 600 } }, '+1,500% luck and +120% roll speed.'),
+  GR('vampirehunter', 'Vampire Hunter', 'right', '#8e0000', { luck: 2.4, speed: 0.3 }, null, '+240% luck and +30% roll speed. A Season Pass reward.', { pass: true }),
+  GR('pumppunch', 'Pump Punch', 'right', '#ff6f00', { luck: 8, speed: -0.5 }, null, '+800% luck, but -50% roll speed. Jack trades it for Pumpkin Tokens.', { jack: true }),
+  GR('gemstone', 'Gemstone Gauntlet', 'left', '#ff6ec7', { gem: true }, { auras: { topaz: 1, ruby: 1, emerald: 1, sapphire: 1, aquamarine: 1, quartz: 1 } }, 'Every 10 rolls, a random gem gives up to +30% luck or roll speed for the next 10 rolls.'),
+  GR('jackpotgauntlet', 'Jackpot Gauntlet', 'left', '#ffd700', { luck: 0.77, speed: 0.07, jackpotCoins: 77 }, { auras: { rare: 777, gilded: 77, jackpot: 77 } }, '+77% luck and +7% roll speed, and 77 coins every time you roll Jackpot.'),
+  GR('tidegauntlet', 'Tide Gauntlet', 'left', '#4fc3f7', { luck: 0.5, tide: true }, { auras: { solar: 3, rage: 1 } }, '+50% luck. Bonus rolls can roll Rainy auras in any biome.'),
+  GR('darkshader', 'Darkshader', 'left', '#4a148c', { bonusEvery: 5 }, { auras: { arcane: 1, twilight: 5, ink: 115, lunar: 270, hazard: 225, bleeding: 350, diaboli: 1480, forbidden: 3700 } }, 'A bonus roll every 5 rolls instead of 10.'),
+  GR('fleshdevice', 'Flesh Device', 'left', '#d81b60', { bonusAll: 1.3 }, { auras: { astral: 1, hazard: 30, corrosive: 15, undead: 10, crystallized: 600, ink: 190, bleeding: 30 } }, 'Every roll is a bonus roll, but bonus rolls are only 1.3x.'),
+  GR('gravitational', 'Gravitational Device', 'left', '#5c6bc0', { bonusMult: 6 }, { auras: { exotic: 5, magnetic: 75, diaboli: 152, sidereum: 31, precious: 152 } }, 'Bonus rolls are 6x as lucky instead of 2x.'),
+  GR('thething', 'The Thing', 'left', '#880e4f', { bonusMult: 11 }, { gears: { fleshdevice: 1 }, auras: { parasite: 20, hazard: 600, ink: 400, bleeding: 1000 } }, 'Bonus rolls are 11x as lucky instead of 2x.'),
+  GR('polelight', 'Pole Light Core Device', 'left', '#e1f5fe', { luck: 5 }, { auras: { blizzard: 3, jade: 100, magnetic: 900, solar: 500, sidereum: 725 } }, '+500% luck.'),
+  GR('ominouscoffin', 'Ominous Coffin', 'left', '#3e2723', { baseLuck: 1.35, noBonus: true, wSpeed: { w: ['pumpkinmoon', 'graveyard', 'bloodrain'], s: 0.3 } }, null, '1.35x base luck with no bonus roll, and +30% roll speed in Halloween biomes. A Season Pass reward.', { pass: true }),
+];
+export const GEAR = Object.fromEntries(GEARS.map(g => [g.id, g]));
+
+// ---------------- achievements: Sol's-style milestones, each with a reward, some with a title ----------------
+// test(s): s is a small summary of your save (see achieveStats in the game). Every 10 achievements: +5% luck forever.
+const AC = (id, name, desc, test, reward, title) => ({ id, name, desc, test, reward, title });
+export const ACHIEVEMENTS = [
+  AC('roll1', 'Roll Once', 'Roll for the first time.', s => s.rolls >= 1, { coins: 10 }, 'Newbie'),
+  AC('roll100', 'Getting Started', 'Roll 100 times.', s => s.rolls >= 100, { coins: 50 }),
+  AC('roll1k', 'Roller', 'Roll 1,000 times.', s => s.rolls >= 1000, { coins: 300 }, 'Roller'),
+  AC('roll10k', 'Dedicated', 'Roll 10,000 times.', s => s.rolls >= 10000, { coins: 3000, potions: { chest1: 2 } }, 'Dedicated'),
+  AC('roll100k', 'Grinder', 'Roll 100,000 times.', s => s.rolls >= 100000, { coins: 10000, potions: { chest2: 2 } }, 'Grinder'),
+  AC('roll1m', 'Unstoppable', 'Roll 1,000,000 times.', s => s.rolls >= 1000000, { coins: 50000, void: 1 }, 'Unstoppable'),
+  AC('roll5m', 'Living Legend', 'Roll 5,000,000 times.', s => s.rolls >= 5000000, { coins: 100000, void: 2, potions: { transcendent: 1 } }, 'Living Legend'),
+  AC('tier1', 'In the Shadows', 'Roll a Shadowed aura or rarer.', s => s.bestTier >= 1, { coins: 500 }),
+  AC('tier2', 'Anomaly', 'Roll an Anomalous aura or rarer.', s => s.bestTier >= 2, { coins: 2000, potions: { chest1: 1 } }, 'Anomalous'),
+  AC('tier3', 'Forbidden Knowledge', 'Roll a Forbidden aura or rarer.', s => s.bestTier >= 3, { potions: { chest2: 1 } }, 'Forbidden'),
+  AC('tier4', 'Eldritch Truth', 'Roll an Eldritch aura or rarer.', s => s.bestTier >= 4, { potions: { chest3: 1 } }, 'Eldritch'),
+  AC('tier5', 'Cataclysm', 'Roll a Cataclysmic aura or rarer.', s => s.bestTier >= 5, { void: 1, potions: { chest3: 1 } }, 'Cataclysmic'),
+  AC('tier6', 'Primordial', 'Roll a Primordial aura or rarer.', s => s.bestTier >= 6, { void: 3 }, 'Primordial'),
+  AC('tier7', 'Nothing Is Real', 'Roll a null aura.', s => s.bestTier >= 7, { void: 5, potions: { rune_everything: 1 } }, 'null'),
+  AC('equinox', 'Equilibrium', 'Roll 『EQUINOX』.', s => s.found.equinox, { void: 10, potions: { heavenly: 3 } }, 'Equilibrium Incarnate'),
+  AC('glitchmut', 'Flaws in the World', 'Roll a Glitched aura (the mutation).', s => s.glitchMut, { void: 1 }),
+  AC('monarch', 'Fate Sealer', 'Roll Monarch.', s => s.found.monarch, { potions: { oblivion: 1 } }),
+  AC('deleted', 'Content Deleted', 'Roll [ DELETED ].', s => s.found.deleted, { potions: { controller: 10 } }, 'Deleted'),
+  AC('hallowed', 'Trick or Treat', 'Roll 『HALLOWED』.', s => s.found.hallowed, { void: 5, potions: { pumpking: 3 } }, 'Hallowed'),
+  AC('collect25', 'Collector', 'Find 25 different auras.', s => s.foundCount >= 25, { potions: { chest1: 3 } }, 'Collector'),
+  AC('collect50', 'Curator', 'Find 50 different auras.', s => s.foundCount >= 50, { potions: { chest2: 3 } }, 'Curator'),
+  AC('collect75', 'Archivist', 'Find 75 different auras.', s => s.foundCount >= 75, { potions: { chest3: 3 } }, 'Archivist'),
+  AC('glitchbiome', 'Something Went Wrong', 'Be there for a Glitched biome.', s => s.biomes.glitched, { coins: 10101 }),
+  AC('allbiomes', 'Storm Chaser', 'See every natural biome.', s => ['windy', 'rain', 'snow', 'sandstorm', 'hell', 'starfall', 'heaven', 'corruption', 'null', 'glitched'].every(b => s.biomes[b]), { potions: { chest2: 2 } }, 'Storm Chaser'),
+  AC('limbo', 'Lost in Limbo', 'Find your way into Limbo.', s => s.eggs.limbo, { potions: { chest2: 1 } }, 'Lost'),
+  AC('play30', 'Take a Break', 'Play for 30 minutes.', s => s.playSecs >= 1800, { potions: { chest1: 3 } }),
+  AC('play60', 'I Can\'t Stop Playing This', 'Play for 1 hour.', s => s.playSecs >= 3600, { potions: { chest1: 5 } }),
+  AC('play600', 'The Day Is Going By Fast', 'Play for 10 hours.', s => s.playSecs >= 36000, { potions: { chest2: 5 } }, 'No Life'),
+  AC('play6000', 'Touch the Grass', 'Play for 100 hours.', s => s.playSecs >= 360000, { potions: { chest3: 10 } }, 'Touch Grass'),
+  AC('fish100', 'Angler', 'Catch 100 fish.', s => s.fish >= 100, { potions: { diver: 3 } }, 'Angler'),
+  AC('leviathan', 'Sea Monster', 'Catch a Baby Leviathan.', s => s.caught.leviathan, { void: 1 }),
+  AC('secrets10', 'Curious', 'Find 10 secrets.', s => s.secrets >= 10, { potions: { chest2: 1 } }, 'Curious'),
+  AC('secretsall', 'Explorer', 'Find every secret.', s => s.secrets >= s.secretsTotal, { void: 3, potions: { chest3: 2 } }, 'Explorer'),
+  AC('sidequests', 'Helping Hand', 'Finish every side quest.', s => s.sideDone >= s.sideTotal, { potions: { chest3: 1 } }, 'Helping Hand'),
+  AC('ko10', 'Gladiator', 'Knock out 10 players in PvP.', s => s.kos >= 10, { potions: { gladiator: 3 } }, 'Gladiator'),
+  AC('raid1', 'Raider', 'Help defeat The Crawler.', s => s.raids >= 1, { potions: { raid: 3, dune: 1 } }, 'Raider'),
+  AC('craft1', 'Tinkerer', 'Craft a gear at Jake\'s Workshop.', s => s.crafted >= 1, { coins: 2500 }, 'Tinkerer'),
+  AC('potions100', 'Alchemist', 'Use 100 potions.', s => s.potions >= 100, { potions: { chest2: 1 } }, 'Alchemist'),
+  AC('daily10', 'Busy Bee', 'Claim 10 daily quests.', s => s.dailies >= 10, { potions: { chest2: 1 } }),
+  AC('pass30', 'Seasoned', 'Reach level 30 on the Season Pass.', s => s.passLevel >= 30, { void: 2 }, 'Seasoned'),
+];
+export const ACHIEVEMENT = Object.fromEntries(ACHIEVEMENTS.map(a => [a.id, a]));
+// what potion chests open into
+export const CHEST_POOLS = {
+  1: { n: 3, pool: [['lucky', 30], ['speed', 30], ['luckl', 10], ['speedl', 10], ['mixed', 10], ['spoid1', 6], ['fortune1', 4]] },
+  2: { n: 4, pool: [['luckxl', 20], ['speedxl', 20], ['fortune2', 15], ['haste2', 15], ['spoid2', 10], ['jewelry', 8], ['zombie', 6], ['strange1', 6]] },
+  3: { n: 5, pool: [['fortune3', 20], ['haste3', 20], ['strange2', 14], ['bound', 8], ['zeus', 8], ['hades', 6], ['poseidon', 6], ['heavenly', 4], ['forbidden2', 6], ['transcendent', 2], ['godlike', 1]] },
+};
+
+// ---------------- the Season Pass: XP from rolling, fishing and quests; a reward at every level ----------------
+// Free rewards for everyone; Frixion Premium unlocks the second row.
+export const SEASON = { id: 1, name: 'Season of the Pumpkin Moon', levels: 30, xpFor: level => 200 + level * 40 };
+export const PASS_REWARDS = Array.from({ length: 30 }, (_, i) => {
+  const L = i + 1;
+  const free = L === 10 ? { gears: ['ominouscoffin'] } : L === 30 ? { gears: ['vampirehunter'] } : L % 5 === 0 ? { potions: { chest2: 1 }, coins: 2500 * L / 5 } : L % 2 ? { potions: { lucky: 3 + L, speed: 2 + L } } : { coins: 500 * L };
+  const prem = L === 30 ? { void: 5, potions: { heavenly: 2 } } : L % 10 === 0 ? { potions: { chest3: 2 } } : L % 5 === 0 ? { void: 1 } : L % 3 === 0 ? { potions: { fortune2: 2, haste2: 1 } } : { potions: { luckxl: 1, speedxl: 1 } };
+  return { level: L, free, prem };
+});
+
+// ---------------- Jack the Pumpkin (Halloween): trades Pumpkin Tokens ----------------
+export const JACK_SHOP = [
+  { kind: 'potion', id: 'candy', tokens: 6 },
+  { kind: 'potion', id: 'pumpking', tokens: 90 },
+  { kind: 'potion', id: 'chest2', tokens: 35 },
+  { kind: 'gear', id: 'pumppunch', tokens: 260 },
+  { kind: 'title', id: 'Pumpkin Head', tokens: 50 },
+];
+
+// ---------------- Mari: a few rotating deals every 15 minutes, like Sol's traveling merchant ----------------
+const MARI_EXTRA = [
+  { kind: 'potion', id: 'penny' }, { kind: 'potion', id: 'randomizer' }, { kind: 'potion', id: 'spoid3' }, { kind: 'potion', id: 'luckxl', price: { coins: 1500 } },
+  { kind: 'potion', id: 'speedxl', price: { coins: 1500 } }, { kind: 'void', price: { coins: 500000 } }, { kind: 'potion', id: 'chest1', price: { coins: 4000 } }, { kind: 'potion', id: 'strange1', price: { coins: 12000 } },
+];
+export const MARI_SLOT_MS = 15 * 60 * 1000;
+export function mariDeals(now) {
+  const rnd = seeded(Math.floor(now / MARI_SLOT_MS) * 13 + 5), pool = [...MARI_EXTRA], out = [];
+  for (let i = 0; i < 3; i++) out.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]);
+  return out;
+}
+
+// ---------------- the raid boss ----------------
+// The Crawler: a giant sand worm that bursts out of the arena during Sandstorms (or when staff summon it).
+export const RAID = { id: 'crawler', name: 'The Crawler', hpPer: 2500, hpMin: 6000, mins: 8, reward: { potions: { raid: 1 }, coins: 3000 }, duneChance: 0.25 };
+
+// ---------------- aura lore, shown in the Collection ----------------
+const LORE = {
+  common: 'Where every story starts.', uncommon: 'A little greener than the rest.', good: 'Good enough.', rare: 'Rare, they say. You will see a lot of it.',
+  divinus: 'A small blessing from somewhere above.', crystallized: 'Light, frozen in place.', rage: 'It burns hot and fast.', ruby: 'Red, deep and precious.',
+  forbidden: 'Some things were left alone for a reason.', gilded: 'Everything it touches looks expensive.', jackpot: 'Seven, seven, seven.', wind: 'It never stays in one place.',
+  magnetic: 'Opposites attract.', solar: 'The sun, worn like a crown.', lunar: 'Moonlight never lies.', starlight: 'Light that left its star long ago.',
+  stormal: 'The calm never comes.', undead: 'It got back up.', comet: 'Gone before you can make a wish.', aether: 'The air the gods breathe.',
+  nullified: 'Erased, almost.', exotic: 'No one knows where it came from.', celestial: 'Born among the stars.', galaxy: 'Billions of suns in a spiral.',
+  arcane: 'Old magic, older than words.', eclipse: 'When the moon swallows the sun.', matrix: 'Wake up.', hades: 'Lord of everything below.',
+  monarch: 'It rules the rot.', requiem: 'A song for the end.', overseer: 'It sees every roll.', bloodlust: 'Never full.', deleted: 'This aura has been removed.',
+  starscourge: 'A plague of falling stars.', sovereign: 'Kneel.', paradox: 'It is and it is not.', archangel: 'The highest of the host.',
+  singularity: 'Everything falls in.', overcontrol: 'The one who holds the dice.', genesis: 'The first light.', equinox: 'The white sun and the black sun, perfectly balanced. The Equilibrium Incarnate.',
+  lantern: 'Carved with a grin.', wraith: 'Cold where it passes.', undertaker: 'Every grave, dug by hand.', bloodmoon: 'The moon bleeds on this night.', pumpking: 'All hail the King of the Patch.',
+  hallowed: 'The night when the walls between worlds are thinnest.', limbo: 'Neither here nor there.', unknown: '???',
+  fault: 'A crack in the code.', pharaoh: 'Buried with his gold.', mirage: 'It was never there.', gale: 'Hold on to something.', astral: 'Walks between constellations.', parasite: 'It is inside you now.',
+};
+const LORE_BY_ELEMENT = { fire: 'It burns.', ice: 'Cold to the touch.', storm: 'Charged with lightning.', light: 'Warm and bright.', dark: 'It lives in the shadows.', nature: 'Grown, not made.', water: 'From the deep.', star: 'From far above.', void: 'From nowhere.', gem: 'Cut and polished.', wind: 'Restless.', earth: 'From the sand.', toxic: 'Do not breathe it in.', glitch: 'ERROR.', arcane: 'Strange and old.', balance: 'In balance.' };
+export const loreOf = id => LORE[id] || LORE_BY_ELEMENT[ELEMENT_OF[id] || 'arcane'];
+
 // ---------------- the shared clock: everyone sees the same time, biome and Jester ----------------
 export const DAY_MS = 10 * 60 * 1000;              // day and night swap every 10 minutes
 export const WEATHER_SLOT_MS = 8 * 60 * 1000;      // a biome can start every 8 minutes
@@ -529,12 +715,15 @@ export function timeOfDay(now, world = {}) {
 // 0..1: how far into the current day or night (for the sun and moon)
 export const dayProgress = now => (now % DAY_MS) / DAY_MS;
 const BIOME_ODDS = [['windy', 0.12], ['rain', 0.11], ['snow', 0.09], ['sandstorm', 0.07], ['hell', 0.05], ['starfall', 0.05], ['heaven', 0.04], ['corruption', 0.04], ['null', 0.03], ['glitched', 0.015]];
+// during Halloween the spooky biomes take some of Normal's place (Pumpkin Moon only at night)
+const HALLOWEEN_ODDS = [['pumpkinmoon', 0.07], ['graveyard', 0.06], ['bloodrain', 0.04]];
 export function weatherAt(now, world = {}) {
   if (world.weather && world.weather.until > now) return world.weather.type;
   const slot = Math.floor(now / WEATHER_SLOT_MS);
   if (now - slot * WEATHER_SLOT_MS > WEATHER_LEN_MS) return 'clear';
   let r = hash01(slot + 7);
   for (const [w, p] of BIOME_ODDS) { if (r < p) return w; r -= p; }
+  if (isHalloween(now)) for (const [w, p] of HALLOWEEN_ODDS) { if (r < p) return w === 'pumpkinmoon' && timeOfDay(now, world) !== 'night' ? 'graveyard' : w; r -= p; }
   return 'clear';
 }
 // when the current biome ends (for the timer in the corner)

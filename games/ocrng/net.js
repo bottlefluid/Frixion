@@ -4,7 +4,9 @@
 //   ocrng/hits/{name}    aura attacks aimed at someone (applied only if both of you have PvP on).
 //   ocrng/fx             attack effects for everyone to see. Each one deletes itself after a few seconds.
 //   ocrng/announce       "X HAS FOUND EQUINOX" for very rare rolls.
-//   ocrng/world          what staff started from the admin panel: weather, day or night, the Jester.
+//   ocrng/world          biomes, day or night, the Jester and server luck: from the admin panel, runes and Biome Randomizers.
+//   ocrng/raid           the raid boss everyone is fighting: its health, and when it gave up or died.
+//   ocrng/chat           chat messages (chat.js), each one deleted after 20 seconds.
 // Everyone leaves the roster automatically when they disconnect.
 export function createNet(rtdb, firebase, uid, on) {
   const ref = p => rtdb.ref('ocrng/' + p);
@@ -50,6 +52,7 @@ export function createNet(rtdb, firebase, uid, on) {
       listen(ref('fx').limitToLast(8), 'child_added', s => { const f = s.val(); if (f && f.uid !== uid && Date.now() - (f.t || 0) < 4000) on.fx(f); });
       listen(ref('announce').limitToLast(1), 'child_added', s => { const a = s.val(); if (a && (a.t || 0) > joinedAt - 15000) on.announce(a); });
       listen(ref('world'), 'value', s => on.world(s.val() || {}));
+      listen(ref('raid'), 'value', s => on.raid && on.raid(s.val()));
     },
     update(partial) { myRoster.update(partial).catch(() => {}); },
     // Where you are, at most 10 times a second, and only when something changed.
@@ -66,6 +69,11 @@ export function createNet(rtdb, firebase, uid, on) {
     fx(f) { const r = ref('fx').push({ ...f, uid, t: Date.now() }); setTimeout(() => r.remove().catch(() => {}), 4000); },
     announce(a) { ref('announce').push({ ...a, uid, t: Date.now() }).catch(() => {}); },
     setWorld(partial) { return ref('world').update(partial); },
+    // only starts if nothing is being fought already (or the last fight is over)
+    raidStart(state) { return ref('raid').transaction(cur => (!cur || cur.dead || cur.gone || cur.until < Date.now() ? state : undefined)); },
+    raidHit(dmg) { return ref('raid/hp').transaction(hp => (typeof hp === 'number' ? Math.max(0, hp - dmg) : hp)); },
+    raidUpdate(fields) { return ref('raid').update(fields).catch(() => {}); },
+    raidClear() { return ref('raid').remove().catch(() => {}); },
     clearWorld() { return ref('world').remove(); },
     leave() {
       offs.forEach(f => f()); offs.length = 0;

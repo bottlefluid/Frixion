@@ -28,6 +28,9 @@ const BIOMES = {
   hell: { scale: 'phrygian', prog: 'dark', bpm: 124, energy: 3, drive: 1 }, starfall: { scale: 'lydian', prog: 'bright', bpm: 90, energy: 2, bells: 1 },
   heaven: { scale: 'major', prog: 'bright', bpm: 66, energy: 1, choir: 1 }, corruption: { scale: 'locrian', prog: 'dark', bpm: 92, energy: 2 },
   null: { scale: 'whole', prog: 'dark', bpm: 58, energy: 0.5 }, glitched: { scale: 'locrian', prog: 'dark', bpm: 140, energy: 3, glitch: 1 },
+  pumpkinmoon: { scale: 'harmonic', prog: 'dark', bpm: 96, energy: 2, bells: 1 }, graveyard: { scale: 'minor', prog: 'dark', bpm: 62, energy: 1, choir: 1 },
+  bloodrain: { scale: 'phrygian', prog: 'dark', bpm: 112, energy: 2.5, drive: 1 }, limbo: { scale: 'whole', prog: 'dark', bpm: 48, energy: 0.5, bells: 1 },
+  raid: { scale: 'phrygian', prog: 'dark', bpm: 138, energy: 3, drive: 1 },
 };
 
 // A theme: everything needed to play it, worked out once from a seed.

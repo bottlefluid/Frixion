@@ -81,17 +81,37 @@ export function createWorld(scene, quality) {
     s.scale.set(scale, scale, 1); s.position.set(x, y, z); parent.add(s); return s;
   };
 
-  // ---- ground: a green baseplate, wider to the west where the mountain stands ----
+  // ---- the island: green on top, dirt cliffs down the sides, sand around it, and the ocean all the way out ----
   const B = { minX: -170, maxX: 100, minZ: -100, maxZ: 100 };
-  const GW = B.maxX - B.minX, GD = B.maxZ - B.minZ;
+  const GW = B.maxX - B.minX, GD = B.maxZ - B.minZ, cx0 = (B.minX + B.maxX) / 2;
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(GW, GD), studMat('#5aa34f', GW, GD));
-  ground.rotation.x = -Math.PI / 2; ground.position.set((B.minX + B.maxX) / 2, 0, 0); ground.receiveShadow = shadows; root.add(ground);
-  // the edges: a low fence, and invisible walls so nobody walks off the world
-  const cx0 = (B.minX + B.maxX) / 2;
-  for (const [x, z, w, d] of [[cx0, B.minZ + 1, GW, 1], [cx0, B.maxZ - 1, GW, 1], [B.minX + 1, 0, 1, GD], [B.maxX - 1, 0, 1, GD]]) {
-    box(x, 0, z, w, 2.2, d, '#8d6e63', { smooth: true });
-    colliders.push({ min: new THREE.Vector3(x - w / 2, 0, z - d / 2), max: new THREE.Vector3(x + w / 2, 90, z + d / 2), cam: false });
+  ground.rotation.x = -Math.PI / 2; ground.position.set(cx0, 0, 0); ground.receiveShadow = shadows; root.add(ground);
+  const cliff = new THREE.Mesh(new THREE.BoxGeometry(GW, 10, GD), [studMat('#7a5236', GD, 10), studMat('#7a5236', GD, 10), plainMat('#5aa34f'), plainMat('#5a3a24'), studMat('#7a5236', GW, 10), studMat('#7a5236', GW, 10)]);
+  cliff.position.set(cx0, -5.02, 0); root.add(cliff);
+  const SAND = 7, sandY = -0.5;
+  const sand = (x0, x1, z0, z1) => box((x0 + x1) / 2, -4, (z0 + z1) / 2, x1 - x0, 4 + sandY, z1 - z0, '#e8d29a', { topColor: '#efdca6', noShadow: true });
+  sand(B.minX - SAND, B.maxX + SAND, B.maxZ, B.maxZ + SAND); sand(B.minX - SAND, B.maxX + SAND, B.minZ - SAND, B.minZ);
+  sand(B.minX - SAND, B.minX, B.minZ, B.maxZ); sand(B.maxX, B.maxX + SAND, B.minZ, -24); sand(B.maxX, B.maxX + SAND, -16, B.maxZ);
+  sand(B.maxX, B.maxX + 3, -24, -16);
+  // a ragged coastline: chunks of grass and dirt sticking out into the sand
+  const coast = mulberry(7);
+  for (let i = 0; i < 26; i++) {
+    const side = i % 4, len = 8 + coast() * 18, dep = 2 + coast() * 4;
+    if (side === 0) box(B.minX + 10 + coast() * (GW - 30), -8, B.maxZ + dep / 2, len, 8, dep, '#7a5236', { topColor: '#5aa34f', studsAllOver: true });
+    if (side === 1) box(B.minX + 10 + coast() * (GW - 30), -8, B.minZ - dep / 2, len, 8, dep, '#7a5236', { topColor: '#5aa34f', studsAllOver: true });
+    if (side === 2) box(B.minX - dep / 2, -8, B.minZ + 10 + coast() * (GD - 30), dep, 8, len, '#7a5236', { topColor: '#5aa34f', studsAllOver: true });
+    if (side === 3) { const z = B.minZ + 10 + coast() * (GD - 30); if (Math.abs(z + 20) > 14) box(B.maxX + dep / 2, -8, z, dep, 8, len, '#7a5236', { topColor: '#5aa34f', studsAllOver: true }); }
   }
+  // the ocean
+  const ocean = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshStandardMaterial({ color: '#1e6bff', map: waterTex(), roughness: 0.25, metalness: 0.05, transparent: true, opacity: 0.94 }));
+  ocean.material.map.repeat.set(160, 160);
+  ocean.rotation.x = -Math.PI / 2; ocean.position.set(cx0, -1.4, 0); root.add(ocean);
+  animated.push(dt => { ocean.material.map.offset.x += dt * 0.01; ocean.material.map.offset.y += dt * 0.006; });
+  // invisible walls at the water's edge, with a gap in the east where stepping stones lead out to a tiny island
+  const edge = (x0, x1, z0, z1) => colliders.push({ min: new THREE.Vector3(x0, -6, z0), max: new THREE.Vector3(x1, 90, z1), cam: false });
+  const E = SAND + 1;
+  edge(B.minX - E, B.maxX + E, B.maxZ + SAND, B.maxZ + E); edge(B.minX - E, B.maxX + E, B.minZ - E, B.minZ - SAND);
+  edge(B.minX - E, B.minX - SAND, B.minZ - E, B.maxZ + E); edge(B.maxX + SAND, B.maxX + E, B.minZ - E, -24); edge(B.maxX + SAND, B.maxX + E, -16, B.maxZ + E);
 
   // ---- paths from the plaza to each place ----
   const path = (x, z, w, d) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), studMat('#a1a1a1', w, d)); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.03, z); m.receiveShadow = shadows; root.add(m); };
@@ -314,12 +334,27 @@ export function createWorld(scene, quality) {
   // inside: a cave. Layer 0 has a chasm; layers 1-3 hold the cavern; a corridor runs in from the east face;
   // a hidden crystal room sits behind a wall you can walk through.
   const PIT = [-140, -122, -74, -38], CAVERN = [-150, -120, -74, -38], CORRIDOR = [-120, -97, -58, -52], CRYSTAL = [-138, -128, -84, -74];
-  const mtColor = i => (i >= 12 ? ['#cfd8e3', '#f4f8ff'] : i >= 8 ? ['#7d8289', '#8f959c'] : i >= 4 ? ['#78716c', '#5a9e48'] : ['#6f6a65', '#86807a']);
+  // like Sol's mountain: brown dirt with grass on the lower terraces, grey rock higher up, snow on top
+  const mtColor = i => (i >= 12 ? ['#d6dee8', '#f4f8ff'] : i >= 8 ? ['#7d7f84', '#8f959c'] : ['#7a5236', '#5aa34f']);
   for (let i = 0; i < MT.n; i++) {
     const r = lay(i), y = i * MT.h, [side, top] = mtColor(i);
     const holes = i === 0 ? [PIT] : i <= 2 ? [CAVERN, CORRIDOR, CRYSTAL] : i === 3 ? [CAVERN] : [];
     for (const piece of holes.length ? rectMinus(r, holes) : [r]) boxR(piece, y, MT.h, side, { studsAllOver: true, topColor: top });
   }
+  // boulders and outcrops on the north, west and east faces (never on the trail side), so it isn't a neat pyramid
+  const rock = mulberry(99);
+  for (let i = 0; i < MT.n - 2; i++) {
+    const r = lay(i), y = i * MT.h, [side, top] = mtColor(i);
+    for (let k = 0; k < 3; k++) {
+      const face = Math.floor(rock() * 3), w = 3 + rock() * 6, h = 2 + rock() * 4, d = 2 + rock() * 3;
+      if (face === 0) { const x = r[0] + 6 + rock() * (r[1] - r[0] - 12); if (i > 1 || Math.abs(x + 132) > 7) box(x, y, r[2] - d / 2 + 1.2, w, h, d, side, { studsAllOver: true, topColor: top }); }
+      if (face === 1) box(r[0] - d / 2 + 1.2, y, r[2] + 6 + rock() * (r[3] - r[2] - 22), d, h, w, side, { studsAllOver: true, topColor: top });
+      if (face === 2 && !(y < 11 && rock() < 2)) { const z = r[2] + 6 + rock() * (r[3] - r[2] - 22); if (Math.abs(z + 55) > 9) box(r[1] + d / 2 - 1.2, y, z, d, h, w, side, { studsAllOver: true, topColor: top }); }
+    }
+  }
+  // stone floors inside the cave, and two old ladders on the north face
+  for (const f of [[-150, -140, -74, -38], [-122, -97, -58, -52], [-138, -128, -84, -74], [-122, -120, -74, -38]]) box((f[0] + f[1]) / 2, 3.6, (f[2] + f[3]) / 2, f[1] - f[0], 0.04, f[3] - f[2], '#6d6560', { noCollide: true, topColor: '#7e7873' });
+  for (const lx of [-150, -118]) { for (const s of [-0.6, 0.6]) box(lx + s, 0, -95.4, 0.2, 14, 0.2, '#6d4c41', { noCollide: true, smooth: true }); for (let k = 1; k < 14; k += 1.2) box(lx, k, -95.4, 1.3, 0.15, 0.2, '#8d6e63', { noCollide: true, smooth: true }); }
   // the trail: three steps on each terrace's south ledge, alternating ends, starting on the ground at the east end
   for (let i = -1; i < MT.n - 1; i++) {
     const r = i < 0 ? [MT.x0, MT.x1, 0, MT.z1] : lay(i), y = i < 0 ? 0 : (i + 1) * MT.h;
@@ -399,6 +434,94 @@ export function createWorld(scene, quality) {
   animated.push((dt, t) => { banner.rotation.y = Math.sin(t * 2) * 0.2; });
   const mtSign = signBoard('THE MOUNTAIN', 'Trail to the top. A cave in the east face.', '#cfd8e3'); mtSign.position.set(-94, 0, -2); mtSign.rotation.y = Math.PI * 1.75; root.add(mtSign);
 
+  // ---- Jake's Workshop: a wooden hut north of the plaza where gears are made ----
+  const JKX = -24, JKZ = -34;
+  box(JKX, 0, JKZ, 12, 0.6, 9, '#8d6e63', { topColor: '#a1887f' });
+  box(JKX, 0.6, JKZ - 4.2, 12, 6, 0.6, '#795548'); box(JKX - 5.7, 0.6, JKZ - 1, 0.6, 6, 6.4, '#795548'); box(JKX + 5.7, 0.6, JKZ - 1, 0.6, 6, 6.4, '#795548');
+  for (const s of [-1, 1]) { const roof = new THREE.Mesh(new THREE.BoxGeometry(13.4, 0.5, 6), plainMat('#c62828')); roof.position.set(JKX, 7.6, JKZ - 1 + s * 2.4); roof.rotation.x = s * 0.42; roof.castShadow = shadows; root.add(roof); }
+  box(JKX - 2.5, 0.6, JKZ - 2.6, 4.5, 1.6, 1.6, '#5d4037', { topColor: '#6d4c41' });                       // workbench
+  box(JKX + 2.6, 0.6, JKZ - 2.6, 1.6, 1.1, 1.2, '#37474f'); box(JKX + 2.6, 1.7, JKZ - 2.6, 2.4, 0.5, 1, '#455a64');   // anvil
+  const sparks = bubbleDots('#ffb74d', 10); sparks.obj.position.set(JKX + 2.6, 2.3, JKZ - 2.6); root.add(sparks.obj); animated.push(dt => sparks.update(dt));
+  const jake = npc('Jake', 'Gears', '#5d4037', '#ffb74d'); jake.root.position.set(JKX, 0.6, JKZ - 0.5); root.add(jake.root);
+  const jakeSign = signBoard('JAKE\'S WORKSHOP', 'Gears for your hands', '#ffb74d'); jakeSign.position.set(JKX + 7.5, 0, JKZ + 4); jakeSign.rotation.y = -0.4; root.add(jakeSign);
+
+  // ---- the raid arena (east): The Crawler bursts out of the sand here ----
+  const ARENA = new THREE.Vector3(76, 0, 18);
+  const arenaSand = new THREE.Mesh(new THREE.CircleGeometry(17, 40), studMat('#d9b56e', 34, 34)); arenaSand.rotation.x = -Math.PI / 2; arenaSand.position.set(ARENA.x, 0.04, ARENA.z); root.add(arenaSand);
+  for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2; box(ARENA.x + Math.cos(a) * 18.5, 0, ARENA.z + Math.sin(a) * 18.5, 2.2, 1 + (i % 3) * 0.7, 2.2, '#a1887f', { ry: a }); }
+  const arenaSign = signBoard('THE PIT', 'Something lives under the sand', '#f0c87a'); arenaSign.position.set(ARENA.x - 20, 0, ARENA.z - 10); arenaSign.rotation.y = Math.PI * 0.35; root.add(arenaSign);
+
+  // ---- Halloween: pumpkins everywhere, and Jack, who trades Pumpkin Tokens ----
+  const spooky = new THREE.Group(); spooky.visible = false; root.add(spooky);
+  const faceTex = textCanvas(64, 64, x => { x.fillStyle = '#000'; x.fillRect(0, 0, 64, 64); x.fillStyle = '#ffcc33'; x.beginPath(); x.moveTo(12, 26); x.lineTo(22, 14); x.lineTo(28, 28); x.fill(); x.beginPath(); x.moveTo(52, 26); x.lineTo(42, 14); x.lineTo(36, 28); x.fill(); x.beginPath(); x.moveTo(10, 38); x.lineTo(20, 44); x.lineTo(26, 38); x.lineTo(32, 46); x.lineTo(38, 38); x.lineTo(44, 44); x.lineTo(54, 38); x.lineTo(46, 54); x.lineTo(18, 54); x.fill(); });
+  const pumpkinFaces = [];
+  const pumpkin = (x, y, z, s = 1, ry = 0) => {
+    const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = ry; spooky.add(g);
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.9 * s, 14, 10), plainMat('#ff7a00')); body.scale.y = 0.78; body.position.y = 0.7 * s; body.castShadow = shadows; g.add(body);
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.1 * s, 0.14 * s, 0.4 * s, 6), plainMat('#4e7a2a')); stem.position.y = 1.45 * s; g.add(stem);
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(1.1 * s, 1.1 * s), new THREE.MeshBasicMaterial({ map: faceTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); face.position.set(0, 0.72 * s, 0.86 * s); g.add(face);
+    pumpkinFaces.push(face.material);
+    return g;
+  };
+  [[-14, 16], [14, 16], [-14, -16], [14, -16], [-6, 18], [6, 18]].forEach(([x, z], i) => pumpkin(x, 1, z, 1.1, i < 4 ? Math.atan2(-x, -z) : 0));
+  [[-40, 66], [-52, 66], [-35, 80], [-58, 80], [JKX - 6, JKZ + 4], [JKX + 6, JKZ + 4], [ARENA.x, ARENA.z + 20], [-94, -4]].forEach(([x, z]) => pumpkin(x, 0, z, 0.9, Math.random() * 6));
+  const jack = npc('Jack', 'Pumpkin Tokens', '#3e2723', '#ff9800', 'pumpkin'); jack.root.position.set(-33, 0, 70); jack.root.rotation.y = -Math.PI / 2; spooky.add(jack.root);
+
+  // ---- secrets ----
+  const duckAt = (x, y, z, s = 1) => {
+    const d = new THREE.Group(); d.position.set(x, y, z); d.scale.setScalar(s); root.add(d);
+    const yl = plainMat('#ffeb3b');
+    const b = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.9), yl); b.position.y = 0.4; d.add(b);
+    const h = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), yl); h.position.set(0.45, 1, 0); d.add(h);
+    const k = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.15, 0.3), plainMat('#ff9800')); k.position.set(0.85, 0.95, 0); d.add(k);
+    animated.push((dt, t) => { d.rotation.y = Math.sin(t * 0.4 + x) * 0.8; });
+    return d;
+  };
+  duckAt(-86, 0.2, 58, 0.8); duckAt(-51, 0, -17.5, 0.7);
+  // a tiny island out in the eastern sea, reached by stepping stones
+  for (let i = 0; i < 8; i++) box(B.maxX + 5 + i * 4.6, -2.4, -20 + Math.sin(i * 1.3) * 2.2, 2.6, 2.4 + 0.15 * i, 2.6, '#8d8d8d', { topColor: '#9e9e9e' });
+  const ISX = B.maxX + 47, ISZ = -20;
+  box(ISX, -3, ISZ, 14, 3.6, 12, '#7a5236', { topColor: '#e8d29a', studsAllOver: true });
+  box(ISX + 2.5, 0.6, ISZ - 1.5, 1, 7, 1, '#8d6e63'); box(ISX + 2.5, 7.6, ISZ - 1.5, 5, 0.6, 1.4, '#43a047', { noCollide: true }); box(ISX + 2.5, 7.6, ISZ - 1.5, 1.4, 0.6, 5, '#388e3c', { noCollide: true });
+  duckAt(ISX - 3, 0.6, ISZ + 2.5, 0.9);
+  const isleSign = signBoard('THE EDGE', 'You swam to the end of the world. Well, walked.', '#4fc3f7'); isleSign.position.set(ISX - 2, 0.6, ISZ - 4.5); root.add(isleSign);
+  edge(ISX - 8, ISX + 8, ISZ - 7, ISZ - 6); edge(ISX - 8, ISX + 8, ISZ + 6, ISZ + 7); edge(ISX + 7, ISX + 8, ISZ - 7, ISZ + 7);
+  const qb = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), new THREE.MeshStandardMaterial({ map: textCanvas(64, 64, x => { x.fillStyle = '#ffb300'; x.fillRect(0, 0, 64, 64); x.strokeStyle = '#7a4a00'; x.lineWidth = 4; x.strokeRect(2, 2, 60, 60); x.fillStyle = '#fff'; x.font = '900 46px Montserrat, sans-serif'; x.textAlign = 'center'; x.fillText('?', 32, 48); }), emissive: '#ffb300', emissiveIntensity: 0.35 }));
+  qb.position.set(ISX + 3, 3.4, ISZ + 2.5); root.add(qb); glow('#ffd54f', 4, ISX + 3, 3.4, ISZ + 2.5, root, 0.4);
+  animated.push((dt, t) => { qb.rotation.y += dt; qb.position.y = 3.4 + Math.sin(t * 2) * 0.2; });
+  // a little door at the bottom of the tower, which leads to a room with a jukebox
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.6, 1.6), plainMat('#3e2723')); door.position.set(TX - 3.1, 1.3, TZ); root.add(door);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), plainMat('#ffd54f', { metal: 0.6 })); knob.position.set(TX - 3.25, 1.3, TZ + 0.5); root.add(knob);
+  const JBX = 0, JBZ = 1100;
+  box(JBX, 0, JBZ, 22, 1, 22, '#1a1a24');
+  for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { const tile = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4), new THREE.MeshBasicMaterial({ color: (i + j) % 2 ? '#7c4dff' : '#00e5ff', transparent: true, opacity: 0.55 })); tile.rotation.x = -Math.PI / 2; tile.position.set(JBX - 8.4 + i * 2.4, 1.02, JBZ - 8.4 + j * 2.4); root.add(tile); animated.push((dt, t) => { tile.material.opacity = 0.25 + 0.35 * (Math.sin(t * 4 + i * 0.7 + j * 1.3) * 0.5 + 0.5); }); }
+  for (const [x, z, w, d] of [[JBX, JBZ - 11, 22, 1], [JBX, JBZ + 11, 22, 1], [JBX - 11, JBZ, 1, 22], [JBX + 11, JBZ, 1, 22]]) box(x, 1, z, w, 9, d, '#11111a');
+  box(JBX, 10, JBZ, 23, 1, 23, '#0d0d14', { noShadow: true });   // the ceiling
+  for (let i = 0; i < 4; i++) { const disco = glow(['#ff4081', '#7c4dff', '#00e5ff', '#ffd740'][i], 7, JBX - 6 + i * 4, 8.6, JBZ, root, 0.5); animated.push((dt, t) => { disco.material.opacity = 0.25 + 0.3 * (Math.sin(t * 3 + i * 1.6) * 0.5 + 0.5); }); }
+  const jbox = new THREE.Group(); jbox.position.set(JBX, 1, JBZ - 8.5); root.add(jbox);
+  const jb1 = new THREE.Mesh(new THREE.BoxGeometry(3, 4, 1.6), plainMat('#5d4037')); jb1.position.y = 2; jbox.add(jb1);
+  const jbTop = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 1.6, 20, 1, false, 0, Math.PI), plainMat('#6d4c41')); jbTop.rotation.z = Math.PI / 2; jbTop.rotation.y = Math.PI / 2; jbTop.position.y = 4; jbox.add(jbTop);
+  const jbGlow = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.4), new THREE.MeshBasicMaterial({ color: '#ff4081' })); jbGlow.position.set(0, 2.2, 0.81); jbox.add(jbGlow);
+  animated.push((dt, t) => { jbGlow.material.color.setHSL((t * 0.15) % 1, 0.9, 0.6); });
+  glow('#ff4081', 8, JBX, 4, JBZ - 8, root, 0.4);
+  const jbSign = signBoard('JUKEBOX', 'Every aura you have found has a song', '#ff4081'); jbSign.position.set(JBX + 6, 1, JBZ - 10); root.add(jbSign);
+  const jbExit = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.2, 10, 40), new THREE.MeshBasicMaterial({ color: '#ffffff' })); jbExit.position.set(JBX, 3.6, JBZ + 9); root.add(jbExit); glow('#ffffff', 6, JBX, 3.6, JBZ + 9);
+  animated.push((dt, t) => { jbExit.rotation.z = t; });
+  // Limbo: a black door on the mountain's north face, and the nowhere behind it
+  const ldoor = new THREE.Mesh(new THREE.BoxGeometry(2.4, 4, 0.3), new THREE.MeshStandardMaterial({ color: '#050505', emissive: '#2a0050', emissiveIntensity: 0.6 })); ldoor.position.set(-132, 2, -95.2); root.add(ldoor);
+  glow('#7c4dff', 6, -132, 2, -95.6, root, 0.3);
+  const LX0 = -900, LZ0 = 0;
+  const limboFloor = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), new THREE.MeshBasicMaterial({ color: '#050505' })); limboFloor.rotation.x = -Math.PI / 2; limboFloor.position.set(LX0, 0, LZ0); root.add(limboFloor);
+  const grid = new THREE.GridHelper(120, 40, '#3a3a3a', '#1a1a1a'); grid.position.set(LX0, 0.02, LZ0); root.add(grid);
+  colliders.push({ min: new THREE.Vector3(LX0 - 60, -2, LZ0 - 60), max: new THREE.Vector3(LX0 + 60, 0, LZ0 + 60) });
+  for (const [x0, x1, z0, z1] of [[-60, 60, -61, -60], [-60, 60, 60, 61], [-61, -60, -60, 60], [60, 61, -60, 60]]) colliders.push({ min: new THREE.Vector3(LX0 + x0, 0, LZ0 + z0), max: new THREE.Vector3(LX0 + x1, 40, LZ0 + z1), cam: false });
+  const limboCubes = [];
+  for (let i = 0; i < 30; i++) { const c = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: i % 4 ? '#ffffff' : '#000000', wireframe: i % 4 !== 0 })); c.position.set(LX0 + (Math.random() - 0.5) * 100, 3 + Math.random() * 20, LZ0 + (Math.random() - 0.5) * 100); c.userData.s = 0.2 + Math.random(); root.add(c); limboCubes.push(c); }
+  animated.push((dt, t) => limboCubes.forEach(c => { c.rotation.x += dt * c.userData.s; c.rotation.y += dt * c.userData.s * 0.7; }));
+  const limboLight = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 80, 24, 1, true), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.5, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }));
+  limboLight.position.set(LX0, 40, LZ0 + 30); root.add(limboLight);
+  const limboSign = signBoard('LIMBO', 'Rolls here can find Limbo auras. Walk into the light to leave.', '#bdbdbd'); limboSign.position.set(LX0, 0, LZ0 - 6); root.add(limboSign);
+
   // ---- the Jester's lost cards (only shown while his quest is on) ----
   const cardAt = { card1: new THREE.Vector3(TX - 2, TH + 1, TZ + 2), card2: new THREE.Vector3(15, 0.3, CZ - 6), card3: new THREE.Vector3(-129.5, 3.6, -80) };
   const cards = {};
@@ -415,9 +538,10 @@ export function createWorld(scene, quality) {
   const blocked = (x, z) => Math.hypot(x, z) < 24 || (Math.abs(x - MX) < 14 && Math.abs(z - MZ) < 14) || (Math.abs(x - JX) < 14 && Math.abs(z - JZ) < 16)
     || (Math.abs(x - PX) < 28 && Math.abs(z - PZ) < 22) || z < -68 || (Math.abs(x - 66) < 18 && Math.abs(z + 36) < 16) || (x < -78 && z > 8 && z < 72) || (Math.abs(x - 23) < 6 && Math.abs(z - 11) < 6) || (Math.abs(x - TX) < 12 && Math.abs(z - TZ) < 12) || (Math.abs(x - SX) < 8 && Math.abs(z - SZ) < 8)
     || Math.abs(x) < 5 || (Math.abs(z + 6) < 5 && Math.abs(x) < 45) || (Math.abs(x + 40) < 5 && z > 0 && z < 40) || (Math.abs(x - GX) < 6 && Math.abs(z - GZ) < 6)
-    || (x < -92 && z < 4) || (Math.abs(x - OB.x) < 14 && Math.abs(z - OB.z) < 14) || (Math.abs(x - GYX) < 15 && Math.abs(z - GYZ) < 12) || (Math.abs(z + 18) < 4 && Math.abs(x) < 20) || (Math.abs(z + 6) < 5 && x < -40 && x > -96);
+    || (x < -92 && z < 4) || (Math.abs(x - OB.x) < 14 && Math.abs(z - OB.z) < 14) || (Math.abs(x - GYX) < 15 && Math.abs(z - GYZ) < 12) || (Math.abs(z + 18) < 4 && Math.abs(x) < 20) || (Math.abs(z + 6) < 5 && x < -40 && x > -96)
+    || (Math.abs(x - JKX) < 12 && z > JKZ - 10 && z < JKZ + 16) || Math.hypot(x - ARENA.x, z - ARENA.z) < 22 || (Math.abs(x + 33) < 4 && Math.abs(z - 70) < 4);
   let trees = 0;
-  for (let i = 0; i < 600 && trees < 64; i++) {
+  for (let i = 0; i < 1400 && trees < 120; i++) {
     const x = B.minX + 6 + rand() * (GW - 12), z = B.minZ + 6 + rand() * (GD - 12);
     if (blocked(x, z)) continue;
     trees++;
@@ -499,12 +623,16 @@ export function createWorld(scene, quality) {
     corruption: { top: '#1e0730', bottom: '#5b2a6e', fog: '#3a1550', sun: 0.6, hemi: 0.65, sunColor: '#d38cff', fogNear: 30, fogFar: 200 },
     null: { top: '#111111', bottom: '#3a3a3a', fog: '#1c1c1c', sun: 0.5, hemi: 0.55, fogNear: 25, fogFar: 160 },
     glitched: { top: '#001a14', bottom: '#00594a', fog: '#002a22', sun: 0.7, hemi: 0.75, sunColor: '#00ffd0', fogNear: 30, fogFar: 200 },
+    pumpkinmoon: { top: '#1a0b00', bottom: '#5a2a00', fog: '#2e1400', sun: 0.6, hemi: 0.6, sunColor: '#ffa040', fogNear: 40, fogFar: 240 },
+    graveyard: { top: '#1c2420', bottom: '#4c5a52', fog: '#3a463f', sun: 0.55, hemi: 0.6, sunColor: '#b8d8c0', fogNear: 18, fogFar: 140 },
+    bloodrain: { top: '#2a0000', bottom: '#6b0a0a', fog: '#3a0505', sun: 0.6, hemi: 0.6, sunColor: '#ff5252', fogNear: 30, fogFar: 190 },
+    limbo: { top: '#000000', bottom: '#0a0a0a', fog: '#000000', sun: 0.35, hemi: 0.55, sunColor: '#ffffff', fogNear: 25, fogFar: 95 },
   };
   const cur = { top: new THREE.Color(look.day.top), bottom: new THREE.Color(look.day.bottom), fog: new THREE.Color(look.day.fog), sun: 1.6, hemi: 0.9, stars: 0, near: 120, far: 420, sunColor: new THREE.Color('#ffffff') };
   const tmp = new THREE.Color();
   let glitchT = 0;
 
-  const npcs = { mari, jester, finn, marlin, nova, stella, ghost };
+  const npcs = { mari, jester, finn, marlin, nova, stella, ghost, jake, jack };
   return {
     root, colliders, bounds: B,
     spawn: new THREE.Vector3(0, 1, 6),
@@ -531,6 +659,14 @@ export function createWorld(scene, quality) {
       card2: { pos: cardAt.card2, r: 2.5, label: 'Pick up the card' },
       card3: { pos: cardAt.card3, r: 2.5, label: 'Pick up the card' },
       obby: { pos: new THREE.Vector3(FX, FY, FZ), r: 3.4, auto: true },
+      jake: { pos: new THREE.Vector3(JKX, 0.6, JKZ + 3), r: 5, label: 'Talk to Jake' },
+      jack: { pos: new THREE.Vector3(-35, 0, 70), r: 4.5, label: 'Talk to Jack' },
+      towerdoor: { pos: new THREE.Vector3(TX - 4.2, 0, TZ), r: 2.6, label: 'Open the little door' },
+      jukebox: { pos: new THREE.Vector3(JBX, 1, JBZ - 6), r: 3.5, label: 'Use the jukebox' },
+      jukebox_exit: { pos: new THREE.Vector3(JBX, 1, JBZ + 9), r: 2.6, auto: true },
+      limbodoor: { pos: new THREE.Vector3(-132, 0, -97.5), r: 3, label: 'Touch the black door' },
+      limbo_exit: { pos: new THREE.Vector3(LX0, 0, LZ0 + 30), r: 2.4, auto: true },
+      qblock: { pos: new THREE.Vector3(ISX + 3, 0.6, ISZ + 2.5), r: 3, label: 'Hit the ? block' },
     },
     eggs: {
       duck: { pos: new THREE.Vector3(11, 0.5, 51), r: 9, name: 'the rubber duck' },
@@ -541,6 +677,12 @@ export function createWorld(scene, quality) {
       summit: { pos: new THREE.Vector3(SUM.x, SUM.y, SUM.z), r: 9, name: 'the top of the mountain' },
       crystal: { box: { min: new THREE.Vector3(CRYSTAL[0], 3, CRYSTAL[2]), max: new THREE.Vector3(CRYSTAL[1], 11, CRYSTAL[3] - 0.5) }, name: 'the hidden crystal room' },
       graveyard: { box: { min: new THREE.Vector3(GYX - 11, 0, GYZ - 8), max: new THREE.Vector3(GYX + 11, 6, GYZ + 8) }, name: 'the graveyard at night', night: true },
+      duck2: { pos: new THREE.Vector3(-86, 0, 58), r: 7, name: 'a duck in the creek' },
+      duck3: { pos: new THREE.Vector3(-51, 0, -17.5), r: 4, name: 'a duck behind Mari\'s shop' },
+      duck4: { pos: new THREE.Vector3(ISX - 3, 0.6, ISZ + 2.5), r: 4, name: 'a duck on the tiny island' },
+      islet: { pos: new THREE.Vector3(ISX, 0.6, ISZ), r: 8, name: 'the edge of the world' },
+      jukebox: { pos: new THREE.Vector3(JBX, 1, JBZ), r: 14, name: 'the jukebox room' },
+      limbo: { pos: new THREE.Vector3(LX0, 0, LZ0), r: 70, name: 'Limbo' },
     },
     // the cave's chasm: fall in and you land back in the corridor
     pit: { min: new THREE.Vector3(PIT[0], -5, PIT[2]), max: new THREE.Vector3(PIT[1], 1.5, PIT[3]), back: new THREE.Vector3(-104, 3.6, -55) },
@@ -553,12 +695,17 @@ export function createWorld(scene, quality) {
     setChest(opened) { cLid.rotation.x = opened ? -1.2 : 0; cLid.position.z = opened ? -0.5 : 0; cLid.position.y = opened ? 1.8 : 1.45; chestGlow.visible = !opened; },
     ringBell() { bellSwing = 0.6; },
     setBoard(data) { board.draw(data); },
+    setHalloween(onOff) { spooky.visible = onOff; },
+    arena: ARENA,
+    rooms: { jukebox: new THREE.Vector3(JBX, 1, JBZ + 5), limbo: new THREE.Vector3(LX0, 0, LZ0 - 2), tower: new THREE.Vector3(TX - 5, 0, TZ), limboDoor: new THREE.Vector3(-132, 0, -98.5) },
+    inLimbo: p => Math.abs(p.x - LX0) < 61 && Math.abs(p.z - LZ0) < 61,
     update(dt, t, env) {
       for (const a of animated) a(dt, t, env);
       for (const n of Object.values(npcs)) n.update(dt, t);
       jester.root.visible = env.jester; jesterGlow.material.opacity = env.jester ? 0.35 + Math.sin(t * 3) * 0.15 : 0;
       const night = env.time === 'night';
       ghost.root.visible = night; ghostGlow.material.opacity = night ? 0.3 + Math.sin(t * 2) * 0.1 : 0;
+      if (spooky.visible) { const lit = night || ['graveyard', 'bloodrain', 'pumpkinmoon'].includes(env.weather); pumpkinFaces.forEach((m, i) => { m.opacity = lit ? 0.75 + Math.sin(t * 9 + i) * 0.15 : 0.35; }); }
       // sky and light
       let target = look[env.weather !== 'clear' ? env.weather : env.time];
       const base = look[env.time];
@@ -606,6 +753,12 @@ export function createWorld(scene, quality) {
       const brim = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.12, 20), plainMat('#1a237e')); brim.position.y = 5.32; a.body.add(brim);
       const cone = new THREE.Mesh(new THREE.ConeGeometry(0.7, 2.2, 16), plainMat('#1a237e')); cone.position.set(0, 6.4, -0.15); cone.rotation.x = -0.25; a.body.add(cone);
       const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.22), plainMat('#ffd54f', { emissive: '#ffd54f', glow: 0.8 })); star.position.set(0, 5.75, 0.62); a.body.add(star);
+    }
+    if (hat === 'pumpkin') {
+      a.head.visible = false;
+      const ph = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), plainMat('#ff7a00')); ph.scale.set(1, 0.85, 1); ph.position.y = 4.85; a.body.add(ph);
+      const pf = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3), new THREE.MeshBasicMaterial({ map: faceTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); pf.position.set(0, 4.85, 0.98); a.body.add(pf);
+      const ps = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.5, 6), plainMat('#4e7a2a')); ps.position.y = 5.8; a.body.add(ps);
     }
     if (hat === 'ghost') {
       const ghostly = m => { m = m.clone(); m.transparent = true; m.opacity = 0.5; m.color.set('#dceeff'); m.emissive = new THREE.Color('#9fc8ff'); m.emissiveIntensity = 0.5; return m; };
@@ -740,16 +893,16 @@ function makeWeather(scene) {
   const cubes = new THREE.Group(); scene.add(cubes);
   for (let i = 0; i < 40; i++) { const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: i % 3 ? '#000000' : '#ffffff' })); m.userData = { x: (Math.random() - 0.5) * 140, y: 4 + Math.random() * 30, z: (Math.random() - 0.5) * 140, s: 0.2 + Math.random() }; cubes.add(m); }
   let kind = null;
-  const POINTS = { snow: '#ffffff', hell: '#ff6a2b', heaven: '#fff3b0', sandstorm: '#e3c58e', corruption: '#c06bff', windy: '#c8f0a0' };
+  const POINTS = { snow: '#ffffff', hell: '#ff6a2b', heaven: '#fff3b0', sandstorm: '#e3c58e', corruption: '#c06bff', windy: '#c8f0a0', graveyard: '#c8d8d0', pumpkinmoon: '#ffab40' };
   return {
     update(dt, t, w, cam) {
       if (w !== kind) {
         kind = w;
-        pts.visible = !!POINTS[w]; lines.visible = ['rain', 'windy', 'starfall', 'sandstorm'].includes(w); cubes.visible = w === 'null' || w === 'glitched';
+        pts.visible = !!POINTS[w]; lines.visible = ['rain', 'windy', 'starfall', 'sandstorm', 'bloodrain'].includes(w); cubes.visible = w === 'null' || w === 'glitched';
         mat.color.set(POINTS[w] || '#ffffff');
         mat.size = w === 'snow' ? 0.5 : w === 'hell' ? 0.45 : w === 'heaven' ? 0.6 : w === 'sandstorm' ? 0.55 : w === 'windy' ? 0.4 : 0.6;
         mat.blending = w === 'snow' || w === 'sandstorm' || w === 'windy' ? THREE.NormalBlending : THREE.AdditiveBlending;
-        lineMat.color.set(w === 'starfall' ? '#dfe9ff' : w === 'windy' ? '#ffffff' : w === 'sandstorm' ? '#e9d2a2' : '#b8d4ff');
+        lineMat.color.set(w === 'starfall' ? '#dfe9ff' : w === 'windy' ? '#ffffff' : w === 'sandstorm' ? '#e9d2a2' : w === 'bloodrain' ? '#ff1744' : '#b8d4ff');
         lineMat.opacity = w === 'starfall' ? 0.9 : w === 'windy' ? 0.35 : 0.55;
         cubes.children.forEach((m, i) => m.material.color.set(w === 'glitched' ? (i % 2 ? '#00ffd0' : '#ff00aa') : (i % 3 ? '#000000' : '#ffffff')));
       }
@@ -758,7 +911,8 @@ function makeWeather(scene) {
           if (w === 'snow') { p.y -= (2 + p.s * 2) * dt; p.x += Math.sin(t + i) * dt * 0.8; }
           else if (w === 'hell') { p.y += (2 + p.s * 3) * dt; p.x += Math.sin(t * 2 + i) * dt; }
           else if (w === 'sandstorm' || w === 'windy') { p.x += (w === 'sandstorm' ? 26 : 18) * (0.6 + p.s) * dt; p.y += Math.sin(t * 3 + i) * dt * 2; if (p.x > 60) p.x -= 120; }
-          else if (w === 'corruption') { p.y += (0.6 + p.s) * dt; p.x += Math.sin(t + i) * dt; }
+          else if (w === 'corruption' || w === 'graveyard') { p.y += (0.6 + p.s) * dt * (w === 'graveyard' ? 0.4 : 1); p.x += Math.sin(t + i) * dt; }
+          else if (w === 'pumpkinmoon') { p.y += (1.5 + p.s * 2) * dt; p.x += Math.sin(t * 2 + i) * dt; }
           else { p.y += (0.3 + p.s) * dt; }
           if (p.y < 0) p.y += 60; if (p.y > 60) p.y -= 60;
           pos[i * 3] = cam.x + p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = cam.z + p.z;
@@ -768,7 +922,7 @@ function makeWeather(scene) {
       if (lines.visible) {
         P.forEach((p, i) => {
           let x = cam.x + p.x, z = cam.z + p.z;
-          if (w === 'rain') { p.y -= (40 + p.s * 20) * dt; if (p.y < 0) p.y += 60; linePos.set([x, p.y, z, x + 0.15, p.y + 1.6, z], i * 6); }
+          if (w === 'rain' || w === 'bloodrain') { p.y -= (40 + p.s * 20) * dt; if (p.y < 0) p.y += 60; linePos.set([x, p.y, z, x + 0.15, p.y + 1.6, z], i * 6); }
           else if (w === 'windy' || w === 'sandstorm') { p.x += (w === 'windy' ? 50 : 40) * (0.5 + p.s) * dt; if (p.x > 60) p.x -= 120; x = cam.x + p.x; linePos.set([x, p.y * 0.5, z, x - 3 - p.s * 3, p.y * 0.5 + 0.1, z], i * 6); }
           else if (w === 'starfall') {
             if (i % 9) { linePos.set([0, -99, 0, 0, -99, 0], i * 6); return; }
