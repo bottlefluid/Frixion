@@ -443,9 +443,11 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      excited, plain language. Lead with what's new and why it's good
 //      for the person reading it. Not a dry technical report, not an
 //      apology, not a confession.
-//   3. Add a new entry every single time you ship a change here, however
-//      small, even if the person didn't ask for one — bump the version,
-//      use today's date. Don't let this log fall behind reality.
+//   3. Every change you ship goes in this log, even if the person didn't
+//      ask — don't let it fall behind reality. A real update gets a new
+//      entry (bump the version, today's date). A very small change (a
+//      tweak, a small fix, one little addition) does NOT get its own
+//      version: add a line to the newest entry instead.
 //   4. Any screen shake, tilt, rumble or violent-motion effect you add MUST
 //      obey the "Reduce screen shake" accessibility setting. See the
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
@@ -455,6 +457,7 @@ const UPDATES = [
     notes: [
       'New /spoiler command: type /spoiler and your message, and it is sent hidden behind a spoiler until someone clicks it.',
       '/vanish, /unvanish and /sfmode are now Sapphire commands, listed under Sapphire in the command list.',
+      'The Owner can now send messages of any length, and Co-Owners up to 5,000 characters. Everyone else keeps the 1,000 limit.',
     ] },
   { v: '4.33', date: '2026-10-26', title: 'Unread dots, notifications and threads',
     notes: [
@@ -8428,7 +8431,7 @@ async function sendMessage() {
   }
   if (!raw && !pendingAttachments.length) return;
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
-  if (raw.length > COMPOSER_MAX_LENGTH) { toast(`Your message is ${raw.length - COMPOSER_MAX_LENGTH} characters over the limit.`, 'error'); return; }
+  { const tooLong = messageTooLong(raw); if (tooLong) { toast(tooLong, 'error'); return; } }
   if (sendChannel && sendChannel.slowmode) { lastChannelSendAt[sendChannel.id] = Date.now(); renderSlowmodeIndicator(); }
   input.value = '';
   autoResize(input);
@@ -8493,12 +8496,26 @@ function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(e
 // corner) so showing/hiding it never changes the composer bar's height.
 const COMPOSER_MAX_LENGTH = 1000;
 const COMPOSER_COUNT_SHOW_AT = 100; // only surface it once you're within 100 chars of the cap
+// The Owner has no limit (the database itself stops one message at about a million characters), Co-Owners get 5,000 and
+// everyone else 1,000. In sfmode staff get the normal limit, like any player.
+const MESSAGE_SIZE_CAP = 900000;
+function myMessageLimit() {
+  const rank = sfMode ? 0 : platformRank(myProfile);
+  return rank >= 3 ? Infinity : rank === 2 ? 5000 : COMPOSER_MAX_LENGTH;
+}
+// null when the text is fine to send, otherwise what to tell the person
+function messageTooLong(text) {
+  const limit = myMessageLimit();
+  if (text.length > limit) return `Your message is ${(text.length - limit).toLocaleString()} characters over the limit.`;
+  if (text.length > MESSAGE_SIZE_CAP) return 'That message is too big to send in one go. Split it into a few messages.';
+  return null;
+}
 function updateComposerCharCount() {
   updateComposerSendBtn();
   const counter = $('composer-char-count');
   if (!counter) return;
   const len = $('composer-input').value.length;
-  const remaining = COMPOSER_MAX_LENGTH - len;
+  const remaining = myMessageLimit() - len;
   if (remaining > COMPOSER_COUNT_SHOW_AT) { counter.classList.add('hidden'); return; }
   counter.classList.remove('hidden');
   const over = remaining < 0;
@@ -16073,7 +16090,7 @@ async function ovOpenChat(target) {
     '</header>' +
     '<div class="ov-msgs"></div>' +
     '<div class="ov-compose">' +
-      `<textarea class="ov-input" rows="1" maxlength="${COMPOSER_MAX_LENGTH}" placeholder="${placeholder}" aria-label="${label}"></textarea>` +
+      `<textarea class="ov-input" rows="1" ${Number.isFinite(myMessageLimit()) ? `maxlength="${myMessageLimit()}" ` : ""}placeholder="${placeholder}" aria-label="${label}"></textarea>` +
     '</div>';
   ovChats.push(chat);
   ovRoot.querySelector('#ov-chats').appendChild(chat.el);
@@ -16172,7 +16189,7 @@ async function ovSend(chat, input) {
   // Moderation commands only work in the main window, inside a server. Here they do nothing.
   if (ovCommandText(raw)) { input.value = ''; ovAutosize(input); return; }
   if (isSiteMuted()) { toast(siteMuteText(), 'error'); return; }
-  if (raw.length > COMPOSER_MAX_LENGTH) { toast(`Your message is ${raw.length - COMPOSER_MAX_LENGTH} characters over the limit.`, 'error'); return; }
+  { const tooLong = messageTooLong(raw); if (tooLong) { toast(tooLong, 'error'); return; } }
   let server = null, ch = null;
   if (chat.kind === 'channel') {
     server = ovServerById(chat.sid); ch = chat.channel;
