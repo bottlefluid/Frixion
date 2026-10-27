@@ -455,6 +455,16 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.36', date: '2026-10-27', title: 'Overcontrol RNG: fishing, a daily shop and new rarities',
+    notes: [
+      'Overcontrol RNG has a new look, closer to Sol\'s RNG: bold outlined text, chunky buttons, and drawn icons instead of emoji.',
+      'New rarities: Mundane, Shadowed, Anomalous, Forbidden, Eldritch, Cataclysmic, Primordial and null. null is red and black, and its letters never stop glitching.',
+      'More auras (79 in all), and a lot more potions (36), like Storm Flask, Celestial Dew, Midas Draught, the Godly Potions (Zeus, Poseidon and Hades), Transcendent, Chrono and the Mixed Potion.',
+      'Fishing: 5 spots, each with its own fish (The Dock, Waterfall Pool, Sunset Lagoon, Tower Creek and The Void Pool). Cast, wait for a bite, then press Reel while the marker is in the green. Sell your catch to Marlin by the dock for F.',
+      'Nova\'s Daily Shop has 5 new deals every day, with gear like the Cosmic Dice, Eternal Hourglass and Abyssal Rod.',
+      'The camera is snappy now, like Roblox: hold right-click to turn, scroll to zoom, and press Shift for Shift Lock.',
+      'On phones the game plays sideways: turn your phone to landscape to play.',
+    ] },
   { v: '4.35', date: '2026-10-26', title: 'Overcontrol RNG',
     notes: [
       'New game: Overcontrol RNG! A 3D aura-rolling game, inspired by Sol\'s RNG, with one shared lobby where everyone rolls together. Press the big banner on the Games page.',
@@ -15621,7 +15631,7 @@ function openOcrng() {
       return true;
     }),
   };
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=1');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=2');
   ocrngModule.then(m => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);

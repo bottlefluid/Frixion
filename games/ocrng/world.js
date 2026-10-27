@@ -213,6 +213,59 @@ export function createWorld(scene, quality) {
   portal.position.set(NX, 3.5, NZ + 10); root.add(portal); glow('#ffffff', 10, NX, 3.5, NZ + 10);
   animated.push((dt, t) => { portal.rotation.z = t; });
 
+  // ---- more water to fish in ----
+  // A patch of water with stone edges; invisible walls keep people out of it.
+  const waterPatch = (x, z, w, d, color, rimColor) => {
+    const wm = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshStandardMaterial({ color, map: waterTex(), transparent: true, opacity: 0.86, roughness: 0.15, metalness: 0.1 }));
+    wm.rotation.x = -Math.PI / 2; wm.position.set(x, 0.12, z); root.add(wm);
+    animated.push(dt => { wm.material.map.offset.x += dt * 0.025; });
+    if (rimColor) { box(x, 0, z - d / 2 - 0.5, w + 2, 0.8, 1, rimColor); box(x, 0, z + d / 2 + 0.5, w + 2, 0.8, 1, rimColor); box(x - w / 2 - 0.5, 0, z, 1, 0.8, d, rimColor); box(x + w / 2 + 0.5, 0, z, 1, 0.8, d, rimColor); }
+    colliders.push({ min: new THREE.Vector3(x - w / 2, 0, z - d / 2), max: new THREE.Vector3(x + w / 2, 14, z + d / 2), water: true });
+    return wm;
+  };
+  // Sunset Lagoon (north-east): sand, palm-ish trees and a little pier
+  const LX = 66, LZ = -36;
+  box(LX, 0, LZ, 30, 0.3, 26, '#e8d29a', { noCollide: true });
+  waterPatch(LX + 3, LZ - 3, 18, 12, '#22a7c9');
+  box(LX - 7.5, 0.3, LZ - 3, 4, 0.5, 3, '#a1887f');                    // the pier you fish from
+  for (const [x, z] of [[LX - 12, LZ + 9], [LX + 12, LZ + 10], [LX - 13, LZ - 10]]) { box(x, 0, z, 1.2, 9, 1.2, '#8d6e63'); box(x, 9, z, 6, 0.8, 1.6, '#2e7d32', { noCollide: true }); box(x, 9, z, 1.6, 0.8, 6, '#388e3c', { noCollide: true }); }
+  // Tower Creek (west, by the tower)
+  waterPatch(-86, 40, 6, 56, '#2a8fd6', '#78909c');
+  // the Void Pool, inside the Null room
+  const vp = waterPatch(NX - 8, NZ + 2, 8, 6, '#1a0033');
+  vp.material.opacity = 0.95; glow('#7c4dff', 10, NX - 8, 0.6, NZ + 2, root, 0.5);
+  // a glowing ring marks every place you can fish
+  const spotRing = (x, y, z) => {
+    const m = new THREE.Mesh(new THREE.RingGeometry(1.2, 1.55, 40), new THREE.MeshBasicMaterial({ color: '#4fd8ff', transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2; m.position.set(x, y + 0.06, z); root.add(m);
+    animated.push((dt, t) => { m.material.opacity = 0.45 + Math.sin(t * 2.5) * 0.25; m.scale.setScalar(1 + Math.sin(t * 2.5) * 0.06); });
+  };
+  const SPOTS = {
+    dock: new THREE.Vector3(PX, 1.1, PZ + 1),
+    falls: new THREE.Vector3(18, 0, CZ + 13),
+    lagoon: new THREE.Vector3(LX - 7.5, 0.8, LZ - 3),
+    creek: new THREE.Vector3(-81.5, 0, 40),
+    void: new THREE.Vector3(NX - 8, 1, NZ + 6.5),
+  };
+  for (const p of Object.values(SPOTS)) spotRing(p.x, p.y, p.z);
+  // Marlin's fish stall, at the foot of the dock
+  const stall = (x, z, roofA, roofB, ry = 0) => {
+    const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; root.add(g);
+    const part = (px, py, pz, w, h, d, c) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), plainMat(c)); m.position.set(px, py + h / 2, pz); m.castShadow = shadows; m.receiveShadow = shadows; g.add(m); };
+    part(0, 0, 1.2, 6, 1.6, 1.2, '#795548');                                // counter
+    for (const sx of [-2.8, 2.8]) part(sx, 0, 1.6, 0.35, 4.6, 0.35, '#5d4037');
+    for (let i = 0; i < 6; i++) part(-2.5 + i, 4.6, 1.2, 1, 0.35, 3, i % 2 ? roofA : roofB);   // striped awning
+    const s = Math.sin(ry), c = Math.cos(ry);
+    const cx = x + 1.2 * s, cz = z + 1.2 * c, hx = 3 * Math.abs(c) + 0.6 * Math.abs(s), hz = 3 * Math.abs(s) + 0.6 * Math.abs(c);   // the counter, after turning
+    colliders.push({ min: new THREE.Vector3(cx - hx, 0, cz - hz), max: new THREE.Vector3(cx + hx, 1.6, cz + hz) });
+    return g;
+  };
+  stall(10, 32, '#1e88e5', '#ffffff', -Math.PI / 2);   // the counter faces the path
+  const marlin = npc('Marlin', 'Buys your fish', '#00897b', '#80deea'); marlin.root.position.set(11.4, 0, 32); marlin.root.rotation.y = -Math.PI / 2; root.add(marlin.root);
+  // Nova's daily shop, beside the plaza
+  stall(23, 11, '#8e24aa', '#ffd54f', -Math.PI / 2);
+  const nova = npc('Nova', 'Daily Shop', '#6a1b9a', '#ffd54f'); nova.root.position.set(24.4, 0, 11); nova.root.rotation.y = -Math.PI / 2; root.add(nova.root);
+
   // ---- a sun statue, a thank-you to Sol's RNG (south-east) ----
   const SX = 62, SZ = 46;
   box(SX, 0, SZ, 6, 3, 6, '#bdbdbd'); box(SX, 3, SZ, 4, 1, 4, '#9e9e9e');
@@ -224,7 +277,7 @@ export function createWorld(scene, quality) {
   // ---- trees, rocks, flowers and lamps ----
   const rand = mulberry(42);
   const blocked = (x, z) => Math.hypot(x, z) < 24 || (Math.abs(x - MX) < 14 && Math.abs(z - MZ) < 14) || (Math.abs(x - JX) < 14 && Math.abs(z - JZ) < 16)
-    || (Math.abs(x - PX) < 28 && Math.abs(z - PZ) < 20) || z < -68 || (Math.abs(x - TX) < 12 && Math.abs(z - TZ) < 12) || (Math.abs(x - SX) < 8 && Math.abs(z - SZ) < 8)
+    || (Math.abs(x - PX) < 28 && Math.abs(z - PZ) < 22) || z < -68 || (Math.abs(x - 66) < 18 && Math.abs(z + 36) < 16) || (x < -78 && z > 8 && z < 72) || (Math.abs(x - 23) < 6 && Math.abs(z - 11) < 6) || (Math.abs(x - TX) < 12 && Math.abs(z - TZ) < 12) || (Math.abs(x - SX) < 8 && Math.abs(z - SZ) < 8)
     || Math.abs(x) < 5 || (Math.abs(z + 6) < 5 && Math.abs(x) < 45) || (Math.abs(x + 40) < 5 && z > 0 && z < 40) || (Math.abs(x - GX) < 6 && Math.abs(z - GZ) < 6);
   let trees = 0;
   for (let i = 0; i < 400 && trees < 46; i++) {
@@ -309,7 +362,13 @@ export function createWorld(scene, quality) {
       mixer: { pos: new THREE.Vector3(MX + 1, 1, MZ + 2.5), r: 6.5, label: 'Talk to the Mixer' },
       jester: { pos: new THREE.Vector3(JX, 0, JZ + 13), r: 6, label: 'Talk to the Jester' },
       finn: { pos: new THREE.Vector3(PX - 5, 0, PZ - 16), r: 6, label: 'Talk to Old Finn' },
-      fish: { pos: new THREE.Vector3(PX, 1.1, PZ + 1), r: 3.4, label: 'Fish' },
+      fish_dock: { pos: SPOTS.dock, r: 3.4, label: 'Fish (The Dock)', spot: 'dock' },
+      fish_falls: { pos: SPOTS.falls, r: 3.4, label: 'Fish (Waterfall Pool)', spot: 'falls' },
+      fish_lagoon: { pos: SPOTS.lagoon, r: 3.4, label: 'Fish (Sunset Lagoon)', spot: 'lagoon' },
+      fish_creek: { pos: SPOTS.creek, r: 3.4, label: 'Fish (Tower Creek)', spot: 'creek' },
+      fish_void: { pos: SPOTS.void, r: 3.4, label: 'Fish (The Void Pool)', spot: 'void' },
+      marlin: { pos: new THREE.Vector3(6.5, 0, 32), r: 4.5, label: 'Sell fish to Marlin' },
+      nova: { pos: new THREE.Vector3(19.5, 0, 11), r: 4.5, label: 'Daily Shop' },
     },
     eggs: {
       duck: { pos: new THREE.Vector3(11, 0.5, 51), r: 9, name: 'the rubber duck' },
@@ -319,11 +378,11 @@ export function createWorld(scene, quality) {
       sun: { pos: new THREE.Vector3(SX, 0, SZ + 4), r: 6, name: 'the sun statue' },
     },
     nullRoom: { spawn: new THREE.Vector3(NX, 1, NZ - 6), portal: new THREE.Vector3(NX, 1, NZ + 10) },
-    npcs: { mixer, jester, finn },
+    npcs: { mixer, jester, finn, marlin, nova },
     lookFor(time, weather) { return look[weather !== 'clear' ? weather : time]; },
     update(dt, t, env) {
       for (const a of animated) a(dt, t, env);
-      for (const n of [mixer, jester, finn]) n.update(dt, t);
+      for (const n of [mixer, jester, finn, marlin, nova]) n.update(dt, t);
       // the Jester is only here when he's visiting
       jester.root.visible = env.jester; jesterGlow.material.opacity = env.jester ? 0.35 + Math.sin(t * 3) * 0.15 : 0;
       // sky and light

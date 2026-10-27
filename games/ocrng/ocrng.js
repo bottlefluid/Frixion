@@ -1,28 +1,55 @@
 // ============================================================
 // OVERCONTROL RNG — a 3D aura-rolling game inside Frixion, inspired by Sol's RNG on Roblox.
 // One shared lobby for everyone (net.js), a studded map (world.js), blocky players and aura effects (avatar.js),
-// and all the auras, potions and items (data.js). Progress is saved to Firestore at rngSaves/{username}.
+// and all the auras, potions, items and fish (data.js). Progress is saved to Firestore at rngSaves/{username}.
 // The Frixion Owner has everything unlocked (every aura, endless potions). The Owner and Co-Owners get an admin panel.
 // ============================================================
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 import {
-  AURAS, AURA, auraKey, rollAura, coinsFor, POTIONS, POTION, ITEMS, ITEM, WEATHERS, TIERS, tierOf, tierIndex,
+  AURAS, auraKey, rollAura, coinsFor, POTIONS, POTION, MIXED_POOL, ITEMS, ITEM, WEATHERS, tierOf, tierIndex,
   timeOfDay, dayProgress, weatherAt, jesterHere, nextJesterIn, fmt, fmtTime,
+  FISH, FISHES, FISHING_SPOTS, catchFish, dailyStock, dayIndex, zalgo,
 } from './data.js';
 import { buildAvatar, AuraFX, shirtColorFor } from './avatar.js';
 import { createWorld } from './world.js';
 import { createNet } from './net.js';
 
-const VERSION = '1.0';
+const VERSION = '1.1';
 const API = () => window.FrixionGameAPI;
 const WALK = 16, JUMP = 24, GRAVITY = 72, STEP = 1.25, R = 0.6, H = 5;
 const ROLL_ANIM_MS = 2600, ROLL_COOLDOWN_MS = 600;
+const CAM_SENS = 0.0048;   // radians per pixel, close to Roblox's default
 let G = null;
 
 const $q = (sel, el) => (el || G.root).querySelector(sel);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const now = () => Date.now();
+
+// ---------------- icons (drawn, never emoji) ----------------
+const svg = (d, extra = '') => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" ${extra}>${d}</svg>`;
+const IC = {
+  auras: svg('<path d="M12 2l2.6 6.4L21 9.3l-4.9 4.3 1.5 6.6L12 16.8 6.4 20.2l1.5-6.6L3 9.3l6.4-.9z" fill="currentColor"/>'),
+  items: svg('<path d="M8 6V5a4 4 0 0 1 8 0v1h2.5A1.5 1.5 0 0 1 20 7.5V20a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7.5A1.5 1.5 0 0 1 5.5 6zm2 0h4V5a2 2 0 0 0-4 0zM8 11v2h8v-2z" fill="currentColor"/>'),
+  settings: svg('<path d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4L10.6 6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5A3.5 3.5 0 1 1 13 8.5a3.5 3.5 0 0 1 0 7z" fill="currentColor"/>'),
+  admin: svg('<path d="M3 8l4.5 3L12 4l4.5 7L21 8l-2 11H5z" fill="currentColor"/>'),
+  close: svg('<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/>'),
+  sun: svg('<circle cx="12" cy="12" r="4.5" fill="currentColor"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'),
+  moon: svg('<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="currentColor"/>'),
+  clear: svg('<circle cx="12" cy="12" r="5" fill="currentColor"/>'),
+  rain: svg('<path d="M7 15a4.5 4.5 0 1 1 .9-8.9A6 6 0 0 1 19 9.5a3.8 3.8 0 0 1-.5 7.5H7z" fill="currentColor"/><path d="M8 19l-1 3M12 19l-1 3M16 19l-1 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'),
+  snow: svg('<path d="M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7M9 3.5l3 2 3-2M9 20.5l3-2 3 2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/>'),
+  hell: svg('<path d="M12 2c1 4 6 6 6 12a6 6 0 0 1-12 0c0-3 1.5-4.5 3-6 0 2 1 3 2 3 0-4-1-6 1-9z" fill="currentColor"/>'),
+  heaven: svg('<ellipse cx="12" cy="6" rx="7" ry="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 10l1.8 4.2 4.5.4-3.4 3 1 4.4L12 19.6 8.1 22l1-4.4-3.4-3 4.5-.4z" fill="currentColor"/>'),
+  null: svg('<rect x="4" y="4" width="16" height="16" rx="1" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M4 20L20 4" stroke="currentColor" stroke-width="2.4"/>'),
+  solar: svg('<circle cx="12" cy="12" r="5.5" fill="currentColor"/><path d="M12 0v4M12 20v4M0 12h4M20 12h4M3.5 3.5l3 3M17.5 17.5l3 3M3.5 20.5l3-3M17.5 6.5l3-3" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>'),
+  fish: svg('<path d="M2 12c3-4 7-6 11-6 4 0 7 3 8 6-1 3-4 6-8 6-4 0-8-2-11-6zm0 0L0 8m2 4L0 16" fill="currentColor" stroke="currentColor" stroke-width="1.5"/><circle cx="16.5" cy="11" r="1.2" fill="#000"/>'),
+  jester: svg('<path d="M4 18l2-10 4 5 2-8 2 8 4-5 2 10z" fill="currentColor"/><circle cx="6" cy="7" r="1.6" fill="currentColor"/><circle cx="12" cy="4" r="1.6" fill="currentColor"/><circle cx="18" cy="7" r="1.6" fill="currentColor"/>'),
+  people: svg('<circle cx="9" cy="8" r="3.5" fill="currentColor"/><path d="M2 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5z" fill="currentColor"/><circle cx="17" cy="9" r="2.6" fill="currentColor"/><path d="M15.5 13.6c3.6.2 6.5 2.3 6.5 6.4h-4.6" fill="currentColor"/>'),
+  lock: svg('<rect x="5" y="10" width="14" height="11" rx="2" fill="currentColor"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.4"/>'),
+  phone: svg('<rect x="7" y="2" width="10" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="18.5" r="1" fill="currentColor"/>'),
+};
+const weatherIcon = w => IC[w] || IC.clear;
 
 // ---------------- opening and closing ----------------
 export async function open() {
@@ -34,30 +61,30 @@ export async function open() {
   G = {
     me: { uid: me.uid, name: me.name, rank, owner: rank >= 3, staff: rank >= 2 },
     root: buildShell(), listeners: [], others: new Map(), input: { keys: {}, joy: { x: 0, y: 0 } },
-    env: { time: 'day', weather: 'clear', jester: false, progress: 0 }, worldState: {}, effects: [], toasts: [],
-    rolling: false, nextRollAt: 0, cam: { yaw: 0, pitch: 0.32, dist: 18 }, panel: null, closed: false,
+    env: { time: 'day', weather: 'clear', jester: false, progress: 0 }, worldState: {}, effects: [], queued: [], rollBuffs: [],
+    rolling: false, nextRollAt: 0, cam: { yaw: 0, pitch: 0.32, dist: 18, zoom: 18 }, panel: null, closed: false, shiftLock: false,
   };
   document.body.appendChild(G.root);
   document.body.classList.add('ocrng-open');
   // Testing on your own computer only: lets a test script look inside the running game. Never on the live site.
-  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ocrngDebug = { state: () => G, interact: () => interact(), admin: a => adminAction(a), attack: () => attack() };
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ocrngDebug = { state: () => G, interact: () => interact(), admin: a => adminAction(a), attack: () => attack(), panel: id => openPanel(id), cut: key => cutscene(auraKey(key)) };
   try {
-    setLoading('Loading the engine…', 0.1);
+    setLoading('Loading the engine', 0.1);
     await sleep(60);
     const quality = qualityFor();
     G.quality = quality;
     setupRenderer(quality);
-    setLoading('Building the world…', 0.35);
+    setLoading('Building the world', 0.35);
     await sleep(30);
     G.world = createWorld(G.scene, quality);
-    setLoading('Loading your auras…', 0.6);
+    setLoading('Loading your auras', 0.6);
     await loadSave();
-    setLoading('Polishing the studs…', 0.8);
+    setLoading('Placing the studs', 0.8);
     buildPlayer();
     setupInput();
     G.clock = new THREE.Clock();
     loop();
-    setLoading('Ready!', 1);
+    setLoading('Ready', 1);
     await sleep(500);
     showTitle();
   } catch (e) {
@@ -75,6 +102,8 @@ export function close() {
   if (g.net) g.net.leave();
   cancelAnimationFrame(g.raf);
   g.listeners.forEach(([t, ev, fn, o]) => t.removeEventListener(ev, fn, o));
+  if (document.pointerLockElement) document.exitPointerLock();
+  if (document.fullscreenElement && g.wentFullscreen) document.exitFullscreen().catch(() => {});
   if (g.renderer) { g.renderer.dispose(); g.renderer.forceContextLoss && g.renderer.forceContextLoss(); }
   if (g.audio) g.audio.close().catch(() => {});
   g.root.remove();
@@ -84,6 +113,11 @@ export function close() {
 const on = (t, ev, fn, o) => { t.addEventListener(ev, fn, o); G.listeners.push([t, ev, fn, o]); };
 
 function ensureCss() {
+  if (!document.getElementById('ocrng-font')) {
+    const f = document.createElement('link');
+    f.id = 'ocrng-font'; f.rel = 'stylesheet'; f.href = 'https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800;900&display=swap';
+    document.head.appendChild(f);
+  }
   if (document.getElementById('ocrng-css')) return;
   const l = document.createElement('link');
   l.id = 'ocrng-css'; l.rel = 'stylesheet'; l.href = new URL('./ocrng.css?v=' + VERSION, import.meta.url).href;
@@ -102,57 +136,58 @@ function buildShell() {
   root.innerHTML = `
   <canvas class="oc-canvas"></canvas>
   <div class="oc-loading">
-    <div class="oc-load-sky"></div>
-    <div class="oc-load-emblem"><span class="ring r1"></span><span class="ring r2"></span><span class="orb w"></span><span class="orb b"></span><span class="core"></span></div>
-    <div class="oc-load-title"><span>OVERCONTROL'S</span><b>RNG</b></div>
+    <div class="oc-load-mark"><span class="ring"></span><span class="orb w"></span><span class="orb b"></span></div>
+    <div class="oc-logo"><span class="pre">OVERCONTROL'S</span><span class="big">RNG</span></div>
     <div class="oc-load-bar"><i></i></div>
-    <div class="oc-load-step">Loading…</div>
+    <div class="oc-load-step">Loading</div>
     <div class="oc-load-tip"></div>
   </div>
   <div class="oc-title hidden">
-    <div class="oc-title-logo"><span class="pre">OVERCONTROL'S</span><span class="big">RNG</span><span class="tag">Roll for auras. Chase 『EQUINOX』.</span></div>
+    <div class="oc-logo big-logo"><span class="pre">OVERCONTROL'S</span><span class="big">RNG</span></div>
     <div class="oc-title-btns">
-      <button type="button" class="oc-btn oc-play">PLAY</button>
-      <button type="button" class="oc-btn ghost oc-title-exit">Back to Frixion</button>
+      <button type="button" class="oc-btn oc-play">Play</button>
+      <button type="button" class="oc-btn dark oc-title-exit">Back to Frixion</button>
     </div>
-    <div class="oc-title-foot"><span class="oc-online">Finding the lobby…</span><span>v${VERSION}</span></div>
+    <div class="oc-title-foot"><span class="oc-online"></span><span>v${VERSION}</span></div>
   </div>
   <div class="oc-hud hidden">
-    <button type="button" class="oc-exit" title="Back to Frixion">✕</button>
+    <button type="button" class="oc-exit oc-x" title="Back to Frixion">${IC.close}</button>
+    <div class="oc-stats"></div>
     <div class="oc-buffs"></div>
-    <div class="oc-status">
-      <div class="oc-world"></div>
-      <div class="oc-money"></div>
-    </div>
+    <div class="oc-biome"></div>
+    <div class="oc-money"></div>
     <div class="oc-menu">
-      <button type="button" data-open="auras"><i>✦</i><span>Auras</span></button>
-      <button type="button" data-open="inventory"><i>⚗</i><span>Items</span></button>
-      <button type="button" data-open="settings"><i>⚙</i><span>Settings</span></button>
-      <button type="button" data-open="admin" class="oc-admin-btn hidden"><i>★</i><span>Admin</span></button>
+      <button type="button" data-open="auras">${IC.auras}<span>Auras</span></button>
+      <button type="button" data-open="inventory">${IC.items}<span>Items</span></button>
+      <button type="button" data-open="settings">${IC.settings}<span>Settings</span></button>
+      <button type="button" data-open="admin" class="oc-admin-btn hidden">${IC.admin}<span>Admin</span></button>
     </div>
     <div class="oc-prompt hidden"></div>
     <div class="oc-rolltext hidden"><div class="oc-rt-name"></div><div class="oc-rt-sub"></div></div>
     <div class="oc-rollbar">
       <button type="button" class="oc-toggle oc-auto"><b>Auto Roll</b><small>OFF</small></button>
-      <button type="button" class="oc-roll"><span class="oc-roll-fill"></span><b>ROLL</b><small class="oc-roll-luck"></small></button>
+      <button type="button" class="oc-roll"><b>Roll</b><small class="oc-roll-luck"></small><span class="oc-roll-cd"></span></button>
       <button type="button" class="oc-toggle oc-quick"><b>Quick Roll</b><small>OFF</small></button>
     </div>
     <div class="oc-pvp">
-      <button type="button" class="oc-pvp-btn">PvP OFF</button>
+      <button type="button" class="oc-pvp-btn">PvP: Off</button>
       <div class="oc-hp hidden"><i></i><span>100</span></div>
-      <button type="button" class="oc-attack hidden" title="Aura attack (F)">ATTACK</button>
+      <button type="button" class="oc-attack hidden" title="Aura attack (F)">Attack</button>
     </div>
+    <div class="oc-lockmark hidden">${IC.lock}</div>
     <div class="oc-joy hidden"><span class="knob"></span></div>
-    <button type="button" class="oc-jump hidden">JUMP</button>
-    <button type="button" class="oc-act hidden">E</button>
+    <button type="button" class="oc-jump hidden">Jump</button>
+    <button type="button" class="oc-act hidden">Use</button>
     <div class="oc-announce"></div>
     <div class="oc-toasts"></div>
   </div>
-  <div class="oc-panel hidden"><div class="oc-panel-box"><div class="oc-panel-head"><h2></h2><button type="button" class="oc-panel-x">✕</button></div><div class="oc-panel-body"></div></div></div>
-  <div class="oc-cut hidden"></div>`;
+  <div class="oc-panel hidden"><div class="oc-panel-box"><div class="oc-panel-head"><h2></h2><button type="button" class="oc-panel-x oc-x">${IC.close}</button></div><div class="oc-panel-body"></div></div></div>
+  <div class="oc-fishbar hidden"></div>
+  <div class="oc-cut hidden"></div>
+  <div class="oc-rotate hidden"><div class="oc-rotate-phone">${IC.phone}</div><b>Turn your phone sideways</b><span>Overcontrol RNG plays in landscape.</span></div>`;
   const tips = ['Every 10th roll is twice as lucky.', 'Day and night swap every 10 minutes. Solar and Lunar only show up in their time.', 'The Jester visits every 4 hours. Bring 5 Void Coins.',
-    'Fish at the end of the dock for F, the blue coins.', 'Rare weather brings auras you can\'t get any other time.', 'Some auras mutate: Shiny, Corrupted, even Glitched.', 'There are 5 secrets hidden on the map.'];
-  root.querySelector('.oc-load-tip').textContent = 'Tip: ' + tips[Math.floor(Math.random() * tips.length)];
+    'Each fishing spot has its own fish. Marlin buys them for F.', 'Nova\'s daily shop changes every day at midnight.', 'Rare weather brings auras you can\'t get any other time.', 'There are 5 secrets hidden on the map.'];
+  root.querySelector('.oc-load-tip').textContent = tips[Math.floor(Math.random() * tips.length)];
   return root;
 }
 function setLoading(text, p) {
@@ -172,23 +207,34 @@ function setupRenderer(quality) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1200);
+  const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 1200);
   G.renderer = renderer; G.scene = scene; G.camera = camera;
-  const fit = () => { const w = window.innerWidth, h = window.innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); };
+  const fit = () => { const w = window.innerWidth, h = window.innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); checkOrientation(); };
   fit(); on(window, 'resize', fit);
+  if (screen.orientation) on(screen.orientation, 'change', fit);
+}
+// Phones play sideways. In portrait the game waits behind a "turn your phone" screen.
+function checkOrientation() {
+  if (!G) return;
+  const touch = API().isMobile() || (matchMedia('(pointer: coarse)').matches && navigator.maxTouchPoints > 0);
+  const portrait = window.innerHeight > window.innerWidth;
+  G.portraitBlock = touch && portrait;
+  $q('.oc-rotate').classList.toggle('hidden', !G.portraitBlock);
 }
 
 // ---------------- saving ----------------
-const blankSave = () => ({ v: 1, coins: 0, f: 0, void: 0, rolls: 0, auras: { common: 0 }, equipped: 'common', potions: {}, items: {}, quickRoll: false, settings: { auto: false, quick: false, autoEquip: true, sound: true }, eggs: {}, effects: [], queued: [], best: 'common' });
+const blankSave = () => ({ v: 2, coins: 0, f: 0, void: 0, rolls: 0, auras: { common: 0 }, equipped: 'common', potions: {}, items: {}, fish: {}, quickRoll: false,
+  settings: { auto: false, quick: false, autoEquip: true, sound: true }, eggs: {}, effects: [], queued: [], rollBuffs: [], daily: { day: 0, bought: [] }, best: 'common' });
 async function loadSave() {
   const api = API();
   G.saveRef = api.db.collection('rngSaves').doc(G.me.uid);
   try { const d = await G.saveRef.get(); G.save = { ...blankSave(), ...(d.exists ? d.data() : {}) }; }
   catch (e) { G.save = blankSave(); }
   G.save.settings = { ...blankSave().settings, ...(G.save.settings || {}) };
-  G.save.auras = G.save.auras || {};
+  G.save.auras = G.save.auras || {}; G.save.fish = G.save.fish || {}; G.save.daily = G.save.daily || { day: 0, bought: [] };
   G.effects = (G.save.effects || []).filter(e => e.until > now() && POTION[e.id]);
   G.queued = (G.save.queued || []).filter(id => POTION[id]);
+  G.rollBuffs = (G.save.rollBuffs || []).filter(b => POTION[b.id] && b.left > 0);
   if (!G.save.auras[G.save.equipped] && !G.me.owner) G.save.equipped = 'common';
 }
 let saveTimer = 0;
@@ -197,7 +243,7 @@ function saveNow() {
   if (!G || !G.saveRef) return;
   clearTimeout(saveTimer);
   G.save.effects = G.effects.filter(e => e.until > now());
-  G.save.queued = G.queued;
+  G.save.queued = G.queued; G.save.rollBuffs = G.rollBuffs;
   G.saveRef.set(JSON.parse(JSON.stringify(G.save))).catch(() => {});
 }
 
@@ -228,7 +274,7 @@ function equip(key, silent) {
   if (!silent) { toast(`Equipped ${auraKey(key).name}`); markDirty(); }
 }
 
-// ---------------- input: keyboard, mouse, touch ----------------
+// ---------------- input: Roblox-style keyboard, mouse and touch ----------------
 function setupInput() {
   const k = G.input.keys, cvs = $q('.oc-canvas');
   // Only a text box inside the game counts as typing; a Frixion box left focused behind the game doesn't steal the keys.
@@ -237,28 +283,38 @@ function setupInput() {
   on(window, 'keydown', e => {
     if (!G || !G.playing || typing(e)) return;
     const key = e.key.toLowerCase();
-    if (e.key === 'Escape') { if (G.panel) closePanel(); e.stopImmediatePropagation(); return; }
-    k[key] = true; k[e.code] = true;
+    if (e.key === 'Escape') { if (G.panel) closePanel(); else if (G.fishing) stopFishing(); e.stopImmediatePropagation(); return; }
+    if (e.repeat && ['e', 'r', 'f', 'shift'].includes(key)) return;
+    k[key] = true;
     if (key === 'e') interact();
     if (key === 'r' && !G.panel) rollOnce();
     if (key === 'f' && G.player.pvp) attack();
-    if ([' ', 'w', 'a', 's', 'd', 'e', 'r', 'f', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(key)) { e.preventDefault(); e.stopImmediatePropagation(); }
+    if (key === 'shift' && !G.player.fly && !G.touch) setShiftLock(!G.shiftLock);
+    if ([' ', 'w', 'a', 's', 'd', 'e', 'r', 'f', 'q', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(key)) { e.preventDefault(); e.stopImmediatePropagation(); }
   }, true);
-  on(window, 'keyup', e => { if (!G) return; k[e.key.toLowerCase()] = false; k[e.code] = false; }, true);
+  on(window, 'keyup', e => { if (!G) return; k[e.key.toLowerCase()] = false; }, true);
   on(window, 'blur', () => { for (const x in k) k[x] = false; });
-  // drag to turn the camera, wheel to zoom
-  let drag = null;
-  on(cvs, 'pointerdown', e => { if (e.pointerType === 'touch') return; drag = { x: e.clientX, y: e.clientY }; cvs.setPointerCapture(e.pointerId); });
-  on(cvs, 'pointermove', e => {
-    if (!drag || e.pointerType === 'touch') return;
-    G.cam.yaw -= (e.clientX - drag.x) * 0.006; G.cam.pitch = Math.max(-0.15, Math.min(1.25, G.cam.pitch + (e.clientY - drag.y) * 0.005));
-    drag = { x: e.clientX, y: e.clientY };
+  // The camera turns as fast as the mouse moves, like Roblox: hold the right button (the cursor hides while you do),
+  // or drag with the left one. Shift Lock keeps it turning without holding anything.
+  let dragging = false;
+  on(cvs, 'mousedown', e => {
+    if (!G.playing && !G.titleCam) return;
+    if (e.button === 2) { dragging = true; if (!G.shiftLock && cvs.requestPointerLock) cvs.requestPointerLock(); }
+    if (e.button === 0) dragging = true;
   });
-  on(cvs, 'pointerup', () => { drag = null; });
+  on(window, 'mouseup', () => { dragging = false; if (!G.shiftLock && document.pointerLockElement === cvs) document.exitPointerLock(); });
+  on(window, 'mousemove', e => {
+    if (!G.playing || G.panel) return;
+    if (!(dragging || G.shiftLock || document.pointerLockElement === cvs)) return;
+    G.cam.yaw -= e.movementX * CAM_SENS;
+    G.cam.pitch = Math.max(-1.2, Math.min(1.35, G.cam.pitch + e.movementY * CAM_SENS));
+  });
+  on(document, 'pointerlockchange', () => { if (G && G.shiftLock && document.pointerLockElement !== cvs) setShiftLock(false); });
   on(cvs, 'contextmenu', e => e.preventDefault());
-  on(cvs, 'wheel', e => { G.cam.dist = Math.max(6, Math.min(48, G.cam.dist * (1 + Math.sign(e.deltaY) * 0.1))); e.preventDefault(); }, { passive: false });
+  // the wheel zooms in steps, like Roblox
+  on(cvs, 'wheel', e => { G.cam.zoom = Math.max(4, Math.min(48, G.cam.zoom + Math.sign(e.deltaY) * 3)); e.preventDefault(); }, { passive: false });
   // touch: a joystick on the left, drag anywhere else to turn, pinch to zoom
-  if (API().isMobile() || ('ontouchstart' in window && navigator.maxTouchPoints > 0)) {
+  if (API().isMobile() || (matchMedia('(pointer: coarse)').matches && navigator.maxTouchPoints > 0)) {
     G.touch = true;
     ['.oc-joy', '.oc-jump', '.oc-act'].forEach(s => $q(s).classList.remove('hidden'));
     const joy = $q('.oc-joy'), knob = joy.querySelector('.knob');
@@ -269,15 +325,15 @@ function setupInput() {
         if (t.identifier === joyId) {
           const r = joy.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
           let dx = (t.clientX - cx) / (r.width / 2), dy = (t.clientY - cy) / (r.height / 2); const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; }
-          G.input.joy = { x: dx, y: dy }; knob.style.transform = `translate(${dx * 34}px, ${dy * 34}px)`;
+          G.input.joy = { x: dx, y: dy }; knob.style.transform = `translate(${dx * 32}px, ${dy * 32}px)`;
         } else if (t.identifier === turnId && last) {
-          G.cam.yaw -= (t.clientX - last.x) * 0.008; G.cam.pitch = Math.max(-0.15, Math.min(1.25, G.cam.pitch + (t.clientY - last.y) * 0.006)); last = { x: t.clientX, y: t.clientY };
+          G.cam.yaw -= (t.clientX - last.x) * 0.009; G.cam.pitch = Math.max(-1.2, Math.min(1.35, G.cam.pitch + (t.clientY - last.y) * 0.007)); last = { x: t.clientX, y: t.clientY };
         }
       }
-      if (e.touches.length === 2 && pinch) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); G.cam.dist = Math.max(6, Math.min(48, pinch.dist * pinch.d / d)); }
+      if (e.touches.length === 2 && pinch) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); G.cam.zoom = Math.max(4, Math.min(48, pinch.zoom * pinch.d / d)); }
     }, { passive: true });
     on(cvs, 'touchstart', e => {
-      if (e.touches.length === 2) { pinch = { d: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), dist: G.cam.dist }; turnId = null; return; }
+      if (e.touches.length === 2) { pinch = { d: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), zoom: G.cam.zoom }; turnId = null; return; }
       const t = e.changedTouches[0]; if (turnId === null) { turnId = t.identifier; last = { x: t.clientX, y: t.clientY }; }
     }, { passive: true });
     on(window, 'touchend', e => {
@@ -303,30 +359,40 @@ function setupInput() {
   on($q('.oc-panel'), 'click', e => { if (e.target.classList.contains('oc-panel')) closePanel(); });
   G.root.querySelectorAll('[data-open]').forEach(b => on(b, 'click', () => openPanel(b.dataset.open)));
 }
+function setShiftLock(onOff) {
+  const cvs = $q('.oc-canvas');
+  G.shiftLock = onOff;
+  $q('.oc-lockmark').classList.toggle('hidden', !onOff);
+  if (onOff && cvs.requestPointerLock) cvs.requestPointerLock();
+  if (!onOff && document.pointerLockElement === cvs) document.exitPointerLock();
+}
 
 // ---------------- title screen and joining ----------------
 function showTitle() {
   $q('.oc-loading').classList.add('gone');
-  setTimeout(() => G && $q('.oc-loading').classList.add('hidden'), 700);
+  setTimeout(() => G && $q('.oc-loading').classList.add('hidden'), 600);
   $q('.oc-title').classList.remove('hidden');
   G.titleCam = true;
-  // peek at how many people are in the lobby (one read, no listener)
   API().rtdb.ref('ocrng/roster').once('value').then(s => {
     if (!G) return;
     const n = s.numChildren();
-    $q('.oc-online').textContent = n ? `${n} ${n === 1 ? 'person is' : 'people are'} playing right now` : 'Nobody is playing yet. Be the first!';
-  }).catch(() => { if (G) $q('.oc-online').textContent = 'Overcontrol\'s RNG'; });
+    $q('.oc-online').textContent = n ? `${n} ${n === 1 ? 'player' : 'players'} in the lobby` : 'The lobby is empty. Be the first!';
+  }).catch(() => {});
 }
 function play() {
   if (G.playing) return;
   audio();
+  // Phones: go fullscreen and hold the screen sideways where the browser allows it.
+  if (G.touch) {
+    const el = document.documentElement;
+    if (el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen({ navigationUI: 'hide' }).then(() => { G && (G.wentFullscreen = true); return screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'); }).catch(() => {});
+  }
   G.titleCam = false; G.playing = true;
   $q('.oc-title').classList.add('gone');
-  setTimeout(() => G && $q('.oc-title').classList.add('hidden'), 600);
+  setTimeout(() => G && $q('.oc-title').classList.add('hidden'), 500);
   $q('.oc-hud').classList.remove('hidden');
   if (G.me.staff) $q('.oc-admin-btn').classList.remove('hidden');
   G.cam.yaw = G.player.yaw + Math.PI;
-  // join the lobby
   const api = API();
   G.net = createNet(api.rtdb, api.firebase, G.me.uid, {
     joined: (uid, d) => { addOther(uid, d); toast(`${d.name || uid} joined the lobby`); },
@@ -341,14 +407,13 @@ function play() {
     denied: () => {
       if (!G || G.netDenied) return;
       G.netDenied = true;
-      toast(G.me.staff ? 'Multiplayer is off: the Realtime Database rules need an "ocrng" section (see the Frixion update notes). You can still play solo.'
-        : 'The lobby is closed right now, so you\'re playing solo. Your progress still saves.', 'warn');
+      toast(G.me.staff ? 'Multiplayer is off: the Realtime Database rules need an "ocrng" section. You can still play solo.' : 'The lobby is closed right now, so you\'re playing solo. Your progress still saves.', 'warn');
     },
   });
   G.net.join({ name: G.me.name, aura: G.save.equipped, shirt: shirtColorFor(G.me.name), pvp: false });
   refreshToggles();
-  updateHud(true);
-  if (owner()) toast('Owner: every aura and endless potions are unlocked for you.', 'gold');
+  updateHud();
+  if (owner()) toast('Owner: every aura and endless potions are unlocked.', 'gold');
   sound('join');
 }
 
@@ -358,7 +423,7 @@ function addOther(uid, d) {
   const a = buildAvatar(d.name || uid, d.shirt || shirtColorFor(uid));
   a.root.visible = false;
   G.scene.add(a.root);
-  const o = { uid, data: d, avatar: a, fx: null, key: null, pos: new THREE.Vector3(0, -50, 0), target: new THREE.Vector3(0, -50, 0), yaw: 0, targetYaw: 0, placed: false, hp: 100, speed: 0 };
+  const o = { uid, data: d, avatar: a, fx: null, key: null, pos: new THREE.Vector3(0, -50, 0), target: new THREE.Vector3(0, -50, 0), yaw: 0, targetYaw: 0, placed: false, hp: 100 };
   G.others.set(uid, o);
   updateOther(uid, d);
 }
@@ -379,27 +444,27 @@ function loop() {
   if (!G) return;
   G.raf = requestAnimationFrame(loop);
   const dt = Math.min(0.05, G.clock.getDelta()), t = G.clock.elapsedTime, n = now();
-  // the shared clock
-  const env = G.env;
-  const ws = G.worldState || {};
+  const env = G.env, ws = G.worldState || {};
   const time = timeOfDay(n, ws), weather = weatherAt(n, ws), jester = jesterHere(n, ws);
   if (G.playing && weather !== env.weather) announceWeather(weather);
-  if (G.playing && jester && !env.jester) { toast('The Jester has arrived! Find his tent to the east.', 'gold'); sound('jester'); }
-  if (G.playing && time !== env.time) toast(time === 'night' ? 'Night falls. Lunar can be rolled now.' : 'The sun rises. Solar can be rolled now.');
+  if (G.playing && jester && !env.jester) { toast('The Jester has arrived. His tent is to the east.', 'gold'); sound('jester'); }
+  if (G.playing && time !== env.time) toast(time === 'night' ? 'Night has fallen. Lunar can be rolled now.' : 'The sun is up. Solar can be rolled now.');
   env.time = time; env.weather = weather; env.jester = jester; env.progress = dayProgress(n);
-  if (G.playing) { movePlayer(dt); updateOthers(dt, t); checkPlaces(); checkEggs(); }
+  if (G.playing && !G.portraitBlock) { movePlayer(dt); updateOthers(dt, t); checkPlaces(); checkEggs(); }
   updateCamera(dt, t);
   G.player.avatar.root.position.copy(G.player.pos);
   G.player.avatar.root.rotation.y = G.player.yaw;
   G.player.fx && G.player.fx.update(dt, t);
   G.world.update(dt, t, { ...env, camPos: G.camera.position, player: G.player.pos });
   if (G.fxObjects) G.fxObjects = G.fxObjects.filter(f => f.update(dt));
+  if (G.fishing) fishingTick(dt);
   if (G.playing) {
-    if (G.save.settings.auto && canAuto() && !G.rolling && !G.panelBlocksAuto && n >= G.nextRollAt) rollOnce();
+    if (G.save.settings.auto && canAuto() && !G.rolling && !G.cutting && n >= G.nextRollAt) rollOnce();
     if (G.net) G.net.sendPos({ x: G.player.pos.x, y: G.player.pos.y, z: G.player.pos.z, r: G.player.yaw, a: G.player.moving ? 1 : 0, hp: G.player.pvp ? G.player.hp : -1 });
     if ((G.hudTick = (G.hudTick || 0) + dt) > 0.25) { G.hudTick = 0; updateHud(); }
+    $q('.oc-roll-cd').style.transform = `scaleX(${G.rolling ? 1 : Math.max(0, Math.min(1, (G.nextRollAt - n) / (ROLL_COOLDOWN_MS / buffs().speed)))})`;
   }
-  // Null weather drains the colour from the world
+  if ((G.zalgoTick = (G.zalgoTick || 0) + dt) > 0.15) { G.zalgoTick = 0; G.root.querySelectorAll('.oc-tier.t-null').forEach(el => { el.textContent = zalgo('null'); }); }
   if (weather !== G.filterFor) { G.filterFor = weather; G.renderer.domElement.style.filter = weather === 'null' ? 'grayscale(.85) contrast(1.15)' : ''; }
   G.renderer.render(G.scene, G.camera);
 }
@@ -408,7 +473,7 @@ function movePlayer(dt) {
   const p = G.player, k = G.input.keys, j = G.input.joy;
   let fx = (k.d || k.arrowright ? 1 : 0) - (k.a || k.arrowleft ? 1 : 0) + j.x;
   let fz = (k.s || k.arrowdown ? 1 : 0) - (k.w || k.arrowup ? 1 : 0) + j.y;
-  if (G.panel && !G.touch) { fx = 0; fz = 0; }
+  if ((G.panel && !G.touch) || G.fishing) { fx = 0; fz = 0; }
   const m = Math.min(1, Math.hypot(fx, fz));
   const yaw = G.cam.yaw;
   const dirX = fx * Math.cos(yaw) + fz * Math.sin(yaw), dirZ = -fx * Math.sin(yaw) + fz * Math.cos(yaw);
@@ -416,15 +481,16 @@ function movePlayer(dt) {
   if (m > 0.05) {
     const len = Math.hypot(dirX, dirZ) || 1;
     p.vel.x = dirX / len * speed * m; p.vel.z = dirZ / len * speed * m;
-    const want = Math.atan2(p.vel.x, p.vel.z);
-    let d = want - p.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); p.yaw += d * Math.min(1, dt * 12);
   } else { p.vel.x = 0; p.vel.z = 0; }
+  // the character turns almost instantly, like Roblox; with Shift Lock it always faces where the camera looks
+  const want = G.shiftLock ? yaw + Math.PI : m > 0.05 ? Math.atan2(p.vel.x, p.vel.z) : p.yaw;
+  let d = want - p.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); p.yaw += d * Math.min(1, dt * 28);
   p.moving = m > 0.05;
   if (p.knock) { p.vel.x += p.knock.x; p.vel.z += p.knock.z; p.knock.x *= Math.pow(0.02, dt); p.knock.z *= Math.pow(0.02, dt); if (Math.hypot(p.knock.x, p.knock.z) < 0.5) p.knock = null; }
   const prevY = p.pos.y;
   p.pos.x += p.vel.x * dt; p.pos.z += p.vel.z * dt;
   if (p.fly) {
-    p.vel.y = ((k[' '] ? 1 : 0) - (k.shift ? 1 : 0)) * speed;
+    p.vel.y = ((k[' '] ? 1 : 0) - (k.q ? 1 : 0)) * speed;
     p.pos.y += p.vel.y * dt;
   } else {
     if (k[' '] && p.onGround) { p.vel.y = JUMP; p.onGround = false; sound('jump'); }
@@ -432,7 +498,7 @@ function movePlayer(dt) {
     p.pos.y += p.vel.y * dt;
   }
   if (!p.noclip) collide(p, prevY);
-  if (p.pos.y < -60) { p.pos.copy(G.world.spawn); p.vel.set(0, 0, 0); toast('You fell out of the world. Back to spawn!'); }
+  if (p.pos.y < -60) { p.pos.copy(G.world.spawn); p.vel.set(0, 0, 0); toast('You fell out of the world. Back to spawn.'); }
   p.avatar.animate(dt, Math.hypot(p.vel.x, p.vel.z), !p.onGround && !p.fly);
 }
 // Bump into blocks, step up small ledges (like stairs), stand on things.
@@ -442,12 +508,11 @@ function collide(p, prevY) {
     if (p.pos.x + R <= b.min.x || p.pos.x - R >= b.max.x || p.pos.z + R <= b.min.z || p.pos.z - R >= b.max.z) continue;
     if (p.pos.y >= b.max.y - 0.001 || p.pos.y + H <= b.min.y) continue;
     if (!b.water && b.max.y - p.pos.y <= STEP && (p.onGround || p.vel.y <= 0)) { p.pos.y = b.max.y; p.vel.y = Math.max(0, p.vel.y); continue; }
-    if (p.vel.y > 0 && prevY + H <= b.min.y + 0.05) { p.pos.y = b.min.y - H; p.vel.y = 0; continue; }   // bumped your head
+    if (p.vel.y > 0 && prevY + H <= b.min.y + 0.05) { p.pos.y = b.min.y - H; p.vel.y = 0; continue; }
     const dx1 = b.max.x - (p.pos.x - R), dx2 = (p.pos.x + R) - b.min.x, dz1 = b.max.z - (p.pos.z - R), dz2 = (p.pos.z + R) - b.min.z;
     const mn = Math.min(dx1, dx2, dz1, dz2);
     if (mn === dx1) p.pos.x += dx1; else if (mn === dx2) p.pos.x -= dx2; else if (mn === dz1) p.pos.z += dz1; else p.pos.z -= dz2;
   }
-  // the ground under you
   let ground = Math.abs(p.pos.x) <= 100 && Math.abs(p.pos.z) <= 100 ? 0 : -Infinity;
   for (const b of C) {
     if (b.water || p.pos.x + R * 0.7 <= b.min.x || p.pos.x - R * 0.7 >= b.max.x || p.pos.z + R * 0.7 <= b.min.z || p.pos.z - R * 0.7 >= b.max.z) continue;
@@ -457,20 +522,22 @@ function collide(p, prevY) {
   else p.onGround = p.pos.y - ground < 0.05;
 }
 
+// The camera sits exactly where it should every frame (no drifting behind), like Roblox. Only the zoom eases.
 function updateCamera(dt, t) {
   const cam = G.camera;
-  if (G.titleCam) {   // the title screen: a slow flight around the map
+  if (G.titleCam) {
     const a = t * 0.06;
     cam.position.set(Math.cos(a) * 70, 34 + Math.sin(t * 0.2) * 4, Math.sin(a) * 70);
     cam.lookAt(0, 8, 0);
     return;
   }
   const p = G.player.pos, c = G.cam;
-  const target = new THREE.Vector3(p.x, p.y + 4.2, p.z);
+  c.dist += (c.zoom - c.dist) * Math.min(1, dt * 18);
+  const target = new THREE.Vector3(p.x, p.y + 4.5, p.z);
+  if (G.shiftLock) target.add(new THREE.Vector3(Math.cos(c.yaw), 0, -Math.sin(c.yaw)).multiplyScalar(1.75));   // over the right shoulder
   const off = new THREE.Vector3(Math.sin(c.yaw) * Math.cos(c.pitch), Math.sin(c.pitch), Math.cos(c.yaw) * Math.cos(c.pitch)).multiplyScalar(c.dist);
-  const want = target.clone().add(off);
-  if (want.y < 1) want.y = 1;
-  cam.position.lerp(want, 1 - Math.exp(-dt * 14));
+  cam.position.copy(target).add(off);
+  if (cam.position.y < 0.6) cam.position.y = 0.6;
   cam.lookAt(target);
 }
 
@@ -480,8 +547,8 @@ function updateOthers(dt, t) {
     o.avatar.root.visible = visible;
     if (!visible) continue;
     const before = o.pos.clone();
-    o.pos.lerp(o.target, 1 - Math.exp(-dt * 10));
-    let d = o.targetYaw - o.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); o.yaw += d * Math.min(1, dt * 10);
+    o.pos.lerp(o.target, 1 - Math.exp(-dt * 12));
+    let d = o.targetYaw - o.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); o.yaw += d * Math.min(1, dt * 14);
     o.avatar.root.position.copy(o.pos); o.avatar.root.rotation.y = o.yaw;
     const sp = before.distanceTo(o.pos) / Math.max(dt, 0.001);
     o.avatar.animate(dt, o.anim ? Math.max(sp, 8) : 0, o.target.y - o.pos.y > 0.5);
@@ -502,16 +569,16 @@ function checkPlaces() {
     G.near = near;
     const el = $q('.oc-prompt');
     el.classList.toggle('hidden', !near);
-    if (near) el.innerHTML = `<kbd>${G.touch ? 'E' : 'E'}</kbd> ${esc(G.world.places[near].label)}`;
+    if (near) el.innerHTML = `<kbd>E</kbd><span>${esc(G.world.places[near].label)}</span>`;
     $q('.oc-act').classList.toggle('ready', !!near);
+    if (!near && G.fishing) stopFishing();
   }
 }
 function interact() {
-  if (!G.near) return;
-  if (G.near === 'mixer') openPanel('mixer');
-  else if (G.near === 'jester') openPanel('jester');
-  else if (G.near === 'finn') openPanel('finn');
-  else if (G.near === 'fish') openPanel('fish');
+  if (!G.near || G.portraitBlock) return;
+  const pl = G.world.places[G.near];
+  if (pl.spot) { if (G.fishing) reelPress(); else startFishing(pl.spot); return; }
+  openPanel(G.near);
 }
 const EGG_REWARD = { duck: { coins: 500 }, cave: { coins: 1500 }, tower: { coins: 2500 }, glitch: { void: 1 }, sun: { coins: 1000 } };
 function checkEggs() {
@@ -521,14 +588,13 @@ function checkEggs() {
     if (e.box) inside = p.x > e.box.min.x && p.x < e.box.max.x && p.z > e.box.min.z && p.z < e.box.max.z && p.y < e.box.max.y;
     else inside = Math.hypot(p.x - e.pos.x, p.z - e.pos.z) < e.r && Math.abs(p.y - e.pos.y) < 4;
     if (!inside) continue;
-    if (id === 'glitch' && !G.inNull) { G.inNull = true; glitchTo(G.world.nullRoom.spawn, 'You slipped through a glitch…'); }
+    if (id === 'glitch' && !G.inNull) { G.inNull = true; glitchTo(G.world.nullRoom.spawn, 'You slipped through a glitch.'); }
     if (G.save.eggs[id]) continue;
     G.save.eggs[id] = true;
     const r = EGG_REWARD[id] || {};
     if (r.coins) G.save.coins += r.coins;
     if (r.void) G.save.void += r.void;
-    const found = Object.keys(G.save.eggs).length;
-    toast(`Secret found: ${e.name}! (${found}/5)  +${r.coins ? fmt(r.coins) + ' coins' : r.void + ' Void Coin'}`, 'gold');
+    toast(`Secret found: ${e.name} (${Object.keys(G.save.eggs).length}/5). +${r.coins ? fmt(r.coins) + ' coins' : r.void + ' Void Coin'}`, 'gold');
     sound(id === 'duck' ? 'quack' : 'secret');
     markDirty();
   }
@@ -542,107 +608,116 @@ function glitchTo(where, msg) {
   setTimeout(() => el.classList.remove('oc-glitching'), 700);
 }
 
-// ---------------- luck and speed ----------------
+// ---------------- buffs: potions and gear added up ----------------
 function activeEffects() { const n = now(); G.effects = G.effects.filter(e => e.until > n); return G.effects; }
-function luckBonus() {
-  let add = 0;
-  for (const e of activeEffects()) add += POTION[e.id].luck || 0;
-  for (const it of ITEMS) if (it.luck && hasItem(it.id) && (!it.when || it.when === G.env.time)) add += it.luck;
-  return add;
-}
-function speedNow() {
-  let add = 0;
-  for (const e of activeEffects()) add += POTION[e.id].speed || 0;
-  for (const it of ITEMS) if (it.speed && hasItem(it.id)) add += it.speed;
-  return 1 + add;
+function buffs() {
+  const env = G.env, b = { luck: 1, speed: 1, gem: 1, coin: 1, mut: 1, fish: 1, fishLuck: 0, voidLuck: 1, rod: 1 };
+  const add = x => {
+    if (x.luck && (!x.when || x.when === env.time)) b.luck += x.luck;
+    if (x.wLuck && x.wLuck.w === env.weather) b.luck += x.wLuck.l;
+    if (x.tLuck && x.tLuck.t === env.time) b.luck += x.tLuck.l;
+    if (x.speed) b.speed += x.speed;
+    if (x.gem) b.gem = Math.max(b.gem, x.gem);
+    if (x.coin) b.coin += x.coin;
+    if (x.mut) b.mut += x.mut;
+    if (x.fish) b.fish += x.fish;
+    if (x.fishLuck) b.fishLuck += x.fishLuck;
+    if (x.voidLuck) b.voidLuck += x.voidLuck;
+    if (x.rod) b.rod = Math.max(b.rod, x.rod);
+  };
+  for (const e of activeEffects()) add(POTION[e.id]);
+  for (const it of ITEMS) if (hasItem(it.id)) add(it);
+  return b;
 }
 const tenthRoll = () => (G.save.rolls + 1) % 10 === 0;
-function luckNow() { return (1 + luckBonus()) * (tenthRoll() ? 2 : 1); }
+function luckNow() {
+  let luck = buffs().luck * (tenthRoll() ? 2 : 1);
+  for (const r of G.rollBuffs) { const p = POTION[r.id].rolls; if (p.l) luck += p.l; if (p.x) luck *= p.x; }
+  return luck;
+}
 
 // ---------------- rolling ----------------
 async function rollOnce() {
-  if (!G || !G.playing || G.rolling || now() < G.nextRollAt) return;
+  if (!G || !G.playing || G.rolling || G.portraitBlock || now() < G.nextRollAt) return;
   G.rolling = true;
+  const b = buffs();
   let luck = luckNow(), used = null;
+  G.rollBuffs.forEach(r => { r.left--; }); G.rollBuffs = G.rollBuffs.filter(r => r.left > 0);
   if (G.queued.length) { used = G.queued.shift(); luck += POTION[used].oneRoll; }
-  const res = rollAura(luck, G.env.time, G.env.weather);
+  const res = rollAura(luck, G.env.time, G.env.weather, { gem: b.gem, mut: b.mut });
   G.save.rolls++;
-  const coins = coinsFor(res.rarity);
+  const coins = Math.round(coinsFor(res.rarity) * b.coin);
   G.save.coins += coins;
   G.save.auras[res.key] = (G.save.auras[res.key] || 0) + 1;
-  if (Math.random() < 1 / 1500) { G.save.void++; toast('A Void Coin fell out of your roll!', 'gold'); }
+  if (Math.random() < 1 / 1500) { G.save.void++; toast('A Void Coin fell out of your roll.', 'gold'); }
   if (res.rarity > auraKey(G.save.best).rarity) G.save.best = res.key;
-  const speed = speedNow();
   const quick = G.save.settings.quick && canQuick();
-  if (used) toast(`${POTION[used].name} used on this roll!`);
+  if (used) toast(`${POTION[used].name} was used on this roll.`);
   markDirty();
   try {
     if (tierIndex(res.rarity) >= 4) await cutscene(res);
-    else if (!quick) await rollAnimation(res, speed);
+    else if (!quick) await rollAnimation(res, b.speed);
     showResult(res, coins, quick);
   } finally {
     if (G) {
       if (G.save.settings.autoEquip && res.rarity > auraKey(G.save.equipped).rarity) equip(res.key, true);
       if (res.rarity >= 100000 && G.net) G.net.announce({ name: G.me.name, key: res.key, rarity: res.rarity });
-      G.nextRollAt = now() + ROLL_COOLDOWN_MS / speed;
+      G.nextRollAt = now() + ROLL_COOLDOWN_MS / b.speed;
       G.rolling = false;
       updateHud();
     }
   }
 }
-// Names flicker past, slowing down, then the real one lands. Like the roll in Sol's RNG.
+// Names flicker past, slowing down, then the real one lands.
 async function rollAnimation(res, speed) {
   const box = $q('.oc-rolltext'), nameEl = $q('.oc-rt-name'), sub = $q('.oc-rt-sub');
-  box.classList.remove('hidden', 'land'); box.className = 'oc-rolltext';
+  box.className = 'oc-rolltext';
   const total = ROLL_ANIM_MS / Math.max(1, speed), frames = 11;
-  let elapsed = 0;
   for (let i = 0; i < frames; i++) {
     const a = randomFlicker(i / frames);
-    paintName(nameEl, a.name, a);
-    sub.textContent = '1 in ' + fmt(a.rarity);
+    paintName(nameEl, a.name, { aura: a });
+    sub.innerHTML = tierLine(a.rarity);
     sound('tick', 300 + i * 40);
-    const wait = total * (0.35 * Math.pow(1.32, i)) / 30;
-    elapsed += wait;
-    await sleep(wait);
+    await sleep(total * (0.35 * Math.pow(1.32, i)) / 30);
     if (!G) return;
   }
 }
 function randomFlicker(progress) {
-  // mostly common names, with the odd rare one for suspense
-  let pool = AURAS.filter(a => !a.only);
-  const r = Math.random();
-  const pick = r < 0.08 + progress * 0.1 ? pool[Math.floor(Math.random() * pool.length)] : pool[Math.floor(Math.random() * 14)];
-  return { name: pick.name, rarity: pick.rarity, aura: pick };
+  const pool = AURAS.filter(a => !a.only).sort((a, b) => a.rarity - b.rarity);
+  return Math.random() < 0.08 + progress * 0.1 ? pool[Math.floor(Math.random() * pool.length)] : pool[Math.floor(Math.random() * 16)];
 }
+// The aura's name in its own style.
 function paintName(el, text, res) {
   const aura = res.aura || res;
   el.textContent = text;
   const t = aura.title || {};
   el.className = 'oc-rt-name' + (t.bw ? ' bw' : t.rainbow ? ' rainbow' : t.gold ? ' gold' : t.violet ? ' violet' : '');
   el.style.color = t.bw || t.rainbow || t.gold || t.violet ? '' : aura.c;
-  el.style.setProperty('--glow', res.mut ? res.mut.color : aura.c);
+}
+// "1 in 2,048 · Shadowed" with the tier in its colour (null is red and black).
+function tierLine(rarity, mut) {
+  const tier = tierOf(rarity);
+  return `<span>1 in ${fmt(rarity)}</span><span class="oc-tier t-${tier.id}">${tier.label}</span>${mut ? `<span class="oc-mut" style="color:${mut.color}">${mut.name}</span>` : ''}`;
 }
 function showResult(res, coins, quick) {
   const box = $q('.oc-rolltext'), nameEl = $q('.oc-rt-name'), sub = $q('.oc-rt-sub');
-  box.className = 'oc-rolltext land tier-' + tierOf(res.rarity).id;
+  box.className = 'oc-rolltext land';
   paintName(nameEl, res.name, res);
-  sub.innerHTML = `1 in ${fmt(res.rarity)}${res.mut ? ` · <b style="color:${res.mut.color}">${res.mut.name}!</b>` : ''} <span class="oc-coin-gain">+${fmt(coins)} coins</span>`;
+  sub.innerHTML = tierLine(res.rarity, res.mut) + `<span class="oc-coin-gain">+${fmt(coins)} coins</span>`;
   sound('land', tierIndex(res.rarity));
   clearTimeout(G.rollHide);
   G.rollHide = setTimeout(() => G && box.classList.add('hidden'), quick ? 1300 : 2400);
 }
-// The big reveal for very rare auras: the screen goes dark, light bursts, and the name arrives.
-// 『EQUINOX』 and 『EQUILIBRIUM INCARNATE』: a white ball and a black ball circle each other, then merge.
+// The big reveal for very rare auras. 『EQUINOX』-style auras: a white ball and a black ball circle each other, then merge.
 async function cutscene(res) {
   const cut = $q('.oc-cut'), tier = tierOf(res.rarity), bw = res.aura.title && res.aura.title.bw;
-  G.panelBlocksAuto = true;
-  cut.className = `oc-cut tier-${tier.id}${bw ? ' bw' : ''}`;
+  G.cutting = true;
+  cut.className = `oc-cut t-${tier.id}${bw ? ' bw' : ''}`;
   cut.style.setProperty('--c', res.mut ? res.mut.color : res.aura.c);
   cut.innerHTML = `<div class="cut-bg"></div><div class="cut-rays"></div>${bw ? '<div class="cut-orb w"></div><div class="cut-orb b"></div>' : '<div class="cut-star"></div>'}
-    <div class="cut-flash"></div><div class="cut-name"></div><div class="cut-sub">1 in ${fmt(res.rarity)}</div><button type="button" class="cut-skip">Skip</button>`;
+    <div class="cut-flash"></div><div class="cut-name"></div><div class="cut-sub">${tierLine(res.rarity, res.mut)}</div><button type="button" class="cut-skip">Skip</button>`;
   const cutName = cut.querySelector('.cut-name');
-  paintName(cutName, res.name, res);
-  cutName.classList.add('cut-name');
+  paintName(cutName, res.name, res); cutName.classList.add('cut-name');
   sound('cut', tierIndex(res.rarity));
   const dur = bw ? 6500 : tierIndex(res.rarity) >= 6 ? 5200 : 4000;
   await new Promise(resolve => {
@@ -652,8 +727,8 @@ async function cutscene(res) {
   });
   if (!G) return;
   cut.classList.add('out');
-  setTimeout(() => { if (G) { cut.className = 'oc-cut hidden'; cut.innerHTML = ''; } }, 500);
-  G.panelBlocksAuto = false;
+  setTimeout(() => { if (G) { cut.className = 'oc-cut hidden'; cut.innerHTML = ''; } }, 450);
+  G.cutting = false;
 }
 function toggleAuto() {
   if (!canAuto()) { toast('Auto Roll comes with Frixion Premium.', 'warn'); return; }
@@ -664,41 +739,40 @@ async function toggleQuick() {
     if ((API().orbs() || 0) < 5000) { toast('Quick Roll costs 5,000 Orbs. Play Frixion games to earn more.', 'warn'); return; }
     const ok = await API().spendOrbs(5000).catch(() => false);
     if (!ok) { toast('Not enough Orbs for Quick Roll.', 'warn'); return; }
-    G.save.quickRoll = true; toast('Quick Roll unlocked! Rolls skip the animation while it\'s on.', 'gold'); sound('secret');
+    G.save.quickRoll = true; toast('Quick Roll unlocked. Rolls skip the animation while it is on.', 'gold'); sound('secret');
   }
   G.save.settings.quick = !G.save.settings.quick; refreshToggles(); markDirty();
 }
 function refreshToggles() {
   const a = $q('.oc-auto'), q = $q('.oc-quick');
-  a.classList.toggle('on', !!G.save.settings.auto && canAuto()); a.querySelector('small').textContent = !canAuto() ? 'Premium' : G.save.settings.auto ? 'ON' : 'OFF';
-  q.classList.toggle('on', !!G.save.settings.quick && canQuick()); q.querySelector('small').textContent = !canQuick() ? '5,000 Orbs' : G.save.settings.quick ? 'ON' : 'OFF';
+  const set = (el, ok, onNow, lockText) => { el.classList.toggle('on', ok && onNow); el.classList.toggle('locked', !ok); el.querySelector('small').textContent = !ok ? lockText : onNow ? 'ON' : 'OFF'; };
+  set(a, canAuto(), !!G.save.settings.auto, 'Premium');
+  set(q, canQuick(), !!G.save.settings.quick, '5,000 Orbs');
 }
 
 // ---------------- the HUD ----------------
-function updateHud(force) {
+function updateHud() {
   if (!G) return;
-  const s = G.save, env = G.env, n = now();
-  // buffs
-  const effects = activeEffects();
-  const chips = effects.map(e => { const p = POTION[e.id]; return `<div class="oc-buff" style="--c:${p.color}">${potionIcon(p.color)}<span>${esc(p.name)}</span><b>${fmtTime(e.until - n)}</b></div>`; });
-  G.queued.forEach(id => chips.push(`<div class="oc-buff next" style="--c:${POTION[id].color}">${potionIcon(POTION[id].color)}<span>${esc(POTION[id].name)}</span><b>next roll</b></div>`));
-  const luck = luckNow(), speed = speedNow();
-  chips.unshift(`<div class="oc-stats"><span>Luck <b>x${luck.toFixed(2).replace(/\.00$/, '')}</b></span><span>Speed <b>x${speed.toFixed(2).replace(/\.00$/, '')}</b></span><span>Rolls <b>${fmt(s.rolls)}</b></span>${tenthRoll() ? '<span class="lucky">Next roll is x2 lucky!</span>' : ''}</div>`);
+  const s = G.save, env = G.env, n = now(), b = buffs();
+  const luck = luckNow();
+  const x2 = v => v.toFixed(2).replace(/\.?0+$/, '');
+  $q('.oc-stats').innerHTML = `<div>Luck: <b>${x2(luck)}x</b></div><div>Roll speed: <b>${x2(b.speed)}x</b></div><div class="dim">Rolls: ${fmt(s.rolls)}</div>${tenthRoll() ? '<div class="lucky">Next roll: 2x luck</div>' : ''}`;
+  const chips = activeEffects().map(e => { const p = POTION[e.id]; return `<div class="oc-buff" title="${esc(p.name)}">${potionIcon(p.color)}<b>${fmtTime(e.until - n)}</b></div>`; });
+  G.queued.forEach(id => chips.push(`<div class="oc-buff next" title="${esc(POTION[id].name)}">${potionIcon(POTION[id].color)}<b>next</b></div>`));
+  G.rollBuffs.forEach(r => chips.push(`<div class="oc-buff next" title="${esc(POTION[r.id].name)}">${potionIcon(POTION[r.id].color)}<b>${r.left}x</b></div>`));
   $q('.oc-buffs').innerHTML = chips.join('');
-  // world
-  const w = WEATHERS[env.weather];
   const ws = G.worldState || {};
-  const jest = env.jester ? `<span class="oc-chip jester">Jester is here${ws.jesterUntil > n ? ' · ' + fmtTime(ws.jesterUntil - n) : ''}</span>` : `<span class="oc-chip dim">Jester in ${fmtTime(nextJesterIn(n))}</span>`;
-  const left = 600000 - (n % 600000);
-  $q('.oc-world').innerHTML = `<span class="oc-chip ${env.time}">${env.time === 'day' ? '☀ Day' : '☾ Night'} · ${fmtTime(ws.time && ws.time.until > n ? ws.time.until - n : left)}</span>` +
-    `<span class="oc-chip w-${env.weather}" title="${esc(w.desc)}">${w.icon} ${w.name}</span>${jest}<span class="oc-chip dim">${G.net ? G.net.count : 1} in lobby</span>`;
-  $q('.oc-money').innerHTML = `<span class="oc-cur coin"><i>C</i>${fmt(s.coins)}</span><span class="oc-cur f"><i>F</i>${fmt(s.f)}</span><span class="oc-cur void"><i>V</i>${fmt(s.void)}</span>`;
-  $q('.oc-roll-luck').textContent = G.rolling ? 'Rolling…' : `Luck x${luck.toFixed(2).replace(/\.00$/, '')}`;
-  const rb = $q('.oc-roll');
-  rb.classList.toggle('busy', G.rolling || n < G.nextRollAt);
-  if (G.panel === 'inventory' || G.panel === 'auras') { /* keep counts fresh without rebuilding while open */ }
+  const left = ws.time && ws.time.until > n ? ws.time.until - n : 600000 - (n % 600000);
+  $q('.oc-biome').innerHTML = `<div class="oc-biome-main w-${env.weather}">${weatherIcon(env.weather)}<span>${env.weather === 'clear' ? 'Normal' : WEATHERS[env.weather].name}</span></div>` +
+    `<div class="oc-biome-sub">${env.time === 'day' ? IC.sun : IC.moon}<span>${env.time === 'day' ? 'Day' : 'Night'} ${fmtTime(left)}</span>` +
+    `<span class="sep"></span>${IC.jester}<span>${env.jester ? `Jester here${ws.jesterUntil > n ? ' ' + fmtTime(ws.jesterUntil - n) : ''}` : 'Jester in ' + fmtTime(nextJesterIn(n))}</span>` +
+    `<span class="sep"></span>${IC.people}<span>${G.net ? G.net.count || 1 : 1}</span></div>`;
+  $q('.oc-money').innerHTML = `<div class="oc-cur coin"><i>C</i>${fmt(s.coins)}</div><div class="oc-cur f"><i>F</i>${fmt(s.f)}</div><div class="oc-cur void"><i>V</i>${fmt(s.void)}</div>`;
+  $q('.oc-roll-luck').textContent = G.rolling ? 'Rolling' : `${x2(luck)}x luck`;
 }
-const potionIcon = (c) => `<svg class="oc-potion" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6v2h-1v4.2l4.6 7.9A3.3 3.3 0 0 1 15.8 21H8.2a3.3 3.3 0 0 1-2.8-4.9L10 8.2V4H9z" fill="rgba(255,255,255,.18)" stroke="rgba(255,255,255,.7)" stroke-width="1"/><path d="M7.2 14h9.6l1.4 2.4A2 2 0 0 1 16.5 19.5h-9A2 2 0 0 1 5.8 16.4z" fill="${c}"/></svg>`;
+const potionIcon = c => `<svg class="oc-potion" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6v2h-1v4.2l4.6 7.9A3.3 3.3 0 0 1 15.8 21H8.2a3.3 3.3 0 0 1-2.8-4.9L10 8.2V4H9z" fill="#1b1b1f" stroke="#000" stroke-width="1.6"/><path d="M7.2 14h9.6l1.4 2.4A2 2 0 0 1 16.5 19.5h-9A2 2 0 0 1 5.8 16.4z" fill="${c}"/><path d="M10.3 9.2h3.4" stroke="#fff" stroke-opacity=".5" stroke-width="1.2"/></svg>`;
+const gearIcon = c => `<svg class="oc-potion" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" fill="${c}" stroke="#000" stroke-width="1.6"/><path d="M7 8h10M7 12h10M7 16h6" stroke="#000" stroke-opacity=".35" stroke-width="1.8"/></svg>`;
+const fishIcon = c => `<svg class="oc-potion" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12c3-4 7-6 11-6 4 0 7 3 8 6-1 3-4 6-8 6-4 0-8-2-11-6zm0 0L0 8m2 4L0 16" fill="${c}" stroke="#000" stroke-width="1.4"/><circle cx="16.5" cy="11" r="1.2" fill="#000"/></svg>`;
 
 function toast(text, kind) {
   if (!G) return;
@@ -712,35 +786,36 @@ function toast(text, kind) {
   setTimeout(() => el.remove(), 4300);
 }
 function announce(a) {
-  const { aura, mut, name } = auraKey(a.key);
+  const { aura, mut, name, rarity } = auraKey(a.key);
   const el = $q('.oc-announce');
-  el.innerHTML = `<span>${esc(a.name)} HAS FOUND</span> <b class="oc-ann-name"></b> <span>CHANCE OF 1 IN ${fmt(a.rarity)}</span>`;
+  el.innerHTML = `<span>${esc(a.name)} HAS FOUND</span><b class="oc-ann-name"></b><span>CHANCE OF 1 IN ${fmt(rarity)}</span>`;
   const n = el.querySelector('.oc-ann-name'); paintName(n, name, { aura, mut }); n.classList.add('oc-ann-name');
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
   sound('announce');
 }
 function announceWeather(w) {
-  const W = WEATHERS[w];
   if (w === 'clear') toast('The weather has cleared.');
-  else { toast(`${W.icon} ${W.name} has started! ${W.desc}`, 'gold'); sound('weather'); }
+  else { toast(`${WEATHERS[w].name} has started. ${WEATHERS[w].desc}`, 'gold'); sound('weather'); }
 }
 
 // ---------------- panels ----------------
+const TITLES = { auras: 'Aura Storage', inventory: 'Inventory', settings: 'Settings', admin: 'Admin', mixer: "Mixer's Brewery", jester: 'The Jester', finn: "Old Finn's Tackle", marlin: "Marlin's Fish Market", nova: "Nova's Daily Shop" };
 function openPanel(id) {
+  if (G.fishing) stopFishing();
   G.panel = id;
-  const box = $q('.oc-panel'), head = box.querySelector('h2'), body = box.querySelector('.oc-panel-body');
+  const box = $q('.oc-panel'), body = box.querySelector('.oc-panel-body');
   box.classList.remove('hidden');
   box.dataset.panel = id;
-  const titles = { auras: 'Aura Storage', inventory: 'Items & Potions', settings: 'Settings', admin: 'Admin Panel', mixer: "Mixer's Brewery", jester: 'The Jester', finn: "Old Finn's Bait & Tackle", fish: 'Fishing' };
-  head.textContent = titles[id] || '';
-  ({ auras: renderAuras, inventory: renderInventory, settings: renderSettings, admin: renderAdmin, mixer: () => renderShop('mixer'), jester: () => renderShop('jester'), finn: () => renderShop('finn'), fish: renderFishing })[id](body);
+  box.querySelector('h2').textContent = TITLES[id] || '';
+  ({ auras: renderAuras, inventory: renderInventory, settings: renderSettings, admin: renderAdmin, mixer: () => renderShop('mixer'), jester: () => renderShop('jester'), finn: () => renderShop('finn'), marlin: renderMarlin, nova: renderDaily })[id](body);
 }
 function closePanel() {
   if (!G) return;
-  if (G.fishing) { clearTimeout(G.fishing.timer); G.fishing = null; }
   G.panel = null;
   $q('.oc-panel').classList.add('hidden');
 }
+const priceText = pr => pr.coins ? `${fmt(pr.coins)} C` : pr.f ? `${fmt(pr.f)} F` : `${pr.void} V`;
+const priceClass = pr => pr.coins ? 'coin' : pr.f ? 'f' : 'void';
 
 function renderAuras(body, filter = G.auraFilter || 'owned') {
   G.auraFilter = filter;
@@ -748,130 +823,223 @@ function renderAuras(body, filter = G.auraFilter || 'owned') {
   if (owner()) AURAS.forEach(a => keys.add(a.id));
   const list = filter === 'owned' ? [...keys].map(auraKey) : AURAS.map(a => auraKey(a.id));
   list.sort((a, b) => b.rarity - a.rarity);
-  body.innerHTML = `<div class="oc-tabs"><button type="button" data-f="owned" class="${filter === 'owned' ? 'on' : ''}">Yours (${keys.size})</button><button type="button" data-f="all" class="${filter === 'all' ? 'on' : ''}">Collection (${AURAS.length})</button></div>
+  body.innerHTML = `<div class="oc-tabs"><button type="button" data-f="owned" class="${filter === 'owned' ? 'on' : ''}">Yours (${keys.size})</button><button type="button" data-f="all" class="${filter === 'all' ? 'on' : ''}">Index (${AURAS.length})</button></div>
     <div class="oc-aura-grid">${list.map(r => {
       const have = auraCount(r.key) > 0, eq = G.save.equipped === r.key, tier = tierOf(r.rarity);
       const only = r.aura.only ? (r.aura.only.time ? (r.aura.only.time === 'day' ? 'Day only' : 'Night only') : WEATHERS[r.aura.only.weather].name + ' only') : '';
-      return `<div class="oc-aura-card ${have ? '' : 'locked'} ${eq ? 'eq' : ''}" style="--c:${r.mut ? r.mut.color : r.aura.c};--t:${tier.color}">
+      return `<div class="oc-aura-card ${have ? '' : 'locked'} ${eq ? 'eq' : ''}" style="--c:${r.mut ? r.mut.color : r.aura.c}">
         <div class="oc-ac-name" data-key="${esc(r.key)}"></div>
-        <div class="oc-ac-meta"><span class="tier" style="color:${tier.color}">${tier.label}</span> · 1 in ${fmt(r.rarity)}${only ? ` · <i>${only}</i>` : ''}</div>
-        <div class="oc-ac-foot"><span>${have ? 'x' + fmt(auraCount(r.key)) : 'Not found yet'}</span>${have ? `<button type="button" data-equip="${esc(r.key)}" ${eq ? 'disabled' : ''}>${eq ? 'Equipped' : 'Equip'}</button>` : ''}</div></div>`;
+        <div class="oc-ac-meta">1 in ${fmt(r.rarity)}<span class="oc-tier t-${tier.id}">${tier.label}</span></div>
+        ${only ? `<div class="oc-ac-only">${only}</div>` : ''}
+        <div class="oc-ac-foot"><span>${have ? 'x' + fmt(auraCount(r.key)) : 'Not found'}</span>${have ? `<button type="button" class="oc-sbtn" data-equip="${esc(r.key)}" ${eq ? 'disabled' : ''}>${eq ? 'Equipped' : 'Equip'}</button>` : ''}</div></div>`;
     }).join('')}</div>`;
   body.querySelectorAll('.oc-ac-name').forEach(el => { const r = auraKey(el.dataset.key); paintName(el, auraCount(r.key) > 0 || filter === 'owned' ? r.name : '???', r); el.classList.add('oc-ac-name'); });
   body.querySelectorAll('[data-f]').forEach(b => b.onclick = () => renderAuras(body, b.dataset.f));
   body.querySelectorAll('[data-equip]').forEach(b => b.onclick = () => { equip(b.dataset.equip); renderAuras(body); });
 }
 
-function renderInventory(body) {
+function renderInventory(body, tab = G.invTab || 'potions') {
+  G.invTab = tab;
   const pots = POTIONS.filter(p => potionCount(p.id) > 0);
   const items = ITEMS.filter(i => hasItem(i.id));
-  body.innerHTML = `<div class="oc-money-big"><span class="oc-cur coin"><i>C</i>${fmt(G.save.coins)} coins</span><span class="oc-cur f"><i>F</i>${fmt(G.save.f)} F</span><span class="oc-cur void"><i>V</i>${fmt(G.save.void)} Void Coins</span></div>
-    <h3>Potions</h3>${pots.length ? `<div class="oc-list">${pots.map(p => `<div class="oc-row" style="--c:${p.color}">${potionIcon(p.color)}<div class="oc-row-text"><b>${esc(p.name)}</b><span>${esc(p.desc)}</span></div><span class="oc-count">x${fmt(potionCount(p.id))}</span><button type="button" data-use="${p.id}">Use</button></div>`).join('')}</div>` : '<p class="oc-empty">No potions yet. Buy some from the Mixer, Old Finn or the Jester.</p>'}
-    <h3>Gear</h3>${items.length ? `<div class="oc-list">${items.map(i => `<div class="oc-row" style="--c:${i.color}"><span class="oc-gear" style="background:${i.color}"></span><div class="oc-row-text"><b>${esc(i.name)}</b><span>${esc(i.desc)}</span></div><span class="oc-count on">Active</span></div>`).join('')}</div>` : '<p class="oc-empty">No gear yet.</p>'}
-    <h3>Secrets found</h3><p class="oc-empty">${Object.keys(G.save.eggs).length} of 5. Look around the map!</p>`;
+  const fish = FISH.filter(f => (G.save.fish[f.id] || 0) > 0);
+  const row = (icon, name, desc, right) => `<div class="oc-row">${icon}<div class="oc-row-text"><b>${esc(name)}</b><span>${esc(desc)}</span></div>${right}</div>`;
+  const tabs = `<div class="oc-tabs">${[['potions', `Potions (${pots.length})`], ['gear', `Gear (${items.length})`], ['fish', `Fish (${fish.reduce((n, f) => n + G.save.fish[f.id], 0)})`]].map(([id, l]) => `<button type="button" data-t="${id}" class="${tab === id ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  let list = '';
+  if (tab === 'potions') list = pots.length ? pots.map(p => row(potionIcon(p.color), p.name, p.desc, `<span class="oc-count">x${fmt(potionCount(p.id))}</span><button type="button" class="oc-sbtn" data-use="${p.id}">Use</button>`)).join('') : '<p class="oc-empty">No potions. The Mixer, Old Finn, the Jester and Nova sell them.</p>';
+  if (tab === 'gear') list = items.length ? items.map(i => row(gearIcon(i.color), i.name, i.desc, '<span class="oc-count on">Active</span>')).join('') : '<p class="oc-empty">No gear yet.</p>';
+  if (tab === 'fish') list = fish.length ? fish.map(f => row(fishIcon(f.color), f.name, f.junk ? 'Worth nothing. Marlin takes it anyway.' : `Marlin pays ${f.value} F each.`, `<span class="oc-count">x${fmt(G.save.fish[f.id])}</span>`)).join('') : '<p class="oc-empty">No fish yet. Find a glowing ring by the water and press E.</p>';
+  body.innerHTML = `<div class="oc-money-row"><div class="oc-cur coin"><i>C</i>${fmt(G.save.coins)}</div><div class="oc-cur f"><i>F</i>${fmt(G.save.f)}</div><div class="oc-cur void"><i>V</i>${fmt(G.save.void)}</div><div class="oc-secrets">Secrets ${Object.keys(G.save.eggs).length}/5</div></div>${tabs}<div class="oc-list">${list}</div>`;
+  body.querySelectorAll('[data-t]').forEach(b => b.onclick = () => renderInventory(body, b.dataset.t));
   body.querySelectorAll('[data-use]').forEach(b => b.onclick = () => { usePotion(b.dataset.use); renderInventory(body); });
 }
 function usePotion(id) {
-  const p = POTION[id];
+  let p = POTION[id];
   if (potionCount(id) < 1) return;
+  if (!owner()) G.save.potions[id] = (G.save.potions[id] || 0) - 1;
+  if (p.mixed) {   // turns into a random effect
+    const into = POTION[MIXED_POOL[Math.floor(Math.random() * MIXED_POOL.length)]];
+    toast(`The Mixed Potion turned into ${into.name}.`, 'gold');
+    p = into; id = into.id;
+  }
   if (p.oneRoll) G.queued.push(id);
+  else if (p.rolls) G.rollBuffs.push({ id, left: p.rolls.n });
   else {
     if (p.group) {
       const other = activeEffects().find(e => POTION[e.id].group === p.group && e.id !== id);
-      if (other) { toast(`${POTION[other.id].name} is already active. You can't use two levels at once.`, 'warn'); return; }
+      if (other) {
+        toast(`${POTION[other.id].name} is already active. Only one level at a time.`, 'warn');
+        if (!owner()) G.save.potions[id] = (G.save.potions[id] || 0) + 1;
+        return;
+      }
     }
     const cur = G.effects.find(e => e.id === id);
     if (cur) cur.until += p.secs * 1000; else G.effects.push({ id, until: now() + p.secs * 1000 });
   }
-  if (!owner()) G.save.potions[id] = (G.save.potions[id] || 0) - 1;
-  toast(p.oneRoll ? `${p.name} is ready. It works on your next roll.` : `${p.name} is working!`, 'gold');
+  toast(p.oneRoll ? `${p.name} is ready for your next roll.` : p.rolls ? `${p.name} works on your next ${p.rolls.n === 1 ? 'roll' : p.rolls.n + ' rolls'}.` : `${p.name} is working.`, 'gold');
   sound('potion'); markDirty(); updateHud();
 }
 
 const SHOPS = {
-  mixer: { intro: 'Bubble, bubble! Potions for luck and speed, and gear that lasts.', potions: ['lucky', 'speed', 'fortune1', 'fortune2', 'fortune3', 'haste1', 'haste2', 'haste3', 'heavenly1', 'heavenly2'], items: ['gloves', 'boots', 'solarlens', 'moonlocket'] },
-  finn: { intro: 'Ahoy. Fish at the end of the dock for F. I take F for my wares.', potions: ['diver', 'warp', 'godlike'], items: ['goldrod', 'voidlantern'] },
-  jester: { intro: 'Hehehe… Bring me five Void Coins and I\'ll give you something… oblivious.', potions: ['oblivion', 'heavenly2', 'godlike'], items: [] },
+  mixer: { intro: 'Potions for luck and speed, and gear that lasts.', potions: ['lucky', 'speed', 'clover', 'sprint', 'fortune1', 'fortune2', 'fortune3', 'haste1', 'haste2', 'haste3', 'rage', 'jewelry', 'zombie', 'stormflask', 'frostflask', 'solartonic', 'starcandle', 'sunbrew', 'bound', 'chrono', 'mixed', 'heavenly1', 'heavenly2'], items: ['gloves', 'boots', 'solarlens', 'moonlocket'] },
+  finn: { intro: 'Rods, bait and brews. I only take F.', potions: ['diver', 'angler', 'midas', 'mutagen', 'warp', 'celestialdew', 'voiddraught', 'zeus', 'poseidon', 'hades', 'transcendent', 'godlike'], items: ['goldrod', 'voidlantern'] },
+  jester: { intro: 'Five Void Coins, and I will give you something... oblivious.', potions: ['oblivion', 'heavenly2', 'godlike', 'transcendent'], items: [] },
 };
-const priceText = pr => pr.coins ? `${fmt(pr.coins)} coins` : pr.f ? `${fmt(pr.f)} F` : `${pr.void} Void Coins`;
 const canAfford = pr => owner() || (pr.coins ? G.save.coins >= pr.coins : pr.f ? G.save.f >= pr.f : G.save.void >= pr.void);
+function shopRow(thing, isItem, price, button) {
+  return `<div class="oc-row">${isItem ? gearIcon(thing.color) : potionIcon(thing.color)}<div class="oc-row-text"><b>${esc(thing.name)}</b><span>${esc(thing.desc)}</span></div>
+    <span class="oc-price ${priceClass(price)} ${canAfford(price) ? '' : 'no'}">${owner() ? 'Free' : priceText(price)}</span>${button}</div>`;
+}
 function renderShop(id, body = $q('.oc-panel-body')) {
   if (id === 'jester' && !G.env.jester) { body.innerHTML = '<p class="oc-empty">The Jester has left. He comes back every 4 hours.</p>'; return; }
   const sh = SHOPS[id];
-  const row = (thing, isItem) => {
-    const owned = isItem && hasItem(thing.id), price = thing.price;
-    return `<div class="oc-row" style="--c:${thing.color}">${isItem ? `<span class="oc-gear" style="background:${thing.color}"></span>` : potionIcon(thing.color)}
-      <div class="oc-row-text"><b>${esc(thing.name)}</b><span>${esc(thing.desc)}</span></div>
-      <span class="oc-price ${canAfford(price) ? '' : 'no'}">${owner() ? 'Free (Owner)' : priceText(price)}</span>
-      <button type="button" data-buy="${isItem ? 'item' : 'potion'}:${thing.id}" ${owned || !canAfford(price) ? 'disabled' : ''}>${owned ? 'Owned' : id === 'jester' && thing.price.void ? 'Trade' : 'Buy'}</button></div>`;
-  };
-  body.innerHTML = `<p class="oc-intro">${esc(sh.intro)}</p><div class="oc-money-big"><span class="oc-cur coin"><i>C</i>${fmt(G.save.coins)}</span><span class="oc-cur f"><i>F</i>${fmt(G.save.f)}</span><span class="oc-cur void"><i>V</i>${fmt(G.save.void)}</span></div>
+  const row = (thing, isItem) => { const owned = isItem && hasItem(thing.id); return shopRow(thing, isItem, thing.price, `<button type="button" class="oc-sbtn" data-buy="${isItem ? 'item' : 'potion'}:${thing.id}" ${owned || !canAfford(thing.price) ? 'disabled' : ''}>${owned ? 'Owned' : thing.price.void ? 'Trade' : 'Buy'}</button>`); };
+  body.innerHTML = `<p class="oc-intro">${esc(sh.intro)}</p><div class="oc-money-row"><div class="oc-cur coin"><i>C</i>${fmt(G.save.coins)}</div><div class="oc-cur f"><i>F</i>${fmt(G.save.f)}</div><div class="oc-cur void"><i>V</i>${fmt(G.save.void)}</div></div>
     <div class="oc-list">${sh.potions.map(p => row(POTION[p], false)).join('')}${sh.items.map(i => row(ITEM[i], true)).join('')}</div>`;
   body.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => { const [kind, tid] = b.dataset.buy.split(':'); buy(kind, tid); renderShop(id, body); });
 }
-function buy(kind, id) {
-  const thing = kind === 'item' ? ITEM[id] : POTION[id], pr = thing.price;
-  if (!canAfford(pr)) { toast('You can\'t afford that yet.', 'warn'); return; }
-  if (!owner()) { if (pr.coins) G.save.coins -= pr.coins; else if (pr.f) G.save.f -= pr.f; else G.save.void -= pr.void; }
+function pay(pr) { if (owner()) return; if (pr.coins) G.save.coins -= pr.coins; else if (pr.f) G.save.f -= pr.f; else G.save.void -= pr.void; }
+function buy(kind, id, price) {
+  const thing = kind === 'item' ? ITEM[id] : POTION[id], pr = price || thing.price;
+  if (!canAfford(pr)) { toast('You can\'t afford that yet.', 'warn'); return false; }
+  pay(pr);
   if (kind === 'item') G.save.items[id] = true; else G.save.potions[id] = (G.save.potions[id] || 0) + 1;
-  toast(`You got ${thing.name}!`, 'gold'); sound('coin'); markDirty(); updateHud();
+  toast(`You got ${thing.name}.`, 'gold'); sound('coin'); markDirty(); updateHud();
+  return true;
+}
+// Nova: five deals a day, one of each per player. Changes at midnight UTC.
+function renderDaily(body) {
+  const day = dayIndex(now());
+  if (G.save.daily.day !== day) G.save.daily = { day, bought: [] };
+  const stock = dailyStock(day);
+  const left = 86400000 - (now() % 86400000);
+  body.innerHTML = `<p class="oc-intro">New deals every day. One of each, so choose well. Next deals in <b>${fmtTime(left)}</b>.</p><div class="oc-money-row"><div class="oc-cur coin"><i>C</i>${fmt(G.save.coins)}</div><div class="oc-cur f"><i>F</i>${fmt(G.save.f)}</div><div class="oc-cur void"><i>V</i>${fmt(G.save.void)}</div></div>
+    <div class="oc-list">${stock.map((o, i) => {
+      const sold = G.save.daily.bought.includes(i) || (o.kind === 'item' && hasItem(o.id) && !owner());
+      if (o.kind === 'void') return `<div class="oc-row"><span class="oc-voidcoin">V</span><div class="oc-row-text"><b>Void Coin</b><span>Trade 5 with the Jester for an Oblivion Potion.</span></div><span class="oc-price ${priceClass(o.price)} ${canAfford(o.price) ? '' : 'no'}">${owner() ? 'Free' : priceText(o.price)}</span><button type="button" class="oc-sbtn" data-d="${i}" ${sold || !canAfford(o.price) ? 'disabled' : ''}>${sold ? 'Sold out' : 'Buy'}</button></div>`;
+      const thing = o.kind === 'item' ? ITEM[o.id] : POTION[o.id];
+      return shopRow(thing, o.kind === 'item', o.price, `<button type="button" class="oc-sbtn" data-d="${i}" ${sold || !canAfford(o.price) ? 'disabled' : ''}>${sold ? 'Sold out' : 'Buy'}</button>`);
+    }).join('')}</div>`;
+  body.querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
+    const i = +b.dataset.d, o = stock[i];
+    if (o.kind === 'void') { if (!canAfford(o.price)) return; pay(o.price); G.save.void++; toast('You got a Void Coin.', 'gold'); sound('coin'); }
+    else if (!buy(o.kind, o.id, o.price)) return;
+    G.save.daily.bought.push(i); markDirty(); updateHud(); renderDaily(body);
+  });
+}
+// Marlin buys fish for F.
+function renderMarlin(body) {
+  const fish = FISH.filter(f => (G.save.fish[f.id] || 0) > 0);
+  const total = fish.reduce((s, f) => s + f.value * G.save.fish[f.id], 0);
+  body.innerHTML = `<p class="oc-intro">Fresh fish, fair prices. I pay in F.</p>
+    ${fish.length ? `<div class="oc-list">${fish.map(f => `<div class="oc-row">${fishIcon(f.color)}<div class="oc-row-text"><b>${esc(f.name)}</b><span>x${G.save.fish[f.id]} at ${f.value} F each</span></div><span class="oc-price f">${fmt(f.value * G.save.fish[f.id])} F</span><button type="button" class="oc-sbtn" data-sell="${f.id}">Sell</button></div>`).join('')}</div>
+    <button type="button" class="oc-btn wide" data-sellall>Sell all for ${fmt(total)} F</button>` : '<p class="oc-empty">You have no fish. Fish at any glowing ring by the water, then come back.</p>'}`;
+  const sell = ids => { let got = 0; ids.forEach(id => { got += FISHES[id].value * (G.save.fish[id] || 0); G.save.fish[id] = 0; }); G.save.f += got; toast(`Sold for ${fmt(got)} F.`, 'gold'); sound('coin'); markDirty(); updateHud(); renderMarlin(body); };
+  body.querySelectorAll('[data-sell]').forEach(b => b.onclick = () => sell([b.dataset.sell]));
+  const all = body.querySelector('[data-sellall]'); if (all) all.onclick = () => sell(fish.map(f => f.id));
 }
 
-// Fishing: cast, wait for a bite, then reel in fast.
-function renderFishing(body) {
-  const boost = (hasItem('goldrod') ? 0.5 : 0) + (activeEffects().some(e => e.id === 'diver') ? 1 : 0);
-  body.innerHTML = `<div class="oc-fish"><div class="oc-fish-water"><span class="bob"></span><span class="ripple"></span></div><p class="oc-fish-msg">Cast your line into the pond.</p><button type="button" class="oc-btn oc-fish-btn">Cast</button>
-    <p class="oc-fish-note">Catch F (blue coins). Sometimes a Void Coin bites. ${boost ? `<b>Bites ${Math.round(boost * 100)}% faster.</b>` : ''}</p></div>`;
-  const btn = body.querySelector('.oc-fish-btn'), msg = body.querySelector('.oc-fish-msg'), water = body.querySelector('.oc-fish-water');
-  const cast = () => {
-    G.fishing = { state: 'wait' };
-    water.className = 'oc-fish-water cast'; msg.textContent = 'Waiting for a bite…'; btn.textContent = 'Reel in'; btn.disabled = true;
-    sound('cast');
-    G.fishing.timer = setTimeout(() => {
-      if (!G || !G.fishing) return;
-      G.fishing.state = 'bite'; water.className = 'oc-fish-water bite'; msg.textContent = 'Something bit! Reel it in!'; btn.disabled = false; btn.classList.add('flash');
-      sound('bite');
-      G.fishing.timer = setTimeout(() => { if (!G || !G.fishing) return; G.fishing = null; water.className = 'oc-fish-water'; msg.textContent = 'It got away… Cast again.'; btn.textContent = 'Cast'; btn.classList.remove('flash'); }, 1100);
-    }, (2500 + Math.random() * 4500) / (1 + boost));
-  };
-  btn.onclick = () => {
-    if (!G.fishing) { cast(); return; }
-    if (G.fishing.state !== 'bite') return;
-    clearTimeout(G.fishing.timer); G.fishing = null; btn.classList.remove('flash'); btn.textContent = 'Cast'; water.className = 'oc-fish-water';
-    const voidChance = (1 / 25) * (hasItem('voidlantern') ? 2 : 1);
-    if (Math.random() < voidChance) { G.save.void++; msg.innerHTML = 'You caught a <b class="void">Void Coin</b>!'; sound('secret'); }
-    else if (Math.random() < 1 / 60) { G.save.f += 25; msg.innerHTML = 'A <b class="f">Golden Fish</b>! +25 F'; sound('coin'); }
-    else { const f = Math.ceil((1 + Math.floor(Math.random() * 4)) * (hasItem('goldrod') ? 1.5 : 1)); G.save.f += f; msg.innerHTML = `You caught <b class="f">${f} F</b>.`; sound('coin'); }
+// ---------------- fishing: cast, wait for a bite, then reel ----------------
+// The reel: a marker slides along a bar; press Reel (or E) while it is inside the green zone. Three hits land the fish,
+// two misses and it gets away. Better rods widen the zone; rarer fish move the marker faster.
+function startFishing(spot) {
+  const b = buffs();
+  G.fishing = { spot, state: 'wait', t: 0, wait: (2.2 + Math.random() * 4) / b.fish, hits: 0, misses: 0, pos: 0, dir: 1 };
+  G.player.vel.set(0, G.player.vel.y, 0);
+  renderFishBar();
+  sound('cast');
+}
+function stopFishing() { G.fishing = null; $q('.oc-fishbar').classList.add('hidden'); }
+function fishingTick(dt) {
+  const f = G.fishing; f.t += dt;
+  if (f.state === 'wait' && f.t > f.wait) {
+    const b = buffs();
+    const voidChance = (f.spot === 'void' ? 1 / 6 : 1 / 40) * b.voidLuck;
+    f.catch = Math.random() < voidChance ? { void: true, name: 'Void Coin', speed: 1.6 } : catchFish(f.spot, G.env.time, G.env.weather, b.fishLuck);
+    const val = f.catch.void ? 200 : f.catch.value;
+    f.speed = 0.8 + Math.min(1.6, Math.log10(1 + val) * 0.55);
+    f.zone = Math.min(0.42, 0.16 + (b.rod - 1) * 0.08);
+    f.zoneAt = 0.15 + Math.random() * (0.85 - f.zone - 0.15);
+    f.state = 'reel'; f.t = 0;
+    sound('bite');
+    renderFishBar();
+  } else if (f.state === 'reel') {
+    f.pos += f.dir * f.speed * dt;
+    if (f.pos > 1) { f.pos = 1; f.dir = -1; } if (f.pos < 0) { f.pos = 0; f.dir = 1; }
+    const m = $q('.oc-fb-marker'); if (m) m.style.left = (f.pos * 100) + '%';
+    if (f.t > 9) { toast('It got away.'); renderFishResult(null); }
+  }
+}
+function reelPress() {
+  const f = G.fishing;
+  if (!f) return;
+  if (f.state === 'done') { startFishing(f.spot); return; }
+  if (f.state !== 'reel') return;
+  const inZone = f.pos >= f.zoneAt && f.pos <= f.zoneAt + f.zone;
+  if (inZone) { f.hits++; sound('tick', 700 + f.hits * 120); f.zoneAt = 0.1 + Math.random() * (0.9 - f.zone - 0.1); }
+  else { f.misses++; sound('hurt'); }
+  if (f.hits >= 3) {
+    const c = f.catch;
+    if (c.void) G.save.void++; else G.save.fish[c.id] = (G.save.fish[c.id] || 0) + 1;
     markDirty(); updateHud();
-  };
+    renderFishResult(c);
+    sound(c.void || c.value >= 50 ? 'secret' : 'coin');
+  } else if (f.misses >= 2) { renderFishResult(null); }
+  else renderFishBar();
+}
+function renderFishBar() {
+  const f = G.fishing, el = $q('.oc-fishbar');
+  el.classList.remove('hidden');
+  const spot = FISHING_SPOTS[f.spot].name;
+  if (f.state === 'wait') {
+    el.innerHTML = `<div class="oc-fb-title">${IC.fish}<span>${esc(spot)}</span></div><div class="oc-fb-msg">Waiting for a bite<span class="dots"></span></div><div class="oc-fb-row"><button type="button" class="oc-sbtn dark" data-stop>Stop</button></div>`;
+  } else if (f.state === 'reel') {
+    el.innerHTML = `<div class="oc-fb-title">${IC.fish}<span>Reel it in</span></div>
+      <div class="oc-fb-bar"><span class="oc-fb-zone" style="left:${f.zoneAt * 100}%;width:${f.zone * 100}%"></span><span class="oc-fb-marker" style="left:${f.pos * 100}%"></span></div>
+      <div class="oc-fb-pips">${[0, 1, 2].map(i => `<i class="${i < f.hits ? 'on' : ''}"></i>`).join('')}<span class="miss">${f.misses ? 'Missed ' + f.misses + '/2' : ''}</span></div>
+      <div class="oc-fb-row"><button type="button" class="oc-btn" data-reel>Reel</button></div>`;
+  }
+  const r = el.querySelector('[data-reel]'); if (r) r.onclick = reelPress;
+  const s = el.querySelector('[data-stop]'); if (s) s.onclick = stopFishing;
+}
+function renderFishResult(c) {
+  const f = G.fishing, el = $q('.oc-fishbar');
+  if (!f) return;
+  f.state = 'done';
+  el.innerHTML = c
+    ? `<div class="oc-fb-title">${c.void ? '<span class="oc-voidcoin">V</span>' : fishIcon(c.color)}<span>${c.void ? 'A Void Coin' : esc(c.name)}</span></div><div class="oc-fb-msg">${c.void ? 'Rare catch. Trade 5 with the Jester.' : c.junk ? 'Worth nothing. Still counts.' : `Marlin pays ${c.value} F for it.`}</div>`
+    : `<div class="oc-fb-title">${IC.fish}<span>It got away</span></div><div class="oc-fb-msg">Try again.</div>`;
+  el.innerHTML += `<div class="oc-fb-row"><button type="button" class="oc-btn" data-again>Cast again</button><button type="button" class="oc-sbtn dark" data-stop>Done</button></div>`;
+  el.querySelector('[data-again]').onclick = () => startFishing(f.spot);
+  el.querySelector('[data-stop]').onclick = stopFishing;
 }
 
 function renderSettings(body) {
   const s = G.save.settings;
-  const quality = G.quality;
-  body.innerHTML = `<div class="oc-set"><label><input type="checkbox" data-s="autoEquip" ${s.autoEquip ? 'checked' : ''}> Equip rarer auras automatically</label>
-    <label><input type="checkbox" data-s="sound" ${s.sound ? 'checked' : ''}> Sound effects</label>
-    <div class="oc-set-row"><span>Graphics</span>${['low', 'medium', 'high'].map(q => `<button type="button" data-q="${q}" class="${q === quality ? 'on' : ''}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div>
-    <p class="oc-empty">Graphics changes apply next time you open the game.</p>
-    <div class="oc-keys"><b>Controls</b><span>WASD / arrows: move · Space: jump · Drag: turn the camera · Wheel: zoom</span><span>R: roll · E: talk / fish · F: aura attack (PvP on)</span></div>
-    <p class="oc-empty">Your best aura: <b class="oc-best"></b> · ${fmt(G.save.rolls)} rolls</p></div>`;
+  body.innerHTML = `<div class="oc-set">
+    <label class="oc-check"><input type="checkbox" data-s="autoEquip" ${s.autoEquip ? 'checked' : ''}><span></span>Equip rarer auras automatically</label>
+    <label class="oc-check"><input type="checkbox" data-s="sound" ${s.sound ? 'checked' : ''}><span></span>Sound effects</label>
+    <div class="oc-set-row"><b>Graphics</b>${['low', 'medium', 'high'].map(q => `<button type="button" class="oc-sbtn ${q === G.quality ? '' : 'dark'}" data-q="${q}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div>
+    <p class="oc-empty">Graphics changes apply the next time you open the game.</p>
+    <div class="oc-keys"><b>Controls</b><span>WASD: move. Space: jump. Hold right mouse: turn the camera. Wheel: zoom.</span><span>Shift: Shift Lock. R: roll. E: talk or fish. F: aura attack (PvP on).</span></div>
+    <p class="oc-best-line">Best aura: <b class="oc-best"></b>  |  ${fmt(G.save.rolls)} rolls</p></div>`;
   const best = auraKey(G.save.best), bestEl = body.querySelector('.oc-best');
   paintName(bestEl, best.name, best); bestEl.classList.add('oc-best');
   body.querySelectorAll('[data-s]').forEach(c => c.onchange = () => { s[c.dataset.s] = c.checked; markDirty(); });
-  body.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { try { localStorage.setItem('ocrng.quality', b.dataset.q); } catch (e) {} body.querySelectorAll('[data-q]').forEach(x => x.classList.toggle('on', x === b)); });
+  body.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { try { localStorage.setItem('ocrng.quality', b.dataset.q); } catch (e) {} body.querySelectorAll('[data-q]').forEach(x => x.classList.toggle('dark', x !== b)); });
 }
 
 // The Owner and Co-Owners: start weather, change the time, summon the Jester, fly and noclip.
 function renderAdmin(body) {
   if (!G.me.staff) { body.innerHTML = ''; return; }
   const ws = G.worldState || {}, n = now();
-  const btn = (act, label, on) => `<button type="button" data-a="${act}" class="${on ? 'on' : ''}">${label}</button>`;
+  const btn = (act, label, onNow) => `<button type="button" class="oc-sbtn ${onNow ? '' : 'dark'}" data-a="${act}">${label}</button>`;
   body.innerHTML = `<div class="oc-admin">
-    <h3>Weather events <small>5 minutes, for everyone</small></h3><div class="oc-admin-row">${Object.values(WEATHERS).filter(w => w.id !== 'clear').map(w => btn('w:' + w.id, `${w.icon} ${w.name}`, ws.weather && ws.weather.type === w.id && ws.weather.until > n)).join('')}${btn('w:stop', 'Stop weather')}</div>
-    <h3>Time <small>10 minutes</small></h3><div class="oc-admin-row">${btn('t:day', '☀ Force day', ws.time && ws.time.mode === 'day' && ws.time.until > n)}${btn('t:night', '☾ Force night', ws.time && ws.time.mode === 'night' && ws.time.until > n)}${btn('t:stop', 'Back to normal')}</div>
-    <h3>The Jester <small>15 minutes</small></h3><div class="oc-admin-row">${btn('j:on', 'Summon the Jester', ws.jesterUntil > n)}${btn('j:off', 'Send him away')}</div>
+    <h3>Weather <small>5 minutes, for everyone</small></h3><div class="oc-admin-row">${Object.values(WEATHERS).filter(w => w.id !== 'clear').map(w => btn('w:' + w.id, w.name, ws.weather && ws.weather.type === w.id && ws.weather.until > n)).join('')}${btn('w:stop', 'Stop')}</div>
+    <h3>Time <small>10 minutes</small></h3><div class="oc-admin-row">${btn('t:day', 'Force day', ws.time && ws.time.mode === 'day' && ws.time.until > n)}${btn('t:night', 'Force night', ws.time && ws.time.mode === 'night' && ws.time.until > n)}${btn('t:stop', 'Normal')}</div>
+    <h3>Jester <small>15 minutes</small></h3><div class="oc-admin-row">${btn('j:on', 'Summon the Jester', ws.jesterUntil > n)}${btn('j:off', 'Send him away')}</div>
     <h3>Movement <small>just you</small></h3><div class="oc-admin-row">${btn('m:fly', 'Fly', G.player.fly)}${btn('m:noclip', 'Noclip', G.player.noclip)}${btn('m:spawn', 'Back to spawn')}</div>
-    <p class="oc-empty">Fly: Space goes up, Shift goes down.</p>
+    <p class="oc-empty">Fly: Space goes up, Q goes down.</p>
     <div class="oc-admin-row">${btn('x:clear', 'End every event')}</div></div>`;
   body.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { adminAction(b.dataset.a); setTimeout(() => G && G.panel === 'admin' && renderAdmin(body), 300); });
 }
@@ -879,11 +1047,11 @@ function adminAction(a) {
   const [k, v] = a.split(':'), n = now(), net = G.net;
   if (!G.me.staff || !net) return;
   if (k === 'w') { net.setWorld({ weather: v === 'stop' ? null : { type: v, until: n + 5 * 60000, by: G.me.name } }); toast(v === 'stop' ? 'Weather stopped.' : `${WEATHERS[v].name} started for everyone.`); }
-  if (k === 't') { net.setWorld({ time: v === 'stop' ? null : { mode: v, until: n + 10 * 60000, by: G.me.name } }); toast(v === 'stop' ? 'Time is back to normal.' : `It's ${v} for everyone now.`); }
+  if (k === 't') { net.setWorld({ time: v === 'stop' ? null : { mode: v, until: n + 10 * 60000, by: G.me.name } }); toast(v === 'stop' ? 'Time is back to normal.' : `It is ${v} for everyone now.`); }
   if (k === 'j') { net.setWorld({ jesterUntil: v === 'on' ? n + 15 * 60000 : 0 }); toast(v === 'on' ? 'The Jester has been summoned.' : 'The Jester has gone.'); }
   if (k === 'm') {
-    if (v === 'fly') { G.player.fly = !G.player.fly; G.player.vel.y = 0; toast(G.player.fly ? 'Fly on.' : 'Fly off.'); }
-    if (v === 'noclip') { G.player.noclip = !G.player.noclip; toast(G.player.noclip ? 'Noclip on. You go through walls.' : 'Noclip off.'); }
+    if (v === 'fly') { G.player.fly = !G.player.fly; G.player.vel.y = 0; if (G.player.fly && G.shiftLock) setShiftLock(false); toast(G.player.fly ? 'Fly on.' : 'Fly off.'); }
+    if (v === 'noclip') { G.player.noclip = !G.player.noclip; toast(G.player.noclip ? 'Noclip on.' : 'Noclip off.'); }
     if (v === 'spawn') { G.player.pos.copy(G.world.spawn); G.player.vel.set(0, 0, 0); }
   }
   if (k === 'x') { net.clearWorld(); toast('Every event ended.'); }
@@ -893,13 +1061,12 @@ function adminAction(a) {
 function togglePvp() {
   const p = G.player;
   p.pvp = !p.pvp; p.hp = 100;
-  $q('.oc-pvp-btn').textContent = p.pvp ? 'PvP ON' : 'PvP OFF';
-  $q('.oc-pvp-btn').classList.toggle('on', p.pvp);
+  const b = $q('.oc-pvp-btn'); b.textContent = p.pvp ? 'PvP: On' : 'PvP: Off'; b.classList.toggle('on', p.pvp);
   $q('.oc-hp').classList.toggle('hidden', !p.pvp); $q('.oc-attack').classList.toggle('hidden', !p.pvp);
   updateHp();
   p.avatar.tag.userData.draw(G.me.name, G.save.equipped, p.pvp ? p.hp : null);
   if (G.net) G.net.update({ pvp: p.pvp });
-  toast(p.pvp ? 'PvP is on. Press F (or ATTACK) to use your aura\'s attack. Only players with PvP on can be hit.' : 'PvP is off. Nobody can hit you.');
+  toast(p.pvp ? 'PvP on. F (or Attack) uses your aura\'s attack. Only players with PvP on can be hit.' : 'PvP off. Nobody can hit you.');
 }
 function updateHp() { const p = G.player; $q('.oc-hp i').style.width = Math.max(0, p.hp) + '%'; $q('.oc-hp span').textContent = Math.max(0, Math.round(p.hp)); }
 function attack() {
@@ -930,13 +1097,12 @@ function takeHit(h) {
   G.root.classList.remove('oc-hurt'); void G.root.offsetWidth; G.root.classList.add('oc-hurt');
   sound('hurt');
   if (p.hp <= 0) {
-    toast(`${h.by || 'Someone'} knocked you out with ${h.aura || 'their aura'}!`, 'warn');
+    toast(`${h.by || 'Someone'} knocked you out with ${h.aura || 'their aura'}.`, 'warn');
     p.hp = 100; p.pos.copy(G.world.spawn); p.vel.set(0, 0, 0); p.knock = null;
   }
   updateHp();
   p.avatar.tag.userData.draw(G.me.name, G.save.equipped, p.hp);
 }
-// An expanding ring of the aura's colour, bigger for rarer auras.
 function attackFx(x, z, color, tier) {
   G.fxObjects = G.fxObjects || [];
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.6, 1.4, 48), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false }));
