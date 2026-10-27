@@ -458,6 +458,7 @@ const UPDATES = [
       'New /spoiler command: type /spoiler and your message, and it is sent hidden behind a spoiler until someone clicks it.',
       '/vanish, /unvanish and /sfmode are now Sapphire commands, listed under Sapphire in the command list.',
       'The Owner can now send messages of any length, and Co-Owners up to 5,000 characters. Everyone else keeps the 1,000 limit.',
+      'Every Sapphire command now shows Sapphire\'s picture in the command list.',
     ] },
   { v: '4.33', date: '2026-10-26', title: 'Unread dots, notifications and threads',
     notes: [
@@ -8978,7 +8979,8 @@ const SLASH_IMAGES = {
   spoiler:   slashTile('#4e5058', '<path d="M12 32s7-12 20-12 20 12 20 12-7 12-20 12-20-12-20-12z"/><circle cx="32" cy="32" r="5"/><path d="M15 15l34 34"/>'),
   tts:       slashTile('#f59e0b', '<path d="M15 26h8l10-8v28l-10-8h-8z" fill="#fff"/><path d="M41 26a9 9 0 0 1 0 12M46 20a17 17 0 0 1 0 24"/>'),
 };
-SLASH_COMMANDS.forEach(c => { if (!c.img) c.img = SLASH_IMAGES[c.name] || ''; });
+// Sapphire's commands all show Sapphire's own picture, like a bot's commands do in Discord.
+SLASH_COMMANDS.forEach(c => { if (!c.img) c.img = c.group === 'sapphire' ? SAPPHIRE_AVATAR_URL : SLASH_IMAGES[c.name] || ''; });
 const SLASH_GROUPS = [
   { id: 'frixion', name: 'Frixion', img: slashTile('#5865f2', '<path d="M23 49V17h20M23 32h14"/>') },
   { id: 'sapphire', name: 'Sapphire', img: SAPPHIRE_AVATAR_URL },
