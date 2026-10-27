@@ -1,6 +1,7 @@
 // Overcontrol RNG: the map. Everything is built from studded blocks like a Roblox place: a spawn plaza with the
-// Overcontrol monument, the Mixer's potion shop, the Jester's tent, a fishing pond with a dock, a waterfall cliff, a
-// tall tower, trees, lamps, and a few secrets. Also the sky, day and night, and the weather.
+// Overcontrol monument, a stats board and a quest board, Mari's shop, the Jester's tent, a pond with a dock, a waterfall
+// cliff, a tall tower, the Sky Parkour, a graveyard, and in the west a giant mountain with a trail to a bell on top and,
+// inside it, the cave where Stella brews her potions. Also the sky, day and night, and every biome.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 import { glowTex, buildAvatar } from './avatar.js';
 
@@ -21,7 +22,7 @@ function studImage() {
 }
 const matCache = new Map();
 function studMat(color, rx, ry, opts = {}) {
-  const key = `${color}|${rx}|${ry}|${opts.emissive || ''}`;
+  const key = `${color}|${Math.round(rx)}|${Math.round(ry)}|${opts.emissive || ''}`;
   if (matCache.has(key)) return matCache.get(key);
   const t = new THREE.CanvasTexture(studImage());
   t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(Math.max(1, rx), Math.max(1, ry));
@@ -37,6 +38,23 @@ function plainMat(color, opts = {}) {
   matCache.set(key, m);
   return m;
 }
+// A rectangle with holes cut out of it, as a few rectangles (for carving caves out of the mountain).
+function rectMinus(r, holes) {
+  const xs = new Set([r[0], r[1]]), zs = new Set([r[2], r[3]]);
+  for (const h of holes) { [h[0], h[1]].forEach(x => { if (x > r[0] && x < r[1]) xs.add(x); }); [h[2], h[3]].forEach(z => { if (z > r[2] && z < r[3]) zs.add(z); }); }
+  const X = [...xs].sort((a, b) => a - b), Z = [...zs].sort((a, b) => a - b), cells = [];
+  for (let i = 0; i < X.length - 1; i++) {
+    let run = null;
+    for (let j = 0; j < Z.length - 1; j++) {
+      const cx = (X[i] + X[i + 1]) / 2, cz = (Z[j] + Z[j + 1]) / 2;
+      const inHole = holes.some(h => cx > h[0] && cx < h[1] && cz > h[2] && cz < h[3]);
+      if (!inHole) { if (run) run[3] = Z[j + 1]; else run = [X[i], X[i + 1], Z[j], Z[j + 1]]; }
+      else if (run) { cells.push(run); run = null; }
+    }
+    if (run) cells.push(run);
+  }
+  return cells;
+}
 
 // ---------------- the world ----------------
 export function createWorld(scene, quality) {
@@ -48,7 +66,7 @@ export function createWorld(scene, quality) {
   // A studded block. (x, z) is its middle, y its bottom.
   function box(x, y, z, w, h, d, color, o = {}) {
     const side = o.studsAllOver ? studMat(color, w, h, o) : plainMat(color, o);
-    const top = o.smooth ? plainMat(color, o) : studMat(color, w, d, o);
+    const top = o.smooth ? plainMat(o.topColor || color, o) : studMat(o.topColor || color, w, d, o);
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [side, side, top, plainMat(color, o), side, side]);
     mesh.position.set(x, y + h / 2, z);
     if (o.ry) mesh.rotation.y = o.ry;
@@ -57,24 +75,27 @@ export function createWorld(scene, quality) {
     if (!o.noCollide) colliders.push({ min: new THREE.Vector3(x - w / 2, y, z - d / 2), max: new THREE.Vector3(x + w / 2, y + h, z + d / 2), id: o.id });
     return mesh;
   }
+  const boxR = (r, y, h, color, o) => box((r[0] + r[1]) / 2, y, (r[2] + r[3]) / 2, r[1] - r[0], h, r[3] - r[2], color, o);
   const glow = (color, scale, x, y, z, parent = root, opacity = 0.7) => {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity }));
     s.scale.set(scale, scale, 1); s.position.set(x, y, z); parent.add(s); return s;
   };
 
-  // ---- ground: a green baseplate with a moat-free edge fence ----
-  const SIZE = 200;
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(SIZE, SIZE), studMat('#5aa34f', SIZE, SIZE));
-  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = shadows; root.add(ground);
+  // ---- ground: a green baseplate, wider to the west where the mountain stands ----
+  const B = { minX: -170, maxX: 100, minZ: -100, maxZ: 100 };
+  const GW = B.maxX - B.minX, GD = B.maxZ - B.minZ;
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(GW, GD), studMat('#5aa34f', GW, GD));
+  ground.rotation.x = -Math.PI / 2; ground.position.set((B.minX + B.maxX) / 2, 0, 0); ground.receiveShadow = shadows; root.add(ground);
   // the edges: a low fence, and invisible walls so nobody walks off the world
-  for (const [x, z, w, d] of [[0, -99, 200, 1], [0, 99, 200, 1], [-99, 0, 1, 200], [99, 0, 1, 200]]) {
+  const cx0 = (B.minX + B.maxX) / 2;
+  for (const [x, z, w, d] of [[cx0, B.minZ + 1, GW, 1], [cx0, B.maxZ - 1, GW, 1], [B.minX + 1, 0, 1, GD], [B.maxX - 1, 0, 1, GD]]) {
     box(x, 0, z, w, 2.2, d, '#8d6e63', { smooth: true });
-    colliders.push({ min: new THREE.Vector3(x - w / 2, 0, z - d / 2), max: new THREE.Vector3(x + w / 2, 60, z + d / 2) });
+    colliders.push({ min: new THREE.Vector3(x - w / 2, 0, z - d / 2), max: new THREE.Vector3(x + w / 2, 90, z + d / 2), cam: false });
   }
 
   // ---- paths from the plaza to each place ----
   const path = (x, z, w, d) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), studMat('#a1a1a1', w, d)); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.03, z); m.receiveShadow = shadows; root.add(m); };
-  path(0, 30, 6, 30); path(-28, -6, 30, 6); path(29, -6, 28, 6); path(0, -40, 6, 50); path(-40, 18, 6, 40);
+  path(0, 30, 6, 30); path(-28, -6, 30, 6); path(29, -6, 28, 6); path(0, -40, 6, 50); path(-40, 18, 6, 40); path(-70, -6, 50, 6);
 
   // ---- spawn plaza and the Overcontrol monument ----
   box(0, 0, 0, 30, 1, 30, '#9e9e9e');
@@ -94,10 +115,14 @@ export function createWorld(scene, quality) {
   for (const [x, z] of [[-11, 8], [11, 8], [-11, -2], [11, -2]]) { box(x, 1, z, 4, 0.8, 1.4, '#795548'); }
   for (const [x, z] of [[-13, -13], [13, -13], [-13, 13], [13, 13]]) { box(x, 1, z, 3, 1.4, 3, '#6d4c41'); box(x, 2.4, z, 2.4, 0.6, 2.4, '#43a047'); }
   // the welcome sign
-  const sign = signBoard('OVERCONTROL\'S RNG', 'Roll · Fish · Trade with the Jester', '#9c6bff');
-  sign.position.set(11, 0, 17.5); root.add(sign);   // at the plaza's south corner, facing people walking up from the pond
+  const sign = signBoard('OVERCONTROL\'S RNG', 'Roll · Fish · Climb the mountain', '#9c6bff');
+  sign.position.set(11, 0, 17.5); root.add(sign);
+  // the stats board and the quest board, at the north edge of the plaza, facing spawn
+  const board = statsBoard(); board.group.position.set(-11, 0, -18.5); root.add(board.group);
+  colliders.push({ min: new THREE.Vector3(-17.5, 0, -19), max: new THREE.Vector3(-4.5, 9, -18) });
+  const qboard = signBoard('QUEST BOARD', 'Daily quests: press E', '#ffd54f'); qboard.position.set(11, 0, -18.5); root.add(qboard);
 
-  // ---- the Mixer's potion shop (north-west) ----
+  // ---- Mari's shop (north-west of the plaza) ----
   const MX = -42, MZ = -8;
   box(MX, 0, MZ, 16, 1, 14, '#8d6e63');
   box(MX, 1, MZ - 6.5, 16, 8, 1, '#efebe9');
@@ -107,32 +132,24 @@ export function createWorld(scene, quality) {
   box(MX, 10, MZ, 14, 1, 12, '#7b1fa2', { noShadow: true });
   box(MX, 11, MZ, 9, 1, 8, '#8e24aa', { noShadow: true });
   box(MX + 1, 1, MZ + 1, 10, 3, 2, '#5d4037');                         // counter
-  const caul = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.2, 2, 20), plainMat('#263238', { metal: 0.5, rough: 0.4 }));
-  caul.position.set(MX - 3, 2, MZ - 3); caul.castShadow = shadows; root.add(caul);
-  colliders.push({ min: new THREE.Vector3(MX - 4.6, 1, MZ - 4.6), max: new THREE.Vector3(MX - 1.4, 3, MZ - 1.4) });
-  const brew = new THREE.Mesh(new THREE.CircleGeometry(1.45, 20), new THREE.MeshBasicMaterial({ color: '#76ff03' }));
-  brew.rotation.x = -Math.PI / 2; brew.position.set(MX - 3, 2.95, MZ - 3); root.add(brew);
-  const brewGlow = glow('#76ff03', 6, MX - 3, 3.6, MZ - 3);
-  const bubbles = bubbleDots('#b2ff59'); bubbles.obj.position.set(MX - 3, 3, MZ - 3); root.add(bubbles.obj); animated.push((dt, t) => { bubbles.update(dt); brewGlow.material.opacity = 0.5 + Math.sin(t * 3) * 0.15; });
   // shelves of potions
-  for (let i = 0; i < 6; i++) {
-    const colors = ['#3ddc84', '#4fc3ff', '#ffd54a', '#ff80ab', '#7c4dff', '#ff7043'];
-    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.35, 0.9, 10), new THREE.MeshStandardMaterial({ color: colors[i], emissive: colors[i], emissiveIntensity: 0.5, transparent: true, opacity: 0.85 }));
-    b.position.set(MX - 5 + i * 2, 6.2, MZ - 5.6); root.add(b);
-  }
-  box(MX, 5.5, MZ - 5.6, 14, 0.3, 1, '#4e342e', { noCollide: true });
-  const mixer = npc('Mixer', 'Potion Brewer', '#7b1fa2', '#ffd54f'); mixer.root.position.set(MX + 1, 1, MZ - 1.6); mixer.root.rotation.y = 0; root.add(mixer.root);
-  const shopSign = signBoard('MIXER\'S BREWERY', 'Potions for luck and speed', '#ab47bc'); shopSign.position.set(MX, 12.2, MZ + 7.2); shopSign.rotation.y = Math.PI; root.add(shopSign);
+  const shelfColors = ['#3ddc84', '#4fc3ff', '#ffd54a', '#ff80ab', '#7c4dff', '#ff7043', '#26c6da', '#ffee58'];
+  shelfColors.forEach((col, i) => { const b = potionModel(col, 0.8); b.position.set(MX - 6 + i * 1.7, 5.75, MZ - 5.6); root.add(b); });
+  box(MX, 5.5, MZ - 5.6, 15, 0.3, 1, '#4e342e', { noCollide: true });
+  shelfColors.slice().reverse().forEach((col, i) => { const b = potionModel(col, 0.7); b.position.set(MX - 6 + i * 1.7, 3.15, MZ - 5.6); root.add(b); });
+  box(MX, 2.9, MZ - 5.6, 15, 0.3, 1, '#4e342e', { noCollide: true });
+  const mari = npc('Mari', 'Potions and gear', '#c2185b', '#f8bbd0'); mari.root.position.set(MX + 1, 1, MZ - 1.6); root.add(mari.root);
+  const shopSign = signBoard('MARI\'S SHOP', 'Potions and gear', '#f06292'); shopSign.position.set(MX, 12.2, MZ + 7.2); shopSign.rotation.y = Math.PI; root.add(shopSign);
 
   // ---- the Jester's tent (east) ----
   const JX = 42, JZ = -10;
   const tent = new THREE.Group(); tent.position.set(JX, 0, JZ); root.add(tent);
-  const stripes = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 9, 11, 16, 1, true), new THREE.MeshStandardMaterial({ map: stripeTex(), side: THREE.DoubleSide, roughness: 0.8 }));
+  const stripes = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 9, 11, 16, 1, true), new THREE.MeshStandardMaterial({ map: stripeTex('#6a1b9a', '#ffd600'), side: THREE.DoubleSide, roughness: 0.8 }));
   stripes.position.y = 5.5; stripes.castShadow = shadows; tent.add(stripes);
   const flag = new THREE.Mesh(new THREE.ConeGeometry(0.6, 1.6, 4), plainMat('#ffd600', { emissive: '#ffd600', glow: 0.3 })); flag.position.y = 11.6; tent.add(flag);
   colliders.push({ min: new THREE.Vector3(JX - 6.4, 0, JZ - 6.4), max: new THREE.Vector3(JX + 6.4, 9, JZ + 6.4) });
   box(JX, 0, JZ + 11.5, 10, 0.4, 5, '#4a148c', { smooth: true, noCollide: true });
-  const jester = npc('Jester', 'Trades Void Coins', '#6a1b9a', '#ffd600', true); jester.root.position.set(JX, 0.4, JZ + 11); root.add(jester.root);
+  const jester = npc('Jester', 'Strange goods', '#6a1b9a', '#ffd600', 'jester'); jester.root.position.set(JX, 0.4, JZ + 11); root.add(jester.root);
   const jesterSign = signBoard('THE JESTER', 'Visits every 4 hours', '#ffd600'); jesterSign.position.set(JX + 9, 0, JZ + 12); jesterSign.rotation.y = Math.PI * 1.15; root.add(jesterSign);
   const jesterGlow = glow('#b388ff', 10, JX, 3, JZ + 11, root, 0);
 
@@ -141,7 +158,6 @@ export function createWorld(scene, quality) {
   const water = new THREE.Mesh(new THREE.PlaneGeometry(PW, PD, 1, 1), new THREE.MeshStandardMaterial({ color: '#1f7ae0', map: waterTex(), transparent: true, opacity: 0.86, roughness: 0.15, metalness: 0.1 }));
   water.rotation.x = -Math.PI / 2; water.position.set(PX, 0.12, PZ); root.add(water);
   animated.push((dt) => { water.material.map.offset.x += dt * 0.02; water.material.map.offset.y += dt * 0.012; });
-  // stone rim, with a gap where the dock starts
   box(PX - PW / 2 - 0.75, 0, PZ, 1.5, 1.2, PD + 3, '#90a4ae'); box(PX + PW / 2 + 0.75, 0, PZ, 1.5, 1.2, PD + 3, '#90a4ae');
   box(PX, 0, PZ + PD / 2 + 0.75, PW, 1.2, 1.5, '#90a4ae');
   box(PX - 13, 0, PZ - PD / 2 - 0.75, PW / 2 - 4, 1.2, 1.5, '#90a4ae'); box(PX + 13, 0, PZ - PD / 2 - 0.75, PW / 2 - 4, 1.2, 1.5, '#90a4ae');
@@ -152,9 +168,8 @@ export function createWorld(scene, quality) {
   box(PX, 0.6, PZ - 6, 4, 0.5, 16, '#a1887f');                          // the dock
   for (const z of [PZ - 12, PZ - 6, PZ, PZ + 2]) for (const sx of [-1.7, 1.7]) box(PX + sx, 0, z, 0.5, 1.8, 0.5, '#6d4c41', { noCollide: true });
   const finn = npc('Old Finn', 'Fishing supplies', '#0277bd', '#ffcc80'); finn.root.position.set(PX - 5, 0, PZ - 16); finn.root.rotation.y = Math.PI / 2; root.add(finn.root);
-  // lily pads
   for (const [x, z] of [[-12, 44], [-8, 58], [14, 54], [18, 42], [-17, 52]]) { const l = new THREE.Mesh(new THREE.CircleGeometry(1.1, 12), plainMat('#2e7d32')); l.rotation.x = -Math.PI / 2; l.position.set(x, 0.16, z); root.add(l); }
-  // Easter egg: a rubber duck floating out on the pond
+  // Secret: a rubber duck floating out on the pond
   const duck = new THREE.Group(); duck.position.set(11, 0.2, 51); root.add(duck);
   const yellow = plainMat('#ffeb3b');
   const dB = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.9), yellow); dB.position.y = 0.4; duck.add(dB);
@@ -162,36 +177,36 @@ export function createWorld(scene, quality) {
   const dK = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.15, 0.3), plainMat('#ff9800')); dK.position.set(0.85, 0.95, 0); duck.add(dK);
   animated.push((dt, t) => { duck.position.y = 0.2 + Math.sin(t * 1.6) * 0.06; duck.rotation.y = Math.sin(t * 0.3) * 0.6; });
 
-  // ---- the waterfall cliff (north), with a hidden cave behind the water ----
+  // ---- the waterfall cliff (north), with the Dev Room hidden behind the water ----
   const CZ = -78;
-  // the cliff face runs along z = CZ + 5, with a cave mouth at x 13..23 hidden behind the waterfall
   box(-18.5, 0, CZ, 63, 32, 10, '#78716c', { studsAllOver: true });
   box(36.5, 0, CZ, 27, 32, 10, '#78716c', { studsAllOver: true });
   box(18, 7, CZ, 10, 25, 10, '#78716c', { studsAllOver: true });                                        // above the cave mouth
   box(18, 0, CZ - 9, 12, 32, 8, '#6d6560', { studsAllOver: true });                                      // the back of the cave
-  for (let i = 0; i < 6; i++) box(-30 + i * 11, 32, CZ + (i % 2) * 2, 9, 2 + (i % 3), 8, '#43a047');  // grass on top
+  for (let i = 0; i < 6; i++) box(-30 + i * 11, 32, CZ + (i % 2) * 2, 9, 2 + (i % 3), 8, '#43a047');
   const fall = new THREE.Mesh(new THREE.PlaneGeometry(6, 30), new THREE.MeshBasicMaterial({ map: fallTex(), transparent: true, opacity: 0.85, depthWrite: false }));
   fall.position.set(18, 15.5, CZ + 5.4); root.add(fall);
   animated.push((dt) => { fall.material.map.offset.y += dt * 0.9; });
   const pool = new THREE.Mesh(new THREE.PlaneGeometry(12, 6), new THREE.MeshStandardMaterial({ color: '#29b6f6', transparent: true, opacity: 0.8, roughness: 0.1 }));
   pool.rotation.x = -Math.PI / 2; pool.position.set(18, 0.1, CZ + 8); root.add(pool);
   const mist = bubbleDots('#e1f5fe', 30, true); mist.obj.position.set(18, 0.5, CZ + 6.5); root.add(mist.obj); animated.push(dt => mist.update(dt));
-  // inside: the Dev Room
   const devSign = signBoard('DEV ROOM', 'You found the secret cave!', '#5865f2'); devSign.position.set(18, 0.5, CZ - 4.6); root.add(devSign);
   const env = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.5, 0.3), new THREE.MeshStandardMaterial({ color: '#5865f2', emissive: '#5865f2', emissiveIntensity: 0.8 }));
-  env.position.set(18, 5.2, CZ - 3); root.add(env); glow('#7c88ff', 8, 18, 5.2, CZ - 3);
+  env.position.set(14.5, 5.2, CZ - 3); root.add(env); glow('#7c88ff', 8, 14.5, 5.2, CZ - 3);
   animated.push((dt, t) => { env.rotation.y = t; env.position.y = 5.2 + Math.sin(t * 2) * 0.3; });
+  // the dev's computer: press E for a terminal
+  box(21, 0, CZ - 6, 3, 1.6, 1.4, '#4e342e');
+  const monitor = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.2, 0.15), [plainMat('#212121'), plainMat('#212121'), plainMat('#212121'), plainMat('#212121'), new THREE.MeshBasicMaterial({ map: terminalTex() }), plainMat('#212121')]);
+  monitor.position.set(21, 2.4, CZ - 6.2); root.add(monitor); glow('#00ff9c', 4, 21, 2.4, CZ - 5.9, root, 0.35);
 
   // ---- the tower (west), climb its stairs to the top ----
   const TX = -70, TZ = 40, TH = 36;
   box(TX, 0, TZ, 6, TH, 6, '#5d6d7e', { studsAllOver: true });
-  const steps = 48;
-  for (let i = 0; i < steps; i++) {
+  for (let i = 0; i < 48; i++) {
     const a = (i / 12) * Math.PI * 2, r = 5.2;
-    const y = (i + 1) * (TH / steps);
-    box(TX + Math.cos(a) * r, y - 0.6, TZ + Math.sin(a) * r, 3, 0.6, 3, i % 2 ? '#8d6e63' : '#a1887f');
+    box(TX + Math.cos(a) * r, (i + 1) * (TH / 48) - 0.6, TZ + Math.sin(a) * r, 3, 0.6, 3, i % 2 ? '#8d6e63' : '#a1887f');
   }
-  box(TX, TH, TZ, 7, 1, 7, '#455a64');   // the top; the stairs arrive on its open +x side
+  box(TX, TH, TZ, 7, 1, 7, '#455a64');
   for (const [x, z, w, d] of [[TX, TZ - 3.5, 7, 0.5], [TX, TZ + 3.5, 7, 0.5], [TX - 3.5, TZ, 0.5, 7]]) box(x, TH + 1, z, w, 1.2, d, '#37474f');
   const goldStud = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.5, 20), new THREE.MeshStandardMaterial({ color: '#ffd700', emissive: '#ffb300', emissiveIntensity: 0.7, metalness: 0.8, roughness: 0.2 }));
   goldStud.position.set(TX, TH + 1.6, TZ); root.add(goldStud); glow('#ffd54a', 6, TX, TH + 1.8, TZ);
@@ -204,7 +219,6 @@ export function createWorld(scene, quality) {
   const glitchEdges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(2.05, 2.05, 2.05)), new THREE.LineBasicMaterial({ color: '#00ffd0' }));
   glitch.add(glitchEdges);
   animated.push((dt, t) => { glitch.rotation.y = t * 0.7; glitch.position.x = GX + (Math.random() < 0.08 ? (Math.random() - 0.5) * 0.6 : 0); glitchEdges.material.color.setHSL((t * 0.5) % 1, 1, 0.55); });
-  // the Null room, far away from everything
   const NX = 0, NZ = 900;
   box(NX, 0, NZ, 30, 1, 30, '#212121');
   for (const [x, z, w, d] of [[NX, NZ - 15, 30, 1], [NX, NZ + 15, 30, 1], [NX - 15, NZ, 1, 30], [NX + 15, NZ, 1, 30]]) box(x, 1, z, w, 12, d, '#111111');
@@ -214,7 +228,6 @@ export function createWorld(scene, quality) {
   animated.push((dt, t) => { portal.rotation.z = t; });
 
   // ---- more water to fish in ----
-  // A patch of water with stone edges; invisible walls keep people out of it.
   const waterPatch = (x, z, w, d, color, rimColor) => {
     const wm = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshStandardMaterial({ color, map: waterTex(), transparent: true, opacity: 0.86, roughness: 0.15, metalness: 0.1 }));
     wm.rotation.x = -Math.PI / 2; wm.position.set(x, 0.12, z); root.add(wm);
@@ -223,22 +236,19 @@ export function createWorld(scene, quality) {
     colliders.push({ min: new THREE.Vector3(x - w / 2, 0, z - d / 2), max: new THREE.Vector3(x + w / 2, 14, z + d / 2), water: true });
     return wm;
   };
-  // Sunset Lagoon (north-east): sand, palm-ish trees and a little pier
   const LX = 66, LZ = -36;
   box(LX, 0, LZ, 30, 0.3, 26, '#e8d29a', { noCollide: true });
   waterPatch(LX + 3, LZ - 3, 18, 12, '#22a7c9');
-  box(LX - 7.5, 0.3, LZ - 3, 4, 0.5, 3, '#a1887f');                    // the pier you fish from
+  box(LX - 7.5, 0.3, LZ - 3, 4, 0.5, 3, '#a1887f');
   for (const [x, z] of [[LX - 12, LZ + 9], [LX + 12, LZ + 10], [LX - 13, LZ - 10]]) { box(x, 0, z, 1.2, 9, 1.2, '#8d6e63'); box(x, 9, z, 6, 0.8, 1.6, '#2e7d32', { noCollide: true }); box(x, 9, z, 1.6, 0.8, 6, '#388e3c', { noCollide: true }); }
-  // Tower Creek (west, by the tower)
   waterPatch(-86, 40, 6, 56, '#2a8fd6', '#78909c');
-  // the Void Pool, inside the Null room
   const vp = waterPatch(NX - 8, NZ + 2, 8, 6, '#1a0033');
   vp.material.opacity = 0.95; glow('#7c4dff', 10, NX - 8, 0.6, NZ + 2, root, 0.5);
-  // a glowing ring marks every place you can fish
-  const spotRing = (x, y, z) => {
-    const m = new THREE.Mesh(new THREE.RingGeometry(1.2, 1.55, 40), new THREE.MeshBasicMaterial({ color: '#4fd8ff', transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false }));
+  const spotRing = (x, y, z, color = '#4fd8ff') => {
+    const m = new THREE.Mesh(new THREE.RingGeometry(1.2, 1.55, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false }));
     m.rotation.x = -Math.PI / 2; m.position.set(x, y + 0.06, z); root.add(m);
     animated.push((dt, t) => { m.material.opacity = 0.45 + Math.sin(t * 2.5) * 0.25; m.scale.setScalar(1 + Math.sin(t * 2.5) * 0.06); });
+    return m;
   };
   const SPOTS = {
     dock: new THREE.Vector3(PX, 1.1, PZ + 1),
@@ -248,21 +258,20 @@ export function createWorld(scene, quality) {
     void: new THREE.Vector3(NX - 8, 1, NZ + 6.5),
   };
   for (const p of Object.values(SPOTS)) spotRing(p.x, p.y, p.z);
-  // Marlin's fish stall, at the foot of the dock
+  // market stalls
   const stall = (x, z, roofA, roofB, ry = 0) => {
     const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; root.add(g);
     const part = (px, py, pz, w, h, d, c) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), plainMat(c)); m.position.set(px, py + h / 2, pz); m.castShadow = shadows; m.receiveShadow = shadows; g.add(m); };
-    part(0, 0, 1.2, 6, 1.6, 1.2, '#795548');                                // counter
+    part(0, 0, 1.2, 6, 1.6, 1.2, '#795548');
     for (const sx of [-2.8, 2.8]) part(sx, 0, 1.6, 0.35, 4.6, 0.35, '#5d4037');
-    for (let i = 0; i < 6; i++) part(-2.5 + i, 4.6, 1.2, 1, 0.35, 3, i % 2 ? roofA : roofB);   // striped awning
+    for (let i = 0; i < 6; i++) part(-2.5 + i, 4.6, 1.2, 1, 0.35, 3, i % 2 ? roofA : roofB);
     const s = Math.sin(ry), c = Math.cos(ry);
-    const cx = x + 1.2 * s, cz = z + 1.2 * c, hx = 3 * Math.abs(c) + 0.6 * Math.abs(s), hz = 3 * Math.abs(s) + 0.6 * Math.abs(c);   // the counter, after turning
+    const cx = x + 1.2 * s, cz = z + 1.2 * c, hx = 3 * Math.abs(c) + 0.6 * Math.abs(s), hz = 3 * Math.abs(s) + 0.6 * Math.abs(c);
     colliders.push({ min: new THREE.Vector3(cx - hx, 0, cz - hz), max: new THREE.Vector3(cx + hx, 1.6, cz + hz) });
     return g;
   };
-  stall(10, 32, '#1e88e5', '#ffffff', -Math.PI / 2);   // the counter faces the path
+  stall(10, 32, '#1e88e5', '#ffffff', -Math.PI / 2);
   const marlin = npc('Marlin', 'Buys your fish', '#00897b', '#80deea'); marlin.root.position.set(11.4, 0, 32); marlin.root.rotation.y = -Math.PI / 2; root.add(marlin.root);
-  // Nova's daily shop, beside the plaza
   stall(23, 11, '#8e24aa', '#ffd54f', -Math.PI / 2);
   const nova = npc('Nova', 'Daily Shop', '#6a1b9a', '#ffd54f'); nova.root.position.set(24.4, 0, 11); nova.root.rotation.y = -Math.PI / 2; root.add(nova.root);
 
@@ -274,14 +283,142 @@ export function createWorld(scene, quality) {
   animated.push((dt) => { sun.rotation.y += dt * 0.4; sun.rotation.x += dt * 0.2; });
   const plaque = signBoard('THANK YOU, SOL', 'Inspired by Sol\'s RNG on Roblox', '#ffca28'); plaque.position.set(SX, 0, SZ + 3.4); plaque.rotation.y = Math.PI; root.add(plaque);
 
+  // ---- the Sky Parkour: floating islands next to the plaza. Reach the top for +30% luck for a minute. ----
+  const OB = { x: -27, z: 26, r: 8.5 };
+  const obbyColors = ['#ef5350', '#ffa726', '#ffee58', '#66bb6a', '#29b6f6', '#7e57c2'];
+  let lastTop = 0;
+  for (let k = 0; k < 13; k++) {
+    const a = k * 0.62, x = OB.x + Math.cos(a) * OB.r, z = OB.z + Math.sin(a) * OB.r, top = 1.6 + k * 2.4;
+    box(x, top - 0.8, z, 3, 0.8, 3, obbyColors[k % obbyColors.length]);
+    lastTop = top;
+  }
+  const fa = 13 * 0.62, FX = OB.x + Math.cos(fa) * (OB.r + 1), FZ = OB.z + Math.sin(fa) * (OB.r + 1), FY = lastTop + 2.4;
+  box(FX, FY - 1, FZ, 7, 1, 7, '#ffffff');
+  const pad = spotRing(FX, FY, FZ, '#ffd54f'); pad.scale.setScalar(1.6);
+  glow('#ffd54f', 8, FX, FY + 1.5, FZ, root, 0.45);
+  const obbySign = signBoard('SKY PARKOUR', 'Reach the top: +30% luck', '#29b6f6'); obbySign.position.set(OB.x + 2, 0, OB.z + 11.5); obbySign.rotation.y = Math.PI; root.add(obbySign);
+
+  // ---- the graveyard (south-west). Someone wanders here at night. ----
+  const GYX = -46, GYZ = 74;
+  box(GYX, 0, GYZ, 22, 0.25, 16, '#4e5b43', { noCollide: true, smooth: true });
+  for (const [x, z, w, d] of [[GYX, GYZ - 8, 22, 0.4], [GYX, GYZ + 8, 22, 0.4], [GYX - 11, GYZ, 0.4, 16], [GYX + 11, GYZ + 4.5, 0.4, 7]]) box(x, 0, z, w, 1.6, d, '#3e2723', { smooth: true });
+  for (let i = 0; i < 6; i++) { const x = GYX - 7 + (i % 3) * 6, z = GYZ - 3 + Math.floor(i / 3) * 6; box(x, 0, z, 1.6, 2 + (i % 2) * 0.6, 0.5, '#9e9e9e', { smooth: true }); box(x, 0, z + 1.6, 1.4, 0.2, 2.4, '#5d4037', { noCollide: true }); }
+  box(GYX + 8, 0, GYZ - 4, 0.9, 7, 0.9, '#3e2723');
+  for (const [dx, dy, ry] of [[1.2, 5, 0.6], [-1.1, 6, -0.7]]) { const br = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.4, 0.4), plainMat('#3e2723')); br.position.set(GYX + 8 + dx, dy, GYZ - 4); br.rotation.z = ry; root.add(br); }
+  const ghost = npc('The Ghost', 'Lost something', '#cfe8ff', '#bfe3ff', 'ghost'); ghost.root.position.set(GYX - 2, 0, GYZ + 2); ghost.root.rotation.y = Math.PI / 2; root.add(ghost.root);
+  const ghostGlow = glow('#bfe3ff', 8, GYX - 2, 3, GYZ + 2, root, 0);
+
+  // ---- THE MOUNTAIN (far west): 16 terraces of studs, a switchback trail up the south face, a bell on top ----
+  const MT = { x0: -165, x1: -99, z0: -95, z1: -7, n: 16, h: 3.6 };
+  const lay = i => [MT.x0 + 1.5 * i, MT.x1 - 1.5 * i, MT.z0 + 1.5 * i, MT.z1 - 3.5 * i];
+  // inside: a cave. Layer 0 has a chasm; layers 1-3 hold the cavern; a corridor runs in from the east face;
+  // a hidden crystal room sits behind a wall you can walk through.
+  const PIT = [-140, -122, -74, -38], CAVERN = [-150, -120, -74, -38], CORRIDOR = [-120, -97, -58, -52], CRYSTAL = [-138, -128, -84, -74];
+  const mtColor = i => (i >= 12 ? ['#cfd8e3', '#f4f8ff'] : i >= 8 ? ['#7d8289', '#8f959c'] : i >= 4 ? ['#78716c', '#5a9e48'] : ['#6f6a65', '#86807a']);
+  for (let i = 0; i < MT.n; i++) {
+    const r = lay(i), y = i * MT.h, [side, top] = mtColor(i);
+    const holes = i === 0 ? [PIT] : i <= 2 ? [CAVERN, CORRIDOR, CRYSTAL] : i === 3 ? [CAVERN] : [];
+    for (const piece of holes.length ? rectMinus(r, holes) : [r]) boxR(piece, y, MT.h, side, { studsAllOver: true, topColor: top });
+  }
+  // the trail: three steps on each terrace's south ledge, alternating ends, starting on the ground at the east end
+  for (let i = -1; i < MT.n - 1; i++) {
+    const r = i < 0 ? [MT.x0, MT.x1, 0, MT.z1] : lay(i), y = i < 0 ? 0 : (i + 1) * MT.h;
+    const zA = MT.z1 - 3.5 * (i + 1), zB = i < 0 ? MT.z1 + 3.5 : MT.z1 - 3.5 * i;   // the ledge in front of the next terrace
+    const west = i >= 0 && i % 2 === 0;
+    const L = r[0] + 0.6, R = r[1] - 0.6;
+    for (let k = 1; k <= 3; k++) {
+      const x = west ? L + 7.2 - 1.2 - (k - 1) * 2.4 : R - 7.2 + 1.2 + (k - 1) * 2.4;
+      box(x, y, (zA + zB) / 2, 2.4, 1.2 * k, zB - zA, '#a1887f', { topColor: '#bcaaa4' });
+    }
+  }
+  // the cave's chasm is dark and deep; falling in sends you back to the corridor
+  const abyss = new THREE.Mesh(new THREE.PlaneGeometry(PIT[1] - PIT[0], PIT[3] - PIT[2]), new THREE.MeshBasicMaterial({ color: '#07020f' }));
+  abyss.rotation.x = -Math.PI / 2; abyss.position.set((PIT[0] + PIT[1]) / 2, 0.08, (PIT[2] + PIT[3]) / 2); root.add(abyss);
+  glow('#4a148c', 26, (PIT[0] + PIT[1]) / 2, 0.5, (PIT[2] + PIT[3]) / 2, root, 0.35);
+  // floating stones across the chasm, and a branch to the crystal room
+  for (const [x, top, z] of [[-125, 4.6, -55], [-129.5, 5.8, -51.5], [-133.5, 6.6, -57], [-137.6, 5.4, -54], [-133, 6, -63], [-133, 5.2, -69.5]]) box(x, top - 0.6, z, 2.6, 0.6, 2.6, '#6d6560', { topColor: '#8e8a86' });
+  // steps up to the cave mouth on the east face
+  for (let k = 1; k <= 3; k++) box(-99 + 2.4 * (3 - k) + 1.2 + 0.0, 0, -55, 2.4, 1.2 * k, 6, '#8d8d8d');
+  // candles along the corridor
+  const candle = (x, y, z) => { box(x, y, z, 0.3, 0.6, 0.3, '#fff3e0', { noCollide: true, smooth: true }); const f = glow('#ffb74d', 1.6, x, y + 0.85, z, root, 0.9); animated.push((dt, t) => { f.material.opacity = 0.7 + Math.sin(t * 13 + x) * 0.2; }); };
+  for (let x = -100; x > -120; x -= 4) { candle(x, 3.6, -57.4); candle(x - 2, 3.6, -52.6); }
+  // glowing crystals on the cavern walls
+  const crystal = (x, y, z, c, s = 1) => { const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.9 * s, 0), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.9, roughness: 0.2 })); m.position.set(x, y, z); m.scale.y = 1.8; m.rotation.z = (x % 3) * 0.3; root.add(m); glow(c, 4 * s, x, y, z, root, 0.4); return m; };
+  [[-149, 8, -45, '#7c4dff'], [-149, 6, -70, '#00e5ff'], [-121, 9, -72, '#7c4dff'], [-121, 8, -40, '#00e5ff'], [-131, 13.5, -56, '#b388ff']].forEach(([x, y, z, c]) => crystal(x, y, z, c));
+  // Stella's camp, on the far side of the chasm
+  const ST = { x: -145.5, y: 3.6, z: -56 };
+  const stella = npc('Stella', 'Potion brewer', '#283593', '#b39ddb', 'witch'); stella.root.position.set(ST.x, ST.y, ST.z); stella.root.rotation.y = Math.PI / 2; root.add(stella.root);
+  const scaul = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.25, 2.1, 20), plainMat('#263238', { metal: 0.5, rough: 0.4 }));
+  scaul.position.set(-146, ST.y + 1.05, -49.5); scaul.castShadow = shadows; root.add(scaul);
+  colliders.push({ min: new THREE.Vector3(-147.7, ST.y, -51.2), max: new THREE.Vector3(-144.3, ST.y + 2.1, -47.8) });
+  const sbrew = new THREE.Mesh(new THREE.CircleGeometry(1.5, 20), new THREE.MeshBasicMaterial({ color: '#b388ff' }));
+  sbrew.rotation.x = -Math.PI / 2; sbrew.position.set(-146, ST.y + 2.02, -49.5); root.add(sbrew);
+  const sglow = glow('#b388ff', 7, -146, ST.y + 2.8, -49.5);
+  const sbub = bubbleDots('#e1bee7'); sbub.obj.position.set(-146, ST.y + 2.1, -49.5); root.add(sbub.obj);
+  animated.push((dt, t) => { sbub.update(dt); sglow.material.opacity = 0.5 + Math.sin(t * 2.6) * 0.2; });
+  const stTent = new THREE.Mesh(new THREE.ConeGeometry(4, 5, 4, 1, true), new THREE.MeshStandardMaterial({ color: '#5e35b1', side: THREE.DoubleSide, roughness: 0.9 }));
+  stTent.position.set(-146.5, ST.y + 2.5, -67); stTent.rotation.y = Math.PI / 4; root.add(stTent);
+  colliders.push({ min: new THREE.Vector3(-149.3, ST.y, -69.8), max: new THREE.Vector3(-143.7, ST.y + 4, -64.2) });
+  for (const [dx, dz, ry] of [[0, 0, 0.4], [0, 0, -0.8]]) { const log = new THREE.Mesh(new THREE.BoxGeometry(2, 0.35, 0.35), plainMat('#4e342e')); log.position.set(-142.5 + dx, ST.y + 0.2, -62.5 + dz); log.rotation.y = ry; root.add(log); }
+  const fire = glow('#ff8f00', 3.4, -142.5, ST.y + 0.9, -62.5, root, 0.95), fire2 = glow('#ffd54f', 1.8, -142.5, ST.y + 1.2, -62.5, root, 0.9);
+  animated.push((dt, t) => { fire.scale.setScalar(3.2 + Math.sin(t * 17) * 0.4); fire2.material.opacity = 0.7 + Math.sin(t * 23) * 0.25; });
+  box(-149.2, ST.y, -58, 0.8, 3.2, 5, '#4e342e');   // a shelf of finished brews
+  ['#ffd54a', '#80d8ff', '#ff6ec7', '#7cb342', '#ffee58', '#29b6f6'].forEach((col, i) => { const b = potionModel(col, 0.6); b.position.set(-149, ST.y + 3.2 + 0.05, -60 + i * 0.8); root.add(b); });
+  for (let z = -46; z > -70; z -= 6) candle(-141, ST.y, z);
+  // portals, once Stella's quest is done: one by the cave mouth outside, one back from her camp
+  const portalRing = (x, y, z, c) => {
+    const g = new THREE.Group(); g.position.set(x, y + 3, z); root.add(g);
+    const t = new THREE.Mesh(new THREE.TorusGeometry(2, 0.22, 12, 48), new THREE.MeshBasicMaterial({ color: c })); g.add(t);
+    const f = new THREE.Mesh(new THREE.CircleGeometry(1.8, 40), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.35, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })); g.add(f);
+    glow(c, 7, 0, 0, 0, g, 0.6);
+    animated.push((dt, tt) => { t.rotation.z = tt * 1.5; f.material.opacity = 0.3 + Math.sin(tt * 3) * 0.1; });
+    g.visible = false; return g;
+  };
+  const portalOut = portalRing(-93, 0, -64, '#b388ff'), portalBack = portalRing(-142.5, ST.y, -44, '#b388ff');
+  portalOut.rotation.y = Math.PI / 2; portalBack.rotation.y = Math.PI / 2;
+  // the crystal room's false wall, and its treasure
+  box((CRYSTAL[0] + CRYSTAL[1]) / 2, 3.6, -74, CRYSTAL[1] - CRYSTAL[0], 7.2, 0.8, '#78716c', { studsAllOver: true, noCollide: true });
+  [[-137, 5, -82, '#ff4081'], [-129, 6, -83, '#00e5ff'], [-136, 8, -78, '#ffd740'], [-129.5, 4.6, -77, '#7c4dff']].forEach(([x, y, z, c]) => crystal(x, y, z, c, 0.8));
+  const chest = new THREE.Group(); chest.position.set(-133, 3.6, -81.5); root.add(chest);
+  const cBase = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.2, 1.4), plainMat('#6d4c41')); cBase.position.y = 0.6; chest.add(cBase);
+  const cLid = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.5, 1.4), plainMat('#8d6e63')); cLid.position.y = 1.45; chest.add(cLid);
+  const cBand = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.8, 1.45), plainMat('#ffd54f', { metal: 0.6 })); cBand.position.y = 0.9; chest.add(cBand);
+  const chestGlow = glow('#ffd54f', 5, -133, 5.2, -81.5, root, 0.5);
+  colliders.push({ min: new THREE.Vector3(-134.1, 3.6, -82.2), max: new THREE.Vector3(-131.9, 5.3, -80.8) });
+  // the summit: a bell and a flag
+  const top = lay(MT.n - 1), SUM = { x: (top[0] + top[1]) / 2, y: MT.n * MT.h, z: (top[2] + top[3]) / 2 };
+  box(SUM.x - 2.2, SUM.y, SUM.z, 0.5, 5, 0.5, '#5d4037'); box(SUM.x + 2.2, SUM.y, SUM.z, 0.5, 5, 0.5, '#5d4037'); box(SUM.x, SUM.y + 5, SUM.z, 5, 0.5, 0.6, '#5d4037', { noCollide: true });
+  const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 1.2, 1.6, 20, 1, true), new THREE.MeshStandardMaterial({ color: '#ffca28', metalness: 0.8, roughness: 0.25, side: THREE.DoubleSide, emissive: '#7a5200', emissiveIntensity: 0.4 }));
+  bell.position.set(SUM.x, SUM.y + 4, SUM.z); root.add(bell);
+  const bellGlow = glow('#ffe082', 6, SUM.x, SUM.y + 4, SUM.z, root, 0.4);
+  let bellSwing = 0;
+  animated.push((dt, t) => { bellSwing *= Math.pow(0.25, dt); bell.rotation.z = Math.sin(t * 9) * bellSwing; bellGlow.material.opacity = 0.35 + bellSwing; });
+  box(SUM.x + 5, SUM.y, SUM.z + 2, 0.3, 8, 0.3, '#eeeeee');
+  const banner = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.8), new THREE.MeshStandardMaterial({ color: '#9c6bff', side: THREE.DoubleSide, emissive: '#4a2a99', emissiveIntensity: 0.4 }));
+  banner.position.set(SUM.x + 6.5, SUM.y + 7, SUM.z + 2); root.add(banner);
+  animated.push((dt, t) => { banner.rotation.y = Math.sin(t * 2) * 0.2; });
+  const mtSign = signBoard('THE MOUNTAIN', 'Trail to the top. A cave in the east face.', '#cfd8e3'); mtSign.position.set(-94, 0, -2); mtSign.rotation.y = Math.PI * 1.75; root.add(mtSign);
+
+  // ---- the Jester's lost cards (only shown while his quest is on) ----
+  const cardAt = { card1: new THREE.Vector3(TX - 2, TH + 1, TZ + 2), card2: new THREE.Vector3(15, 0.3, CZ - 6), card3: new THREE.Vector3(-129.5, 3.6, -80) };
+  const cards = {};
+  for (const [id, p] of Object.entries(cardAt)) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.3, 0.05), new THREE.MeshStandardMaterial({ map: cardTex(), emissive: '#ffffff', emissiveIntensity: 0.15 }));
+    m.position.set(p.x, p.y + 1.4, p.z); m.visible = false; root.add(m);
+    const g = glow('#ffd600', 3, p.x, p.y + 1.4, p.z, root, 0); g.visible = false;
+    cards[id] = { m, g };
+    animated.push((dt, t) => { m.rotation.y = t * 1.8; m.position.y = p.y + 1.4 + Math.sin(t * 2) * 0.15; g.material.opacity = 0.5; });
+  }
+
   // ---- trees, rocks, flowers and lamps ----
   const rand = mulberry(42);
   const blocked = (x, z) => Math.hypot(x, z) < 24 || (Math.abs(x - MX) < 14 && Math.abs(z - MZ) < 14) || (Math.abs(x - JX) < 14 && Math.abs(z - JZ) < 16)
     || (Math.abs(x - PX) < 28 && Math.abs(z - PZ) < 22) || z < -68 || (Math.abs(x - 66) < 18 && Math.abs(z + 36) < 16) || (x < -78 && z > 8 && z < 72) || (Math.abs(x - 23) < 6 && Math.abs(z - 11) < 6) || (Math.abs(x - TX) < 12 && Math.abs(z - TZ) < 12) || (Math.abs(x - SX) < 8 && Math.abs(z - SZ) < 8)
-    || Math.abs(x) < 5 || (Math.abs(z + 6) < 5 && Math.abs(x) < 45) || (Math.abs(x + 40) < 5 && z > 0 && z < 40) || (Math.abs(x - GX) < 6 && Math.abs(z - GZ) < 6);
+    || Math.abs(x) < 5 || (Math.abs(z + 6) < 5 && Math.abs(x) < 45) || (Math.abs(x + 40) < 5 && z > 0 && z < 40) || (Math.abs(x - GX) < 6 && Math.abs(z - GZ) < 6)
+    || (x < -92 && z < 4) || (Math.abs(x - OB.x) < 14 && Math.abs(z - OB.z) < 14) || (Math.abs(x - GYX) < 15 && Math.abs(z - GYZ) < 12) || (Math.abs(z + 18) < 4 && Math.abs(x) < 20) || (Math.abs(z + 6) < 5 && x < -40 && x > -96);
   let trees = 0;
-  for (let i = 0; i < 400 && trees < 46; i++) {
-    const x = (rand() - 0.5) * 186, z = (rand() - 0.5) * 186;
+  for (let i = 0; i < 600 && trees < 64; i++) {
+    const x = B.minX + 6 + rand() * (GW - 12), z = B.minZ + 6 + rand() * (GD - 12);
     if (blocked(x, z)) continue;
     trees++;
     const h = 5 + Math.floor(rand() * 4);
@@ -290,27 +427,37 @@ export function createWorld(scene, quality) {
     box(x, h, z, 6, 3, 6, leaf, { noCollide: true });
     box(x, h + 3, z, 4, 2, 4, leaf, { noCollide: true });
   }
-  for (let i = 0; i < 26; i++) {
-    const x = (rand() - 0.5) * 180, z = (rand() - 0.5) * 180;
+  for (let i = 0; i < 36; i++) {
+    const x = B.minX + 6 + rand() * (GW - 12), z = B.minZ + 6 + rand() * (GD - 12);
     if (blocked(x, z)) continue;
     const s = 1 + rand() * 2.5;
     box(x, 0, z, s * 1.4, s, s * 1.2, '#8d8d8d', { ry: rand() * 3 });
   }
   const flowerColors = ['#ff5252', '#ffd740', '#e040fb', '#ffffff', '#40c4ff'];
-  for (let i = 0; i < 90; i++) {
-    const x = (rand() - 0.5) * 180, z = (rand() - 0.5) * 180;
+  for (let i = 0; i < 120; i++) {
+    const x = B.minX + 6 + rand() * (GW - 12), z = B.minZ + 6 + rand() * (GD - 12);
     if (blocked(x, z)) continue;
     const f = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), plainMat(flowerColors[i % 5]));
     f.position.set(x, 0.6, z); root.add(f);
     const st = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.6, 0.12), plainMat('#2e7d32')); st.position.set(x, 0.3, z); root.add(st);
   }
   const lamps = [];
-  for (const [x, z] of [[4, 26], [-4, 36], [-4, 44], [-22, -2], [-34, -10], [20, -2], [32, -10], [-4, -30], [4, -50], [-36, 10], [-44, 28], [16, 16], [-16, 16]]) {
+  for (const [x, z] of [[4, 26], [-4, 36], [-4, 44], [-22, -2], [-34, -10], [20, -2], [32, -10], [-4, -30], [4, -50], [-36, 10], [-44, 28], [16, 16], [-16, 16], [-60, -2], [-80, -10], [-50, 62], [-90, -50]]) {
     box(x, 0, z, 0.6, 7, 0.6, '#37474f');
     const head = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1, 1.4), new THREE.MeshStandardMaterial({ color: '#fff3c4', emissive: '#ffcc66', emissiveIntensity: 0.2 }));
     head.position.set(x, 7.5, z); root.add(head);
     lamps.push({ head, glow: glow('#ffcc66', 9, x, 7.5, z, root, 0) });
   }
+  // where things can lie on the ground for people to pick up
+  const itemSpots = [];
+  for (let i = 0; i < 400 && itemSpots.length < 44; i++) {
+    const x = B.minX + 8 + rand() * (GW - 16), z = B.minZ + 8 + rand() * (GD - 16);
+    if (blocked(x, z) && !(Math.hypot(x, z) > 18 && Math.hypot(x, z) < 24)) continue;
+    if (x < -92 && z < 4) continue;
+    itemSpots.push(new THREE.Vector3(x, 0, z));
+  }
+  for (const i of [1, 4, 7, 10, 13]) { const r = lay(i); itemSpots.push(new THREE.Vector3((r[0] + r[1]) / 2, (i + 1) * MT.h, MT.z1 - 3.5 * (i + 0.5))); }
+  itemSpots.push(new THREE.Vector3(-143, ST.y, -46), new THREE.Vector3(SUM.x - 3, SUM.y, SUM.z - 3), new THREE.Vector3(FX + 2, FY, FZ + 2));
 
   // ---------------- sky, sun, moon, stars ----------------
   const skyMat = new THREE.ShaderMaterial({
@@ -330,36 +477,39 @@ export function createWorld(scene, quality) {
   const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: '#ffffff', size: 1.8, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, fog: false }));
   scene.add(stars);
 
-  // lights
   const hemi = new THREE.HemisphereLight('#bfe3ff', '#3d5a3a', 0.9); scene.add(hemi);
   const sunLight = new THREE.DirectionalLight('#ffffff', 1.6);
   sunLight.castShadow = shadows;
-  if (shadows) { sunLight.shadow.mapSize.set(quality === 'high' ? 2048 : 1024, quality === 'high' ? 2048 : 1024); const sc = sunLight.shadow.camera; sc.left = -60; sc.right = 60; sc.top = 60; sc.bottom = -60; sc.near = 1; sc.far = 260; sunLight.shadow.bias = -0.0008; }
+  if (shadows) { sunLight.shadow.mapSize.set(quality === 'high' ? 2048 : 1024, quality === 'high' ? 2048 : 1024); const sc = sunLight.shadow.camera; sc.left = -60; sc.right = 60; sc.top = 60; sc.bottom = -60; sc.near = 1; sc.far = 300; sunLight.shadow.bias = -0.0008; }
   scene.add(sunLight); scene.add(sunLight.target);
   scene.fog = new THREE.Fog('#cfe9ff', 120, 420);
 
-  // ---------------- weather around the player ----------------
   const weatherFx = makeWeather(scene);
-
-  // How everything looks for a given time and weather. Colours ease towards their targets so changes are smooth.
+  // How everything looks for a given time and biome. Colours ease towards their targets so changes are smooth.
   const look = {
     day: { top: '#3d8fff', bottom: '#cfe9ff', fog: '#cfe9ff', sun: 1.7, hemi: 0.95, stars: 0 },
     night: { top: '#071033', bottom: '#243266', fog: '#151d40', sun: 0.5, hemi: 0.6, stars: 1 },
+    windy: { top: '#5aa9ff', bottom: '#e6f7ff', fog: '#dff3ff', sun: 1.6, hemi: 1.0, fogNear: 90, fogFar: 360 },
     rain: { top: '#4b5867', bottom: '#8795a3', fog: '#7c8a98', sun: 0.6, hemi: 0.7, fogNear: 50, fogFar: 230 },
     snow: { top: '#a9c3db', bottom: '#eef5fb', fog: '#e4eef7', sun: 1.0, hemi: 1.0, fogNear: 40, fogFar: 220 },
+    sandstorm: { top: '#b98a4b', bottom: '#e3c58e', fog: '#d2ad6e', sun: 1.2, hemi: 0.9, sunColor: '#ffd59a', fogNear: 18, fogFar: 140 },
     hell: { top: '#3a0400', bottom: '#b3260a', fog: '#7a1500', sun: 0.8, hemi: 0.6, sunColor: '#ff6a3d', fogNear: 30, fogFar: 200 },
+    starfall: { top: '#030824', bottom: '#1c2c6e', fog: '#141f52', sun: 0.55, hemi: 0.7, sunColor: '#9fb4ff', fogNear: 80, fogFar: 380 },
     heaven: { top: '#fff7d6', bottom: '#ffffff', fog: '#fffbe8', sun: 1.9, hemi: 1.2, sunColor: '#fff3c4', fogNear: 40, fogFar: 260 },
+    corruption: { top: '#1e0730', bottom: '#5b2a6e', fog: '#3a1550', sun: 0.6, hemi: 0.65, sunColor: '#d38cff', fogNear: 30, fogFar: 200 },
     null: { top: '#111111', bottom: '#3a3a3a', fog: '#1c1c1c', sun: 0.5, hemi: 0.55, fogNear: 25, fogFar: 160 },
-    solar: { top: '#ff9a3c', bottom: '#ffe0a3', fog: '#ffd9a0', sun: 2.4, hemi: 1.1, sunColor: '#ffd27a', fogNear: 80, fogFar: 380 },
+    glitched: { top: '#001a14', bottom: '#00594a', fog: '#002a22', sun: 0.7, hemi: 0.75, sunColor: '#00ffd0', fogNear: 30, fogFar: 200 },
   };
   const cur = { top: new THREE.Color(look.day.top), bottom: new THREE.Color(look.day.bottom), fog: new THREE.Color(look.day.fog), sun: 1.6, hemi: 0.9, stars: 0, near: 120, far: 420, sunColor: new THREE.Color('#ffffff') };
   const tmp = new THREE.Color();
+  let glitchT = 0;
 
+  const npcs = { mari, jester, finn, marlin, nova, stella, ghost };
   return {
-    root, colliders,
+    root, colliders, bounds: B,
     spawn: new THREE.Vector3(0, 1, 6),
     places: {
-      mixer: { pos: new THREE.Vector3(MX + 1, 1, MZ + 2.5), r: 6.5, label: 'Talk to the Mixer' },
+      mari: { pos: new THREE.Vector3(MX + 1, 1, MZ + 2.5), r: 6.5, label: 'Talk to Mari' },
       jester: { pos: new THREE.Vector3(JX, 0, JZ + 13), r: 6, label: 'Talk to the Jester' },
       finn: { pos: new THREE.Vector3(PX - 5, 0, PZ - 16), r: 6, label: 'Talk to Old Finn' },
       fish_dock: { pos: SPOTS.dock, r: 3.4, label: 'Fish (The Dock)', spot: 'dock' },
@@ -369,67 +519,100 @@ export function createWorld(scene, quality) {
       fish_void: { pos: SPOTS.void, r: 3.4, label: 'Fish (The Void Pool)', spot: 'void' },
       marlin: { pos: new THREE.Vector3(6.5, 0, 32), r: 4.5, label: 'Sell fish to Marlin' },
       nova: { pos: new THREE.Vector3(19.5, 0, 11), r: 4.5, label: 'Daily Shop' },
+      questboard: { pos: new THREE.Vector3(11, 0, -15.5), r: 4, label: 'Read the Quest Board' },
+      stella: { pos: new THREE.Vector3(ST.x + 3, ST.y, ST.z), r: 7, label: 'Talk to Stella' },
+      bell: { pos: new THREE.Vector3(SUM.x, SUM.y, SUM.z + 1.5), r: 4.5, label: 'Ring the bell' },
+      portal_stella: { pos: new THREE.Vector3(-93, 0, -64), r: 3.5, label: 'Enter the portal to Stella' },
+      portal_back: { pos: new THREE.Vector3(-142.5, ST.y, -44), r: 3.5, label: 'Enter the portal' },
+      chest: { pos: new THREE.Vector3(-133, 3.6, -79.5), r: 3, label: 'Open the chest' },
+      devpc: { pos: new THREE.Vector3(21, 0, CZ - 4.5), r: 3, label: 'Use the computer' },
+      ghost: { pos: new THREE.Vector3(GYX - 2, 0, GYZ + 2), r: 5, label: 'Talk to the Ghost' },
+      card1: { pos: cardAt.card1, r: 2.5, label: 'Pick up the card' },
+      card2: { pos: cardAt.card2, r: 2.5, label: 'Pick up the card' },
+      card3: { pos: cardAt.card3, r: 2.5, label: 'Pick up the card' },
+      obby: { pos: new THREE.Vector3(FX, FY, FZ), r: 3.4, auto: true },
     },
     eggs: {
       duck: { pos: new THREE.Vector3(11, 0.5, 51), r: 9, name: 'the rubber duck' },
-      cave: { box: { min: new THREE.Vector3(13, 0, CZ - 9), max: new THREE.Vector3(23, 7, CZ + 1) }, name: 'the secret cave' },
+      cave: { box: { min: new THREE.Vector3(13, 0, CZ - 9), max: new THREE.Vector3(23, 7, CZ + 1) }, name: 'the Dev Room' },
       tower: { pos: new THREE.Vector3(TX, TH + 1, TZ), r: 4, name: 'the top of the tower' },
       glitch: { pos: new THREE.Vector3(GX, 1, GZ), r: 2.8, name: 'the glitch' },
       sun: { pos: new THREE.Vector3(SX, 0, SZ + 4), r: 6, name: 'the sun statue' },
+      summit: { pos: new THREE.Vector3(SUM.x, SUM.y, SUM.z), r: 9, name: 'the top of the mountain' },
+      crystal: { box: { min: new THREE.Vector3(CRYSTAL[0], 3, CRYSTAL[2]), max: new THREE.Vector3(CRYSTAL[1], 11, CRYSTAL[3] - 0.5) }, name: 'the hidden crystal room' },
+      graveyard: { box: { min: new THREE.Vector3(GYX - 11, 0, GYZ - 8), max: new THREE.Vector3(GYX + 11, 6, GYZ + 8) }, name: 'the graveyard at night', night: true },
     },
+    // the cave's chasm: fall in and you land back in the corridor
+    pit: { min: new THREE.Vector3(PIT[0], -5, PIT[2]), max: new THREE.Vector3(PIT[1], 1.5, PIT[3]), back: new THREE.Vector3(-104, 3.6, -55) },
+    stellaCamp: new THREE.Vector3(-141.5, ST.y, -53), caveMouth: new THREE.Vector3(-90, 0, -60),
     nullRoom: { spawn: new THREE.Vector3(NX, 1, NZ - 6), portal: new THREE.Vector3(NX, 1, NZ + 10) },
-    npcs: { mixer, jester, finn, marlin, nova },
+    itemSpots, npcs,
     lookFor(time, weather) { return look[weather !== 'clear' ? weather : time]; },
+    setPortals(onOff) { portalOut.visible = onOff; portalBack.visible = onOff; },
+    setCards(visible) { for (const [id, c] of Object.entries(cards)) { c.m.visible = !!visible[id]; c.g.visible = !!visible[id]; } },
+    setChest(opened) { cLid.rotation.x = opened ? -1.2 : 0; cLid.position.z = opened ? -0.5 : 0; cLid.position.y = opened ? 1.8 : 1.45; chestGlow.visible = !opened; },
+    ringBell() { bellSwing = 0.6; },
+    setBoard(data) { board.draw(data); },
     update(dt, t, env) {
       for (const a of animated) a(dt, t, env);
-      for (const n of [mixer, jester, finn, marlin, nova]) n.update(dt, t);
-      // the Jester is only here when he's visiting
+      for (const n of Object.values(npcs)) n.update(dt, t);
       jester.root.visible = env.jester; jesterGlow.material.opacity = env.jester ? 0.35 + Math.sin(t * 3) * 0.15 : 0;
+      const night = env.time === 'night';
+      ghost.root.visible = night; ghostGlow.material.opacity = night ? 0.3 + Math.sin(t * 2) * 0.1 : 0;
       // sky and light
-      const target = look[env.weather !== 'clear' ? env.weather : env.time];
+      let target = look[env.weather !== 'clear' ? env.weather : env.time];
       const base = look[env.time];
+      if (env.weather === 'glitched') { glitchT -= dt; if (glitchT < 0) { glitchT = 0.15 + Math.random() * 0.5; target = { ...target, top: '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0') }; cur.top.set(target.top); } }
       const k = 1 - Math.exp(-dt * 1.5);
-      cur.top.lerp(tmp.set(env.weather !== 'clear' && env.time === 'night' ? tmp.set(target.top).lerp(new THREE.Color(base.top), 0.6) : target.top), k);
+      const blendNight = env.weather !== 'clear' && night && env.weather !== 'starfall';
+      if (env.weather !== 'glitched') cur.top.lerp(tmp.set(blendNight ? tmp.set(target.top).lerp(new THREE.Color(base.top), 0.6) : target.top), k);
       cur.bottom.lerp(tmp.set(target.bottom), k);
-      cur.fog.lerp(tmp.set(env.weather !== 'clear' && env.time === 'night' ? new THREE.Color(target.fog).lerp(new THREE.Color(base.fog), 0.6) : target.fog), k);
-      cur.sun += ((env.time === 'night' ? Math.min(target.sun, base.sun) : target.sun) - cur.sun) * k;
-      cur.hemi += ((env.time === 'night' ? Math.min(target.hemi, base.hemi + 0.1) : target.hemi) - cur.hemi) * k;
-      cur.stars += ((env.time === 'night' && env.weather !== 'rain' && env.weather !== 'null' ? 1 : 0) - cur.stars) * k;
+      cur.fog.lerp(tmp.set(blendNight ? new THREE.Color(target.fog).lerp(new THREE.Color(base.fog), 0.6) : target.fog), k);
+      cur.sun += ((night ? Math.min(target.sun, base.sun) : target.sun) - cur.sun) * k;
+      cur.hemi += ((night ? Math.min(target.hemi, base.hemi + 0.1) : target.hemi) - cur.hemi) * k;
+      cur.stars += (((night || env.weather === 'starfall') && !['rain', 'null', 'sandstorm'].includes(env.weather) ? 1 : 0) - cur.stars) * k;
       cur.near += ((target.fogNear || 120) - cur.near) * k; cur.far += ((target.fogFar || 420) - cur.far) * k;
-      cur.sunColor.lerp(tmp.set(target.sunColor || (env.time === 'night' ? '#9fb4ff' : '#ffffff')), k);
+      cur.sunColor.lerp(tmp.set(target.sunColor || (night ? '#9fb4ff' : '#ffffff')), k);
       skyMat.uniforms.top.value.copy(cur.top); skyMat.uniforms.bottom.value.copy(cur.bottom);
       scene.fog.color.copy(cur.fog); scene.fog.near = cur.near; scene.fog.far = cur.far;
       hemi.intensity = cur.hemi; sunLight.intensity = cur.sun; sunLight.color.copy(cur.sunColor);
       stars.material.opacity = cur.stars;
-      // the sun and moon cross the sky over each 10-minute day and night
       const a = env.progress * Math.PI, cam = env.camPos;
       const arc = (ang) => new THREE.Vector3(Math.cos(ang) * 300, Math.sin(ang) * 220 + 20, -160);
-      const sp = arc(env.time === 'day' ? a : a), mp = arc(a);
-      sunSprite.visible = env.time === 'day'; moonSprite.visible = env.time === 'night';
+      const sp = arc(a), mp = arc(a);
+      sunSprite.visible = env.time === 'day' && env.weather !== 'starfall'; moonSprite.visible = night || env.weather === 'starfall';
       sunSprite.position.copy(sp).add(cam); moonSprite.position.copy(mp).add(cam);
       sky.position.copy(cam); stars.position.copy(cam);
-      sunSprite.material.opacity = env.weather === 'rain' || env.weather === 'null' ? 0.25 : 1;
+      sunSprite.material.opacity = ['rain', 'null', 'sandstorm', 'corruption'].includes(env.weather) ? 0.25 : 1;
       const lightDir = env.time === 'day' ? sp : mp;
       sunLight.position.copy(env.player).add(lightDir.clone().normalize().multiplyScalar(120));
       sunLight.target.position.copy(env.player);
-      // lamps light up at night and in dark weather
-      const dark = env.time === 'night' || env.weather === 'rain' || env.weather === 'null' || env.weather === 'hell';
+      const dark = night || ['rain', 'null', 'hell', 'starfall', 'corruption', 'sandstorm', 'glitched'].includes(env.weather);
       for (const l of lamps) { l.head.material.emissiveIntensity += ((dark ? 1.4 : 0.15) - l.head.material.emissiveIntensity) * k; l.glow.material.opacity += ((dark ? 0.75 : 0) - l.glow.material.opacity) * k; }
       weatherFx.update(dt, t, env.weather, env.camPos);
     },
   };
 
   // ---- small builders ----
-  function npc(name, role, shirt, accent, jesterHat) {
+  function npc(name, role, shirt, accent, hat) {
     const a = buildAvatar(name, shirt);
     a.root.remove(a.tag);
     const label = signLabel(name, role, accent); label.position.y = 6.9; a.root.add(label);
-    if (jesterHat) {
+    if (hat === 'jester') {
       const hatMat = [plainMat('#6a1b9a'), plainMat('#ffd600')];
       for (const s of [-1, 1]) { const h = new THREE.Mesh(new THREE.ConeGeometry(0.35, 1.5, 8), hatMat[s > 0 ? 1 : 0]); h.position.set(s * 0.45, 5.6, 0); h.rotation.z = -s * 0.7; a.body.add(h); const bell = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 8), plainMat('#ffd600', { emissive: '#ffd600', glow: 0.5 })); bell.position.set(s * 1.0, 5.95, 0); a.body.add(bell); }
     }
+    if (hat === 'witch') {
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.12, 20), plainMat('#1a237e')); brim.position.y = 5.32; a.body.add(brim);
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.7, 2.2, 16), plainMat('#1a237e')); cone.position.set(0, 6.4, -0.15); cone.rotation.x = -0.25; a.body.add(cone);
+      const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.22), plainMat('#ffd54f', { emissive: '#ffd54f', glow: 0.8 })); star.position.set(0, 5.75, 0.62); a.body.add(star);
+    }
+    if (hat === 'ghost') {
+      const ghostly = m => { m = m.clone(); m.transparent = true; m.opacity = 0.5; m.color.set('#dceeff'); m.emissive = new THREE.Color('#9fc8ff'); m.emissiveIntensity = 0.5; return m; };
+      a.root.traverse(o => { if (o.isMesh && o.material && o.parent !== a.root) { o.material = Array.isArray(o.material) ? o.material.map(ghostly) : ghostly(o.material); o.castShadow = false; } });
+    }
     let t0 = Math.random() * 6;
-    return { root: a.root, update(dt, t) { a.animate(dt, 0, false); a.body.position.y = Math.sin(t * 2 + t0) * 0.05; a.head.rotation.y = Math.sin(t * 0.7 + t0) * 0.35; } };
+    return { root: a.root, update(dt, t) { a.animate(dt, 0, false); a.body.position.y = Math.sin(t * 2 + t0) * 0.05 + (hat === 'ghost' ? 0.5 + Math.sin(t * 1.3) * 0.25 : 0); a.head.rotation.y = Math.sin(t * 0.7 + t0) * 0.35; } };
   }
 }
 
@@ -441,26 +624,83 @@ function signBoard(title, sub, accent) {
   const tex = textCanvas(512, 200, x => {
     x.fillStyle = '#2b2118'; x.fillRect(0, 0, 512, 200);
     x.strokeStyle = accent; x.lineWidth = 10; x.strokeRect(5, 5, 502, 190);
-    x.textAlign = 'center'; x.fillStyle = '#ffffff'; x.font = '900 52px "Segoe UI", sans-serif'; x.fillText(title, 256, 92, 470);
-    x.fillStyle = accent; x.font = '600 28px "Segoe UI", sans-serif'; x.fillText(sub, 256, 148, 470);
+    x.textAlign = 'center'; x.fillStyle = '#ffffff'; x.font = '800 52px Montserrat, "Segoe UI", sans-serif'; x.fillText(title, 256, 92, 470);
+    x.fillStyle = accent; x.font = '600 28px Montserrat, "Segoe UI", sans-serif'; x.fillText(sub, 256, 148, 470);
   });
   const board = new THREE.Mesh(new THREE.BoxGeometry(7, 2.8, 0.3), [plainMat('#4e342e'), plainMat('#4e342e'), plainMat('#4e342e'), plainMat('#4e342e'), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 }), plainMat('#4e342e')]);
   board.position.y = 3.6; g.add(board);
   for (const s of [-2.6, 2.6]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.4, 0.4), plainMat('#4e342e')); p.position.set(s, 1.2, 0); g.add(p); }
   return g;
 }
+// The stats board in the plaza: the top rollers and the rarest auras ever found. The game fills it in.
+function statsBoard() {
+  const g = new THREE.Group();
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 600;
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(12, 7), new THREE.MeshBasicMaterial({ map: tex }));
+  face.position.set(0, 5.4, 0.21); g.add(face);
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(12.6, 7.6, 0.4), plainMat('#1a1a1f')); frame.position.y = 5.4; g.add(frame);
+  for (const s of [-5.6, 5.6]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2, 0.5), plainMat('#1a1a1f')); p.position.set(s, 0.8, 0); g.add(p); }
+  const draw = (data = {}) => {
+    const x = c.getContext('2d');
+    x.fillStyle = '#0d0d12'; x.fillRect(0, 0, 1024, 600);
+    x.strokeStyle = 'rgba(255,255,255,.75)'; x.lineWidth = 3; x.strokeRect(14, 14, 996, 572);
+    x.textAlign = 'center'; x.fillStyle = '#fff'; x.font = '800 44px Montserrat, "Segoe UI", sans-serif'; x.fillText('STATS', 512, 72);
+    const col = (title, rows, cx) => {
+      x.font = '700 30px Montserrat, "Segoe UI", sans-serif'; x.fillStyle = '#cfcfd6'; x.fillText(title, cx, 130);
+      x.fillStyle = 'rgba(255,255,255,.3)'; x.fillRect(cx - 220, 146, 440, 2);
+      (rows || []).slice(0, 8).forEach((r, i) => {
+        const y = 192 + i * 50;
+        x.textAlign = 'left'; x.font = '700 28px Montserrat, "Segoe UI", sans-serif'; x.fillStyle = i === 0 ? '#ffd54f' : i === 1 ? '#e0e0e0' : i === 2 ? '#d7a46b' : '#ffffff';
+        x.fillText(`${i + 1}. ${r.name}`, cx - 215, y, 250);
+        x.textAlign = 'right'; x.font = '600 26px Montserrat, "Segoe UI", sans-serif'; x.fillStyle = r.color || '#b9b9c2'; x.fillText(r.value, cx + 215, y, 190);
+        x.textAlign = 'center';
+      });
+      if (!rows || !rows.length) { x.font = '600 24px Montserrat, "Segoe UI", sans-serif'; x.fillStyle = '#8a8a94'; x.fillText(data.loading ? 'Loading...' : 'Nobody yet', cx, 220); }
+    };
+    col('MOST ROLLS', data.rolls, 266);
+    col('RAREST AURA', data.rare, 758);
+    tex.needsUpdate = true;
+  };
+  draw({ loading: true });
+  return { group: g, draw };
+}
 function signLabel(name, role, accent) {
   const tex = textCanvas(768, 192, x => {
     x.textAlign = 'center'; x.lineJoin = 'round';
-    x.font = '900 60px "Segoe UI", sans-serif'; x.lineWidth = 10; x.strokeStyle = 'rgba(0,0,0,.75)'; x.strokeText(name, 384, 80); x.fillStyle = accent; x.fillText(name, 384, 80);
-    x.font = '700 38px "Segoe UI", sans-serif'; x.lineWidth = 7; x.strokeText(role, 384, 140); x.fillStyle = '#ffffff'; x.fillText(role, 384, 140);
+    x.font = '800 60px Montserrat, "Segoe UI", sans-serif'; x.lineWidth = 10; x.strokeStyle = 'rgba(0,0,0,.75)'; x.strokeText(name, 384, 80); x.fillStyle = accent; x.fillText(name, 384, 80);
+    x.font = '600 38px Montserrat, "Segoe UI", sans-serif'; x.lineWidth = 7; x.strokeText(role, 384, 140); x.fillStyle = '#ffffff'; x.fillText(role, 384, 140);
   });
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
   s.scale.set(7.2, 1.8, 1); return s;
 }
-function stripeTex() {
-  const t = textCanvas(256, 64, x => { for (let i = 0; i < 8; i++) { x.fillStyle = i % 2 ? '#ffd600' : '#6a1b9a'; x.fillRect(i * 32, 0, 32, 64); } });
+// A small 3D potion bottle (shop shelves, Stella's shelf, and potions lying on the ground).
+export function potionModel(color, s = 1) {
+  const g = new THREE.Group();
+  const liquid = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.45, roughness: 0.25, transparent: true, opacity: 0.92 });
+  const glass = new THREE.MeshStandardMaterial({ color: '#dff3ff', transparent: true, opacity: 0.35, roughness: 0.1 });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.42 * s, 14, 10), liquid); body.position.y = 0.42 * s; g.add(body);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.14 * s, 0.16 * s, 0.36 * s, 10), glass); neck.position.y = 0.92 * s; g.add(neck);
+  const cork = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * s, 0.13 * s, 0.16 * s, 10), new THREE.MeshStandardMaterial({ color: '#a1887f' })); cork.position.y = 1.16 * s; g.add(cork);
+  return g;
+}
+function stripeTex(a, b) {
+  const t = textCanvas(256, 64, x => { for (let i = 0; i < 8; i++) { x.fillStyle = i % 2 ? b : a; x.fillRect(i * 32, 0, 32, 64); } });
   t.wrapS = THREE.RepeatWrapping; t.repeat.set(2, 1); return t;
+}
+function cardTex() {
+  return textCanvas(64, 96, x => {
+    x.fillStyle = '#ffffff'; x.fillRect(0, 0, 64, 96); x.strokeStyle = '#6a1b9a'; x.lineWidth = 4; x.strokeRect(2, 2, 60, 92);
+    x.fillStyle = '#111'; x.font = '800 18px Montserrat, sans-serif'; x.fillText('A', 7, 22);
+    x.beginPath(); x.moveTo(32, 30); x.bezierCurveTo(14, 46, 18, 62, 30, 58); x.lineTo(26, 72); x.lineTo(38, 72); x.lineTo(34, 58); x.bezierCurveTo(46, 62, 50, 46, 32, 30); x.fill();
+  });
+}
+function terminalTex() {
+  return textCanvas(256, 170, x => {
+    x.fillStyle = '#04120a'; x.fillRect(0, 0, 256, 170);
+    x.fillStyle = '#00ff9c'; x.font = '600 15px monospace';
+    ['> overcontrol_rng.exe', '> loading auras... ok', '> luck: ???', '> hint: codes are', '  case-sensitive', '> _'].forEach((l, i) => x.fillText(l, 10, 24 + i * 24));
+  });
 }
 function waterTex() {
   const t = textCanvas(128, 128, x => {
@@ -479,7 +719,6 @@ function fallTex() {
   });
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1, 2); return t;
 }
-// Little rising bubbles (the cauldron) or mist (the waterfall).
 function bubbleDots(color, n = 16, wide) {
   const pos = new Float32Array(n * 3), geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   const obj = new THREE.Points(geo, new THREE.PointsMaterial({ color, size: wide ? 1.4 : 0.45, map: glowTex(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: wide ? 0.5 : 0.9 }));
@@ -487,45 +726,57 @@ function bubbleDots(color, n = 16, wide) {
   return { obj, update(dt) { p.forEach((q, i) => { q.y += q.v * dt; if (q.y > (wide ? 4 : 2.2)) q.y = 0; pos[i * 3] = q.x; pos[i * 3 + 1] = q.y; pos[i * 3 + 2] = q.z; }); geo.attributes.position.needsUpdate = true; } };
 }
 
-// Weather particles that follow the camera: rain streaks, snow, embers, heavenly motes, null cubes, solar glare.
+// Biome particles that follow the camera: rain, snow, embers, motes, dust, wind, falling stars, null cubes.
 function makeWeather(scene) {
   const N = 900, geo = new THREE.BufferGeometry(), pos = new Float32Array(N * 3);
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   const mat = new THREE.PointsMaterial({ size: 0.35, map: glowTex(), transparent: true, depthWrite: false, opacity: 0.9, color: '#ffffff' });
   const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; scene.add(pts);
-  const rainGeo = new THREE.BufferGeometry(), rainPos = new Float32Array(N * 6);
-  rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
-  const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: '#b8d4ff', transparent: true, opacity: 0.55 })); rain.frustumCulled = false; scene.add(rain);
+  const lineGeo = new THREE.BufferGeometry(), linePos = new Float32Array(N * 6);
+  lineGeo.setAttribute('position', new THREE.BufferAttribute(linePos, 3));
+  const lineMat = new THREE.LineBasicMaterial({ color: '#b8d4ff', transparent: true, opacity: 0.55 });
+  const lines = new THREE.LineSegments(lineGeo, lineMat); lines.frustumCulled = false; scene.add(lines);
   const P = Array.from({ length: N }, () => ({ x: (Math.random() - 0.5) * 120, y: Math.random() * 60, z: (Math.random() - 0.5) * 120, s: Math.random() }));
   const cubes = new THREE.Group(); scene.add(cubes);
   for (let i = 0; i < 40; i++) { const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: i % 3 ? '#000000' : '#ffffff' })); m.userData = { x: (Math.random() - 0.5) * 140, y: 4 + Math.random() * 30, z: (Math.random() - 0.5) * 140, s: 0.2 + Math.random() }; cubes.add(m); }
   let kind = null;
+  const POINTS = { snow: '#ffffff', hell: '#ff6a2b', heaven: '#fff3b0', sandstorm: '#e3c58e', corruption: '#c06bff', windy: '#c8f0a0' };
   return {
     update(dt, t, w, cam) {
       if (w !== kind) {
         kind = w;
-        pts.visible = ['snow', 'hell', 'heaven', 'solar'].includes(w); rain.visible = w === 'rain'; cubes.visible = w === 'null';
-        mat.color.set(w === 'hell' ? '#ff6a2b' : w === 'heaven' ? '#fff3b0' : w === 'solar' ? '#ffd27a' : '#ffffff');
-        mat.size = w === 'snow' ? 0.5 : w === 'hell' ? 0.45 : w === 'heaven' ? 0.6 : 0.8;
-        mat.blending = w === 'snow' ? THREE.NormalBlending : THREE.AdditiveBlending;
+        pts.visible = !!POINTS[w]; lines.visible = ['rain', 'windy', 'starfall', 'sandstorm'].includes(w); cubes.visible = w === 'null' || w === 'glitched';
+        mat.color.set(POINTS[w] || '#ffffff');
+        mat.size = w === 'snow' ? 0.5 : w === 'hell' ? 0.45 : w === 'heaven' ? 0.6 : w === 'sandstorm' ? 0.55 : w === 'windy' ? 0.4 : 0.6;
+        mat.blending = w === 'snow' || w === 'sandstorm' || w === 'windy' ? THREE.NormalBlending : THREE.AdditiveBlending;
+        lineMat.color.set(w === 'starfall' ? '#dfe9ff' : w === 'windy' ? '#ffffff' : w === 'sandstorm' ? '#e9d2a2' : '#b8d4ff');
+        lineMat.opacity = w === 'starfall' ? 0.9 : w === 'windy' ? 0.35 : 0.55;
+        cubes.children.forEach((m, i) => m.material.color.set(w === 'glitched' ? (i % 2 ? '#00ffd0' : '#ff00aa') : (i % 3 ? '#000000' : '#ffffff')));
       }
       if (pts.visible) {
         P.forEach((p, i) => {
           if (w === 'snow') { p.y -= (2 + p.s * 2) * dt; p.x += Math.sin(t + i) * dt * 0.8; }
           else if (w === 'hell') { p.y += (2 + p.s * 3) * dt; p.x += Math.sin(t * 2 + i) * dt; }
-          else { p.y += (0.3 + p.s) * dt * (w === 'solar' ? 0.4 : 1); }
+          else if (w === 'sandstorm' || w === 'windy') { p.x += (w === 'sandstorm' ? 26 : 18) * (0.6 + p.s) * dt; p.y += Math.sin(t * 3 + i) * dt * 2; if (p.x > 60) p.x -= 120; }
+          else if (w === 'corruption') { p.y += (0.6 + p.s) * dt; p.x += Math.sin(t + i) * dt; }
+          else { p.y += (0.3 + p.s) * dt; }
           if (p.y < 0) p.y += 60; if (p.y > 60) p.y -= 60;
           pos[i * 3] = cam.x + p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = cam.z + p.z;
         });
         geo.attributes.position.needsUpdate = true;
       }
-      if (rain.visible) {
+      if (lines.visible) {
         P.forEach((p, i) => {
-          p.y -= (40 + p.s * 20) * dt; if (p.y < 0) p.y += 60;
-          const x = cam.x + p.x, z = cam.z + p.z;
-          rainPos.set([x, p.y, z, x + 0.15, p.y + 1.6, z], i * 6);
+          let x = cam.x + p.x, z = cam.z + p.z;
+          if (w === 'rain') { p.y -= (40 + p.s * 20) * dt; if (p.y < 0) p.y += 60; linePos.set([x, p.y, z, x + 0.15, p.y + 1.6, z], i * 6); }
+          else if (w === 'windy' || w === 'sandstorm') { p.x += (w === 'windy' ? 50 : 40) * (0.5 + p.s) * dt; if (p.x > 60) p.x -= 120; x = cam.x + p.x; linePos.set([x, p.y * 0.5, z, x - 3 - p.s * 3, p.y * 0.5 + 0.1, z], i * 6); }
+          else if (w === 'starfall') {
+            if (i % 9) { linePos.set([0, -99, 0, 0, -99, 0], i * 6); return; }
+            p.y -= (30 + p.s * 25) * dt; p.x -= 20 * dt; if (p.y < 0) { p.y += 60; p.x = (Math.random() - 0.5) * 120; } x = cam.x + p.x;
+            linePos.set([x, p.y + 30, z, x + 4, p.y + 36, z], i * 6);
+          }
         });
-        rainGeo.attributes.position.needsUpdate = true;
+        lineGeo.attributes.position.needsUpdate = true;
       }
       if (cubes.visible) cubes.children.forEach(m => { const u = m.userData; m.position.set(cam.x + u.x, u.y + Math.sin(t * u.s) * 2, cam.z + u.z); m.rotation.x += dt * u.s; m.rotation.y += dt * u.s * 1.3; });
     },

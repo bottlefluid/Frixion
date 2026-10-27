@@ -141,11 +141,24 @@ export function buildAvatar(name, shirt) {
   const head = mk(1.25, 1.25, 1.25, headMats); head.position.y = 4.65; body.add(head);
   const tag = makeNameTag(name, 'common'); tag.position.y = 6.9; root.add(tag);
   const fxHolder = new THREE.Group(); root.add(fxHolder);
-  let walk = 0;
+  let walk = 0, clock = 0;
   return {
     root, body, tag, fxHolder, head,
-    animate(dt, speed, airborne) {
-      walk += dt * Math.min(speed, 24) * 0.55;
+    // emote: 'dance' or 'wave' (from the chat's /e commands), shown while standing still
+    animate(dt, speed, airborne, emote) {
+      walk += dt * Math.min(speed, 24) * 0.55; clock += dt;
+      armL.rotation.z = 0; armR.rotation.z = 0; body.rotation.y = 0; body.position.y = 0;
+      if (emote && speed < 1 && !airborne) {
+        if (emote === 'dance') {
+          const b = Math.sin(clock * 9);
+          armL.rotation.x = -2.6 + b * 0.5; armR.rotation.x = -2.6 - b * 0.5; armL.rotation.z = -0.4; armR.rotation.z = 0.4;
+          legL.rotation.x = Math.max(0, b) * 0.6; legR.rotation.x = Math.max(0, -b) * 0.6;
+          body.position.y = Math.abs(b) * 0.35; body.rotation.y = Math.sin(clock * 4.5) * 0.5;
+        } else {
+          armR.rotation.x = -2.9; armR.rotation.z = 0.35 + Math.sin(clock * 10) * 0.35; armL.rotation.x = 0; legL.rotation.x = 0; legR.rotation.x = 0;
+        }
+        return;
+      }
       const s = airborne ? 0.6 : Math.min(1, speed / 10) * Math.sin(walk);
       legL.rotation.x = s * 0.9; legR.rotation.x = -s * 0.9;
       armL.rotation.x = airborne ? -2.6 : -s * 0.9; armR.rotation.x = airborne ? -2.6 : s * 0.9;

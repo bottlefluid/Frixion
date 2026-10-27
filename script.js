@@ -455,6 +455,22 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.37', date: '2026-10-27', title: 'Overcontrol RNG 2.0: rebuilt like Sol\'s RNG',
+    notes: [
+      'Overcontrol RNG now looks and plays like Sol\'s RNG: dark panels with thin borders, the biome and time of day in the bottom-left corner, and a Roll button that counts to your bonus roll (4/10).',
+      'A Roblox-style chat: press / to talk. Messages pop up over your head and are never saved. Try /e dance.',
+      'Aura moves: rare auras fight with Z, X, C and V, and some get F to dash, blink, leap or fly. 『EQUINOX』 has all five. Turn PvP on to hit other players.',
+      '『EQUINOX』 and 『EQUILIBRIUM INCARNATE』 are one aura now, like in Sol\'s: 『EQUINOX』, the Equilibrium Incarnate. If you had the old one, it is 『EQUINOX』 now.',
+      'Every aura from Shadowed up has its own music, and you hear rare auras near you. Volume sliders are in Settings, Sound.',
+      'A giant mountain in the west, with a trail up to a bell on top and a cave inside where Stella brews potions from your potions and auras.',
+      'Every potion from Sol\'s RNG, each with its own bottle: Lucky and Speed L and XL, Fortune Spoids, Strange Potions, Forbidden Potions, Warp, Transcendent, Potion of the Dune, Red Moon and more.',
+      'New biomes: Windy, Sandstorm, Starfall, Corruption and Glitched, each with its own auras.',
+      'You no longer get coins for rolling. Coins and potions lie around the island instead, and quests pay coins.',
+      'Daily quests, side quests from people around the island, the Sky Parkour, a stats board in the plaza, and lots more secrets.',
+      'Codes: redeem them in Settings, Miscellaneous. The Owner and Co-Owners can make codes in the Admin panel.',
+      'The Owner rolls and collects like everyone else now, with a separate Owner tab that has everything.',
+      'The camera turns faster (there is a sensitivity slider in Settings, Controls), and it no longer goes through walls.',
+    ] },
   { v: '4.36', date: '2026-10-27', title: 'Overcontrol RNG: fishing, a daily shop and new rarities',
     notes: [
       'Overcontrol RNG has a new look, closer to Sol\'s RNG: bold outlined text, chunky buttons, and drawn icons instead of emoji.',
@@ -15631,7 +15647,7 @@ function openOcrng() {
       return true;
     }),
   };
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=2');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=3');
   ocrngModule.then(m => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);
