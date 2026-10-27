@@ -451,6 +451,15 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.33', date: '2026-10-26', title: 'Unread dots, notifications and threads',
+    notes: [
+      'Servers and channels with new messages get a white dot, and a red number shows how many times you were @mentioned (or replied to). Unread DMs show a red number on the Messages button, and the browser tab shows your total.',
+      'Notifications, like Discord: DMs, group messages and messages that mention you (or @everyone) notify you while you aren\'t looking at Frixion. Muted chats stay quiet. Turn them on or off in Settings → Notifications.',
+      'In the Frixion computer app, a notification pops up in the corner of your game while you play. Press your overlay shortcut and the overlay opens right on that chat so you can answer. Outside games they are Windows notifications.',
+      'In a computer\'s browser, allow notifications in Settings → Notifications and they show while Frixion is open in a tab.',
+      'Threads: hover a message in a server (or hold it on a phone) and pick Create Thread to start a side conversation. Active threads are listed under their channel, and the message shows how many replies it has.',
+      'Muting a group chat now works properly.',
+    ] },
   { v: '4.32', date: '2026-10-26', title: 'Text formatting, and a see-through game overlay',
     notes: [
       'Messages can be formatted like Discord: **bold**, *italic*, __underline__, ~~strikethrough~~, `code`, ```code blocks```, > quotes, # headings, -# small text and - lists.',
@@ -2879,7 +2888,7 @@ $('logout-btn').onclick = async () => {
   stopGameEngines();
   myUid = null; myProfile = null; profileCache = {}; isAdmin = false; isOwner = false; sfMode = false; ephemeralMsgs = []; seedBotProfiles();
   applyAdminVisibility();
-  currentServerId = null; currentServerData = null; currentChannelId = null;
+  currentServerId = null; currentServerData = null; currentChannelId = null; currentThreadId = null; currentThreadData = null;
   currentDMId = null; currentDMOtherUid = null; currentView = 'none';
   document.body.className = '';
   closeModal('settings-modal');
@@ -2895,6 +2904,9 @@ function cleanupAllListeners() {
   if (unsub.groupDms) unsub.groupDms();
   if (unsub.self) unsub.self();
   if (unsub.typing) unsub.typing();
+  if (unsub.mentions) unsub.mentions();
+  if (unsub.threads) unsub.threads();
+  stopServerChannelListeners();
   unsub = { servers: null, channels: null, categories: null, messages: null, dms: null, groupDms: null, self: null, typing: null };
 }
 
@@ -3166,6 +3178,7 @@ function initAppForUser() {
     window.__myServers = servers;
     if (typeof ovOnServersChanged === 'function') ovOnServersChanged();
     renderServerRail(servers);
+    syncServerChannelListeners(servers);
     if (currentServerId) {
       const cur = servers.find(s => s.id === currentServerId);
       if (cur) {
@@ -3199,6 +3212,7 @@ function initAppForUser() {
   }, err => console.error(err));
 
   subscribeDMList();
+  subscribeMentions();
   subscribeCustomEmojis();
   subscribeCustomDecorations();
   subscribeCustomThemes();
@@ -3262,6 +3276,7 @@ function renderServerRail(servers) {
     el.onclick = () => selectServer(s);
     list.appendChild(el);
   });
+  refreshUnread();
 }
 
 $('rail-home').onclick = () => showHomeView();
@@ -3462,7 +3477,8 @@ function applyDefaultMemberListState() {
   const open = isMobile() ? false : (memberListManualOverride !== null ? memberListManualOverride : true);   // a phone never opens it by itself
   $('app').classList.toggle('member-list-open', open);
 }
-$('back-to-list-btn').onclick = () => setMobilePane('list');
+// In a thread, back goes to its channel; otherwise to the list.
+$('back-to-list-btn').onclick = () => { if (currentThreadId && goToThreadParent()) return; setMobilePane('list'); };
 
 // On iOS and some Android webviews, the layout viewport keeps its original
 // height while the software keyboard overlays the page. Use the visual
@@ -3651,7 +3667,7 @@ function hideMainPageViews() {
 }
 
 function showHomeView() {
-  currentServerId = null; currentServerData = null; currentChannelId = null;
+  currentServerId = null; currentServerData = null; currentChannelId = null; currentThreadId = null; currentThreadData = null;
   currentView = 'none'; currentDMId = null; currentDMOtherUid = null; currentGroupDMId = null;
   if (unsub.channels) { unsub.channels(); unsub.channels = null; }
   if (unsub.categories) { unsub.categories(); unsub.categories = null; }
@@ -3691,7 +3707,7 @@ document.querySelectorAll('.home-nav-item[data-home-view]').forEach(item => {
 });
 
 function openHomeMainView(which) {
-  currentServerId = null; currentServerData = null; currentChannelId = null;
+  currentServerId = null; currentServerData = null; currentChannelId = null; currentThreadId = null; currentThreadData = null;
   currentDMId = null; currentDMOtherUid = null; currentGroupDMId = null;
   if (unsub.messages) { unsub.messages(); unsub.messages = null; }
   if (unsub.typing) { unsub.typing(); unsub.typing = null; }
@@ -3716,6 +3732,7 @@ function openHomeMainView(which) {
 const conversationLastNotifiedAt = {};
 function maybePingForConversationSnapshot(snap, isFirstSync, kind) {
   snap.forEach(d => {
+    if (d.metadata.hasPendingWrites) return;          // still being saved by this browser: wait for the real time
     const data = d.data();
     const lm = data.lastMessage;
     if (!lm || !lm.username || lm.username === myUid) return;
@@ -3725,7 +3742,7 @@ function maybePingForConversationSnapshot(snap, isFirstSync, kind) {
     conversationLastNotifiedAt[d.id] = millis;
     // Establish the baseline on first sync without retroactively pinging
     // for every DM/group that already existed when the app loaded.
-    if (!isFirstSync && !isConversationMuted(kind, d.id)) playPingSound();
+    if (!isFirstSync && !isConversationMuted(kind, d.id)) { playPingSound(); notifyConversation(kind, d.id, data); }
   });
 }
 function subscribeDMList() {
@@ -3742,6 +3759,7 @@ function subscribeDMList() {
     hydrateConversationPreviews('dms', dms);
     ovRenderLists();
     if (currentView !== 'channel') renderDMRows();
+    refreshUnread();
   });
   let groupDmsFirstSync = true;
   if (unsub.groupDms) unsub.groupDms();
@@ -3754,6 +3772,7 @@ function subscribeDMList() {
     await Promise.all(gs.flatMap(g => g.participants.filter(p => p !== myUid).map(p => getProfile(p))));
     hydrateConversationPreviews('groupDMs', gs);
     if (currentView !== 'channel') renderDMRows();
+    refreshUnread();
     if (currentView === 'groupdm') {
       const cg = gs.find(x => x.id === currentGroupDMId);
       if (cg) { renderMemberPanel(cg.participants || [], cg.ownerId); $('chat-header-title').textContent = groupDMDisplayName(cg); }
@@ -3870,9 +3889,10 @@ function isChannelUnread(sid, c) {
   const read = loadLastRead();
   return at > (read[chReadKey(sid, c.id)] || read._since || 0);
 }
-// @everyone / @here counts once while the channel is unread
+// tid: undefined counts the channel and its threads (the server's number), null the channel itself, or one thread.
+// @everyone / @here counts once while the channel is unread.
 const channelMentionCount = (sid, c, tid) => myMentions.filter(m => m.sid === sid && m.cid === c.id && (tid === undefined || (m.tid || null) === tid)).length +
-  (tid === undefined && c.lastMessage && c.lastMessage.everyone && isChannelUnread(sid, c) ? 1 : 0);
+  (!tid && c.lastMessage && c.lastMessage.everyone && isChannelUnread(sid, c) ? 1 : 0);
 function serverUnreadState(sid) {
   let unread = false, mentions = 0;
   Object.values(serverChannels[sid] || {}).forEach(c => { if (isChannelUnread(sid, c)) unread = true; mentions += channelMentionCount(sid, c); });
@@ -3915,7 +3935,7 @@ function updateChannelRowBadges() {
   const chans = serverChannels[currentServerId] || {};
   document.querySelectorAll('#channel-rows .channel-row[data-cid]').forEach(row => {
     const c = chans[row.dataset.cid] || lastChannelsList.find(x => x.id === row.dataset.cid);
-    const n = c ? channelMentionCount(currentServerId, c) : 0;
+    const n = c ? channelMentionCount(currentServerId, c, null) : 0;
     row.classList.toggle('unread', !!c && (n > 0 || isChannelUnread(currentServerId, c)));
     setCountBadge(row, n, 'ch-badge');
   });
@@ -3977,7 +3997,7 @@ function markChannelRead(sid, cid) {
   refreshUnread();
 }
 // Sending in a channel or thread: stamp the channel and leave a note for everyone mentioned or replied to.
-function noteChannelMessage(sid, cid, payload, ref, tid) {
+function noteChannelMessage(sid, cid, payload, ref, tid, channelName) {
   if (!sid || !cid || !ref) return;
   const server = sid === currentServerId ? currentServerData : serverById(sid);
   const channel = (serverChannels[sid] || {})[cid] || lastChannelsList.find(c => c.id === cid) || {};
@@ -3994,7 +4014,7 @@ function noteChannelMessage(sid, cid, payload, ref, tid) {
   targets.delete(myUid);
   [...targets].slice(0, 25).forEach(u => db.collection('users').doc(u).collection('mentions').add({
     sid, cid, tid: tid || null, mid: ref.id, from: myUid, text, at: FieldValue.serverTimestamp(),
-    server: (server && server.name) || '', channel: channel.name || '', thread: tid ? (currentThreadData && currentThreadData.name) || '' : '',
+    server: (server && server.name) || '', channel: channel.name || channelName || '', thread: tid ? (currentThreadData && currentThreadData.name) || '' : '',
   }).catch(() => {}));
 }
 
@@ -4034,7 +4054,7 @@ function notifyConversation(kind, id, data) {
 }
 function onNewMention(m) {
   if (!freshMessage(timeValue(m.at))) return;          // an old note coming back into view, not a new message
-  const open = m.tid ? currentThreadId === m.tid : lookingAtChannel(m.sid, m.cid);
+  const open = m.tid ? currentView === 'channel' && currentThreadId === m.tid : lookingAtChannel(m.sid, m.cid);
   if (open) clearMentions(x => x.id === m.id);
   if (isConversationMuted('ch', m.cid)) return;
   if (!open) playPingSound();                           // the open chat already pings for its own mentions
@@ -4072,6 +4092,40 @@ function openChannelTarget(o) {
   selectChannel(c);
   if (o.tid) openThreadById(o.tid);
 }
+// Settings → Notifications
+function populateNotifySettings() {
+  const inApp = !!DESKTOP, canAsk = !inApp && !isMobile() && 'Notification' in window;
+  $('notify-toggle').checked = notifyOn();
+  $('notify-game-toggle').checked = notifyInGame();
+  $('notify-game-row').classList.toggle('hidden', !appNotifies());
+  $('notify-app-note').classList.toggle('hidden', !inApp || appNotifies());
+  $('notify-where').textContent = inApp ? 'In the Frixion app they show as Windows notifications, or over your game while you play.'
+    : isMobile() ? 'Phones don\'t show them yet. Notifications work in the Frixion app for computers and in a computer\'s browser.'
+    : 'Your browser shows them while Frixion is open in a tab, even in the background.';
+  $('notify-permission').classList.toggle('hidden', !canAsk || Notification.permission === 'granted');
+  if (canAsk) {
+    const denied = Notification.permission === 'denied';
+    $('notify-permission-text').textContent = denied ? 'Your browser is blocking notifications from Frixion. Allow them in this site\'s settings (the icon to the left of the address).'
+      : 'Your browser needs your OK before Frixion can show notifications.';
+    $('notify-allow-btn').classList.toggle('hidden', denied);
+  }
+}
+function askNotifyPermission() {
+  if (DESKTOP || !('Notification' in window) || Notification.permission !== 'default') return Promise.resolve();
+  return Promise.resolve(Notification.requestPermission()).catch(() => {}).then(populateNotifySettings);
+}
+$('notify-toggle').onchange = e => { try { localStorage.setItem(NOTIFY_KEY, e.target.checked ? '1' : '0'); } catch (err) {} if (e.target.checked) askNotifyPermission(); };
+$('notify-game-toggle').onchange = e => { try { localStorage.setItem(NOTIFY_GAME_KEY, e.target.checked ? '1' : '0'); } catch (err) {} };
+$('notify-allow-btn').onclick = () => askNotifyPermission();
+$('notify-test-btn').onclick = () => {
+  const hint = $('notify-test-hint');
+  if (!DESKTOP && (!('Notification' in window) || Notification.permission !== 'granted')) { hint.textContent = isMobile() ? 'Phones don\'t show notifications yet.' : 'Allow notifications first.'; return; }
+  hint.textContent = DESKTOP ? 'Sending one in 5 seconds. Switch to a game or another window to see it.' : 'Sending one in 5 seconds. Switch to another tab or window to see it.';
+  setTimeout(() => {
+    notifyMessage({ title: 'Frixion', body: 'This is what a notification looks like.', icon: (myProfile && myProfile.avatarUrl) || DEFAULT_AVATAR_URL, open: null }, true);
+    hint.textContent = '';
+  }, 5000);
+};
 if (DESKTOP && typeof DESKTOP.onNotifyOpen === 'function') DESKTOP.onNotifyOpen(o => {
   if (!o || typeof o !== 'object') return;
   if (OVERLAY_WINDOW) {          // answering from the overlay over a game: open that chat in the overlay
@@ -4181,6 +4235,7 @@ function setChatHeaderHash(text, kind) {
   $('chat-header-hash').textContent = text;
   const header = $('chat-header');
   if (kind) header.dataset.kind = kind; else delete header.dataset.kind;
+  header.classList.remove('is-thread');
   renderChatHeaderAvatar();
 }
 function renderChatHeaderAvatar() {
@@ -4218,10 +4273,11 @@ function openConversationSheet(kind) {
 async function selectDM(id, otherUid) {
   clearReplyTarget();
   clearMyTypingDoc();
-  currentServerId = null; currentServerData = null; currentChannelId = null; currentGroupDMId = null;
+  currentServerId = null; currentServerData = null; currentChannelId = null; currentGroupDMId = null; currentThreadId = null; currentThreadData = null;
   exitCommandMode();
   currentView = 'dm'; currentDMId = id; currentDMOtherUid = otherUid;
   markConversationRead(id);
+  refreshUnread();
   clearHomeNavActive();
   subscribeTyping();
   document.querySelectorAll('#server-rail-list .rail-item').forEach(e => e.classList.remove('active'));
@@ -4252,11 +4308,12 @@ async function selectDM(id, otherUid) {
 async function selectGroupDM(id) {
   clearReplyTarget();
   clearMyTypingDoc();
-  currentServerId = null; currentServerData = null; currentChannelId = null;
+  currentServerId = null; currentServerData = null; currentChannelId = null; currentThreadId = null; currentThreadData = null;
   currentDMId = null; currentDMOtherUid = null;
   exitCommandMode();
   currentView = 'groupdm'; currentGroupDMId = id;
   markConversationRead(id);
+  refreshUnread();
   clearHomeNavActive();
   subscribeTyping();
   document.querySelectorAll('#server-rail-list .rail-item').forEach(e => e.classList.remove('active'));
@@ -5073,7 +5130,7 @@ async function removeFriend(username) {
 async function selectServer(server) {
   currentServerId = server.id;
   currentServerData = server;
-  currentDMId = null; currentDMOtherUid = null; currentGroupDMId = null; currentChannelId = null;
+  currentDMId = null; currentDMOtherUid = null; currentGroupDMId = null; currentChannelId = null; currentThreadId = null; currentThreadData = null;
   currentView = 'none';
   document.querySelectorAll('#server-rail-list .rail-item').forEach(e => e.classList.remove('active'));
   $('rail-home').classList.remove('active');
@@ -6010,6 +6067,12 @@ function subscribeChannels(serverId) {
       snap.forEach(d => channels.push({ id: d.id, ...d.data() }));
       lastChannelsList = channels;
       renderChannelRows(channels);
+      // A notification asked for a channel in this server: open it now that the channels are here.
+      if (pendingChannelOpen && pendingChannelOpen.sid === serverId) {
+        const want = pendingChannelOpen;
+        pendingChannelOpen = null;
+        if (channels.some(c => c.id === want.cid)) { openChannelTarget(want); return; }
+      }
       // PC jumps straight into the first channel you can see; on a phone
       // you stay on the channel list and pick one yourself, like Discord.
       const firstVisible = channels.find(c => canViewChannel(c, currentServerData, myUid));
@@ -6024,6 +6087,7 @@ function subscribeChannels(serverId) {
         if (firstVisible && !isMobile()) selectChannel(firstVisible);
       } else if (currentView === 'channel') refreshChannelComposerState();
     });
+  subscribeThreads(serverId);
   unsub.categories = db.collection('servers').doc(serverId).collection('categories').orderBy('createdAt', 'asc')
     .onSnapshot(snap => {
       const cats = [];
@@ -6051,7 +6115,8 @@ function renderChannelRows(channels) {
   const buildChannelRow = (c) => {
     const restricted = isChannelPrivate(c);
     const row = document.createElement('div');
-    row.className = 'channel-row' + (currentChannelId === c.id ? ' active' : '');
+    row.className = 'channel-row' + (currentChannelId === c.id && !currentThreadId ? ' active' : '');
+    row.dataset.cid = c.id;
     row.innerHTML = `<span class="hash">#</span><span class="cname">${esc(c.name)}</span>` +
       (restricted ? `<span class="i channel-lock-icon" title="Restricted to certain roles">${icon('shield')}</span>` : '') +
       (canManage ? `<span class="channel-perms-btn" title="Channel Permissions">${icon('gear')}</span><span class="del-channel" title="Delete channel">${icon('trash')}</span>` : '');
@@ -6080,7 +6145,19 @@ function renderChannelRows(channels) {
   };
 
   const uncategorized = visible.filter(c => !c.categoryId);
-  uncategorized.forEach(c => wrap.appendChild(buildChannelRow(c)));
+  // A channel's active threads sit under it, like Discord.
+  const appendChannelRow = (c) => {
+    wrap.appendChild(buildChannelRow(c));
+    activeThreadsFor(c.id).forEach(t => {
+      const row = document.createElement('div');
+      row.className = 'thread-row' + (currentThreadId === t.id ? ' active' : '');
+      row.dataset.tid = t.id; row.dataset.cid = c.id;
+      row.innerHTML = `<span class="thread-curve" aria-hidden="true"></span><span class="tname">${esc(t.name)}</span>`;
+      row.onclick = () => selectThread(t);
+      wrap.appendChild(row);
+    });
+  };
+  uncategorized.forEach(c => appendChannelRow(c));
 
   lastCategoriesList.forEach(cat => {
     const inCat = visible.filter(c => c.categoryId === cat.id);
@@ -6113,8 +6190,9 @@ function renderChannelRows(channels) {
       };
     }
     wrap.appendChild(header);
-    if (!collapsed) inCat.forEach(c => wrap.appendChild(buildChannelRow(c)));
+    if (!collapsed) inCat.forEach(c => appendChannelRow(c));
   });
+  updateChannelRowBadges();
   refreshChannelComposerState();
 }
 
@@ -6168,19 +6246,24 @@ function refreshChannelComposerState() {
   }
   const channel = currentChannelObj();
   if (!channel) return;
-  const canSend = hasChannelPerm(channel, currentServerData, myUid, 'sendMessages');
+  const thread = currentThreadId ? currentThreadData : null;
+  const canSend = hasChannelPerm(channel, currentServerData, myUid, thread ? 'sendMessagesInThreads' : 'sendMessages');
   const tUntil = isTimedOutHere() ? timeoutUntil(currentServerData, myUid) : 0;
   const muted = isSiteMuted();
   input.disabled = !canSend || !!tUntil || muted;
   input.placeholder = muted ? siteMuteText() : tUntil ? `You are timed out for ${timeoutLeftText(tUntil)}.`
-    : canSend ? `Message #${channel.name}` : 'You do not have permission to send messages in this channel.';
+    : canSend ? (thread ? `Message ${thread.name}` : `Message #${channel.name}`)
+    : thread ? 'You do not have permission to send messages in threads here.' : 'You do not have permission to send messages in this channel.';
   $('attach-btn').classList.toggle('hidden', !canSend || !!tUntil || muted);
   $('sticker-btn').classList.toggle('hidden', !canHere('useExternalStickers'));
   $('gif-btn').classList.toggle('hidden', !canHere('embedLinks'));
-  $('chat-header-title').textContent = channel.name;
-  $('chat-header-topic').textContent = channel.topic || '';
-  $('chat-header-topic').title = channel.topic || '';
-  $('chat-header-topic').classList.toggle('hidden', !channel.topic);
+  $('chat-header-title').textContent = thread ? thread.name : channel.name;
+  // in a thread, the topic line says which channel it's in (and clicking it goes back there)
+  const topic = thread ? `in #${channel.name}` : (channel.topic || '');
+  $('chat-header-topic').textContent = topic;
+  $('chat-header-topic').title = thread ? `Back to #${channel.name}` : topic;
+  $('chat-header-topic').classList.toggle('hidden', !topic);
+  $('chat-header-topic').classList.toggle('is-parent-link', !!thread);
   renderSlowmodeIndicator();
   updateComposerSendBtn();
 }
@@ -6408,8 +6491,10 @@ function selectChannel(channel) {
   clearMyTypingDoc();
   exitCommandMode();
   currentChannelId = channel.id;
+  currentThreadId = null; currentThreadData = null;
   currentView = 'channel';
   channelOpenedAt = Date.now();
+  markChannelRead(currentServerId, channel.id);
   subscribeTyping();
   setChatHeaderHash('#', 'channel');
   $('chat-header-title').textContent = channel.name;
@@ -6424,12 +6509,16 @@ function selectChannel(channel) {
   setMobilePane('chat');
   scheduleMsgLoading();
   if (channel.autoDelete !== false) sweepOldMessages(db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id).collection('messages'));
-  listenToMessages(db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id).collection('messages'), (snap, first) => {
+  listenToMessages(db.collection('servers').doc(currentServerId).collection('channels').doc(channel.id).collection('messages'), channelSnapHandler(channel.id));
+}
+// A channel's (or thread's) messages arriving: pings for mentions, read-aloud /tts messages, then the list is redrawn.
+function channelSnapHandler(channelId) {
+  return (snap, first) => {
     if (!first) {
       snap.docChanges().forEach(change => {
         if (change.type !== 'added') return;
         const m = change.doc.data();
-        if (m.uid === myUid || isConversationMuted('ch', channel.id)) return;
+        if (m.uid === myUid || isConversationMuted('ch', channelId)) return;
         // Only brand-new messages ping. An older one can re-enter the window when a newer one is deleted.
         const sentAt = m.createdAt && m.createdAt.toMillis ? m.createdAt.toMillis() : Date.now();
         if (Date.now() - sentAt > 60000) return;
@@ -6442,13 +6531,112 @@ function selectChannel(channel) {
     const msgs = [];
     snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
     onMessagesUpdate(msgs);
-  });
+    if (!first) refreshUnread();
+  };
 }
+
+// ============================================================
+// THREADS — like Discord: start one from any message in a channel ("Create Thread" on the message), and it gets its own
+// conversation. Active threads (a message in the last week) are listed under their channel. A thread lives at
+// servers/{id}/threads/{threadId} with its messages under it, and the message it started from shows a link with the
+// number of replies. Permissions come from the channel (Create Public Threads, Send Messages in Threads).
+// ============================================================
+let lastThreadsList = [];
+const threadRef = tid => db.collection('servers').doc(currentServerId).collection('threads').doc(tid);
+const THREAD_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v10H9l-5 4V5z"/><path d="M8 9h8M8 12h5"/></svg>';
+function activeThreadsFor(cid) {
+  const weekAgo = Date.now() - 7 * 86400000;
+  return lastThreadsList.filter(t => t.channelId === cid && (t.id === currentThreadId || timeValue(t.lastMessageAt) > weekAgo)).slice(0, 6);
+}
+function subscribeThreads(serverId) {
+  if (unsub.threads) unsub.threads();
+  lastThreadsList = [];
+  unsub.threads = db.collection('servers').doc(serverId).collection('threads').orderBy('lastMessageAt', 'desc').limit(50).onSnapshot(snap => {
+    lastThreadsList = snap.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }));
+    const open = currentThreadId && lastThreadsList.find(t => t.id === currentThreadId);
+    if (open) currentThreadData = open;
+    renderChannelRows(lastChannelsList);
+  }, () => {});
+}
+function selectThread(t) {
+  const parent = lastChannelsList.find(c => c.id === t.channelId);
+  if (!parent || !canViewChannel(parent, currentServerData, myUid)) { toast("You don't have access to that thread."); return; }
+  clearReplyTarget();
+  clearMyTypingDoc();
+  exitCommandMode();
+  currentChannelId = parent.id;
+  currentThreadId = t.id; currentThreadData = t;
+  currentView = 'channel';
+  channelOpenedAt = Date.now();
+  subscribeTyping();
+  setChatHeaderHash('', 'channel');
+  $('chat-header').classList.add('is-thread');
+  $('chat-header-title').textContent = t.name;
+  refreshChannelComposerState();
+  $('members-toggle').classList.remove('hidden');
+  applyDefaultMemberListState();
+  $('gift-btn').classList.add('hidden');
+  showHeaderActions();
+  renderChannelRows(lastChannelsList);
+  showChat();
+  setMobilePane('chat');
+  scheduleMsgLoading();
+  clearMentions(m => m.tid === t.id);
+  listenToMessages(threadRef(t.id).collection('messages'), channelSnapHandler(parent.id));
+}
+function openThreadById(tid) {
+  const t = lastThreadsList.find(x => x.id === tid);
+  if (t) { selectThread(t); return; }
+  threadRef(tid).get().then(d => { if (d.exists) selectThread({ id: d.id, ...d.data() }); }).catch(() => {});
+}
+let threadDraftMsg = null;
+function openCreateThread(msgId) {
+  const m = lastRawMessages.find(x => x.id === msgId);
+  if (!m || currentView !== 'channel' || currentThreadId) return;
+  if (m.thread && m.thread.id) { openThreadById(m.thread.id); return; }
+  if (!canHere('createPublicThreads')) { toast('You do not have permission to create threads here.', 'error'); return; }
+  closeActionSheet();
+  threadDraftMsg = m;
+  const from = (profileCache[m.uid] && displayNameOf(profileCache[m.uid])) || m.username || 'someone';
+  $('thread-modal-from').textContent = `From ${from}: ${previewForMessage(m).slice(0, 120)}`;
+  $('thread-name').value = (mdPlain(m.text || '').replace(/\s+/g, ' ').trim().slice(0, 40)) || 'New thread';
+  $('thread-error').textContent = '';
+  openModal('thread-modal');
+  setTimeout(() => { $('thread-name').focus(); $('thread-name').select(); }, 50);
+}
+async function createThreadFromModal() {
+  const m = threadDraftMsg;
+  const name = $('thread-name').value.replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (!m || currentView !== 'channel') { closeModal('thread-modal'); return; }
+  if (!name) { $('thread-error').textContent = 'Give the thread a name.'; return; }
+  const sid = currentServerId, cid = currentChannelId;
+  $('thread-create-btn').disabled = true;
+  try {
+    const now = FieldValue.serverTimestamp();
+    const ref = await db.collection('servers').doc(sid).collection('threads').add({
+      channelId: cid, name, starterId: m.id, starterUid: m.uid || null, createdBy: myUid, createdAt: now, lastMessageAt: now, messageCount: 0,
+    });
+    await db.collection('servers').doc(sid).collection('channels').doc(cid).collection('messages').doc(m.id).update({ thread: { id: ref.id, name, count: 0 } }).catch(() => {});
+    closeModal('thread-modal');
+    threadDraftMsg = null;
+    if (currentServerId === sid) selectThread({ id: ref.id, channelId: cid, name, starterId: m.id, lastMessageAt: Date.now() });
+  } catch (e) { $('thread-error').textContent = e.message || 'Could not create the thread.'; }
+  finally { $('thread-create-btn').disabled = false; }
+}
+function goToThreadParent() {
+  const parent = currentView === 'channel' && currentThreadId && currentChannelObj();
+  if (!parent) return false;
+  selectChannel(parent);
+  return true;
+}
+$('chat-header-topic').addEventListener('click', () => { if (currentThreadId) goToThreadParent(); });
+$('thread-create-btn').onclick = createThreadFromModal;
+$('thread-name').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); createThreadFromModal(); } });
 
 // ============================================================
 // CHAT HEADER ACTIONS (mute / pins / search)
 // ============================================================
-function muteKey() { return currentView === 'channel' ? `frixion_mute:ch:${currentChannelId}` : `frixion_mute:dm:${currentDMId}`; }
+function muteKey() { return currentView === 'channel' ? `frixion_mute:ch:${currentChannelId}` : currentView === 'groupdm' ? `frixion_mute:gdm:${currentGroupDMId}` : `frixion_mute:dm:${currentDMId}`; }
 function isMuted() { return localStorage.getItem(muteKey()) === '1'; }
 // Same underlying localStorage scheme as isMuted() above, but for any
 // conversation (not just whichever one is currently open) — needed since
@@ -6496,12 +6684,14 @@ function renderPinnedList(pinned) {
   });
 }
 function msgRef(msgId) {
+  if (currentView === 'channel' && currentThreadId) return threadRef(currentThreadId).collection('messages').doc(msgId);
   if (currentView === 'channel') return db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').doc(msgId);
   if (currentView === 'dm') return db.collection('dms').doc(currentDMId).collection('messages').doc(msgId);
   if (currentView === 'groupdm') return db.collection('groupDMs').doc(currentGroupDMId).collection('messages').doc(msgId);
   return null;
 }
 function msgCollectionRef() {
+  if (currentView === 'channel' && currentThreadId) return threadRef(currentThreadId).collection('messages');
   if (currentView === 'channel') return db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages');
   if (currentView === 'dm') return db.collection('dms').doc(currentDMId).collection('messages');
   if (currentView === 'groupdm') return db.collection('groupDMs').doc(currentGroupDMId).collection('messages');
@@ -6660,6 +6850,7 @@ function openMessageActionSheet(msgId) {
 
   const canDel = m.uid === myUid;
   const canEditThis = m.uid === myUid && !m.sticker;
+  const threadAct = currentView === 'channel' && !currentThreadId && !m.system && (m.thread && m.thread.id ? 'Open Thread' : canHere('createPublicThreads') ? 'Create Thread' : '');
   const pinnable = canPin();
 
   const backdrop = document.createElement('div');
@@ -6673,6 +6864,7 @@ function openMessageActionSheet(msgId) {
       <div class="as-actions">
         ${canEditThis ? `<button type="button" class="as-item" data-act="edit">${icon('edit')}<span>Edit Message</span></button>` : ''}
         <button type="button" class="as-item" data-act="reply">${icon('reply')}<span>Reply</span></button>
+        ${threadAct ? `<button type="button" class="as-item" data-act="thread">${THREAD_ICON}<span>${threadAct}</span></button>` : ''}
         ${m.text ? `<button type="button" class="as-item" data-act="copy">${icon('copy')}<span>Copy Text</span></button>` : ''}
         ${pinnable ? `<button type="button" class="as-item" data-act="pin">${icon('pin')}<span>${m.pinned ? 'Unpin Message' : 'Pin Message'}</span></button>` : ''}
         ${canDel ? `<button type="button" class="as-item as-danger" data-act="delete">${icon('trash')}<span>Delete Message</span></button>` : ''}
@@ -6696,6 +6888,7 @@ function openMessageActionSheet(msgId) {
       closeActionSheet();
       if (act === 'edit') startEditMessage(msgId);
       else if (act === 'reply') setReplyTarget(msgId);
+      else if (act === 'thread') openCreateThread(msgId);
       else if (act === 'copy') copyMessageText(m);
       else if (act === 'pin') togglePin(msgId);
       else if (act === 'delete') deleteMessage(msgId);
@@ -7222,6 +7415,7 @@ function buildMessageLineEl(m, canDelete) {
   }
   const pinnable = canPin();
   const canEditThis = m.uid === myUid && !m.sticker && !m.poll && !m.purgeResult && !m.wordle;
+  const canThread = currentView === 'channel' && !currentThreadId && !m.thread && !m.system && canHere('createPublicThreads');
   const line = document.createElement('div');
   line.className = 'msg-line' + (m.pinned ? ' is-pinned' : '');
   line.dataset.mid = m.id;
@@ -7267,12 +7461,14 @@ function buildMessageLineEl(m, canDelete) {
     `<span class="msg-hover-actions">` +
     `<span class="hover-icon-btn react-btn" title="Add Reaction">${icon('smiley')}</span>` +
     `<span class="hover-icon-btn reply-msg" title="Reply">${icon('reply')}</span>` +
+    (canThread ? `<span class="hover-icon-btn thread-msg" title="Create Thread">${THREAD_ICON}</span>` : '') +
     (canEditThis ? `<span class="hover-icon-btn edit-msg" title="Edit">${icon('edit')}</span>` : '') +
     (pinnable ? `<span class="hover-icon-btn pin-msg${m.pinned ? ' on' : ''}" title="${m.pinned ? 'Unpin' : 'Pin Message'}">${icon('pin')}</span>` : '') +
     (canDelete ? `<span class="hover-icon-btn del-msg" title="Delete">${icon('trash')}</span>` : '') +
     `</span>`;
   rowWrap.querySelector('.react-btn').onclick = (e) => { e.stopPropagation(); toggleReactPopover(e.currentTarget, m.id); };
   rowWrap.querySelector('.reply-msg').onclick = () => setReplyTarget(m.id);
+  if (canThread) rowWrap.querySelector('.thread-msg').onclick = () => openCreateThread(m.id);
   if (canEditThis) rowWrap.querySelector('.edit-msg').onclick = () => startEditMessage(m.id);
   if (pinnable) rowWrap.querySelector('.pin-msg').onclick = () => togglePin(m.id);
   if (canDelete) rowWrap.querySelector('.del-msg').onclick = () => deleteMessage(m.id);
@@ -7292,6 +7488,17 @@ function buildMessageLineEl(m, canDelete) {
   }
   if (m.id === editingMessageId) buildEditBoxInto(rowWrap, m);
   line.appendChild(rowWrap);
+  // the message a thread started from links to it, with how many replies it has
+  if (m.thread && m.thread.id && currentView === 'channel' && !currentThreadId) {
+    const t = lastThreadsList.find(x => x.id === m.thread.id);
+    const count = t ? (t.messageCount || 0) : (m.thread.count || 0);
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'msg-thread-chip';
+    chip.innerHTML = `${THREAD_ICON}<span class="mtc-name">${esc((t && t.name) || m.thread.name || 'Thread')}</span><span class="mtc-count">${count === 1 ? '1 message' : `${count} messages`}</span><svg class="mtc-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`;
+    chip.onclick = () => openThreadById(m.thread.id);
+    line.appendChild(chip);
+  }
 
   const rx = reactionsHTML(m.reactions);
   if (rx) {
@@ -7341,12 +7548,13 @@ async function renderMessages(rawMsgs) {
   }
 
   if (!searching && !msgs.length) {
-    const name = currentView === 'channel' ? `#${$('chat-header-title').textContent}` : $('chat-header-title').textContent;
+    const inThread = currentView === 'channel' && !!currentThreadId;
+    const name = currentView === 'channel' && !inThread ? `#${$('chat-header-title').textContent}` : $('chat-header-title').textContent;
     wrap.innerHTML = `
       <div class="convo-start">
-        <span class="convo-start-icon">${currentView === 'channel' ? '#' : icon('people')}</span>
+        <span class="convo-start-icon">${inThread ? THREAD_ICON : currentView === 'channel' ? '#' : icon('people')}</span>
         <h2>Welcome to ${esc(name)}!</h2>
-        <p>${currentView === 'channel' ? 'This is the start of the channel.' : 'This is the beginning of your conversation.'}</p>
+        <p>${inThread ? 'This is the start of the thread.' : currentView === 'channel' ? 'This is the start of the channel.' : 'This is the beginning of your conversation.'}</p>
       </div>`;
     purgeMsgMedia();
     return;
@@ -7791,8 +7999,18 @@ async function sendToCurrentConversation(payload) {
     if (payload.poll && !canHere('createPolls')) throw new Error('You do not have permission to create polls in this channel.');
   }
   let ref;
-  if (currentView === 'channel') {
+  if (currentView === 'channel' && currentThreadId) {
+    if (!canHere('sendMessagesInThreads')) throw new Error('You do not have permission to send messages in threads here.');
+    const tid = currentThreadId, starter = currentThreadData && currentThreadData.starterId;
+    ref = await threadRef(tid).collection('messages').add(payload);
+    threadRef(tid).update({ lastMessageAt: FieldValue.serverTimestamp(), messageCount: FieldValue.increment(1) }).catch(() => {});
+    // the message the thread started from shows how many replies it has
+    if (starter) channelRef(currentChannelId).collection('messages').doc(starter).update({ 'thread.count': FieldValue.increment(1) }).catch(() => {});
+    noteChannelMessage(currentServerId, currentChannelId, payload, ref, tid);
+    db.collection('users').doc(myUid).update({ 'dailyStats.channelsMessaged': FieldValue.increment(1) }).catch(() => {});
+  } else if (currentView === 'channel') {
     ref = await db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').add(payload);
+    noteChannelMessage(currentServerId, currentChannelId, payload, ref, null);
     db.collection('users').doc(myUid).update({ 'dailyStats.channelsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else if (currentView === 'dm') {
     ref = await db.collection('dms').doc(currentDMId).collection('messages').add(payload);
@@ -8305,6 +8523,7 @@ let typingIdleTimer = null;
 let lastTypingWriteAt = 0;
 
 function typingCollectionRef() {
+  if (currentView === 'channel' && currentThreadId) return threadRef(currentThreadId).collection('typing');
   if (currentView === 'channel') return db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('typing');
   if (currentView === 'dm') return db.collection('dms').doc(currentDMId).collection('typing');
   if (currentView === 'groupdm') return db.collection('groupDMs').doc(currentGroupDMId).collection('typing');
@@ -10047,6 +10266,7 @@ const YOU_ICONS = {
   premium: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.500 2.900 6 6.600.9-4.800 4.600 1.200 6.500L12 17.300 6.100 20.500l1.200-6.500L2.500 9.400l6.600-.9L12 2.500Z"/></svg>',
   quests: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 3h9l5 5v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm8 1.500V9h4.500L13 4.500ZM7.500 13v1.500h9V13h-9Zm0 3.500V18h6v-1.500h-6Z"/></svg>',
   themes: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20c1.300 0 2-.9 2-1.800 0-.5-.2-.9-.5-1.300-.3-.4-.5-.8-.5-1.300 0-1 .8-1.800 1.800-1.800H17a5 5 0 0 0 5-5C22 6 17.500 2 12 2ZM6.500 12a1.500 1.500 0 1 1 0-3 1.500 1.500 0 0 1 0 3Zm3-4a1.500 1.500 0 1 1 0-3 1.500 1.500 0 0 1 0 3Zm5 0a1.500 1.500 0 1 1 0-3 1.500 1.500 0 0 1 0 3Zm3 4a1.500 1.500 0 1 1 0-3 1.500 1.500 0 0 1 0 3Z"/></svg>',
+  notify: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22a2.5 2.5 0 0 0 2.4-1.8H9.6A2.5 2.5 0 0 0 12 22Zm7-5.5V11a7 7 0 0 0-5.2-6.8v-.7a1.8 1.8 0 0 0-3.6 0v.7A7 7 0 0 0 5 11v5.5l-1.7 1.7V19h17.4v-.8L19 16.5Z"/></svg>',
   access: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="4.500" r="2.200"/><path d="M4 8.500 12 9.800l8-1.300v2.200l-5.500 1V21h-2.200v-5h-.6v5H9.500v-9.300L4 10.700V8.500Z"/></svg>',
   app: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 3h2v9.200l3.300-3.300 1.400 1.400L12 16l-5.700-5.700 1.400-1.400L11 12.200V3ZM4 19h16v2H4v-2Z"/></svg>',
   updates: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4a1 1 0 0 0 1 1h2l5 4V5L6 9H4a1 1 0 0 0-1 1Zm13.500 2a4.500 4.500 0 0 0-2.500-4v8a4.500 4.500 0 0 0 2.500-4ZM14 3.200v2.100a7 7 0 0 1 0 13.400v2.100a9 9 0 0 0 0-17.600Z"/></svg>',
@@ -10079,7 +10299,7 @@ function renderMobileYou() {
     <div class="mpage-label">Frixion</div>
     <div class="myou-group">${page('friends', 'Friends', 'friends', reqs)}${page('shop', 'Shop', 'shop')}${page('quests', 'Quests', 'quests')}${page('codes', 'Codes', 'codes')}</div>
     <div class="mpage-label">Settings</div>
-    <div class="myou-group">${row('pane-account', 'My Account', 'account')}${row('pane-activity', 'Activity Status', 'activity')}${row('pane-premium', 'Frixion Premium', 'premium')}${row('pane-themes', 'Themes', 'themes')}${row('pane-accessibility', 'Accessibility', 'access')}${row('pane-keyboard', 'Keyboard', 'keyboard')}</div>
+    <div class="myou-group">${row('pane-account', 'My Account', 'account')}${row('pane-activity', 'Activity Status', 'activity')}${row('pane-premium', 'Frixion Premium', 'premium')}${row('pane-themes', 'Themes', 'themes')}${row('pane-accessibility', 'Accessibility', 'access')}${row('pane-notifications', 'Notifications', 'notify')}${row('pane-keyboard', 'Keyboard', 'keyboard')}</div>
     <div class="mpage-label">App</div>
     <div class="myou-group">${row('pane-app', 'Frixion App', 'app')}${row('pane-updates', 'Update Log', 'updates')}</div>
     ${staff.length ? `<div class="mpage-label">Staff</div><div class="myou-group">${staff.join('')}</div>` : ''}
@@ -10163,6 +10383,7 @@ function populateSettings() {
   $('quick-buttons-toggle').checked = showQuickButtons();
   renderQuickTextList();
   populateRpc();
+  populateNotifySettings();
 
   const swatchWrap = $('avatar-color-swatches');
   swatchWrap.innerHTML = '';
@@ -15969,7 +16190,8 @@ async function ovSend(chat, input) {
     } else {
       if (/(^|[\s(>])@(everyone|here)\b/i.test(text) && !hasChannelPerm(ch, server, myUid, 'mentionEveryone')) payload.everyoneBlocked = true;
       if (ch.slowmode) lastChannelSendAt[ch.id] = Date.now();
-      await db.collection('servers').doc(chat.sid).collection('channels').doc(chat.cid).collection('messages').add(payload);
+      const sent = await db.collection('servers').doc(chat.sid).collection('channels').doc(chat.cid).collection('messages').add(payload);
+      noteChannelMessage(chat.sid, chat.cid, payload, sent, null, chat.channel && chat.channel.name);
       db.collection('users').doc(myUid).update({
         'dailyStats.channelsMessaged': FieldValue.increment(1),
         'stats.messagesSent': FieldValue.increment(1),

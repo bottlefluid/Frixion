@@ -4484,3 +4484,57 @@ body.is-mobile .mnotif-btn.yes { background: var(--accent, #5865f2); color: #fff
 .md-spoiler * { visibility: hidden; pointer-events: none; }
 .md-spoiler.revealed { color: inherit; cursor: auto; background: color-mix(in srgb, var(--text-normal) 10%, transparent); }
 .md-spoiler.revealed * { visibility: visible; pointer-events: auto; }
+
+/* ============================================================
+   Unread dots and red @mention numbers (script.js refreshUnread)
+   ============================================================ */
+.rail-item.unread:not(.active)::before { height: 8px; opacity: 1; }
+.rail-item.unread:not(.active):hover::before { height: 20px; }
+body.is-mobile .rail-item.unread:not(.active)::before { height: 8px; }
+.rail-badge {
+  position: absolute; right: -4px; bottom: -4px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box;
+  border-radius: 9px; background: #f23f43; color: #fff; font-size: 12px; font-weight: 700; line-height: 18px; text-align: center;
+  box-shadow: 0 0 0 3px var(--bg-deepest); pointer-events: none;
+}
+body.is-mobile .rail-badge { box-shadow: 0 0 0 3px var(--m-rail); }
+.channel-row.unread { color: var(--text-header, var(--text-normal)); font-weight: 600; }
+.channel-row.unread::before { content: ''; position: absolute; left: -8px; top: 50%; width: 4px; height: 8px; margin-top: -4px; border-radius: 0 4px 4px 0; background: var(--text-header, var(--text-normal)); }
+body.is-mobile .channel-row.unread { color: var(--m-text); }
+.ch-badge { flex-shrink: 0; margin-left: auto; min-width: 16px; height: 16px; padding: 0 5px; box-sizing: border-box; border-radius: 8px; background: #f23f43; color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; }
+
+/* ============================================================
+   Threads: listed under their channel, a link under the message they started from, and a thread icon in the header
+   ============================================================ */
+.thread-row { position: relative; display: flex; align-items: center; gap: 6px; margin: 0 0 2px 26px; padding: 5px 8px; border-radius: 4px; color: var(--text-muted); font-size: 14px; font-weight: 500; cursor: pointer; }
+.thread-row:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
+.thread-row.active { background: var(--bg-modifier-selected); color: var(--text-normal); }
+.thread-row .tname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-curve { position: absolute; left: -14px; top: -8px; width: 12px; height: 22px; border-left: 2px solid color-mix(in srgb, var(--text-muted) 45%, transparent); border-bottom: 2px solid color-mix(in srgb, var(--text-muted) 45%, transparent); border-bottom-left-radius: 8px; pointer-events: none; }
+body.is-mobile .thread-row { min-height: 36px; padding: 0 10px; margin-left: 30px; border-radius: 10px; font-size: 15px; color: var(--m-muted); }
+body.is-mobile .thread-row.active { background: var(--m-row); color: var(--m-text); }
+.msg-thread-chip {
+  display: flex; width: max-content; align-items: center; gap: 8px; max-width: min(420px, 100%); margin: 4px 0 2px; padding: 6px 10px;
+  border: 1px solid var(--divider); border-radius: 8px; background: var(--bg-secondary); color: var(--text-normal);
+  font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.msg-thread-chip:hover { border-color: color-mix(in srgb, var(--text-normal) 30%, transparent); }
+.msg-thread-chip svg { flex: none; color: var(--text-muted); }
+.mtc-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.mtc-count { flex: none; color: var(--accent); font-weight: 600; white-space: nowrap; }
+#chat-header.is-thread #chat-header-hash {
+  display: inline-block !important; flex: none; width: 20px; height: 20px; font-size: 0; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5h16v10H9l-5 4V5z'/%3E%3Cpath d='M8 9h8M8 12h5'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5h16v10H9l-5 4V5z'/%3E%3Cpath d='M8 9h8M8 12h5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.chat-topic.is-parent-link { cursor: pointer; }
+.chat-topic.is-parent-link:hover { color: var(--text-normal); text-decoration: underline; }
+/* Settings → Notifications */
+.notify-permission { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 4px 0 14px; padding: 12px 14px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 14%, transparent); font-size: 14px; }
+.notify-permission.hidden { display: none; }
+.notify-app-note { margin: 4px 0 14px; font-size: 13px; color: var(--text-muted); }
+#notify-test-btn { margin-top: 10px; }
+.notify-test-hint { margin-top: 8px; font-size: 13px; color: var(--text-muted); }
+/* unread DMs stand out on a computer too */
+.dm-row.unread .dm-name { color: var(--text-header, var(--text-normal)); font-weight: 600; }
+body.is-mobile .thread-curve { top: -14px; height: 32px; }
+#pane-notifications .setting-row { margin-bottom: 16px; }

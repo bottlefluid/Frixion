@@ -12,7 +12,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=91">
+<link rel="stylesheet" href="style.css?v=92">
 </head>
 <body>
 
@@ -426,6 +426,20 @@
 </div>
 
 
+<!-- ============ MODAL: start a thread from a message ============ -->
+<div class="modal-overlay hidden" id="thread-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2>Create Thread</h2><span class="x" data-close="thread-modal">✕</span></div>
+    <p class="desc" id="thread-modal-from"></p>
+    <div class="field"><label for="thread-name">Thread name</label><input type="text" id="thread-name" maxlength="80" placeholder="New thread" autocomplete="off"></div>
+    <div class="auth-error" id="thread-error"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" data-close="thread-modal">Cancel</button>
+      <button class="btn-accent-inline" id="thread-create-btn">Create Thread</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL: create/join server chooser ============ -->
 <div class="modal-overlay hidden" id="server-choice-modal">
   <div class="modal-box">
@@ -834,6 +848,7 @@
       <div class="nav-item" data-pane="pane-quests">Quests</div>
       <div class="nav-item" data-pane="pane-themes">Themes</div>
       <div class="nav-item" data-pane="pane-accessibility">Accessibility</div>
+      <div class="nav-item" data-pane="pane-notifications">Notifications</div>
       <div class="nav-label">App</div>
       <div class="nav-item" data-pane="pane-app">Frixion App</div>
       <div class="nav-item" data-pane="pane-updates">Update Log</div>
@@ -998,6 +1013,32 @@
           <label class="gt-row"><span class="gt-name">Menu background blur</span><input type="range" id="a11y-menu-blur" min="0" max="30" step="1" value="8"><span class="gt-val" id="a11y-menu-blur-val">8px</span></label>
           <button type="button" class="btn-secondary slim" id="a11y-glass-reset">Reset to default</button>
         </div>
+      </div>
+
+      <div class="settings-pane hidden" id="pane-notifications">
+        <h2>Notifications</h2>
+        <p class="desc">Like Discord, Frixion tells you about direct messages, group messages and messages that mention you (or @everyone) while you aren't looking at it. Muted chats stay quiet.</p>
+        <div class="setting-row">
+          <div class="setting-row-text">
+            <div class="setting-row-title">Show notifications</div>
+            <div class="setting-row-desc" id="notify-where"></div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="notify-toggle" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="notify-permission hidden" id="notify-permission">
+          <span id="notify-permission-text"></span>
+          <button type="button" class="btn-accent-inline slim" id="notify-allow-btn">Allow notifications</button>
+        </div>
+        <div class="setting-row hidden" id="notify-game-row">
+          <div class="setting-row-text">
+            <div class="setting-row-title">Show them over games</div>
+            <div class="setting-row-desc">While you play, a notification pops up in the corner of your game, the way Discord's overlay does. Press your overlay shortcut to answer it.</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="notify-game-toggle" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="notify-app-note hidden" id="notify-app-note">Restart the Frixion app to update it and get notifications over games.</div>
+        <button type="button" class="btn-secondary slim" id="notify-test-btn">Send a test notification</button>
+        <div class="notify-test-hint" id="notify-test-hint"></div>
       </div>
 
       <div class="settings-pane hidden" id="pane-app">
@@ -1602,6 +1643,6 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=91"></script>
+<script defer src="script.js?v=92"></script>
 </body>
 </html>
