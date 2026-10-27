@@ -451,6 +451,11 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.34', date: '2026-10-26', title: '/spoiler, and Sapphire runs /vanish and /sfmode',
+    notes: [
+      'New /spoiler command: type /spoiler and your message, and it is sent hidden behind a spoiler until someone clicks it.',
+      '/vanish, /unvanish and /sfmode are now Sapphire commands, listed under Sapphire in the command list.',
+    ] },
   { v: '4.33', date: '2026-10-26', title: 'Unread dots, notifications and threads',
     notes: [
       'Servers and channels with new messages get a white dot, and a red number shows how many times you were @mentioned (or replied to). Unread DMs show a red number on the Messages button, and the browser tab shows your total.',
@@ -1143,6 +1148,8 @@ function mdBlocks(safe) {
   return out.map((seg, i) => (i > 0 && !seg.block && !out[i - 1].block ? '\n' : '') +
     (seg.lines ? `<span class="md-quote">${seg.lines.join('\n')}</span>` : seg.html)).join('');
 }
+// /spoiler: each line of the message goes behind its own spoiler bar.
+function spoilerText(s) { return String(s || '').split('\n').map(l => (l.trim() ? `||${l.trim().replace(/\|\|/g, '')}||` : l)).join('\n'); }
 // Plain text for previews, replies and notifications: the marks come off and spoilers stay hidden.
 function mdPlain(s) {
   return String(s || '')
@@ -8344,6 +8351,7 @@ async function sendMessage() {
     return;
   }
   // "/tts hello" speaks the message aloud for everyone viewing the channel.
+  if (/^\/spoiler\s+\S/i.test(raw)) raw = spoilerText(raw.replace(/^\/spoiler\s+/i, ''));   // /spoiler typed out in full
   let ttsFlag = false;
   if (/^\/tts\s+\S/i.test(raw)) {
     raw = raw.replace(/^\/tts\s+/i, '');
@@ -8918,11 +8926,14 @@ const SLASH_COMMANDS = [
   { name: 'tts', desc: 'Send a text-to-speech message', needs: 'sendTTS', options: [
     { name: 'message', desc: 'What should be read out loud', required: true },
   ] },
-  // Staff commands. They are listed only for the people who can use them. In sfmode the owner ones
-  // disappear, because sfmode turns the effective staff flags off.
-  { name: 'vanish', desc: 'Owner: hide yourself here and post a "left" message. Run it again to come back', ownerOnly: true, places: ['channel', 'groupdm'], options: [] },
-  { name: 'unvanish', desc: 'Owner: come back after vanishing and post a "joined" message', ownerOnly: true, places: ['channel', 'groupdm'], options: [] },
-  { name: 'sfmode', desc: 'Staff: act like a normal player. Hides your staff tag and staff commands', staffAny: true, options: [
+  { name: 'spoiler', desc: 'Send a message hidden behind a spoiler until someone clicks it', options: [
+    { name: 'message', desc: 'What to hide', required: true },
+  ] },
+  // Staff commands, run by Sapphire. They are listed only for the people who can use them. In sfmode the
+  // owner ones disappear, because sfmode turns the effective staff flags off.
+  { name: 'vanish', desc: 'Owner: hide yourself here and post a "left" message. Run it again to come back', ownerOnly: true, places: ['channel', 'groupdm'], group: 'sapphire', options: [] },
+  { name: 'unvanish', desc: 'Owner: come back after vanishing and post a "joined" message', ownerOnly: true, places: ['channel', 'groupdm'], group: 'sapphire', options: [] },
+  { name: 'sfmode', desc: 'Staff: act like a normal player. Hides your staff tag and staff commands', staffAny: true, group: 'sapphire', options: [
     { name: 'mode', desc: 'on, off or toggle. Leave it empty to toggle.', required: false, type: 'choice' },
   ] },
 ];
@@ -8947,6 +8958,7 @@ const SLASH_IMAGES = {
   vanish:    slashTile('#6b7280', '<path d="M19 49V30a13 13 0 0 1 26 0v19l-4.3-3.5L36.4 49 32 45.5 27.6 49l-4.3-3.5z"/><circle cx="27" cy="31" r="1.8" fill="#fff"/><circle cx="37" cy="31" r="1.8" fill="#fff"/>'),
   unvanish:  slashTile('#14b8a6', '<path d="M10 32s8-14 22-14 22 14 22 14-8 14-22 14-22-14-22-14z"/><circle cx="32" cy="32" r="6"/>'),
   sfmode:    slashTile('#5865f2', '<path d="M32 13l16 5.5v12.5c0 9.5-6.5 15.5-16 19.5-9.5-4-16-10-16-19.5V18.5z"/><path d="M24 32h16"/>'),
+  spoiler:   slashTile('#4e5058', '<path d="M12 32s7-12 20-12 20 12 20 12-7 12-20 12-20-12-20-12z"/><circle cx="32" cy="32" r="5"/><path d="M15 15l34 34"/>'),
   tts:       slashTile('#f59e0b', '<path d="M15 26h8l10-8v28l-10-8h-8z" fill="#fff"/><path d="M41 26a9 9 0 0 1 0 12M46 20a17 17 0 0 1 0 24"/>'),
 };
 SLASH_COMMANDS.forEach(c => { if (!c.img) c.img = SLASH_IMAGES[c.name] || ''; });
@@ -9161,6 +9173,7 @@ function finishCommandMode() {
     if (v && !['on', 'off', 'toggle'].includes(v)) { switchCommandOption(0); toast('Use on, off or toggle, or leave it empty.', 'error'); return null; }
     text = v ? `/sfmode ${v}` : '/sfmode';
   } else if (cmd.name === 'tts') text = `/tts ${vals[0]}`;
+  else if (cmd.name === 'spoiler') text = spoilerText(vals[0]);
   else text = `/${cmd.name}`;
   exitCommandMode(false);
   return text;
