@@ -11,7 +11,7 @@ import {
   AURAS, AURA, auraKey, rollAura, POTIONS, POTION, ITEMS, ITEM, WEATHERS, tierOf, tierIndex, STRANGE, POTION_RENAMES,
   timeOfDay, dayProgress, weatherAt, weatherEndsAt, jesterHere, fmt, fmtTime, zalgo, movesFor, elementOf,
   FISH, FISHES, FISHING_SPOTS, catchFish, dailyStock, dayIndex, PICKUPS, DAILY_QUESTS, dailyQuests, SIDE_QUEST, BUILTIN_CODES,
-  GEARS, GEAR, ACHIEVEMENTS, CHEST_POOLS, SEASON, PASS_REWARDS, JACK_SHOP, mariDeals, MARI_SLOT_MS, RAID, loreOf, isHalloween, HALLOWEEN_BIOMES, WEATHER_SLOT_MS,
+  GEARS, GEAR, HEX_SHOP, isSpecial, ACHIEVEMENTS, CHEST_POOLS, SEASON, PASS_REWARDS, JACK_SHOP, mariDeals, MARI_SLOT_MS, RAID, loreOf, isHalloween, HALLOWEEN_BIOMES, WEATHER_SLOT_MS,
 } from './data.js';
 import { createCrawler } from './raid.js';
 import { createXFight } from './xfight.js';
@@ -25,7 +25,7 @@ import { createEquinoxCinematic, EQUINOX_MERGE, EQUINOX_LENGTH } from './cinemat
 import { glowTex } from './avatar.js';
 import { IC, potionArt, gearArt, handGearArt, fishArt, coinArt, starArt, titleArt, titleInfo } from './icons.js';
 
-const VERSION = '2.3';
+const VERSION = '2.4';
 const API = () => window.FrixionGameAPI;
 const WALK = 16, JUMP = 24, GRAVITY = 72, STEP = 1.25, R = 0.6, H = 5;
 const ROLL_ANIM_MS = 2600, ROLL_COOLDOWN_MS = 600;
@@ -66,6 +66,7 @@ export async function open() {
     await sleep(30);
     G.world = createWorld(G.scene, quality);
     setLoading('Loading your auras', 0.6);
+    await claimSession();
     await loadSave();
     setLoading('Placing the studs', 0.8);
     buildPlayer();
@@ -88,6 +89,7 @@ export function close() {
   const g = G;
   g.closed = true;
   try { saveNow(); } catch (e) {}
+  if (g.sessionOff) g.sessionOff();
   if (g.net) g.net.leave();
   if (g.chat) g.chat.destroy();
   if (g.music) g.music.dispose();
@@ -148,11 +150,11 @@ function buildShell() {
   <div class="oc-hud hidden">
     <div class="oc-topleft"><button type="button" class="oc-sq oc-exit" title="Back to Frixion">${IC.close}</button><button type="button" class="oc-sq oc-chat-btn" title="Chat (/)">${IC.chat}</button><button type="button" class="oc-sq oc-admin-btn hidden" data-open="admin" title="Admin Panel">${IC.admin}</button></div>
     <div class="oc-menu">
-      <button type="button" class="oc-sq" data-open="storage" title="Aura Storage">${IC.storage}</button>
-      <button type="button" class="oc-sq" data-open="collection" title="Collection">${IC.collection}</button>
-      <button type="button" class="oc-sq" data-open="inventory" title="Inventory">${IC.inventory}</button>
-      <button type="button" class="oc-sq" data-open="quests" title="Quests">${IC.quests}<i class="oc-dot hidden"></i></button>
-      <button type="button" class="oc-sq oc-menu-btn" title="Menu">${IC.menu}<i class="oc-dot hidden"></i></button>
+      <button type="button" class="oc-sq" data-open="storage" title="Aura Storage" data-label="Auras">${IC.storage}</button>
+      <button type="button" class="oc-sq" data-open="collection" title="Collection" data-label="Index">${IC.collection}</button>
+      <button type="button" class="oc-sq" data-open="inventory" title="Inventory" data-label="Items">${IC.inventory}</button>
+      <button type="button" class="oc-sq" data-open="quests" title="Quests" data-label="Quests">${IC.quests}<i class="oc-dot hidden"></i></button>
+      <button type="button" class="oc-sq oc-menu-btn" title="Menu" data-label="Menu">${IC.menu}<i class="oc-dot hidden"></i></button>
       <div class="oc-more hidden">
         <button type="button" data-open="achievements">${IC.trophy}<span>Achievements</span><i class="oc-dot hidden"></i></button>
         <button type="button" data-open="pass">${IC.pass}<span>Season Pass</span><i class="oc-dot hidden"></i></button>
@@ -251,7 +253,9 @@ async function loadSave() {
   const api = API();
   G.saveRef = api.db.collection('rngSaves').doc(G.me.uid);
   let data = {};
-  try { const d = await G.saveRef.get(); data = d.exists ? d.data() : {}; } catch (e) {}
+  let ok = false;
+  for (let i = 0; i < 3 && !ok; i++) { try { const d = await G.saveRef.get(); data = d.exists ? d.data() : {}; ok = true; } catch (e) { await sleep(900); } }
+  if (!ok) { G.loadFailed = true; setTimeout(() => toast('Your save didn' + "'" + 't load, so this session won' + "'" + 't save over it. Reopen the game to try again.', 'warn'), 3000); }
   const b = blankSave(), s = { ...b, ...data };
   s.settings = { ...b.settings, ...(data.settings || {}), vol: { ...b.settings.vol, ...((data.settings || {}).vol || {}) } };
   if (data.settings && data.settings.sound === false) s.settings.vol.sfx = 0;
@@ -267,7 +271,7 @@ async function loadSave() {
   s.equipped = auraKey(s.equipped).key; s.best = auraKey(s.best).key;
   for (const k of Object.keys(s.auras)) if (s.auras[k] > 0) s.found[auraKey(k).aura.id] = true;
   G.save = s;
-  G.effects = (s.effects || []).filter(e => e.until > now() && POTION[e.id]);
+  G.effects = (s.effects || []).map(e => (e.left != null ? { ...e, until: now() + e.left } : e)).filter(e => e.until > now() && POTION[e.id]).map(({ left, ...e }) => e);
   G.queued = (s.queued || []).filter(id => POTION[id]);
   // Warp and Transcendent roll instantly now: their old leftover speed buffs turn back into potions
   for (const r of s.rollBuffs || []) if (POTION[r.id] && POTION[r.id].batch && !G.me.owner) s.potions[r.id] = (s.potions[r.id] || 0) + 1;
@@ -277,12 +281,31 @@ async function loadSave() {
   if (!s.auras[s.equipped] && !G.me.owner && s.equipped !== 'common') s.equipped = 'common';
   checkDay();
 }
+// One game per account at a time, like Roblox. Opening Overcontrol RNG somewhere else makes this window save one last
+// time and close, so two windows can never save over each other (that is how progress went backwards).
+async function claimSession() {
+  let ref; try { ref = API().rtdb.ref('ocrng/session/' + G.me.uid); } catch (e) { return; }
+  G.sessionId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  let had = null;
+  try { had = (await ref.get()).val(); } catch (e) {}
+  try { await ref.set({ id: G.sessionId, t: Date.now() }); } catch (e) { return; }
+  if (had && had.id && Date.now() - (had.t || 0) < 12 * 3600000) await sleep(1600);   // let the other window save first
+  const watch = s => { const v = s.val(); if (G && !G.kicked && v && v.id && v.id !== G.sessionId) sessionTaken(); };
+  ref.on('value', watch);
+  G.sessionOff = () => { ref.off('value', watch); ref.transaction(v => (v && v.id === G.sessionId ? null : v)).catch(() => {}); };
+}
+function sessionTaken() {
+  if (G.save && !G.loadFailed) saveNow();
+  G.kicked = true;
+  API().toast('Overcontrol RNG was opened somewhere else, so this window closed. Your progress is saved.', 'warn');
+  close();
+}
 let saveTimer = 0;
 function markDirty() { if (!G) return; clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 3000); }
 function saveNow() {
-  if (!G || !G.saveRef || !G.save || G.wiped) return;
+  if (!G || !G.saveRef || !G.save || G.wiped || G.kicked || G.loadFailed) return;
   clearTimeout(saveTimer);
-  G.save.effects = G.effects.filter(e => e.until > now());
+  G.save.effects = G.effects.filter(e => e.until > now()).map(e => ({ ...e, left: e.until - now() }));
   G.save.queued = G.queued; G.save.rollBuffs = G.rollBuffs;
   G.save.name = G.me.name; G.save.bestRarity = auraKey(G.save.best).rarity;
   G.saveRef.set(JSON.parse(JSON.stringify(G.save))).catch(() => {});
@@ -785,7 +808,7 @@ function placeActive(id) {
   if (id === 'portal_stella' || id === 'portal_back') return side.stella === 'done';
   if (id === 'chest') return !G.save.chest;
   if (id.startsWith('card')) return side.cards && side.cards.state === 'active' && !(side.cards.found || []).includes(id);
-  if (id === 'jack') return isHalloween();
+  if (id === 'jack' || id === 'hex') return isHalloween();
   return true;
 }
 function checkPlaces() {
@@ -1310,12 +1333,12 @@ async function rollOnce() {
     const t = tierIndex(res.rarity), cut = s.settings.cutscenes;
     if (cut !== 'off' && t >= (cut === 'rare' ? 5 : 4)) await cutscene(res);
     else if (!quick) await rollAnimation(res, b.speed);
-    if (G) showResult(res, quick);
+    if (G && !quick) showResult(res, quick);
   } finally {
     if (G) {
       const rarer = res.rarity > auraKey(s.equipped).rarity;
       if (rarer && s.settings.autoEquip) equip(res.key, true);
-      else if (rarer && !s.settings.auto) offerEquip(res.key);
+      else if (rarer && !s.settings.auto && !quick) offerEquip(res.key);
       if (res.rarity >= 100000 && G.net) G.net.announce({ name: G.me.name, key: res.key, rarity: res.rarity });
       checkAchievements();
       G.nextRollAt = now() + ROLL_COOLDOWN_MS / b.speed;
@@ -1526,6 +1549,24 @@ function refreshToggles() {
   set($q('.oc-quick'), canQuick(), !!G.save.settings.quick, '5,000 Orbs');
 }
 
+// ---------------- small pieces of UI ----------------
+const amountHtml = max => `<div class="oc-amt"><button type="button" data-amt="-1">-</button><input type="number" min="1" max="${max}" value="1"><button type="button" data-amt="1">+</button><button type="button" data-amt="max">Max</button></div>`;
+const amountOf = (el, max) => { const i = el.querySelector('.oc-amt input'); return Math.max(1, Math.min(max, Math.floor(+(i && i.value) || 1))); };
+function wireAmount(el, max) {
+  const i = el.querySelector('.oc-amt input'); if (!i) return;
+  i.onkeydown = e => e.stopPropagation();
+  el.querySelectorAll('[data-amt]').forEach(b => b.onclick = () => { i.value = b.dataset.amt === 'max' ? max : Math.max(1, Math.min(max, (Math.floor(+i.value) || 1) + +b.dataset.amt)); });
+}
+function confirmBox(text, ok = 'Yes') {
+  return new Promise(res => {
+    const box = document.createElement('div'); box.className = 'oc-confirm';
+    box.innerHTML = `<div class="oc-confirm-card"><p>${esc(text)}</p><div><button type="button" class="oc-btn bad" data-y>${esc(ok)}</button><button type="button" class="oc-btn" data-n>Cancel</button></div></div>`;
+    $q('.oc-panel').appendChild(box);
+    const done = v => { box.remove(); res(v); };
+    box.querySelector('[data-y]').onclick = () => done(true); box.querySelector('[data-n]').onclick = () => done(false);
+    box.onclick = e => { if (e.target === box) done(false); };
+  });
+}
 // ---------------- the HUD ----------------
 const BUFF_ROW = 6;   // potions shown before the expand button
 // "237h 0m", "12m 5s", "40s", like Sol's
@@ -1743,7 +1784,7 @@ function takeHit(h) {
 // ---------------- panels ----------------
 const TITLES = { storage: 'Aura Storage', collection: 'Collection', inventory: 'Inventory', quests: 'Quests', stats: 'Stats', settings: 'Settings', admin: 'Admin',
   mari: 'Mari', jester: 'The Jester', finn: 'Old Finn', marlin: 'Marlin\'s Fish Market', nova: 'Nova\'s Daily Shop', stella: 'Stella', ghost: 'The Ghost', devpc: 'Terminal',
-  jake: 'Jake\'s Workshop', jack: 'Jack the Pumpkin', achievements: 'Achievements', pass: 'Season Pass', jukebox: 'Jukebox' };
+  jake: 'Jake\'s Workshop', jack: 'Jack the Pumpkin', hex: 'Hex' + "'" + 's Halloween Auras', achievements: 'Achievements', pass: 'Season Pass', jukebox: 'Jukebox' };
 function openPanel(id) {
   if (G.fishing) stopFishing();
   if (document.pointerLockElement) document.exitPointerLock();
@@ -1755,7 +1796,7 @@ function openPanel(id) {
   body.scrollTop = 0;
   ({ storage: renderStorage, collection: renderCollection, inventory: renderInventory, quests: renderQuests, stats: renderStats, settings: renderSettings, admin: renderAdmin,
     mari: () => renderShop('mari'), jester: () => renderShop('jester'), finn: () => renderShop('finn'), marlin: renderMarlin, nova: renderDaily, stella: renderStella, ghost: renderGhost, devpc: renderTerminal,
-    jake: renderJake, jack: renderJack, achievements: renderAchievements, pass: renderPass, jukebox: renderJukebox })[id](body);
+    jake: renderJake, jack: renderJack, hex: renderHex, achievements: renderAchievements, pass: renderPass, jukebox: renderJukebox })[id](body);
   if (id === 'achievements' || id === 'pass') dotFor(id, false);
 }
 function closePanel() {
@@ -1768,28 +1809,30 @@ const priceText = pr => pr.coins ? `$ ${fmt(pr.coins)}` : pr.f ? `F ${fmt(pr.f)}
 const priceClass = pr => pr.coins ? 'coin' : pr.f ? 'f' : 'void';
 const moneyRow = () => `<div class="oc-money-row"><span class="oc-pill coin">$ ${fmt(G.save.coins)}</span><span class="oc-pill f">F ${fmt(G.save.f)}</span><span class="oc-pill void">V ${fmt(G.save.void)}</span></div>`;
 const tabsHtml = (tabs, cur) => `<div class="oc-tabs">${tabs.map(([id, label]) => `<button type="button" data-tab="${id}" class="${cur === id ? 'on' : ''}">${label}</button>`).join('')}</div>`;
-const onlyText = a => a.only && a.only.boss ? 'Only from beating ____X____: most damage, no deaths, 250 damage or more' : a.only ? (a.only.time ? (a.only.time === 'day' ? 'Only during the day' : 'Only at night') : `Only in ${WEATHERS[a.only.weather].name}`) : a.native ? `${WEATHERS[a.native].name}: ${WEATHERS[a.native].bt}x as likely` : '';
+const onlyText = a => { const o = a.only; if (!o) return a.native ? `${WEATHERS[a.native].name}: ${WEATHERS[a.native].bt}x as likely` : ''; if (o.boss) return 'Only from beating ____X____: most damage, no deaths, 250 damage or more'; if (o.time) return o.time === 'day' ? 'Only during the day' : 'Only at night'; if (o.weather === 'halloween') return 'Only during the Halloween event (or from Hex)'; const w = WEATHERS[o.weather]; return w ? `Only in ${w.name}` : ''; };
 
 // The Sol's-style storage screen: information on the left, a grid of tiles on the right.
 function storageLayout(body, { tabs, tab, tiles, info, onTab, after, search = true }) {
   body.innerHTML = `<div class="oc-store"><div class="oc-info"><div class="oc-info-title">[ Information ]</div><div class="oc-info-body"></div></div>
     <div class="oc-store-main"><div class="oc-store-top">${search ? '<label class="oc-search">' + IC.search + '<input type="search" placeholder="Search..."></label>' : ''}${tabs ? tabsHtml(tabs, tab) : ''}</div><div class="oc-grid"></div></div></div>`;
   const grid = body.querySelector('.oc-grid'), infoEl = body.querySelector('.oc-info-body');
+  const scrollKey = (G.panel || '') + ':' + (tab || ''), keepScroll = G.gridScroll && G.gridScroll.k === scrollKey ? G.gridScroll.y : 0;
+  grid.onscroll = () => { G.gridScroll = { k: scrollKey, y: grid.scrollTop }; };
   let sel = G.sel && tiles.find(t => t.id === G.sel) ? G.sel : tiles[0] && tiles[0].id;
   const draw = (q = '') => {
     const list = tiles.filter(t => !q || t.search.includes(q.toLowerCase()));
-    grid.innerHTML = list.length ? list.map(t => `<button type="button" class="oc-tile${t.id === sel ? ' sel' : ''}${t.eq ? ' eq' : ''}${t.locked ? ' locked' : ''}${t.fav ? ' fav' : ''}" data-id="${esc(t.id)}">${t.html}${t.count != null ? `<b class="oc-tile-n">${t.count}</b>` : ''}</button>`).join('') : '<p class="oc-empty">Nothing here yet.</p>';
+    grid.innerHTML = list.length ? list.map(t => `<button type="button" class="oc-tile${t.id === sel ? ' sel' : ''}${t.eq ? ' eq' : ''}${t.locked ? ' locked' : ''}${t.dim ? ' dim' : ''}${t.fav ? ' fav' : ''}" data-id="${esc(t.id)}">${t.html}${t.count != null ? `<b class="oc-tile-n">${t.count}</b>` : ''}</button>`).join('') : '<p class="oc-empty">Nothing here yet.</p>';
     grid.querySelectorAll('.oc-tile').forEach(b => b.onclick = () => { sel = G.sel = b.dataset.id; grid.querySelectorAll('.oc-tile').forEach(x => x.classList.toggle('sel', x === b)); showInfo(); });
     if (after) after(grid);
   };
   const showInfo = () => { const t = tiles.find(x => x.id === sel); infoEl.innerHTML = ''; if (t) info(t, infoEl); else infoEl.innerHTML = '<p class="oc-empty">Pick something on the right.</p>'; };
-  draw(); showInfo();
+  draw(); showInfo(); grid.scrollTop = keepScroll;
   const s = body.querySelector('.oc-search input'); if (s) s.oninput = () => draw(s.value.trim());
   body.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { G.sel = null; onTab(b.dataset.tab); });
 }
 function auraTile(key, opts = {}) {
   const r = auraKey(key);
-  return { id: r.key, search: r.name.toLowerCase(), eq: G.save.equipped === r.key, fav: !!G.save.locked[r.key], count: opts.count, locked: opts.locked, html: `<span class="oc-tile-name" data-paint="${esc(r.key)}"${opts.locked ? ' data-hide="1"' : ''}></span>`, r };
+  return { id: r.key, search: r.name.toLowerCase(), eq: G.save.equipped === r.key, fav: !!G.save.locked[r.key], count: opts.count, locked: opts.locked, dim: opts.dim, html: `<span class="oc-tile-name" data-paint="${esc(r.key)}"${opts.locked ? ' data-hide="1"' : ''}></span>`, r };
 }
 function paintTiles(grid) {
   grid.querySelectorAll('[data-paint]').forEach(el => { const r = auraKey(el.dataset.paint); paintName(el, el.dataset.hide ? '???' : r.name, r, 'oc-tile-name'); });
@@ -1809,20 +1852,30 @@ function auraInfo(t, el, { owner } = {}) {
   if ((auraCount(r.key) > 0 || owner) && !hidden) {
     const eq = G.save.equipped === r.key, locked = !!G.save.locked[r.key];
     actions.innerHTML = `<button type="button" class="oc-btn ${eq ? 'bad' : 'ok'}" data-eq>${eq ? 'Unequip' : 'Equip'}</button>`
-      + (owner ? '' : `<button type="button" class="oc-btn" data-lock>${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="oc-btn bad" data-rm ${locked || eq ? 'disabled' : ''}>Remove 1</button>`);
+      + (owner ? '' : `<button type="button" class="oc-btn" data-lock>${locked ? 'Unlock' : 'Lock'}</button>`);
+    const canRm = owner || locked ? 0 : auraCount(r.key) - (eq ? 1 : 0);
+    if (!owner) actions.insertAdjacentHTML('afterend', `${canRm > 0 ? amountHtml(canRm) : ''}<div class="oc-info-actions"><button type="button" class="oc-btn bad" data-rm ${canRm > 0 ? '' : 'disabled'}>${locked ? 'Locked' : eq && canRm < 1 ? 'Equipped' : 'Remove'}</button></div>`);
     actions.querySelector('[data-eq]').onclick = () => { equip(eq ? 'common' : r.key); rerender(); };
     const lk = actions.querySelector('[data-lock]'); if (lk) lk.onclick = () => { if (locked) delete G.save.locked[r.key]; else G.save.locked[r.key] = true; toast(locked ? 'Unlocked. It can be removed or used in crafting.' : 'Locked. It can\'t be removed or used in crafting.'); markDirty(); rerender(); };
-    const rm = actions.querySelector('[data-rm]'); if (rm) rm.onclick = () => { if (G.save.locked[r.key]) return; G.save.auras[r.key]--; if (G.save.auras[r.key] <= 0) delete G.save.auras[r.key]; markDirty(); rerender(); };
+    const rm = el.querySelector('[data-rm]');
+    if (rm && canRm > 0) { wireAmount(el, canRm); rm.onclick = async () => {
+      if (G.save.locked[r.key]) return;
+      const n = amountOf(el, canRm);
+      if (!(await confirmBox(`Remove ${fmt(n)} ${r.name}? You can't get ${n > 1 ? 'them' : 'it'} back.`, 'Remove'))) return;
+      G.save.auras[r.key] = auraCount(r.key) - n; if (G.save.auras[r.key] <= 0) delete G.save.auras[r.key];
+      toast(`Removed ${fmt(n)} ${r.name}.`); markDirty(); rerender();
+    }; }
   }
 }
 function renderStorage(body, tab = G.storeTab || 'storage') {
   G.storeTab = tab;
-  const tabs = isOwner() ? [['storage', 'Storage'], ['owner', 'Owner']] : null;
+  const tabs = [['storage', 'Storage'], ['special', 'Special'], ...(isOwner() ? [['owner', 'Owner']] : [])];
   if (tab === 'owner' && !isOwner()) tab = 'storage';
-  const keys = tab === 'owner' ? AURAS.map(a => a.id) : Object.keys(G.save.auras).filter(k => G.save.auras[k] > 0);
-  const tiles = keys.map(k => auraTile(k, { count: tab === 'owner' ? null : fmt(auraCount(k)) })).sort((a, b) => b.r.rarity - a.r.rarity);
+  const keys = tab === 'owner' ? AURAS.map(a => a.id) : tab === 'special' ? AURAS.filter(isSpecial).map(a => a.id) : Object.keys(G.save.auras).filter(k => G.save.auras[k] > 0);
+  const tiles = keys.map(k => auraTile(k, { count: tab === 'owner' ? null : fmt(auraCount(k)), dim: tab === 'special' && !auraCount(k) && !isOwner() })).sort((a, b) => b.r.rarity - a.r.rarity);
   storageLayout(body, { tabs, tab, tiles, after: paintTiles, info: (t, el) => auraInfo(t, el, { owner: tab === 'owner' }), onTab: tb => renderStorage(body, tb) });
-  if (tab !== 'owner') body.querySelector('.oc-store-top').insertAdjacentHTML('beforeend', `<div class="oc-found">Storage [${fmt(Object.values(G.save.auras).reduce((a, b) => a + b, 0))}]</div>`);
+  if (tab === 'storage') body.querySelector('.oc-store-top').insertAdjacentHTML('beforeend', `<div class="oc-found">Storage [${fmt(Object.values(G.save.auras).reduce((a, b) => a + b, 0))}]</div>`);
+  if (tab === 'special') body.querySelector('.oc-store-top').insertAdjacentHTML('beforeend', '<div class="oc-found">Limited and boss auras</div>');
 }
 function renderCollection(body) {
   const found = G.save.found;
@@ -1839,11 +1892,20 @@ function renderInventory(body, tab = G.invTab || 'items') {
   const potionTile = (p, free) => ({ id: 'p:' + p.id, search: p.name.toLowerCase(), count: free ? '∞' : fmt(potionCount(p.id)), html: potionArt(p, 'oc-tile-art'), p });
   const gearTile = (g, free) => ({ id: 'gear:' + g.id, search: g.name.toLowerCase(), eq: G.save.hands[g.hand] === g.id, count: free ? null : fmt(G.save.gears[g.id] || 0), html: handGearArt(g, 'oc-tile-art'), gear: g });
   const charmTile = (i, free) => ({ id: 'g:' + i.id, search: i.name.toLowerCase(), eq: free && !!G.save.ownerGear[i.id], html: gearArt(i, 'oc-tile-art'), g: i });
+  // a potion: how many to use, and deleting some (with a confirmation)
   const potionInfo = (p, free, el) => {
-    const verb = p.chest ? 'Open' : 'Use';
+    const verb = p.chest ? 'Open' : 'Use', owned = potionCount(p.id), max = p.biome ? 1 : free ? 100 : owned;
     el.innerHTML = `${potionArt(p, 'oc-info-art')}<div class="oc-info-title2">${esc(p.name)}</div><div class="oc-info-line dim">${esc(p.desc)}</div>
-      ${free ? '' : `<div class="oc-info-line">Owned: <b>${fmt(potionCount(p.id))}</b></div>`}<div class="oc-info-actions"><button type="button" class="oc-btn ok" data-u="1">${verb}</button>${!p.biome && (free || potionCount(p.id) >= 10) ? `<button type="button" class="oc-btn" data-u="10">${verb} 10</button>` : ''}</div>`;
-    el.querySelectorAll('[data-u]').forEach(b => b.onclick = () => { for (let i = 0; i < +b.dataset.u; i++) if (!usePotion(p.id, free)) break; rerender(); });
+      ${free ? '' : `<div class="oc-info-line">Owned: <b>${fmt(owned)}</b></div>`}${max > 0 ? amountHtml(max) : ''}<div class="oc-info-actions"><button type="button" class="oc-btn ok" data-use ${max > 0 ? '' : 'disabled'}>${verb}</button>${free ? '' : `<button type="button" class="oc-btn bad" data-del ${owned > 0 ? '' : 'disabled'}>Delete</button>`}</div>`;
+    wireAmount(el, max);
+    el.querySelector('[data-use]').onclick = () => { const n = amountOf(el, max); for (let i = 0; i < n; i++) if (!usePotion(p.id, free)) break; rerender(); };
+    const del = el.querySelector('[data-del]');
+    if (del) del.onclick = async () => {
+      const n = amountOf(el, owned);
+      if (!(await confirmBox(`Delete ${fmt(n)} ${p.name}? You can't get ${n > 1 ? 'them' : 'it'} back.`, 'Delete'))) return;
+      G.save.potions[p.id] = potionCount(p.id) - n; if (G.save.potions[p.id] <= 0) delete G.save.potions[p.id];
+      toast(`Deleted ${fmt(n)} ${p.name}.`); markDirty(); rerender();
+    };
   };
   const gearInfo = (g, free, el) => {
     const worn = G.save.hands[g.hand] === g.id;
@@ -2107,6 +2169,22 @@ function renderJake(body, hand = G.jakeHand || 'right') {
 }
 
 // ---------------- Jack the Pumpkin (Halloween): Pumpkin Tokens for spooky things ----------------
+// Hex sells Halloween auras for coins (the crown of the season also takes Pumpkin Tokens), only during the event.
+function renderHex(body) {
+  const keep = body.scrollTop, s = G.save;
+  body.innerHTML = `<p class="oc-npc-intro">Once a year, darling, and never again until next October. Coins, please. For 『HALLOWED』, Pumpkin Tokens too.</p>
+    <div class="oc-money-row"><span class="oc-pill coin">$ ${fmt(s.coins)}</span><span class="oc-pill token">Tokens ${fmt(s.tokens)}</span></div>
+    <div class="oc-list">${HEX_SHOP.map((o, i) => { const a = auraKey(o.aura), can = s.coins >= o.coins && s.tokens >= (o.tokens || 0);
+      return `<div class="oc-row"><div class="oc-row-text"><b data-hexname="${i}"></b><span>1 in ${fmt(a.rarity)} ${tierOf(a.rarity).label}  |  Owned: ${fmt(auraCount(a.key))}</span></div><span class="oc-price ${can ? '' : 'no'}">$ ${fmt(o.coins)}${o.tokens ? ` + ${o.tokens} tokens` : ''}</span><button type="button" class="oc-btn sm ok" data-hex="${i}" ${can ? '' : 'disabled'}>Buy</button></div>`; }).join('')}</div>`;
+  body.querySelectorAll('[data-hexname]').forEach(el => { const a = auraKey(HEX_SHOP[+el.dataset.hexname].aura); paintName(el, a.name, a, 'oc-row-aura'); });
+  body.querySelectorAll('[data-hex]').forEach(b => b.onclick = () => {
+    const o = HEX_SHOP[+b.dataset.hex], a = auraKey(o.aura);
+    if (s.coins < o.coins || s.tokens < (o.tokens || 0)) return;
+    s.coins -= o.coins; s.tokens -= o.tokens || 0; s.auras[a.key] = auraCount(a.key) + 1; s.found[a.aura.id] = true;
+    toast(`Bought ${a.name} from Hex.`, 'gold'); sound('secret'); markDirty(); updateHud(); checkAchievements(); renderHex(body);
+  });
+  body.scrollTop = keep;
+}
 function renderJack(body) {
   if (!isHalloween()) { body.innerHTML = '<p class="oc-empty">Jack only comes out for Halloween.</p>'; return; }
   body.innerHTML = `<p class="oc-intro">Heh heh. Pumpkin Tokens fall all over the island this time of year. Bring them to me.</p>
@@ -2133,23 +2211,34 @@ function renderAchievements(body) {
     <div class="oc-list">${ACHIEVEMENTS.map(a => `<div class="oc-quest${got[a.id] ? ' got' : ''}"><div class="oc-q-text"><b>${esc(a.name)}${a.title ? ` <small class="oc-titletag">Title: ${esc(a.title)}</small>` : ''}</b><span>${esc(a.desc)}</span><span>Reward: ${esc(rewardText(a.reward))}</span></div><span class="oc-q-state ${got[a.id] ? 'ok' : ''}">${got[a.id] ? 'Done' : 'Locked'}</span></div>`).join('')}</div>`;
 }
 function renderPass(body) {
+  const keep = body.scrollTop, keepX = (body.querySelector('.oc-pass') || {}).scrollLeft || 0;
   const lv = passLevel(), prem = API().premium(), P = G.save.pass;
+  const open = PASS_REWARDS.filter(r => lv.level >= r.level && (!P.free.includes(r.level) || (prem && !P.prem.includes(r.level)))).length;
   const rewardText = r => [r.coins ? `$ ${fmt(r.coins)}` : '', r.void ? `${r.void} Void` : '', ...Object.entries(r.potions || {}).map(([id, n]) => `${n} ${POTION[id].name}`), ...(r.gears || []).map(id => GEAR[id].name + ' (gear)')].filter(Boolean).join(', ');
   body.innerHTML = `<div class="oc-pass-head"><b>${esc(SEASON.name)}</b><span>Level ${lv.level}/${SEASON.levels}</span></div>
     <div class="oc-bar big"><i style="width:${lv.need ? Math.round(lv.xp / lv.need * 100) : 100}%"></i><em>${lv.need ? `${fmt(lv.xp)} / ${fmt(lv.need)} XP` : 'Max level'}</em></div>
-    <p class="oc-empty">XP comes from rolling, fishing, picking things up, quests, secrets, achievements and raids. The second row is for Frixion Premium.</p>
+    <div class="oc-pass-tools"><p class="oc-empty">XP comes from rolling, fishing, picking things up, quests, secrets, achievements and raids. The second row is for Frixion Premium.</p><button type="button" class="oc-btn ok" data-claimall ${open ? '' : 'disabled'}>Claim all${open ? ` (${open})` : ''}</button></div>
     <div class="oc-pass">${PASS_REWARDS.map(r => {
       const reached = lv.level >= r.level, gotF = P.free.includes(r.level), gotP = P.prem.includes(r.level);
       return `<div class="oc-pass-lv${reached ? ' reached' : ''}"><b>${r.level}</b>
         <div class="oc-pass-cell">${esc(rewardText(r.free))}<button type="button" class="oc-btn sm ok" data-pf="${r.level}" ${reached && !gotF ? '' : 'disabled'}>${gotF ? 'Claimed' : 'Claim'}</button></div>
         <div class="oc-pass-cell prem">${esc(rewardText(r.prem))}<button type="button" class="oc-btn sm" data-pp="${r.level}" ${reached && !gotP && prem ? '' : 'disabled'}>${gotP ? 'Claimed' : prem ? 'Claim' : 'Premium'}</button></div></div>`;
     }).join('')}</div>`;
-  const claim = (row, level) => {
-    const r = PASS_REWARDS[level - 1]; if (!r || passLevel().level < level || P[row].includes(level)) return;
-    if (row === 'prem' && !API().premium()) return;
+  const claim = (row, level, quiet) => {
+    const r = PASS_REWARDS[level - 1]; if (!r || passLevel().level < level || P[row].includes(level)) return false;
+    if (row === 'prem' && !API().premium()) return false;
     P[row].push(level);
-    toast(`Season Pass level ${level}: ` + giveReward(row === 'free' ? r.free : r.prem), 'gold'); sound('secret'); renderPass(body);
+    const got = giveReward(row === 'free' ? r.free : r.prem);
+    if (!quiet) { toast(`Season Pass level ${level}: ` + got, 'gold'); sound('secret'); markDirty(); renderPass(body); }
+    return true;
   };
+  body.querySelector('[data-claimall]').onclick = () => {
+    let n = 0;
+    for (const r of PASS_REWARDS) { if (claim('free', r.level, true)) n++; if (prem && claim('prem', r.level, true)) n++; }
+    if (n) { toast(`Season Pass: claimed ${n} reward${n > 1 ? 's' : ''}.`, 'gold'); sound('secret'); markDirty(); }
+    renderPass(body);
+  };
+  body.scrollTop = keep; body.querySelector('.oc-pass').scrollLeft = keepX;
   body.querySelectorAll('[data-pf]').forEach(b => b.onclick = () => claim('free', +b.dataset.pf));
   body.querySelectorAll('[data-pp]').forEach(b => b.onclick = () => claim('prem', +b.dataset.pp));
 }
@@ -2331,7 +2420,9 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
       if (!G || G.panel !== 'admin') return;
       if (!found) { card.innerHTML = `<p class="oc-empty">Nobody called ${esc(q)} has Overcontrol RNG data.</p>`; return; }
       const d = found.data, best = auraKey(d.best || 'common');
-      card.innerHTML = `<b>${esc(d.name || found.id)}</b><span>${fmt(d.rolls || 0)} rolls  |  rarest: ${esc(best.name)}  |  ${Object.keys(d.auras || {}).length} kinds of aura</span><button type="button" class="oc-adm-btn bad" data-wipe>Wipe ALL data</button>`;
+      card.innerHTML = `<b>${esc(d.name || found.id)}</b><span>${fmt(d.rolls || 0)} rolls  |  rarest: ${esc(best.name)}  |  ${Object.keys(d.auras || {}).length} kinds of aura</span><div class="oc-adm-find"><input type="number" min="0" data-rolls value="${d.rolls || 0}"><button type="button" class="oc-adm-btn ok" data-setrolls>Set rolls</button></div><button type="button" class="oc-adm-btn bad" data-wipe>Wipe ALL data</button>`;
+      const ri = card.querySelector('[data-rolls]'); ri.onkeydown = e => e.stopPropagation();
+      card.querySelector('[data-setrolls]').onclick = () => setRolls(found.id, d.name || found.id, Math.max(0, Math.floor(+ri.value || 0)));
       let armed = 0;
       card.querySelector('[data-wipe]').onclick = e => {
         const b = e.currentTarget;
@@ -2359,6 +2450,12 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
     body.querySelectorAll('.oc-codeform input').forEach(i => { i.onkeydown = e => e.stopPropagation(); });
     loadCodes(body);
   }
+}
+// Put a player's roll count back (or change it). Your own changes at once; someone playing right now sees it after
+// they rejoin.
+async function setRolls(id, name, n) {
+  if (id === G.me.uid) { G.save.rolls = n; markDirty(); saveNow(); renderPlayers(); toast(`Your rolls are ${fmt(n)} now.`, 'gold'); return; }
+  try { await API().db.collection('rngSaves').doc(id).update({ rolls: n }); toast(`${name} has ${fmt(n)} rolls now. If they are playing, they see it after rejoining.`, 'gold'); } catch (e) { toast('Could not change their rolls.', 'warn'); }
 }
 // A save by username, or by the name it was saved under.
 async function findSave(q) {

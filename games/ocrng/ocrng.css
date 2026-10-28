@@ -679,3 +679,53 @@ body.ocrng-open { overflow: hidden; }
   .oc-hearts { left: auto; right: 218px; transform: none; top: 52px; }
 }
 @media (max-height: 520px) { #ocrng.oc-touch .oc-br .oc-buffs { right: 6px; bottom: 194px; width: 232px; } }
+
+/* ---------- 2.4 ---------- */
+/* the main buttons: bigger, down the middle of the left side like Sol's, with a word under each picture */
+.oc-menu { top: max(236px, calc(50% - 150px)); bottom: auto; transform: none; gap: 8px; }
+.oc-menu > .oc-sq { width: 64px; height: 64px; flex-direction: column; gap: 3px; }
+.oc-menu > .oc-sq .ic { width: 28px; height: 28px; }
+.oc-menu > .oc-sq[data-label]::after { content: attr(data-label); font-size: 10.5px; font-weight: 700; letter-spacing: .02em; line-height: 1; }
+.oc-more { left: 74px; top: auto; bottom: 0; }
+.oc-roll { width: 230px; height: 76px; }
+.oc-roll b { font-size: 36px !important; }
+.oc-toggle { width: 118px; height: 52px; }
+.oc-topleft .oc-sq { width: 44px; height: 44px; }
+/* how many: - [ 1 ] + Max */
+.oc-amt { display: flex; align-items: stretch; gap: 4px; margin-top: 6px; }
+.oc-amt button { min-width: 32px; height: 32px; padding: 0 8px !important; border: 1px solid var(--line-dim) !important; background: rgba(255, 255, 255, .06) !important; font-weight: 800; }
+.oc-amt button:hover { background: rgba(255, 255, 255, .14) !important; }
+.oc-amt input { width: 0; flex: 1; min-width: 44px; height: 32px; padding: 0 6px; border: 1px solid var(--line-dim); background: rgba(0, 0, 0, .45); text-align: center; font-weight: 700; outline: none; -moz-appearance: textfield; }
+.oc-amt input::-webkit-outer-spin-button, .oc-amt input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* are you sure? */
+.oc-confirm { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, .55); }
+.oc-confirm-card { width: min(360px, 90%); padding: 16px 18px; border: 1.5px solid var(--line); background: var(--panel); text-align: center; animation: ocPop .14s ease; }
+.oc-confirm-card p { margin: 0 0 14px; font-size: 14px; font-weight: 700; line-height: 1.4; }
+.oc-confirm-card div { display: flex; gap: 8px; justify-content: center; }
+.oc-confirm-card .oc-btn { min-width: 110px; }
+/* the Special tab: auras you don't have yet are dimmed */
+.oc-tile.dim { opacity: .42; }
+.oc-tile.dim:hover { opacity: .7; }
+/* the Season Pass: claim all */
+.oc-pass-tools { display: flex; align-items: center; gap: 12px; }
+.oc-pass-tools p { flex: 1; margin: 0; }
+/* Hex's aura names */
+.oc-row-aura { font-size: 15px; font-weight: 800; text-shadow: 0 1px 2px #000, 0 0 8px currentColor; }
+.oc-row-aura.gold, .oc-row-aura.violet, .oc-row-aura.rainbow, .oc-row-aura.bw { -webkit-background-clip: text; background-clip: text; color: transparent !important; text-shadow: none; }
+.oc-row-aura.gold { background-image: linear-gradient(180deg, #fff6c2, #ffcc33 55%, #e08a00); }
+.oc-row-aura.violet { background-image: linear-gradient(180deg, #f1e8ff, #a77bff 60%, #6a3fd6); }
+.oc-row-aura.rainbow { background-image: linear-gradient(90deg, #ff5252, #ffd740, #69f0ae, #40c4ff, #b388ff, #ff4081); }
+.oc-row-aura.bw { background-image: linear-gradient(90deg, #fff 0%, #fff 49.5%, #555 50.5%, #555 100%); }
+@media (max-height: 520px) {
+  .oc-menu { top: 48px; transform: none; gap: 4px; }
+  .oc-menu > .oc-sq { width: 46px; height: 46px; gap: 1px; }
+  .oc-menu > .oc-sq .ic { width: 20px; height: 20px; }
+  .oc-menu > .oc-sq[data-label]::after { font-size: 8.5px; }
+  .oc-more { left: 54px; top: 0; bottom: auto; }
+  .oc-roll { width: 190px; height: 62px; }
+  .oc-roll b { font-size: 28px !important; }
+  .oc-toggle { width: 96px; height: 44px; }
+  .oc-topleft .oc-sq { width: 34px; height: 34px; }
+  .oc-pass-tools { flex-direction: column; align-items: stretch; gap: 6px; }
+}
+@media (max-height: 520px) { .oc-menu > .oc-sq { width: 44px; height: 42px; } .oc-menu { gap: 3px; } }

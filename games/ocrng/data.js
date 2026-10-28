@@ -162,6 +162,10 @@ export const AURAS = [
   // One aura, like Sol's: 『EQUINOX』, the Equilibrium Incarnate. A white sun and a black sun in balance.
   // only from beating ____X____: be his top damager, never die, and do at least 250 damage
   A('xboss', '____X____', 999999999, '#b388ff', [{ t: 'weapons' }, L.spiral('#9c6bff', { n: 36 }), L.motes('#b388ff', 26), L.motes('#ffffff', 14), L.ring('#7c4dff', { r: 3.2, runes: 1 })], { boss: true }, { violet: 1 }),
+  // rarer than 『EQUINOX』, and enormous
+  A('abyssalcrown', '『ABYSSAL CROWN』', 4444444444, '#9c6bff', [L.wings('#12001f', { big: 1, many: 1, S: 2.6, dark: 1 }), L.halo('#b388ff', { r: 1.1, S: 2.2 }), L.ring('#7c4dff', { r: 4, runes: 1, S: 2.6 }), L.pillar('#4a148c', { tall: 1, S: 1.5 }), L.orbit('#d1c4e9', 6, { r: 3, size: 0.35, S: 2 }), L.motes('#000000', 60, { dark: 1, S: 2.4 }), L.motes('#b388ff', 50, { S: 2.4 })], null, { violet: 1 }, { sub: 'The Throne Beneath' }),
+  A('celestialthrone', '『CELESTIAL THRONE』', 7777777777, '#ffe082', [L.wings('#fff8e1', { big: 1, many: 1, S: 3 }), L.halo('#ffd54f', { r: 1.2, S: 2.4 }), L.ring('#ffe082', { r: 4.5, rays: 1, S: 2.8 }), L.pillar('#fff59d', { tall: 1, S: 2 }), L.sparkle('#fffde7', { n: 70, S: 2.6 }), L.crystals('#ffecb3', 8, { S: 2.2 })], null, { gold: 1 }, { sub: 'Seated Above the Sky' }),
+  A('eternity', '『ETERNITY』', 12000000000, '#ffffff', [L.rainbow({ S: 3 }), L.ring('#ffffff', { r: 5, runes: 1, rays: 1, S: 3 }), L.wings('#e1f5fe', { big: 1, many: 1, S: 3.2 }), L.halo('#ffffff', { r: 1.3, S: 2.6 }), L.orbit('#80deea', 8, { r: 3.4, size: 0.4, S: 2.4 }), L.pillar('#ffffff', { tall: 1, S: 2.2 }), L.spiral('#b388ff', { n: 80, S: 2.4 })], null, { rainbow: 1 }, { sub: 'Beyond Every Ending' }),
   A('equinox', '『EQUINOX』', 2500000000, '#ffffff', [L.yinyang({ r: 3.4, huge: 1 }), L.ring('#ffffff', { r: 3.8, half: 1, runes: 1 }), L.motes('#ffffff', 30), L.motes('#000000', 30, { dark: 1 })], null, { bw: 1 }, { sub: 'Equilibrium Incarnate', float: true }),
 ];
 // Gem auras: the Jewelry Potion makes these more likely.
@@ -208,6 +212,8 @@ export const WEATHERS = {
   limbo: { id: 'limbo', name: 'Limbo', color: '#e0e0e0', bt: 1, hidden: true, desc: 'Between places.' },
 };
 // The Halloween event: from October 15 to November 10, every year.
+// limited (event) and boss auras: the Special tab in Aura Storage
+export const isSpecial = a => !!(a.only && (a.only.boss || a.only.weather === 'halloween' || HALLOWEEN_BIOMES.includes(a.only.weather)));
 export const isHalloween = (now = Date.now()) => { const d = new Date(now), m = d.getUTCMonth(), day = d.getUTCDate(); return (m === 9 && day >= 15) || (m === 10 && day <= 10); };
 export const HALLOWEEN_BIOMES = ['pumpkinmoon', 'graveyard', 'bloodrain'];
 
@@ -286,12 +292,12 @@ for (const [el, ids] of Object.entries({
   fire: 'rage ember solaris eclipse bloodlust diaboli hades bleeding velvet lantern pumpking bloodmoon',
   ice: 'glacier frostbite blizzard crystallized quartz',
   storm: 'stormal tempest static magnetic',
-  light: 'divinus aether seraphim celestial archangel dawnbreaker genesis gilded solar sovereign',
+  light: 'divinus aether seraphim celestial archangel dawnbreaker genesis gilded solar sovereign celestialthrone',
   dark: 'ink raven spectre phantom lostsoul requiem forbidden undead lunar twilight wraith undertaker hallowed',
   nature: 'natural flora uncommon honey jade emerald flutter',
   water: 'aquamarine leviathan sapphire',
-  star: 'starlight sidereum comet galaxy nebula astral aurora starscourge overseer singularity',
-  void: 'nullified overcontrol limbo unknown',
+  star: 'starlight sidereum comet galaxy nebula astral aurora starscourge overseer singularity eternity',
+  void: 'nullified overcontrol limbo unknown abyssalcrown',
   gem: 'topaz ruby precious kyawthuite prism jackpot exotic chromatic rare good common',
   wind: 'wind gale echo',
   earth: 'mirage pharaoh hazard',
@@ -301,7 +307,7 @@ for (const [el, ids] of Object.entries({
   warrior: 'xboss',
 })) ids.split(' ').forEach(id => { ELEMENT_OF[id] = el; });
 export const elementOf = id => ELEMENT_OF[id] || 'arcane';
-const HAS_F = new Set('wind gale magnetic static comet phantom tempest leviathan aurora dawnbreaker starscourge singularity overcontrol genesis archangel seraphim aether paradox fault monarch pharaoh astral equinox hallowed unknown wraith'.split(' '));
+const HAS_F = new Set('abyssalcrown celestialthrone eternity wind gale magnetic static comet phantom tempest leviathan aurora dawnbreaker starscourge singularity overcontrol genesis archangel seraphim aether paradox fault monarch pharaoh astral equinox hallowed unknown wraith'.split(' '));
 // The moves an aura gives you: [{ key: 'z', kind, name, cd, dmg, ... }]
 export function movesFor(key) {
   const { aura, mut } = auraKey(key);
@@ -666,6 +672,11 @@ export const PASS_REWARDS = Array.from({ length: 30 }, (_, i) => {
 });
 
 // ---------------- Jack the Pumpkin (Halloween): trades Pumpkin Tokens ----------------
+// Hex sells Halloween auras for coins (and the rarest also wants Pumpkin Tokens), only during the Halloween event.
+export const HEX_SHOP = [
+  { aura: 'lantern', coins: 60000 }, { aura: 'wraith', coins: 250000 }, { aura: 'undertaker', coins: 600000 },
+  { aura: 'bloodmoon', coins: 1500000 }, { aura: 'pumpking', coins: 4000000 }, { aura: 'hallowed', coins: 30000000, tokens: 300 },
+];
 export const JACK_SHOP = [
   { kind: 'potion', id: 'candy', tokens: 6 },
   { kind: 'potion', id: 'pumpking', tokens: 90 },
@@ -692,6 +703,7 @@ export const RAID = { id: 'crawler', name: 'The Crawler', hpPer: 2500, hpMin: 60
 
 // ---------------- aura lore, shown in the Collection ----------------
 const LORE = {
+  abyssalcrown: 'A crown that was never meant to be worn, from a throne under everything.', celestialthrone: 'Someone has to sit above the sky. Today it is you.', eternity: 'It started before the first roll and it will still be here after the last.', xboss: 'Most damage, no deaths. The Totem did not save him from you.',
   common: 'Where every story starts.', uncommon: 'A little greener than the rest.', good: 'Good enough.', rare: 'Rare, they say. You will see a lot of it.',
   divinus: 'A small blessing from somewhere above.', crystallized: 'Light, frozen in place.', rage: 'It burns hot and fast.', ruby: 'Red, deep and precious.',
   forbidden: 'Some things were left alone for a reason.', gilded: 'Everything it touches looks expensive.', jackpot: 'Seven, seven, seven.', wind: 'It never stays in one place.',

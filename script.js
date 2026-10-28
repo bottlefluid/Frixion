@@ -455,6 +455,21 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.41', date: '2026-10-28', title: 'Overcontrol RNG 2.4: saves you can trust, Hex the Halloween merchant, and auras bigger than Equinox',
+    notes: [
+      'Your progress can no longer go backwards. Opening Overcontrol RNG in a second window or tab now closes the first one after it saves, so two copies can never save over each other. A save that fails to load is never written over.',
+      'Potions pause while you are away, like Sol\'s: they keep the time they had left instead of running out while you are offline.',
+      'Quick Roll really is quick: what you rolled no longer pops up (cutscenes for very rare auras still play).',
+      'Choose how many potions to use, and delete potions or remove auras by the amount, with a confirmation first.',
+      'Season Pass: Claim all, a reward can only ever be claimed once, and the pass stays where you scrolled after claiming.',
+      'Hex sells Halloween auras at the graveyard during the Halloween event: Jack-o\'-Lantern, Wraith, Undertaker, Blood Moon, PUMP KING and 『HALLOWED』.',
+      'Aura Storage has a Special tab for limited and boss auras, like 『HALLOWED』 and ____X____.',
+      '『HALLOWED』 can be equipped again (its info panel crashed), and its black wings show now.',
+      'Three auras rarer than 『EQUINOX』, and enormous: 『ABYSSAL CROWN』 (1 in 4.4 billion), 『CELESTIAL THRONE』 (1 in 7.8 billion) and 『ETERNITY』 (1 in 12 billion).',
+      'Bigger buttons in the same places as Sol\'s: Auras, Index, Items, Quests and Menu down the left side with their names, and a bigger Roll button.',
+      'X and team null wear their armour like Minecraft: the helmet, chestplate, sleeves and boots stick out from a black body, with the face and forearms showing black.',
+      'The Owner can set a player\'s roll count in Admin, Players, to put back lost progress.',
+    ] },
   { v: '4.40', date: '2026-10-27', title: 'Overcontrol RNG 2.3: the ____X____ raid, a faster game, and titles like Sol\'s',
     notes: [
       'Overcontrol RNG runs much faster. The island used to cost about 1,700 draw calls every frame and now costs about 260, and slow computers and phones lower the resolution on their own until it runs smoothly.',
@@ -15688,7 +15703,7 @@ function openOcrng() {
       return true;
     }),
   };
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=7');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=8');
   ocrngModule.then(m => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);

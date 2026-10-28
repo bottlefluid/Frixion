@@ -518,6 +518,8 @@ export function createWorld(scene, quality) {
   [[-14, 16], [14, 16], [-14, -16], [14, -16], [-6, 18], [6, 18]].forEach(([x, z], i) => pumpkin(x, 1, z, 1.1, i < 4 ? Math.atan2(-x, -z) : 0));
   [[-40, 66], [-52, 66], [-35, 80], [-58, 80], [JKX - 6, JKZ + 4], [JKX + 6, JKZ + 4], [ARENA.x, ARENA.z + 20], [-94, -4]].forEach(([x, z]) => pumpkin(x, 0, z, 0.9, Math.random() * 6));
   const jack = npc('Jack', 'Pumpkin Tokens', '#3e2723', '#ff9800', 'pumpkin'); jack.root.position.set(-33, 0, 70); jack.root.rotation.y = -Math.PI / 2; spooky.add(jack.root);
+  // Hex, the Halloween merchant: Halloween auras, only while the event is on
+  const hex = npc('Hex', 'Halloween Auras', '#1a0f24', '#b14dff', 'pumpkin'); hex.root.position.set(-33, 0, 62); hex.root.rotation.y = -Math.PI / 2; spooky.add(hex.root);
 
   // ---- secrets ----
   const duckAt = (x, y, z, s = 1) => {
@@ -685,7 +687,7 @@ export function createWorld(scene, quality) {
   let glitchT = 0;
 
   bakeStatic(root);
-  const npcs = { mari, jester, finn, marlin, nova, stella, ghost, jake, jack };
+  const npcs = { mari, jester, finn, marlin, nova, stella, ghost, jake, jack, hex };
   return {
     root, colliders, bounds: B,
     spawn: new THREE.Vector3(0, 1, 6),
@@ -714,6 +716,7 @@ export function createWorld(scene, quality) {
       obby: { pos: new THREE.Vector3(FX, FY, FZ), r: 3.4, auto: true },
       jake: { pos: new THREE.Vector3(JKX, 0.6, JKZ + 3), r: 5, label: 'Talk to Jake' },
       jack: { pos: new THREE.Vector3(-35, 0, 70), r: 4.5, label: 'Talk to Jack' },
+      hex: { pos: new THREE.Vector3(-35, 0, 62), r: 4.5, label: 'Talk to Hex' },
       towerdoor: { pos: new THREE.Vector3(TX - 4.2, 0, TZ), r: 2.6, label: 'Open the little door' },
       jukebox: { pos: new THREE.Vector3(JBX, 1, JBZ - 6), r: 3.5, label: 'Use the jukebox' },
       jukebox_exit: { pos: new THREE.Vector3(JBX, 1, JBZ + 9), r: 2.6, auto: true },

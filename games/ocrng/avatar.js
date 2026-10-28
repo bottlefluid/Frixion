@@ -284,7 +284,7 @@ export class AuraFX {
     }
   }
   add(L) {
-    const g = this.group, push = (obj, update) => { g.add(obj); this.parts.push({ obj, update }); };
+    const g = this.group, push = (obj, update) => { if (L.S) obj.scale.multiplyScalar(L.S); g.add(obj); this.parts.push({ obj, update }); };
     if (EXTRA_LAYERS[L.t]) { const x = EXTRA_LAYERS[L.t](L); push(x.obj, x.update); return; }
     if (['motes', 'flames', 'fall', 'sparkle', 'spiral', 'rainbow'].includes(L.t)) {
       const d = new Dots(L, L.t); push(d.obj, (dt, t) => d.update(dt, t)); return;
@@ -357,7 +357,8 @@ export class AuraFX {
       const grp = new THREE.Group(); grp.position.set(0, 3.4, -0.65);
       const sc = L.big ? 1.7 : 1.15, pairs = L.many ? 2 : 1, wings = [];
       for (let p = 0; p < pairs; p++) for (const side of [-1, 1]) {
-        const m = new THREE.Mesh(new THREE.PlaneGeometry(2.2 * sc, 4.4 * sc), new THREE.MeshBasicMaterial({ map: wingTex(), color: L.c, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+        const dk = L.dark || (c => c.r * 0.3 + c.g * 0.59 + c.b * 0.11 < 0.2)(new THREE.Color(L.c));
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(2.2 * sc, 4.4 * sc), new THREE.MeshBasicMaterial({ map: wingTex(), color: L.c, transparent: true, opacity: dk ? 0.92 : 1, depthWrite: false, blending: blend(dk), side: THREE.DoubleSide }));
         const pivot = new THREE.Group(); m.position.set(side * 1.1 * sc, 0.4 * sc - p * 1.4, 0); m.scale.x = side; pivot.add(m); grp.add(pivot);
         wings.push({ pivot, side, p });
       }

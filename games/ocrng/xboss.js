@@ -14,64 +14,65 @@ const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 function pixTex(w, h, paint) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d');
-  paint((x, y, col) => { g.fillStyle = col; g.fillRect(x, y, 1, 1); }, w, h, g);
+  paint((x, y, col) => { if (col) { g.fillStyle = col; g.fillRect(x, y, 1, 1); } else g.clearRect(x, y, 1, 1); }, w, h, g);
   const t = new THREE.CanvasTexture(c);
   t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
 const NETH = ['#2f2b2f', '#383338', '#433d43', '#2a262a', '#4c464c', '#352f36', '#3d3740'];
+const NETH_LIGHT = ['#4f4a50', '#5a555b', '#625d63', '#4a454b', '#57525a'];
 const pickN = () => NETH[Math.floor(rnd() * NETH.length)];
-const SKIN = ['#000000', '#040404', '#070707'];   // ____X____ and team null are black all over under the armour
-const skin = () => SKIN[Math.floor(rnd() * SKIN.length)];
+const pickL = () => NETH_LIGHT[Math.floor(rnd() * NETH_LIGHT.length)];
 
-// The armour, pixel for pixel like the pictures: netherite, and on the chestplate a square spiral on the outside and the
-// back of each shoulder, a band all round the arm at the elbow, a collar and a bracket down each side of the chest, and
-// a wave across the lower back. The helmet has a pale ridge down the middle over a black face; the boots have dark
-// spirals. Everyone wears the same trims; only the chestplate's colour changes (white for X, red for the general).
-// Each part's six faces come in three.js box order: +x, -x, +y, -y, +z (front), -z (back). The figure faces +z, so its
-// right arm and leg are on the -x side.
+// The armour, like the pictures. As in Minecraft it is a shell one pixel bigger all round than the black body under
+// it, so the helmet and shoulders stand out, and where it has holes (the face, the forearms) the black body shows
+// through. On the chestplate: a square spiral on the outside and the back of each shoulder, a band all round the arm
+// at the elbow, a collar and a bracket down each side of the chest, a wave across the lower back. The helmet has a pale
+// ridge down the middle; the boots have dark spirals. Everyone wears the same trims; only the chestplate's colour
+// changes (white for X, red for the general, dark for the soldiers).
+// Faces come in three.js box order: +x, -x, +y, -y, +z (front), -z (back). The figure faces +z, so its right arm and
+// leg are on the -x side. null in a face means a hole.
 function armourSet(chestTrim) {
   const CT = chestTrim || '#57515a', CT2 = shade(CT, -0.2);
-  const HS = '#8f898f', HS2 = '#7a747b';            // the helmet's ridge
-  const BT = '#5f595f', BT2 = '#514b51';            // the boots' spirals
+  const HS = '#8f898f', HS2 = '#7a747b', BT = '#5f595f', BT2 = '#514b51';
   const tex = (w, h, paint) => {
-    const bare = new Set();
+    const holes = new Set();
     const map = pixTex(w, h, set => {
-      const put = (x, y, c) => { set(x, y, c); if (SKIN.includes(c)) bare.add(x + ',' + y); else bare.delete(x + ',' + y); };
-      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) put(x, y, pickN());
+      const put = (x, y, c) => { set(x, y, c); if (c) holes.delete(x + ',' + y); else holes.add(x + ',' + y); };
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) put(x, y, (x === 0 || y === 0 || x === w - 1 || y === h - 1) && rnd() < 0.5 ? '#262226' : pickN());
       if (paint) paint(put);
     });
-    const mask = pixTex(w, h, set => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) set(x, y, bare.has(x + ',' + y) ? '#000000' : '#ffffff'); });
+    const mask = pixTex(w, h, set => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) set(x, y, holes.has(x + ',' + y) ? '#000000' : '#ffffff'); });
     return { map, mask };
   };
   const fill = (set, x0, y0, x1, y1, c) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, typeof c === 'function' ? c() : c); };
   const T = (set, pts, a = CT, b = CT2) => pts.forEach(([x, y]) => set(x, y, (x * 7 + y * 3) % 5 ? a : b));
   const ridge = (set, rows) => { for (let y = 0; y < rows; y++) { set(3, y, y % 2 ? HS2 : HS); set(4, y, y % 2 ? HS : HS2); } };
-  const head = [
-    tex(8, 8), tex(8, 8),
-    tex(8, 8, set => ridge(set, 8)),
-    tex(8, 8, set => fill(set, 0, 0, 7, 7, skin)),
-    tex(8, 8, set => { fill(set, 1, 3, 6, 7, skin); ridge(set, 6); }),   // the face: black, split at the top by the ridge
+  const helmet = [
+    tex(8, 8), tex(8, 8), tex(8, 8, set => ridge(set, 8)), tex(8, 8, set => fill(set, 0, 0, 7, 7, null)),
+    tex(8, 8, set => { fill(set, 1, 3, 6, 7, null); ridge(set, 6); }),   // the face opening, split at the top by the ridge
     tex(8, 8, set => ridge(set, 4)),
   ];
-  const body = [
-    tex(4, 12), tex(4, 12), tex(8, 4), tex(8, 4, set => fill(set, 0, 0, 7, 3, skin)),
-    tex(8, 12, set => T(set, [[0, 2], [1, 2], [2, 3], [7, 2], [6, 2], [5, 3], [1, 4], [2, 4], [1, 5], [1, 6], [1, 7], [1, 8], [0, 8], [5, 4], [6, 4], [6, 5], [6, 6], [6, 7], [6, 8], [7, 8]])),
-    tex(8, 12, set => T(set, [[2, 7], [3, 7], [4, 7], [5, 7], [0, 8], [2, 8], [5, 8], [7, 8], [1, 9], [2, 9], [5, 9], [6, 9]])),
+  const chest = [
+    tex(4, 12), tex(4, 12), tex(8, 4), tex(8, 4),
+    tex(8, 12, set => { fill(set, 2, 3, 5, 9, pickL); T(set, [[0, 2], [1, 2], [2, 3], [7, 2], [6, 2], [5, 3], [1, 4], [2, 4], [1, 5], [1, 6], [1, 7], [1, 8], [0, 8], [5, 4], [6, 4], [6, 5], [6, 6], [6, 7], [6, 8], [7, 8]]); }),
+    tex(8, 12, set => { fill(set, 2, 2, 5, 6, pickL); T(set, [[2, 7], [3, 7], [4, 7], [5, 7], [0, 8], [2, 8], [5, 8], [7, 8], [1, 9], [2, 9], [5, 9], [6, 9]]); }),
   ];
-  // an arm: netherite to the elbow with the band, then the black arm
+  // the shoulder pieces: armour down to the elbow (with the band), then a hole for the black forearm
   const SPIRAL = [[0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [3, 2], [0, 3], [2, 3], [3, 3]], BAND = [[0, 4], [1, 4], [2, 4], [3, 4]];
-  const armFace = (spiral, flip) => tex(4, 12, set => { fill(set, 0, 7, 3, 11, skin); T(set, BAND); if (spiral) T(set, flip ? SPIRAL.map(([x, y]) => [3 - x, y]) : SPIRAL); });
-  const armTop = tex(4, 4), armEnd = tex(4, 4, set => fill(set, 0, 0, 3, 3, skin));
-  const armR = [armFace(false), armFace(true, true), armTop, armEnd, armFace(false), armFace(true)];
-  const armL = [armFace(true), armFace(false), armTop, armEnd, armFace(false), armFace(true, true)];
-  // a leg: leggings, then a boot with a dark spiral on the front and the outside
+  const sleeve = (spiral, flip) => tex(4, 12, set => { fill(set, 0, 7, 3, 11, null); fill(set, 0, 0, 3, 0, pickL); T(set, BAND); if (spiral) T(set, flip ? SPIRAL.map(([x, y]) => [3 - x, y]) : SPIRAL); });
+  const sTop = tex(4, 4, set => fill(set, 0, 0, 3, 3, pickL)), sEnd = tex(4, 4, set => fill(set, 0, 0, 3, 3, null));
+  const armR = [sleeve(false), sleeve(true, true), sTop, sEnd, sleeve(false), sleeve(true)];
+  const armL = [sleeve(true), sleeve(false), sTop, sEnd, sleeve(false), sleeve(true, true)];
+  // leggings all the way down (the boots go over them)
+  const legs = () => [tex(4, 12, set => fill(set, 0, 0, 3, 0, '#2b272b')), tex(4, 12, set => fill(set, 0, 0, 3, 0, '#2b272b')), tex(4, 4), tex(4, 4, set => fill(set, 0, 0, 3, 3, null)), tex(4, 12, set => fill(set, 0, 0, 3, 0, '#2b272b')), tex(4, 12, set => fill(set, 0, 0, 3, 0, '#2b272b'))];
+  // the boots: only the bottom of the leg, with a dark spiral on the front and the outside
   const BOOT = [[1, 8], [2, 8], [3, 8], [1, 9], [1, 10], [3, 10], [1, 11], [2, 11], [3, 11]];
-  const legFace = (spiral, flip) => tex(4, 12, set => { fill(set, 0, 7, 3, 7, '#232023'); fill(set, 0, 0, 3, 0, '#2b272b'); if (spiral) T(set, flip ? BOOT.map(([x, y]) => [3 - x, y]) : BOOT, BT, BT2); });
-  const legTop = tex(4, 4), sole = tex(4, 4, set => fill(set, 0, 0, 3, 3, '#1d1a1d'));
-  const legR = [legFace(false), legFace(true, true), legTop, sole, legFace(true), legFace(false)];
-  const legL = [legFace(true), legFace(false), legTop, sole, legFace(true, true), legFace(false)];
-  return { head, body, armR, armL, legR, legL };
+  const boot = (spiral, flip) => tex(4, 12, set => { fill(set, 0, 0, 3, 6, null); fill(set, 0, 7, 3, 7, '#232023'); if (spiral) T(set, flip ? BOOT.map(([x, y]) => [3 - x, y]) : BOOT, BT, BT2); });
+  const bTop = tex(4, 4, set => fill(set, 0, 0, 3, 3, null)), sole = tex(4, 4, set => fill(set, 0, 0, 3, 3, '#1d1a1d'));
+  const bootR = [boot(false), boot(true, true), bTop, sole, boot(true), boot(false)];
+  const bootL = [boot(true), boot(false), bTop, sole, boot(true, true), boot(false)];
+  return { helmet, chest, armR, armL, legR: legs(), legL: legs(), bootR, bootL };
 }
 function shade(hex, k) { const c = new THREE.Color(hex); if (k < 0) c.multiplyScalar(1 + k); else c.lerp(new THREE.Color('#ffffff'), k); return '#' + c.getHexString(); }
 
@@ -189,17 +190,24 @@ export function mcTag(text, color = '#ffffff') {
 // opts: { trim, name, nameColor, scale }. pose() is called every frame with what they are doing.
 export function createMcPerson(scene, opts = {}) {
   const root = new THREE.Group(); scene.add(root);
-  const set = armourSet(opts.trim), mats = {};
-  const glints = {};
-  for (const k in set) { mats[k] = set[k].map(t => new THREE.MeshLambertMaterial({ map: t.map })); glints[k] = set[k].map(t => new THREE.MeshBasicMaterial({ map: glintTex(), alphaMap: t.mask, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false })); }
+  const set = armourSet(opts.trim), mats = {}, glints = {};
+  for (const k in set) { mats[k] = set[k].map(t => new THREE.MeshLambertMaterial({ map: t.map, alphaTest: 0.5 })); glints[k] = set[k].map(t => new THREE.MeshBasicMaterial({ map: glintTex(), alphaMap: t.mask, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false })); }
+  const skinMat = new THREE.MeshLambertMaterial({ color: '#050505' });   // black all over under the armour
   const all = [];
-  const part = (k, w, h, d) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w * PX, h * PX, d * PX), mats[k]); m.castShadow = true; const gl = new THREE.Mesh(m.geometry, glints[k]); gl.scale.setScalar(1.015); m.add(gl); all.push(m); return m; };
+  const box = (w, h, d, m) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w * PX, h * PX, d * PX), m); b.castShadow = true; all.push(b); return b; };
+  // a black body part with an armour piece around it, `grow` pixels bigger on every side
+  const part = (parent, w, h, d, y, pieces) => {
+    const s = box(w, h, d, skinMat); s.position.y = y * PX; parent.add(s);
+    for (const [k, grow] of pieces) { const a = box(w + grow * 2, h + grow * 2, d + grow * 2, mats[k]); const gl = new THREE.Mesh(a.geometry, glints[k]); gl.scale.setScalar(1.01); a.add(gl); a.position.y = y * PX; parent.add(a); }
+    return s;
+  };
   const body = new THREE.Group(); root.add(body);
-  const torso = part('body', 8, 12, 4); torso.position.y = 18 * PX; body.add(torso);
-  const head = part('head', 8, 8, 8); head.position.y = 4 * PX;
-  const neck = new THREE.Group(); neck.position.y = 24 * PX; neck.add(head); body.add(neck);
-  const limb = (k, x, y) => { const pivot = new THREE.Group(); pivot.position.set(x * PX, y * PX, 0); const m = part(k, 4, 12, 4); m.position.y = -6 * PX; pivot.add(m); body.add(pivot); return pivot; };
-  const armR = limb('armR', -6, 24), armL = limb('armL', 6, 24), legR = limb('legR', -2, 12), legL = limb('legL', 2, 12);
+  part(body, 8, 12, 4, 18, [['chest', 1]]);
+  const neck = new THREE.Group(); neck.position.y = 24 * PX; body.add(neck);
+  const head = part(neck, 8, 8, 8, 4, [['helmet', 1]]);
+  const limb = (x, y, pieces) => { const pivot = new THREE.Group(); pivot.position.set(x * PX, y * PX, 0); part(pivot, 4, 12, 4, -6, pieces); body.add(pivot); return pivot; };
+  const armR = limb(-6, 24, [['armR', 1]]), armL = limb(6, 24, [['armL', 1]]);
+  const legR = limb(-2, 12, [['legR', 0.5], ['bootR', 1]]), legL = limb(2, 12, [['legL', 0.5], ['bootL', 1]]);
   const handR = new THREE.Group(); handR.position.set(0, -10.5 * PX, 1 * PX); armR.add(handR);
   const handL = new THREE.Group(); handL.position.set(0, -10.5 * PX, 1 * PX); armL.add(handL);
   const shield = makeShield(); handL.add(shield);
@@ -222,17 +230,18 @@ export function createMcPerson(scene, opts = {}) {
     held[id].visible = true;
   };
   let walk = 0, clock = 0, hurtUntil = 0, deadT = -1;
-  const tint = c => all.forEach(m => m.material.forEach(x => x.color.set(c)));
+  // the red flash when hit (each material goes back to its own colour afterwards)
+  const tint = on => all.forEach(m => [].concat(m.material).forEach(x => { if (x.userData.base === undefined) x.userData.base = x.color.getHex(); x.color.setHex(on ? 0xff6a6a : x.userData.base); }));
   return {
     root, head, neck, handR, handL, shield, tag,
     hold,
-    hurt() { hurtUntil = clock + 0.35; tint('#ff6a6a'); },
-    die() { if (deadT < 0) { deadT = 0; tint('#ff5a5a'); } },
+    hurt() { hurtUntil = clock + 0.35; tint(true); },
+    die() { if (deadT < 0) { deadT = 0; tint(true); } },
     // p: { speed, act, k (0..1 through the action), lookUp }
     pose(dt, p) {
       clock += dt; walk += dt * Math.min(p.speed || 0, 20) * 0.5;
       const gs = performance.now() / 1000; glintTex().offset.set((gs * 0.09) % 1, (gs * 0.04) % 1);
-      if (hurtUntil && clock > hurtUntil && deadT < 0) { hurtUntil = 0; tint('#ffffff'); }
+      if (hurtUntil && clock > hurtUntil && deadT < 0) { hurtUntil = 0; tint(false); }
       if (deadT >= 0) { deadT += dt; root.rotation.z = -Math.min(1, deadT / 0.5) * Math.PI / 2; return deadT < 1.4; }
       const s = Math.min(1, (p.speed || 0) / 10) * Math.sin(walk);
       legR.rotation.x = s * 0.8; legL.rotation.x = -s * 0.8;
