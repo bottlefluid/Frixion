@@ -267,6 +267,7 @@ function glowSprite(color, scale, dark) {
 }
 
 // Builds every layer for an aura (and its mutation) and moves them each frame.
+export const EXTRA_LAYERS = {};
 export class AuraFX {
   constructor(key, lowDetail) {
     this.group = new THREE.Group();
@@ -284,6 +285,7 @@ export class AuraFX {
   }
   add(L) {
     const g = this.group, push = (obj, update) => { g.add(obj); this.parts.push({ obj, update }); };
+    if (EXTRA_LAYERS[L.t]) { const x = EXTRA_LAYERS[L.t](L); push(x.obj, x.update); return; }
     if (['motes', 'flames', 'fall', 'sparkle', 'spiral', 'rainbow'].includes(L.t)) {
       const d = new Dots(L, L.t); push(d.obj, (dt, t) => d.update(dt, t)); return;
     }

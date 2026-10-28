@@ -7,12 +7,14 @@
 //   ocrng/world          biomes, day or night, the Jester and server luck: from the admin panel, runes and Biome Randomizers.
 //   ocrng/raid           the raid boss everyone is fighting: its health, and when it gave up or died.
 //   ocrng/chat           chat messages (chat.js), each one deleted after 20 seconds.
+//   ocrng/xboss          ____X____: his health (life), what the host game sees him do (s), everyone's damage, team null.
+//   ocrng/wipe/{name}    when the Owner wiped this player's data, so a game they have open stops saving and closes.
 // Everyone leaves the roster automatically when they disconnect.
 export function createNet(rtdb, firebase, uid, on) {
   const ref = p => rtdb.ref('ocrng/' + p);
   const roster = {}, offs = [];
   const myRoster = ref('roster/' + uid), myPos = ref('pos/' + uid);
-  let streaming = false, posOff = null, lastSent = 0, lastKey = '', joinedAt = Date.now();
+  let streaming = false, posOff = null, lastSent = 0, lastKey = '', joinedAt = Date.now(), offset = 0;
   const listen = (r, ev, fn) => { r.on(ev, fn); offs.push(() => r.off(ev, fn)); };
 
   function startStreaming() {
@@ -52,6 +54,9 @@ export function createNet(rtdb, firebase, uid, on) {
       listen(ref('fx').limitToLast(8), 'child_added', s => { const f = s.val(); if (f && f.uid !== uid && Date.now() - (f.t || 0) < 4000) on.fx(f); });
       listen(ref('announce').limitToLast(1), 'child_added', s => { const a = s.val(); if (a && (a.t || 0) > joinedAt - 15000) on.announce(a); });
       listen(ref('world'), 'value', s => on.world(s.val() || {}));
+      listen(rtdb.ref('.info/serverTimeOffset'), 'value', s => { offset = s.val() || 0; });
+      listen(ref('xboss'), 'value', s => on.xboss && on.xboss(s.val()));
+      listen(ref('wipe/' + uid), 'value', s => on.wiped && on.wiped(s.val()));
       listen(ref('raid'), 'value', s => on.raid && on.raid(s.val()));
     },
     update(partial) { myRoster.update(partial).catch(() => {}); },
@@ -75,6 +80,16 @@ export function createNet(rtdb, firebase, uid, on) {
     raidUpdate(fields) { return ref('raid').update(fields).catch(() => {}); },
     raidClear() { return ref('raid').remove().catch(() => {}); },
     clearWorld() { return ref('world').remove(); },
+    // the database's clock, so every game agrees when things happen
+    serverNow: () => Date.now() + offset,
+    xStart(state) { const n = Date.now() + offset; return ref('xboss').transaction(cur => (!cur || cur.gone || (cur.life && cur.life.dead) || (cur.until || 0) < n ? state : undefined)); },
+    xSet(fields) { return ref('xboss').update(fields).catch(() => {}); },
+    xLife(fn) { return ref('xboss/life').transaction(fn); },
+    xMob(i, fn) { return ref('xboss/mobs/' + i).transaction(fn); },
+    xDmg(n) { return ref('xboss/dmg/' + uid).set(n).catch(() => {}); },
+    xDied() { return ref('xboss/died/' + uid).transaction(n => (n || 0) + 1).catch(() => {}); },
+    xHost(me) { const n = Date.now() + offset; return ref('xboss').transaction(cur => (cur && !cur.gone && !(cur.life && cur.life.dead) && (cur.hb || 0) < n - 3500 ? { ...cur, host: me, hb: n } : undefined)); },
+    wipe(name) { return ref('wipe/' + name).set(Date.now() + offset); },
     leave() {
       offs.forEach(f => f()); offs.length = 0;
       stopStreaming();

@@ -113,3 +113,47 @@ export function coinArt(kind, cls = 'oc-potion') {
 export function starArt(cls = 'oc-potion') {
   return `<svg class="${cls}" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="18" fill="#9fd0ff" opacity=".3"/><path d="M24 6l4.8 11.4 12.2 1-9.3 8 2.9 12L24 32l-10.6 6.4 2.9-12-9.3-8 12.2-1z" fill="#e3f2ff" stroke="#0d0d10" stroke-width="1.8" stroke-linejoin="round"/></svg>`;
 }
+
+// ---------------- leaderboard titles ----------------
+// Like Sol's, a title shows next to your name on the leaderboard (the player list), with a little picture.
+const TP = {   // the pictures, drawn in a 24 x 24 box
+  dice: '<rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke-width="2.4"/><circle cx="8" cy="8" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="16" cy="16" r="1.9"/>',
+  gear: '<circle cx="12" cy="12" r="5.5" fill="none" stroke-width="3"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4M4.6 4.6l2.8 2.8M16.6 16.6l2.8 2.8M4.6 19.4l2.8-2.8M16.6 7.4l2.8-2.8" stroke-width="3"/>',
+  bolt: '<path d="M13.5 1.5L4 14h7l-1.5 8.5L20 9.5h-7z" stroke="none"/>',
+  crown: '<path d="M2.5 19V7.5l5.5 5 4-7.5 4 7.5 5.5-5V19z" stroke="none"/>',
+  eye: '<path d="M1.5 12C5 5.5 19 5.5 22.5 12 19 18.5 5 18.5 1.5 12z" fill="none" stroke-width="2.2"/><circle cx="12" cy="12" r="3.6"/>',
+  lock: '<rect x="4" y="10.5" width="16" height="11" rx="2" stroke="none"/><path d="M7.5 10.5V7.5a4.5 4.5 0 0 1 9 0v3" fill="none" stroke-width="2.6"/>',
+  flame: '<path d="M12 1.5c1 4.5 7 7 7 13a7 7 0 0 1-14 0c0-3.5 2.5-5.5 3.5-8 1 2 2 3 3 3.5-.5-3 .5-6 .5-8.5z" stroke="none"/>',
+  star: '<path d="M12 1.8l3 6.7 7.2.7-5.4 4.9 1.6 7.1L12 17.5l-6.4 3.7 1.6-7.1-5.4-4.9 7.2-.7z" stroke="none"/>',
+  glitch: '<rect x="2" y="4" width="13" height="4" stroke="none"/><rect x="7" y="10" width="15" height="4" stroke="none"/><rect x="3" y="16" width="11" height="4" stroke="none"/>',
+  yinyang: '<circle cx="12" cy="12" r="10" fill="#000" stroke-width="1.6"/><path d="M12 2a10 10 0 0 1 0 20 5 5 0 0 1 0-10 5 5 0 0 0 0-10z" stroke="none"/><circle cx="12" cy="7" r="1.7" fill="#000" stroke="none"/><circle cx="12" cy="17" r="1.7" stroke="none"/>',
+  x: '<path d="M4 4l16 16M20 4L4 20" fill="none" stroke-width="3.4"/>',
+  pumpkin: '<ellipse cx="12" cy="14" rx="9.5" ry="7.5" stroke="none"/><path d="M12 6.5V3l3-1" fill="none" stroke-width="2.4"/>',
+  book: '<path d="M4 3h12a3 3 0 0 1 3 3v15H7a3 3 0 0 1-3-3z" fill="none" stroke-width="2.4"/><path d="M8 8h7M8 12h7" stroke-width="2"/>',
+  void: '<circle cx="12" cy="12" r="9" fill="none" stroke-width="2.4"/><circle cx="12" cy="12" r="4" stroke="none"/>',
+  clock: '<circle cx="12" cy="12" r="9.5" fill="none" stroke-width="2.4"/><path d="M12 6.5V12l4 2.5" fill="none" stroke-width="2.4"/>',
+  leaf: '<path d="M4 20C4 9 10 4 21 3c0 11-6 17-17 17z" stroke="none"/><path d="M4 20L13 11" stroke="#000" stroke-width="1.6"/>',
+  fish: '<path d="M2 12c4-6 11-6 15 0-4 6-11 6-15 0zM17 12l5-4.5v9z" stroke="none"/>',
+  search: '<circle cx="10" cy="10" r="6.5" fill="none" stroke-width="2.6"/><path d="M15 15l6.5 6.5" stroke-width="3"/>',
+  compass: '<circle cx="12" cy="12" r="9.5" fill="none" stroke-width="2.2"/><path d="M15.5 8.5l-2 5-5 2 2-5z" stroke="none"/>',
+  heart: '<path d="M12 21C5 15.5 2 12.5 2 8.5A5 5 0 0 1 12 6a5 5 0 0 1 10 2.5c0 4-3 7-10 12.5z" stroke="none"/>',
+  swords: '<path d="M4 3l13 13M20 3L7 16" fill="none" stroke-width="2.6"/><path d="M15 18l4-4M5 14l4 4M3 21l3-3M21 21l-3-3" fill="none" stroke-width="2.6"/>',
+  hammer: '<rect x="3" y="3" width="14" height="6.5" rx="1" stroke="none"/><path d="M10 9.5V22" stroke-width="3.2"/>',
+  flask: '<path d="M9 2.5h6M10 2.5v6L3.5 19.5A1.6 1.6 0 0 0 5 22h14a1.6 1.6 0 0 0 1.5-2.5L14 8.5v-6" fill="none" stroke-width="2.2"/><path d="M6.5 16h11l2 4h-15z" stroke="none"/>',
+  ticket: '<path d="M2 6h20v4a2 2 0 0 0 0 4v4H2v-4a2 2 0 0 0 0-4z" stroke="none"/>',
+  sprout: '<path d="M12 22V11" stroke-width="2.6"/><path d="M12 12C12 7 8 5 3 5c0 5 4 7 9 7zM12 10c0-4 3-6 8-6 0 4-3 6-8 6z" stroke="none"/>',
+  totem: '<rect x="8" y="2" width="8" height="7" stroke="none"/><rect x="7" y="10" width="10" height="9" stroke="none"/><path d="M7 11L2 8v6l5 1M17 11l5-3v6l-5 1" stroke="none"/><rect x="9" y="19" width="6" height="3" stroke="none"/><rect x="9.5" y="4.5" width="1.6" height="1.6" fill="#0f6" stroke="none"/><rect x="12.9" y="4.5" width="1.6" height="1.6" fill="#0f6" stroke="none"/>',
+};
+const TITLE_INFO = {
+  'Newbie': ['#b0bec5', 'sprout'], 'Roller': ['#64b5f6', 'dice'], 'Dedicated': ['#4dd0e1', 'dice'], 'Grinder': ['#ffb74d', 'gear'], 'Unstoppable': ['#ff7043', 'bolt'], 'Living Legend': ['#ffd54f', 'crown'],
+  'Anomalous': ['#b388ff', 'eye'], 'Forbidden': ['#ff5252', 'lock'], 'Eldritch': ['#69f0ae', 'eye'], 'Cataclysmic': ['#ff6e40', 'flame'], 'Primordial': ['#eeeeee', 'star'], 'null': ['#ff1744', 'glitch'],
+  'Equilibrium Incarnate': ['#ffffff', 'yinyang'], 'Deleted': ['#9e9e9e', 'x'], 'Hallowed': ['#ff9100', 'pumpkin'], 'Collector': ['#81c784', 'book'], 'Curator': ['#4db6ac', 'book'], 'Archivist': ['#9575cd', 'book'],
+  'Lost': ['#e0e0e0', 'void'], 'No Life': ['#90a4ae', 'clock'], 'Touch Grass': ['#66bb6a', 'leaf'], 'Angler': ['#4fc3f7', 'fish'], 'Curious': ['#ce93d8', 'search'], 'Explorer': ['#ffcc80', 'compass'],
+  'Helping Hand': ['#f48fb1', 'heart'], 'Gladiator': ['#ef5350', 'swords'], 'Raider': ['#f0c87a', 'swords'], 'Tinkerer': ['#bcaaa4', 'hammer'], 'Alchemist': ['#7c4dff', 'flask'], 'Seasoned': ['#ffd54f', 'ticket'],
+  'Totem Popper': ['#e8d84a', 'totem'], '____X____': ['#b388ff', 'x'],
+};
+export function titleInfo(t) { const [color, icon] = TITLE_INFO[t] || ['#ffd54f', 'star']; return { color, icon }; }
+export function titleArt(t, cls = 'oc-ttl') {
+  const { color, icon } = titleInfo(t);
+  return `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><rect x=".75" y=".75" width="22.5" height="22.5" rx="3" fill="rgba(0,0,0,.6)" stroke="${color}" stroke-width="1.5"/><g transform="translate(4 4) scale(.667)" fill="${color}" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">${TP[icon] || TP.star}</g></svg>`;
+}

@@ -14,6 +14,7 @@ import {
   GEARS, GEAR, ACHIEVEMENTS, CHEST_POOLS, SEASON, PASS_REWARDS, JACK_SHOP, mariDeals, MARI_SLOT_MS, RAID, loreOf, isHalloween, HALLOWEEN_BIOMES, WEATHER_SLOT_MS,
 } from './data.js';
 import { createCrawler } from './raid.js';
+import { createXFight } from './xfight.js';
 import { buildAvatar, AuraFX, shirtColorFor } from './avatar.js';
 import { createWorld, potionModel } from './world.js';
 import { createNet } from './net.js';
@@ -22,9 +23,9 @@ import { createMusic } from './music.js';
 import { castFx, hitTest } from './moves.js';
 import { createEquinoxCinematic, EQUINOX_MERGE, EQUINOX_LENGTH } from './cinematics.js';
 import { glowTex } from './avatar.js';
-import { IC, potionArt, gearArt, handGearArt, fishArt, coinArt, starArt } from './icons.js';
+import { IC, potionArt, gearArt, handGearArt, fishArt, coinArt, starArt, titleArt, titleInfo } from './icons.js';
 
-const VERSION = '2.2';
+const VERSION = '2.3';
 const API = () => window.FrixionGameAPI;
 const WALK = 16, JUMP = 24, GRAVITY = 72, STEP = 1.25, R = 0.6, H = 5;
 const ROLL_ANIM_MS = 2600, ROLL_COOLDOWN_MS = 600;
@@ -145,7 +146,7 @@ function buildShell() {
     <div class="oc-title-foot"><span class="oc-online"></span><span>v${VERSION}</span></div>
   </div>
   <div class="oc-hud hidden">
-    <div class="oc-topleft"><button type="button" class="oc-sq oc-exit" title="Back to Frixion">${IC.close}</button><button type="button" class="oc-sq oc-chat-btn" title="Chat (/)">${IC.chat}</button></div>
+    <div class="oc-topleft"><button type="button" class="oc-sq oc-exit" title="Back to Frixion">${IC.close}</button><button type="button" class="oc-sq oc-chat-btn" title="Chat (/)">${IC.chat}</button><button type="button" class="oc-sq oc-admin-btn hidden" data-open="admin" title="Admin Panel">${IC.admin}</button></div>
     <div class="oc-menu">
       <button type="button" class="oc-sq" data-open="storage" title="Aura Storage">${IC.storage}</button>
       <button type="button" class="oc-sq" data-open="collection" title="Collection">${IC.collection}</button>
@@ -157,13 +158,13 @@ function buildShell() {
         <button type="button" data-open="pass">${IC.pass}<span>Season Pass</span><i class="oc-dot hidden"></i></button>
         <button type="button" data-open="stats">${IC.stats}<span>Stats</span></button>
         <button type="button" data-open="settings">${IC.settings}<span>Settings</span></button>
-        <button type="button" class="oc-admin-btn hidden" data-open="admin">${IC.admin}<span>Admin</span></button>
       </div>
     </div>
     <div class="oc-raidbar hidden"><b>THE CRAWLER</b><div class="oc-raid-hp"><i></i><span></span></div><small></small></div>
+    <div class="oc-bossbar hidden"><b class="oc-mcname">____X____</b><div class="oc-boss-hp"><i></i><u></u></div><small></small></div>
+    <div class="oc-hearts hidden"></div>
     <div class="oc-players"></div>
     <div class="oc-bl">
-      <div class="oc-buffs"></div>
       <div class="oc-luckline"></div>
       <div class="oc-biome"></div>
       <div class="oc-daytime"></div>
@@ -177,6 +178,7 @@ function buildShell() {
       <button type="button" class="oc-toggle oc-quick"><span>Quick Roll</span><b>OFF</b></button>
     </div>
     <div class="oc-br">
+      <div class="oc-buffs"></div>
       <div class="oc-hp hidden"><i></i><span>100</span></div>
       <div class="oc-abilities"></div>
       <button type="button" class="oc-pvp-btn">PvP: Off</button>
@@ -188,6 +190,7 @@ function buildShell() {
     <button type="button" class="oc-act hidden">E</button>
     <div class="oc-bubbles"></div>
     <div class="oc-batch hidden"></div>
+    <div class="oc-tip hidden"></div>
     <div class="oc-announce"></div>
     <div class="oc-toasts"></div>
   </div>
@@ -236,7 +239,7 @@ function checkOrientation() {
 // ---------------- saving ----------------
 const blankSave = () => ({
   v: 3, name: '', coins: 0, f: 0, void: 0, rolls: 0, auras: { common: 0 }, equipped: 'common', potions: {}, items: {}, fish: {}, quickRoll: false,
-  settings: { auto: false, quick: false, autoEquip: true, cutscenes: 'all', pvp: false, bubbles: true, sens: 1.5, sensV2: true, vol: { music: 0.45, mine: 0.7, others: 0.5, sfx: 0.7 } },
+  settings: { auto: false, quick: false, autoEquip: true, cutscenes: 'all', pvp: false, bubbles: true, serverRolls: true, sens: 1.5, sensV2: true, vol: { music: 0.45, mine: 0.7, others: 0.5, sfx: 0.7 } },
   eggs: {}, effects: [], queued: [], rollBuffs: [], daily: { day: 0, bought: [] }, best: 'common', bestRarity: 2,
   quests: { day: 0, prog: {}, claimed: [], side: {} }, stats: { fish: 0, pickups: 0, potions: 0, kos: 0, moves: 0, playSecs: 0, raids: 0, crafted: 0, dailies: 0 }, found: {}, redeemed: {}, ownerGear: {},
   lastObby: 0, lastBell: 0, chest: false,
@@ -269,6 +272,7 @@ async function loadSave() {
   // Warp and Transcendent roll instantly now: their old leftover speed buffs turn back into potions
   for (const r of s.rollBuffs || []) if (POTION[r.id] && POTION[r.id].batch && !G.me.owner) s.potions[r.id] = (s.potions[r.id] || 0) + 1;
   G.rollBuffs = (s.rollBuffs || []).filter(r => (r.id === 'gem' || (POTION[r.id] && POTION[r.id].boost)) && r.left > 0);
+  if (s.settings.serverRolls === undefined) s.settings.serverRolls = true;
   if (!s.settings.sensV2) { if (s.settings.sens === 1) s.settings.sens = 1.5; s.settings.sensV2 = true; }
   if (!s.auras[s.equipped] && !G.me.owner && s.equipped !== 'common') s.equipped = 'common';
   checkDay();
@@ -276,7 +280,7 @@ async function loadSave() {
 let saveTimer = 0;
 function markDirty() { if (!G) return; clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 3000); }
 function saveNow() {
-  if (!G || !G.saveRef || !G.save) return;
+  if (!G || !G.saveRef || !G.save || G.wiped) return;
   clearTimeout(saveTimer);
   G.save.effects = G.effects.filter(e => e.until > now());
   G.save.queued = G.queued; G.save.rollBuffs = G.rollBuffs;
@@ -301,7 +305,7 @@ function buildPlayer() {
   a.root.position.copy(G.player.pos);
   equip(G.save.equipped, true);
 }
-const drawMyTag = () => G.player.avatar.tag.userData.draw(G.me.name, G.save.equipped, G.player.pvp ? G.player.hp : null, { title: G.save.title, afk: G.afk });
+const drawMyTag = () => G.player.avatar.tag.userData.draw(G.me.name, G.save.equipped, G.player.pvp ? G.player.hp : null, { afk: G.afk });
 function equip(key, silent) {
   const p = G.player;
   if (p.fx) p.fx.dispose();
@@ -415,6 +419,15 @@ function setupInput() {
   on($q('.oc-panel-x'), 'click', closePanel);
   on($q('.oc-panel'), 'click', e => { if (e.target.classList.contains('oc-panel')) closePanel(); });
   on($q('.oc-abilities'), 'click', e => { const b = e.target.closest('[data-move]'); if (b) useMove(b.dataset.move); });
+  // potions: hover (or tap) one for what it does, and the + button shows them all
+  const buffsEl = $q('.oc-buffs'), hideTip = () => { G.tipKey = null; $q('.oc-tip').classList.add('hidden'); };
+  on(buffsEl, 'mouseover', e => { const c = e.target.closest('.oc-buff'); if (c && !G.touch) showBuffTip(c.dataset.k); });
+  on(buffsEl, 'mouseleave', () => { if (!G.touch) hideTip(); });
+  on(buffsEl, 'click', e => {
+    if (e.target.closest('[data-more]')) { G.buffsOpen = !G.buffsOpen; hideTip(); updateHud(); return; }
+    const c = e.target.closest('.oc-buff'); if (!c) return;
+    if (G.tipKey === c.dataset.k) hideTip(); else showBuffTip(c.dataset.k);
+  });
   const endOffer = () => { G.offer = null; $q('.oc-rt-actions').classList.add('hidden'); $q('.oc-rolltext').classList.add('hidden'); };
   on($q('[data-eq]'), 'click', () => { if (G.offer) equip(G.offer); endOffer(); });
   on($q('[data-skip]'), 'click', endOffer);
@@ -463,15 +476,25 @@ function play() {
     pos: (uid, p) => { const o = G.others.get(uid); if (o) { o.target.set(p.x, p.y, p.z); o.targetYaw = p.r; o.anim = p.a; o.hp = p.hp; if (!o.placed) { o.pos.copy(o.target); o.placed = true; } o.seen = now(); } },
     posGone: uid => { const o = G.others.get(uid); if (o) o.placed = false; },
     hit: h => takeHit(h),
-    fx: f => { if (f.kind === 'equinox') { remoteEquinox(f); return; } const fxo = castFx(G.scene, f); if (fxo) G.fxObjects.push(fxo); },
+    fx: f => { if (f.kind === 'equinox') { remoteEquinox(f); return; } if (f.kind === 'death') { G.chat && G.chat.system(String(f.text || '').slice(0, 120), '#ffffff'); return; } const fxo = castFx(G.scene, f); if (fxo) G.fxObjects.push(fxo); },
     announce: a => announce(a),
     world: w => { G.worldState = w; },
     raid: r => onRaid(r),
+    xboss: v => G.xfight && G.xfight.onState(v),
+    wiped: at => onWiped(at),
     denied: () => {
       if (!G || G.netDenied) return;
       G.netDenied = true;
       toast(G.me.staff ? 'Multiplayer is off: the Realtime Database rules need an "ocrng" section. You can still play solo.' : 'The lobby is closed right now, so you\'re playing solo. Your progress still saves.', 'warn');
     },
+  });
+  G.xfight = createXFight({
+    scene: G.scene, net: G.net, uid: G.me.uid, arena: G.world.arena, colliders: () => G.world.colliders,
+    player: () => G.player, isDead: () => !!G.respawning, others: () => [...G.others.values()].filter(o => o.placed).map(o => ({ uid: o.uid, pos: o.pos })),
+    hurtMe, addFx: f => G.fxObjects.push(f), sound, shake: k => { G.shake = Math.max(G.shake || 0, k); },
+    chat: (text, color) => G.chat && G.chat.system(text, color), banner: (big, small) => bossBanner(big, small),
+    busy: () => !!(G.crawler && !G.crawler.dying), onWin: xReward, onMobKill: m => { toast(`You defeated ${m.name}. ` + giveReward({ coins: m.gen ? 6000 : 1500 }), 'gold'); },
+    loadNames: () => fetch(new URL('./nullnames.txt', import.meta.url)).then(r => r.text()),
   });
   G.net.join({ name: G.me.name, aura: G.save.equipped, shirt: shirtColorFor(G.me.name), pvp: false, rolls: G.save.rolls, ...(G.save.title ? { title: G.save.title } : {}) });
   G.music = G.audio ? createMusic(G.audio) : null;
@@ -498,7 +521,7 @@ function updateOther(uid, d) {
   const o = G.others.get(uid); if (!o) return addOther(uid, d);
   o.data = d;
   if (d.aura !== o.key) { if (o.fx) o.fx.dispose(); o.key = auraKey(d.aura || 'common').key; o.fx = new AuraFX(o.key, true); o.avatar.fxHolder.add(o.fx.group); }
-  o.avatar.tag.userData.draw(d.name || uid, o.key, d.pvp ? (o.hp ?? 100) : null, { title: d.title, afk: d.afk });
+  o.avatar.tag.userData.draw(d.name || uid, o.key, d.pvp ? (o.hp ?? 100) : null, { afk: d.afk });
   o.lastHp = o.hp;
 }
 function removeOther(uid) {
@@ -512,6 +535,7 @@ function loop() {
   if (!G) return;
   G.raf = requestAnimationFrame(loop);
   const raw = G.clock.getDelta(), dt = Math.min(0.05, raw), t = G.clock.elapsedTime, n = now();
+  adaptResolution(raw);
   const env = G.env, ws = G.worldState || {};
   const time = timeOfDay(n, ws), weather = weatherAt(n, ws), jester = jesterHere(n, ws);
   if (G.playing) {
@@ -536,6 +560,7 @@ function loop() {
   if (G.cine) G.cine.update(Math.min(0.25, raw));   // real time, so slow devices see it at the same pace as the music
   if (G.fishing) fishingTick(dt);
   if (G.crawler) updateRaid(dt, t);
+  if (G.xfight) G.xfight.update(dt);
   if (G.playing) {
     if (G.save.settings.auto && canAuto() && !G.rolling && !G.cutting && n >= G.nextRollAt) rollOnce();
     if (G.net) G.net.sendPos({ x: p.pos.x, y: p.pos.y, z: p.pos.z, r: p.yaw, a: p.moving ? 1 : 0, hp: p.pvp ? p.hp : -1 });
@@ -548,6 +573,22 @@ function loop() {
   if (!G.cine && weather !== G.filterFor) { G.filterFor = weather; G.renderer.domElement.style.filter = weather === 'null' ? 'grayscale(.85) contrast(1.15)' : ''; }
   G.renderer.render(G.scene, G.camera);
 }
+// A slow computer or phone draws fewer pixels until the game runs smoothly, and goes back up when there is room. If a
+// step down doesn't help, the screen is just capped (a 30 Hz phone), so it goes back and stops trying.
+function adaptResolution(raw) {
+  if (!G.playing || raw > 0.5 || document.hidden) return;
+  const a = G.adapt || (G.adapt = { t: 0, n: 0, low: 0, tried: null, stuck: false, hold: 0 });
+  a.t += raw; a.n++;
+  if (a.t < 2) return;
+  const fps = a.n / a.t, r = G.renderer, pr = r.getPixelRatio(), n = now();
+  a.t = 0; a.n = 0;
+  const max = Math.min(window.devicePixelRatio || 1, G.quality === 'high' ? 2 : G.quality === 'medium' ? 1.5 : 1);
+  const set = v => { r.setPixelRatio(v); r.setSize(window.innerWidth, window.innerHeight, false); };
+  if (a.tried) { if (fps < a.tried.fps * 1.12) { a.stuck = true; set(a.tried.pr); } a.tried = null; return; }
+  if (fps < 40 && !a.stuck && pr > 0.75) { if (++a.low >= 2) { a.low = 0; a.tried = { fps, pr }; a.hold = n + 20000; set(Math.max(0.75, pr - 0.2)); } return; }
+  a.low = 0;
+  if (fps > 57 && pr < max && n > a.hold) set(Math.min(max, pr + 0.1));
+}
 // Once a second: music, play time, the player list, the new day.
 function slowTick() {
   if (!G || !G.playing) return;
@@ -558,6 +599,7 @@ function slowTick() {
   if (G.net && Math.abs((G.lastRollsSent || 0) - G.save.rolls) >= 25) { G.lastRollsSent = G.save.rolls; G.net.update({ rolls: G.save.rolls }); }
   if ((G.boardTick = (G.boardTick || 0) + 1) >= 120) { G.boardTick = 0; loadBoard(); }
   if (G.raid) renderRaidBar();
+  if (G.player.raidHp < 100 && !G.respawning && now() - (G.player.lastHurt || 0) > 4000) G.player.raidHp = Math.min(100, G.player.raidHp + 5);
   if (G.crawler && (G.player.pos.distanceTo(G.world.arena) < 60) !== !!G.nearArena) renderAbilities();
   if (G.player.emoteUntil && G.player.emoteUntil < now()) { G.player.emote = null; G.player.emoteUntil = 0; if (G.net) G.net.update({ emote: null }); }
   // AFK after 5 minutes of nothing, like Roblox; a secret after 10
@@ -566,6 +608,7 @@ function slowTick() {
   if (idle > 600000) findEgg('afk');
   if ((G.achTick = (G.achTick || 0) + 1) >= 4) { G.achTick = 0; checkAchievements(); }
   maybeStartRaid();
+  if (G.xfight) G.xfight.tryScheduled();
 }
 
 function movePlayer(dt) {
@@ -664,6 +707,7 @@ function updateCamera(dt, t) {
   cam.position.copy(target).addScaledVector(dir, Math.max(1.2, reach - 0.35));
   if (cam.position.y < 0.6) cam.position.y = 0.6;
   cam.lookAt(target);
+  if (G.shake > 0.01) { cam.position.x += (Math.random() - 0.5) * G.shake; cam.position.y += (Math.random() - 0.5) * G.shake; G.shake *= Math.pow(0.02, dt); }
 }
 
 // where a ray from o along d first enters the box, or null (slab test)
@@ -691,7 +735,7 @@ function updateOthers(dt, t) {
     const sp = before.distanceTo(o.pos) / Math.max(dt, 0.001);
     o.avatar.animate(dt, o.anim ? Math.max(sp, 8) : 0, o.target.y - o.pos.y > 0.5, o.data && o.data.emote, floats(o.key) ? 'float' : null);
     if (o.fx) o.fx.update(dt, t);
-    if (o.data && o.data.pvp && o.hp !== o.lastHp) { o.lastHp = o.hp; o.avatar.tag.userData.draw(o.data.name || o.uid, o.key, o.hp < 0 ? 100 : o.hp, { title: o.data.title, afk: o.data.afk }); }
+    if (o.data && o.data.pvp && o.hp !== o.lastHp) { o.lastHp = o.hp; o.avatar.tag.userData.draw(o.data.name || o.uid, o.key, o.hp < 0 ? 100 : o.hp, { afk: o.data.afk }); }
   }
 }
 
@@ -1028,7 +1072,7 @@ function achieveStats() {
     rolls: s.rolls, bestTier: s.bestTier || 0, found: s.found, foundCount: Object.keys(s.found).filter(id => AURA[id]).length, glitchMut: !!s.flags.glitchMut,
     biomes: s.biomes, eggs: s.eggs, playSecs: st.playSecs, fish: st.fish, caught: s.caught, secrets: Object.keys(s.eggs).filter(e => EGGS.includes(e)).length, secretsTotal: EGGS.length,
     sideDone: side.filter(v => v === 'done' || (v && v.state === 'done')).length, sideTotal: Object.keys(SIDE_QUEST).length, kos: st.kos, raids: st.raids || 0, crafted: st.crafted || 0,
-    potions: st.potions, dailies: st.dailies || 0, passLevel: passLevel().level,
+    potions: st.potions, dailies: st.dailies || 0, passLevel: passLevel().level, xboss: st.xboss || 0,
   };
 }
 function checkAchievements() {
@@ -1081,7 +1125,7 @@ function hitQBlock() {
 function maybeStartRaid() {
   if (!G.net || G.netDenied) return;
   const n = now(), r = G.raid, slot = Math.floor(n / WEATHER_SLOT_MS);
-  if (G.env.weather !== 'sandstorm' || (r && !r.dead && !r.gone && r.until > n) || G.raidTriedSlot === slot) return;
+  if (G.env.weather !== 'sandstorm' || (r && !r.dead && !r.gone && r.until > n) || G.raidTriedSlot === slot || (G.xfight && G.xfight.live())) return;
   G.raidTriedSlot = slot;
   if (r && r.slot === slot) return;
   startRaid(slot);
@@ -1152,6 +1196,69 @@ function raidHitFrom(f, dmg) {
   G.raidDmg = (G.raidDmg || 0) + total;
   G.crawler.flash();
   G.net.raidHit(total).catch(() => {});
+}
+// Something in a raid hit you. Raid health is 10 hearts (100), like Minecraft; at 0 you die, go back to spawn, and
+// (against ____X____) your damage counter starts over.
+function hurtMe(dmg, o = {}) {
+  const p = G.player;
+  if (G.respawning || G.portraitBlock) return;
+  if (o.kx || o.kz) p.knock = { x: o.kx || 0, z: o.kz || 0 };
+  if (o.vy) { p.vel.y = o.vy; p.onGround = false; }
+  if (!dmg) return;
+  p.raidHp = (p.raidHp ?? 100) - dmg; p.lastHurt = now();
+  G.root.classList.remove('oc-hurt'); void G.root.offsetWidth; G.root.classList.add('oc-hurt');
+  sound('hurt');
+  if (p.raidHp <= 0) {
+    G.respawning = true;
+    const text = `${G.me.name} ${o.how || 'died'}`;
+    if (G.chat) G.chat.system(text, '#ffffff');
+    if (G.net) G.net.fx({ kind: 'death', text });
+    if (G.xfight) G.xfight.onMyDeath();
+    toast('You died! Your damage to ____X____ is back to 0.', 'warn');
+    setTimeout(() => { if (!G) return; G.respawning = false; p.raidHp = 100; p.pos.copy(G.world.spawn); p.vel.set(0, 0, 0); p.knock = null; renderBossBar(); }, 1200);
+  }
+  renderBossBar();
+}
+// ____X____ is beaten: rewards by how much damage you did. The ____X____ aura goes to whoever did the most, as long as
+// they never died and did at least 250 damage.
+function xReward(r) {
+  const s = G.save;
+  s.stats.xboss = (s.stats.xboss || 0) + 1;
+  const tiers = [{ void: 3, potions: { heavenly: 2, transcendent: 1, chest3: 2 } }, { void: 2, potions: { heavenly: 1, chest3: 1 } }, { void: 1, potions: { bound: 1, chest2: 2 } }];
+  const top = tiers[r.rank - 1] || { potions: { chest2: 1 } };
+  const got = giveReward({ coins: 15000, void: top.void || 0, potions: { lucky: 5, speed: 5, ...top.potions } });
+  toast(`____X____ is defeated! You were #${r.rank} of ${r.players} with ${fmt(r.dmg)} damage. ${got}`, 'gold');
+  if (r.aura) {
+    s.auras.xboss = (s.auras.xboss || 0) + 1; s.found.xboss = true;
+    const res = auraKey('xboss');
+    if (G.net) G.net.announce({ name: G.me.name, key: 'xboss', rarity: res.rarity });
+    setTimeout(() => { if (G) cutscene(res).then(() => { if (G && s.settings.autoEquip && res.rarity > auraKey(s.equipped).rarity) equip('xboss'); }); }, 1500);
+  } else if (r.rank === 1) toast(r.died ? 'You were #1, but you died, so no ____X____ aura this time.' : 'You were #1, but the ____X____ aura needs at least 250 damage.', 'warn');
+  addXp(500); sound('secret'); checkAchievements(); markDirty();
+}
+function bossBanner(big, small) {
+  const el = $q('.oc-announce');
+  el.innerHTML = `<b class="oc-mcname big">${esc(big)}</b><span>${esc(small)}</span>`;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+}
+// The boss bar at the top, like Minecraft's, and your hearts while you are near a raid.
+function renderBossBar() {
+  if (!G || !G.player) return;
+  const info = G.xfight && G.xfight.info(), near = !!(info && G.xfight.near(G.player.pos)), bar = $q('.oc-bossbar');
+  bar.classList.toggle('hidden', !near);
+  if (near) {
+    bar.classList.toggle('p2', info.phase === 2);
+    bar.querySelector('i').style.width = (info.dead ? 0 : Math.max(0, Math.min(1, info.hp / info.max)) * 100).toFixed(1) + '%';
+    bar.querySelector('small').textContent = info.dead ? 'Defeated' : `${Math.max(0, Math.ceil(info.hp))} / ${info.max}${info.phase === 2 ? '   Phase 2' : ''}${info.mobsTotal ? `   Team null: ${info.mobs} left` : ''}   Your damage: ${fmt(info.myDmg)}${info.rank ? ` (#${info.rank})` : ''}   ${fmtTime(Math.max(0, info.left))}`;
+  }
+  const raid = near || (G.crawler && !G.crawler.dying && G.player.pos.distanceTo(G.world.arena) < 70);
+  const hearts = $q('.oc-hearts');
+  hearts.classList.toggle('hidden', !raid);
+  if (raid) {
+    const hp = Math.max(0, G.player.raidHp ?? 100);
+    const html = Array.from({ length: 10 }, (_, i) => { const v = hp - i * 10; return `<i class="${v >= 10 ? 'f' : v >= 5 ? 'h' : 'e'}"></i>`; }).join('');
+    if (hearts.dataset.h !== html) { hearts.innerHTML = html; hearts.dataset.h = html; hearts.classList.toggle('low', hp <= 30); }
+  }
 }
 function renderRaidBar() {
   const bar = $q('.oc-raidbar'), r = G.raid, live = r && !r.dead && !r.gone && r.until > now() && G.crawler;
@@ -1420,6 +1527,25 @@ function refreshToggles() {
 }
 
 // ---------------- the HUD ----------------
+const BUFF_ROW = 6;   // potions shown before the expand button
+// "237h 0m", "12m 5s", "40s", like Sol's
+function buffTime(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
+  return h ? `${h}h ${m}m` : m ? `${m}m ${s % 60}s` : `${s}s`;
+}
+const pct = v => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%`;
+function effectText(o) { return [o.luck ? `${pct(o.luck)} luck` : '', o.speed ? `${pct(o.speed)} roll speed` : ''].filter(Boolean).join(', ') || 'Something strange.'; }
+// the little card over a potion: its name, what it does and how long it has left
+function showBuffTip(k) {
+  const tip = $q('.oc-tip'), t = G.buffTips && G.buffTips[k], el = t && G.root.querySelector(`.oc-buff[data-k="${CSS.escape(k)}"]`);
+  if (!el) { tip.classList.add('hidden'); G.tipKey = null; return; }
+  G.tipKey = k;
+  tip.innerHTML = `<b style="color:${t.color}">${esc(t.name)}</b><span>${esc(t.text || '')}</span><small>${esc(t.left)}</small>`;
+  tip.classList.remove('hidden');
+  const r = el.getBoundingClientRect(), box = G.root.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.max(6, Math.min(box.width - w - 6, r.left - box.left + r.width / 2 - w / 2)) + 'px';
+  tip.style.top = Math.max(6, r.top - box.top - h - 8) + 'px';
+}
 function updateHud() {
   if (!G || !G.save) return;
   const s = G.save, env = G.env, n = now(), b = buffs(), ws = G.worldState || {};
@@ -1432,16 +1558,27 @@ function updateHud() {
   const sl = ws.luck && ws.luck.until > n ? ws.luck : null;
   $q('.oc-luckline').innerHTML = `Luck <b>${x2(luck)}x</b><span class="sep"></span>Speed <b>${x2(b.speed)}x</b>${sl ? `<span class="sep"></span><b class="oc-server">SERVER LUCK x${sl.mult} ${fmtTime(sl.until - n)}</b>` : ''}`;
   $q('.oc-money').innerHTML = `<span class="oc-pill coin">$ ${fmt(s.coins)}</span><span class="oc-pill f">F ${fmt(s.f)}</span>${s.void ? `<span class="oc-pill void">V ${fmt(s.void)}</span>` : ''}`;
-  const chips = activeEffects().filter((e, i, arr) => arr.findIndex(x => x.id === e.id && !x.out === !e.out) === i).map(e => { const p = POTION[e.id]; return `<div class="oc-buff" title="${esc(e.out ? p.name + ': ' + e.out.name : p.name)}">${potionArt(p)}<b>${fmtTime(e.until - n)}</b></div>`; });
-  // one icon per potion with a count, not one per bottle
+  // potions at work, bottom right like Sol's: one icon per potion (with a count), hover or tap one to see what it does,
+  // and only the first row until you press the expand button
+  const chips = [];
+  const chip = (k, p, label, tip, next) => chips.push({ k, tip, html: `<div class="oc-buff${next ? ' next' : ''}" data-k="${esc(k)}">${potionArt(p)}<b>${label}</b></div>` });
+  activeEffects().filter((e, i, arr) => arr.findIndex(x => x.id === e.id && !x.out === !e.out) === i).forEach(e => {
+    const p = POTION[e.id];
+    chip('e:' + e.id + (e.out ? ':o' : ''), p, buffTime(e.until - n), { name: p.name + (e.out ? ': ' + e.out.name : ''), color: p.color, text: e.out ? effectText(e.out) : p.desc, left: 'Ends in ' + buffTime(e.until - n) });
+  });
   const queued = new Map(), perRoll = new Map();
   G.queued.forEach(id => queued.set(id, (queued.get(id) || 0) + 1));
   G.rollBuffs.forEach(r => perRoll.set(r.id, (perRoll.get(r.id) || 0) + r.left));
-  queued.forEach((c, id) => chips.push(`<div class="oc-buff next" title="${esc(POTION[id].name)}${c > 1 ? ' x' + c : ''}">${potionArt(POTION[id])}<b>${c > 1 ? 'x' + fmt(c) : 'next'}</b></div>`));
-  perRoll.forEach((left, id) => { const p = POTION[id] || { name: 'Gemstone Gauntlet', color: '#ff6ec7', shape: 'gem' }; chips.push(`<div class="oc-buff next" title="${esc(p.name)}: ${fmt(left)} rolls">${potionArt(p)}<b>${fmt(left)}</b></div>`); });
-  if (chips.length > 14) chips.splice(13, chips.length - 13, `<div class="oc-buff more"><b>+${chips.length - 13}</b></div>`);
-  const buffsEl = $q('.oc-buffs'), html = chips.join('');
+  queued.forEach((c, id) => chip('q:' + id, POTION[id], c > 1 ? 'x' + fmt(c) : 'next', { name: POTION[id].name, color: POTION[id].color, text: POTION[id].desc, left: c > 1 ? `${fmt(c)} waiting, one per roll` : 'Works on your next roll' }, true));
+  perRoll.forEach((left, id) => { const p = POTION[id] || { name: 'Gemstone Gauntlet', color: '#ff6ec7', shape: 'gem', desc: 'A gem lit up: a little extra luck or roll speed.' }; chip('r:' + id, p, fmt(left), { name: p.name, color: p.color, text: p.desc, left: `${fmt(left)} rolls left` }, true); });
+  G.buffTips = Object.fromEntries(chips.map(c => [c.k, c.tip]));
+  const shown = G.buffsOpen ? chips : chips.slice(0, BUFF_ROW);
+  let html = shown.map(c => c.html).join('');
+  if (chips.length > BUFF_ROW) html += `<button type="button" class="oc-buff-more" data-more title="${G.buffsOpen ? 'Show less' : 'Show all'}">${G.buffsOpen ? IC.close : '+' + (chips.length - BUFF_ROW)}</button>`;
+  const buffsEl = $q('.oc-buffs');
   if (buffsEl.dataset.h !== html) { buffsEl.innerHTML = html; buffsEl.dataset.h = html; }
+  if (G.tipKey) showBuffTip(G.tipKey);
+  renderBossBar();
   // the Roll button counts towards the bonus roll: 9/10 means the next one is twice as lucky (gears can change it)
   const bi = bonusInfo(), c = s.rolls % bi.every;
   $q('.oc-roll-count').textContent = bi.none ? 'No bonus roll' : bi.all ? `Every roll x${bi.all}` : `${c}/${bi.every}${bi.mult !== 2 ? ` (x${bi.mult})` : ''}`;
@@ -1451,12 +1588,14 @@ function renderPlayers() {
   const el = $q('.oc-players');
   const rows = [];
   const roster = G.net && G.net.roster ? G.net.roster : {};
-  const list = Object.entries(roster).map(([uid, d]) => ({ uid, name: d.name || uid, rolls: uid === G.me.uid ? G.save.rolls : d.rolls || 0, aura: uid === G.me.uid ? G.save.equipped : d.aura }));
-  if (!list.some(r => r.uid === G.me.uid)) list.push({ uid: G.me.uid, name: G.me.name, rolls: G.save.rolls, aura: G.save.equipped });
+  const list = Object.entries(roster).map(([uid, d]) => ({ uid, name: d.name || uid, rolls: uid === G.me.uid ? G.save.rolls : d.rolls || 0, aura: uid === G.me.uid ? G.save.equipped : d.aura, title: uid === G.me.uid ? G.save.title : d.title }));
+  if (!list.some(r => r.uid === G.me.uid)) list.push({ uid: G.me.uid, name: G.me.name, rolls: G.save.rolls, aura: G.save.equipped, title: G.save.title });
   list.sort((a, b) => b.rolls - a.rolls);
   for (const r of list.slice(0, 12)) {
     const a = auraKey(r.aura || 'common');
-    rows.push(`<div class="oc-pl-row${r.uid === G.me.uid ? ' me' : ''}"><span class="n">${esc(r.name)}</span><span class="r">${fmt(r.rolls)}</span><span class="a" style="color:${a.mut ? a.mut.color : a.aura.c}">${esc(a.name)}</span></div>`);
+    // like Sol's, your leaderboard title sits under your name with its little picture
+    const ttl = r.title ? `<span class="t">${titleArt(r.title, 'oc-ttl')}<small style="color:${titleInfo(r.title).color}">${esc(r.title)}</small></span>` : '';
+    rows.push(`<div class="oc-pl-row${r.uid === G.me.uid ? ' me' : ''}"><span class="n"><span class="nm">${esc(r.name)}</span>${ttl}</span><span class="r">${fmt(r.rolls)}</span><span class="a" style="color:${a.mut ? a.mut.color : a.aura.c}">${esc(a.name)}</span></div>`);
   }
   const html = `<div class="oc-pl-head"><span class="n">Players (${list.length})</span><span class="r">Rolls</span><span class="a">Aura</span></div>${rows.join('')}`;
   if (el.dataset.h !== html) { el.innerHTML = html; el.dataset.h = html; }
@@ -1473,9 +1612,11 @@ function toast(text, kind) {
   setTimeout(() => el.remove(), 4300);
 }
 // Someone in the lobby rolled something very rare.
+// Rare rolls from everyone, in the chat's Server tab (Settings, Miscellaneous can turn them off).
 function announce(a) {
+  if (G.save.settings.serverRolls === false) return;
   const { aura, mut, name, rarity } = auraKey(a.key);
-  if (G.chat) G.chat.system(`[Server]: ${a.name} HAS FOUND ${name.toUpperCase()}, CHANCE OF 1 IN ${fmt(rarity)}`, mut ? mut.color : aura.c === '#ffffff' ? '#e0e0e0' : aura.c);
+  if (G.chat) G.chat.system(`[Server]: ${a.name} HAS FOUND ${name.toUpperCase()}, CHANCE OF 1 IN ${fmt(rarity)}`, mut ? mut.color : aura.c === '#ffffff' ? '#e0e0e0' : aura.c, 'server');
   if (tierIndex(rarity) < 4) return;
   const el = $q('.oc-announce');
   el.innerHTML = `<span>${esc(a.name)} HAS FOUND</span><b class="oc-ann-name"></b><span>1 IN ${fmt(rarity)}</span>`;
@@ -1499,6 +1640,7 @@ function pickMusic() {
   let id, v;
   if (G.cutting && G.cutKey) { id = 'aura:' + G.cutKey; v = Math.max(vol('mine'), 0.6); }
   else if (G.jukebox && G.player.pos.distanceTo(G.world.rooms.jukebox) < 30) { id = G.jukebox; v = Math.max(vol('music'), 0.5); }
+  else if (G.xfight && G.xfight.near(G.player.pos)) { id = 'biome:xboss'; v = Math.max(vol('music'), 0.5); }
   else if (G.crawler && !G.crawler.dying && G.player.pos.distanceTo(G.world.arena) < 70) { id = 'biome:raid'; v = Math.max(vol('music'), 0.45); }
   else if (G.world.inLimbo(G.player.pos)) { id = 'biome:limbo'; v = Math.max(vol('music'), 0.4); }
   else {
@@ -1560,6 +1702,7 @@ function useMove(key) {
     }
   }
   raidHitFrom(m.kind === 'punch' ? { kind: 'punch' } : f, m.dmg);
+  if (G.xfight) G.xfight.hitFrom(m.kind === 'punch' ? { kind: 'punch' } : f, m.dmg, hitTest);
   G.save.stats.moves++; progress('moves');
   sound('attack', m.tier);
   updateAbilityCds();
@@ -1625,7 +1768,7 @@ const priceText = pr => pr.coins ? `$ ${fmt(pr.coins)}` : pr.f ? `F ${fmt(pr.f)}
 const priceClass = pr => pr.coins ? 'coin' : pr.f ? 'f' : 'void';
 const moneyRow = () => `<div class="oc-money-row"><span class="oc-pill coin">$ ${fmt(G.save.coins)}</span><span class="oc-pill f">F ${fmt(G.save.f)}</span><span class="oc-pill void">V ${fmt(G.save.void)}</span></div>`;
 const tabsHtml = (tabs, cur) => `<div class="oc-tabs">${tabs.map(([id, label]) => `<button type="button" data-tab="${id}" class="${cur === id ? 'on' : ''}">${label}</button>`).join('')}</div>`;
-const onlyText = a => a.only ? (a.only.time ? (a.only.time === 'day' ? 'Only during the day' : 'Only at night') : `Only in ${WEATHERS[a.only.weather].name}`) : a.native ? `${WEATHERS[a.native].name}: ${WEATHERS[a.native].bt}x as likely` : '';
+const onlyText = a => a.only && a.only.boss ? 'Only from beating ____X____: most damage, no deaths, 250 damage or more' : a.only ? (a.only.time ? (a.only.time === 'day' ? 'Only during the day' : 'Only at night') : `Only in ${WEATHERS[a.only.weather].name}`) : a.native ? `${WEATHERS[a.native].name}: ${WEATHERS[a.native].bt}x as likely` : '';
 
 // The Sol's-style storage screen: information on the left, a grid of tiles on the right.
 function storageLayout(body, { tabs, tab, tiles, info, onTab, after, search = true }) {
@@ -2088,13 +2231,16 @@ function renderSettings(body, tab = G.setTab || 'rolling') {
   if (tab === 'controls') html = `<label class="oc-slider"><span>Camera Sensitivity</span><input type="range" min="25" max="800" step="5" value="${Math.round((s.sens || 1) * 100)}" data-sens><b>${(s.sens || 1).toFixed(2)}x</b></label>
     <div class="oc-keys"><b>Keys</b><span>WASD: move. Space: jump. Hold right mouse: turn the camera. Wheel: zoom. Shift: Shift Lock.</span><span>R: roll. E: talk, fish, use. Z X C V: aura moves. F: mobility move. /: chat. Tab: player list.</span></div>`;
   if (tab === 'misc') html = `${check('bubbles', 'Chat bubbles over heads')}
-    <div class="oc-set-row"><b>Title</b><select data-title><option value="">None</option>${G.save.titles.map(x => `<option value="${esc(x)}" ${G.save.title === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select><small class="oc-dim">${G.save.titles.length ? '' : 'Achievements give titles.'}</small></div>
+    ${check('serverRolls', 'Server roll messages: rare finds from everyone, in the chat\'s Server tab')}
     <div class="oc-set-row"><b>PvP Mode</b><button type="button" class="oc-btn sm ${G.player.pvp ? 'bad' : ''}" data-pvp>${G.player.pvp ? 'On' : 'Off'}</button></div>
     <div class="oc-set-row"><b>Graphics</b>${['low', 'medium', 'high'].map(q => `<button type="button" class="oc-btn sm ${q === G.quality ? 'ok' : ''}" data-q="${q}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div>
     <p class="oc-empty">Graphics changes apply the next time you open the game.</p>
     <div class="oc-set-row"><b>Redeem Code</b><button type="button" class="oc-btn sm" data-code>Open</button></div>
     <div class="oc-code hidden"><input type="text" maxlength="32" placeholder="Enter Code..." spellcheck="false" autocomplete="off"><button type="button" class="oc-btn ok sm" data-redeem>Redeem</button></div>`;
-  body.innerHTML = tabsHtml([['rolling', 'Rolling'], ['sound', 'Sound'], ['controls', 'Controls'], ['misc', 'Miscellaneous']], tab) + `<div class="oc-set">${html}</div>`;
+  if (tab === 'titles') html = `<p class="oc-empty">Your title shows next to your name on the leaderboard, with its picture. Achievements give titles.</p>
+    <div class="oc-titles">${[''].concat(G.save.titles).map(x => `<button type="button" class="oc-title-card${(G.save.title || '') === x ? ' on' : ''}" data-ttl="${esc(x)}">${x ? titleArt(x, 'oc-ttl big') : '<i class="oc-ttl big none"></i>'}<b style="color:${x ? titleInfo(x).color : '#bdbdbd'}">${x ? esc(x) : 'No title'}</b>${(G.save.title || '') === x ? '<small>Equipped</small>' : ''}</button>`).join('')}</div>`;
+  body.innerHTML = tabsHtml([['rolling', 'Rolling'], ['sound', 'Sound'], ['controls', 'Controls'], ['titles', 'Leaderboard Titles'], ['misc', 'Miscellaneous']], tab) + `<div class="oc-set">${html}</div>`;
+  body.querySelectorAll('[data-ttl]').forEach(b => b.onclick = () => { G.save.title = b.dataset.ttl; if (G.net) G.net.update({ title: b.dataset.ttl || null }); markDirty(); renderPlayers(); renderSettings(body); });
   body.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => renderSettings(body, b.dataset.tab));
   body.querySelectorAll('[data-s]').forEach(c => c.onchange = () => { s[c.dataset.s] = c.checked; markDirty(); });
   body.querySelectorAll('[data-cut]').forEach(b => b.onclick = () => { s.cutscenes = b.dataset.cut; markDirty(); renderSettings(body); });
@@ -2134,46 +2280,113 @@ async function redeemCode(code) {
 }
 
 // The Owner and Co-Owners: start biomes, change the time, summon the Jester, fly and noclip, and make codes.
-function renderAdmin(body) {
+// The Owner's admin panel, laid out like Sol's: tabs along the top and big outlined tiles, each in its own colour. An
+// active tile is filled in. Events and codes are for the Frixion Owner only.
+function renderAdmin(body, tab = G.adminTab || 'biomes') {
   if (!G.me.owner) { body.innerHTML = ''; return; }
+  G.adminTab = tab;
   const ws = G.worldState || {}, n = now();
-  const btn = (act, label, onNow) => `<button type="button" class="oc-btn sm ${onNow ? 'ok' : ''}" data-a="${act}">${label}</button>`;
-  const potionOpts = POTIONS.filter(p => !p.hidden).map(p => `<option value="potion:${p.id}">${esc(p.name)}</option>`).join('');
-  const gearOpts = ITEMS.map(i => `<option value="item:${i.id}">${esc(i.name)} (gear)</option>`).join('');
-  body.innerHTML = `<div class="oc-admin">
-    <h3>Biome <small>5 minutes, for everyone</small></h3><div class="oc-admin-row">${Object.values(WEATHERS).filter(w => w.id !== 'clear').map(w => btn('w:' + w.id, w.name, ws.weather && ws.weather.type === w.id && ws.weather.until > n)).join('')}${btn('w:stop', 'Stop')}</div>
-    <h3>Time <small>10 minutes</small></h3><div class="oc-admin-row">${btn('t:day', 'Force day', ws.time && ws.time.mode === 'day' && ws.time.until > n)}${btn('t:night', 'Force night', ws.time && ws.time.mode === 'night' && ws.time.until > n)}${btn('t:stop', 'Normal')}</div>
-    <h3>Jester <small>15 minutes</small></h3><div class="oc-admin-row">${btn('j:on', 'Summon the Jester', ws.jesterUntil > n)}${btn('j:off', 'Send him away')}</div>
-    <h3>Server luck <small>10 minutes, for everyone</small></h3><div class="oc-admin-row">${btn('l:2', 'Luck x2', ws.luck && ws.luck.mult === 2 && ws.luck.until > n)}${btn('l:3', 'Luck x3', ws.luck && ws.luck.mult === 3 && ws.luck.until > n)}${btn('l:10', 'Luck x10', ws.luck && ws.luck.mult === 10 && ws.luck.until > n)}${btn('l:stop', 'Normal')}</div>
-    <h3>Raid <small>The Crawler, in the Pit</small></h3><div class="oc-admin-row">${btn('r:start', 'Summon The Crawler', G.crawler && !G.crawler.dying)}${btn('r:stop', 'Send it away')}</div>
-    <h3>Movement <small>just you</small></h3><div class="oc-admin-row">${btn('m:fly', 'Fly', G.player.fly)}${btn('m:noclip', 'Noclip', G.player.noclip)}${btn('m:spawn', 'Spawn')}${btn('m:summit', 'Mountain top')}${btn('m:stella', 'Stella')}</div>
-    <p class="oc-empty">Fly: Space goes up, Q goes down.</p>
-    <div class="oc-admin-row">${btn('x:clear', 'End every event')}</div>
-    <h3>Codes <small>players redeem them in Settings, Miscellaneous</small></h3>
+  const tile = (act, label, sub, onNow, color, cls = '') => `<button type="button" class="oc-adm-tile${onNow ? ' on' : ''}${cls ? ' ' + cls : ''}" data-a="${act}" style="--c:${color || '#ffffff'}"><b>${label}</b>${sub ? `<small>${sub}</small>` : ''}${onNow ? '<i>ACTIVE</i>' : ''}</button>`;
+  let html = '';
+  if (tab === 'biomes') html = `<h3>[ Biomes ] <small>5 minutes, for everyone</small></h3><div class="oc-adm-grid">${Object.values(WEATHERS).filter(w => w.id !== 'clear' && !w.hidden).map(w => tile('w:' + w.id, `[ ${w.name.toUpperCase()} ]`, w.event ? 'Halloween' : '', ws.weather && ws.weather.type === w.id && ws.weather.until > n, w.color)).join('')}${tile('w:stop', 'NORMAL', 'End the biome', false, '#9e9e9e', 'stop')}</div>`;
+  if (tab === 'events') html = `
+    <h3>[ Raids ] <small>in the Pit, east of the plaza</small></h3><div class="oc-adm-grid">${tile('x:boss', '____X____', 'Summon him', G.xfight && G.xfight.live(), '#b388ff')}${tile('x:bossoff', 'SEND X AWAY', 'Ends his fight', false, '#9e9e9e', 'stop')}${tile('r:start', 'THE CRAWLER', 'Summon the worm', G.crawler && !G.crawler.dying, '#f0c87a')}${tile('r:stop', 'SEND IT AWAY', 'Ends the worm', false, '#9e9e9e', 'stop')}</div>
+    <h3>[ Server Luck ] <small>10 minutes, for everyone</small></h3><div class="oc-adm-grid">${[2, 3, 10].map(m => tile('l:' + m, `LUCK x${m}`, 'Everyone rolls luckier', ws.luck && ws.luck.mult === m && ws.luck.until > n, '#ffd54f')).join('')}${tile('l:stop', 'NORMAL', 'End server luck', false, '#9e9e9e', 'stop')}</div>
+    <h3>[ Time ] <small>10 minutes</small></h3><div class="oc-adm-grid">${tile('t:day', 'DAYTIME', 'Force day', ws.time && ws.time.mode === 'day' && ws.time.until > n, '#ffe082')}${tile('t:night', 'NIGHTTIME', 'Force night', ws.time && ws.time.mode === 'night' && ws.time.until > n, '#9fb4ff')}${tile('t:stop', 'NORMAL', 'Day and night as usual', false, '#9e9e9e', 'stop')}</div>
+    <h3>[ The Jester ] <small>15 minutes</small></h3><div class="oc-adm-grid">${tile('j:on', 'SUMMON', 'The Jester arrives', ws.jesterUntil > n, '#d6a8ff')}${tile('j:off', 'SEND AWAY', 'The Jester leaves', false, '#9e9e9e', 'stop')}</div>
+    <h3>[ Everything ]</h3><div class="oc-adm-grid">${tile('x:clear', 'END EVERY EVENT', 'Biome, time, luck and the Jester', false, '#ff6b6b', 'stop')}</div>`;
+  if (tab === 'players') {
+    const online = Object.entries((G.net && G.net.roster) || {}).filter(([u]) => u !== G.me.uid);
+    html = `<h3>[ Wipe Data ] <small>everything a player has in Overcontrol RNG, for good</small></h3>
+      <div class="oc-adm-find"><input type="text" data-wn maxlength="40" placeholder="Username" spellcheck="false" autocomplete="off"><button type="button" class="oc-adm-btn" data-wf>Find</button></div>
+      ${online.length ? `<div class="oc-adm-online"><small>In the lobby:</small>${online.map(([u, d]) => `<button type="button" class="oc-adm-chip" data-pick="${esc(u)}">${esc(d.name || u)}</button>`).join('')}</div>` : ''}
+      <div class="oc-adm-card hidden" data-wc></div>`;
+  }
+  if (tab === 'codes') {
+    const potionOpts = POTIONS.filter(p => !p.hidden).map(p => `<option value="potion:${p.id}">${esc(p.name)}</option>`).join('');
+    const gearOpts = ITEMS.map(i => `<option value="item:${i.id}">${esc(i.name)} (gear)</option>`).join('');
+    html = `<h3>[ Make a Code ] <small>players redeem them in Settings, Miscellaneous</small></h3>
     <div class="oc-codeform">
       <input type="text" data-c="code" maxlength="24" placeholder="CODE (case-sensitive)" spellcheck="false">
       <select data-c="what"><option value="coins">Coins</option><option value="f">F (blue coins)</option><option value="void">Void Coins</option>${potionOpts}${gearOpts}</select>
       <label><small>Amount</small><input type="number" data-c="amount" min="1" max="1000000000" value="1"></label>
       <label><small>Max uses</small><input type="number" data-c="uses" min="0" value="0"></label>
       <label><small>Hours</small><input type="number" data-c="hours" min="0" value="0"></label>
-      <button type="button" class="oc-btn ok sm" data-mk>Make code</button>
+      <button type="button" class="oc-adm-btn ok" data-mk>Make code</button>
     </div>
     <p class="oc-empty">Max uses 0 means no limit. Hours 0 means it never expires.</p>
-    <div class="oc-list oc-codes"><p class="oc-empty">Loading codes...</p></div></div>`;
+    <h3>[ Codes ]</h3><div class="oc-list oc-codes"><p class="oc-empty">Loading codes...</p></div>`;
+  }
+  if (tab === 'me') html = `<h3>[ Movement ] <small>just you</small></h3><div class="oc-adm-grid">${tile('m:fly', 'FLY', 'Space up, Q down', G.player.fly, '#80d8ff')}${tile('m:noclip', 'NOCLIP', 'Walk through walls', G.player.noclip, '#80d8ff')}</div>
+    <h3>[ Teleport ]</h3><div class="oc-adm-grid">${tile('m:spawn', 'SPAWN', 'The plaza', false, '#ffffff')}${tile('m:pit', 'THE PIT', 'Where raids happen', false, '#b388ff')}${tile('m:summit', 'MOUNTAIN TOP', 'The bell', false, '#ffffff')}${tile('m:stella', 'STELLA', 'Her cave', false, '#ffffff')}</div>`;
+  body.innerHTML = tabsHtml([['biomes', 'Biomes'], ['events', 'Events'], ['players', 'Players'], ['codes', 'Codes'], ['me', 'Me']], tab) + `<div class="oc-admin">${html}</div>`;
+  body.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => renderAdmin(body, b.dataset.tab));
   body.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { adminAction(b.dataset.a); setTimeout(() => G && G.panel === 'admin' && renderAdmin(body), 300); });
-  const val = k => body.querySelector(`[data-c="${k}"]`).value;
-  body.querySelector('[data-mk]').onclick = async () => {
-    const code = val('code').trim();
-    if (!/^[A-Za-z0-9_-]{3,24}$/.test(code)) { toast('Codes are 3 to 24 letters, numbers, - or _.', 'warn'); return; }
-    const [kind, id] = val('what').split(':'), amount = Math.max(1, Math.floor(+val('amount') || 1));
-    const reward = kind === 'potion' ? { potions: { [id]: amount } } : kind === 'item' ? { items: [id] } : { [kind]: amount };
-    const hours = +val('hours') || 0;
-    try {
-      await API().db.collection('rngCodes').doc(code).set({ reward, maxUses: Math.max(0, Math.floor(+val('uses') || 0)), uses: 0, expires: hours ? now() + hours * 3600000 : 0, by: G.me.name, made: now() });
-      toast(`Code ${code} is live.`, 'gold'); loadCodes(body);
-    } catch (e) { toast('Couldn\'t save that code.', 'warn'); }
-  };
-  loadCodes(body);
+  if (tab === 'players') {
+    const input = body.querySelector('[data-wn]'), card = body.querySelector('[data-wc]');
+    const find = async () => {
+      const q = input.value.trim(); if (!q) return;
+      card.classList.remove('hidden'); card.innerHTML = '<p class="oc-empty">Looking...</p>';
+      const found = await findSave(q);
+      if (!G || G.panel !== 'admin') return;
+      if (!found) { card.innerHTML = `<p class="oc-empty">Nobody called ${esc(q)} has Overcontrol RNG data.</p>`; return; }
+      const d = found.data, best = auraKey(d.best || 'common');
+      card.innerHTML = `<b>${esc(d.name || found.id)}</b><span>${fmt(d.rolls || 0)} rolls  |  rarest: ${esc(best.name)}  |  ${Object.keys(d.auras || {}).length} kinds of aura</span><button type="button" class="oc-adm-btn bad" data-wipe>Wipe ALL data</button>`;
+      let armed = 0;
+      card.querySelector('[data-wipe]').onclick = e => {
+        const b = e.currentTarget;
+        if (Date.now() - armed > 4000) { armed = Date.now(); b.textContent = `Click again to wipe ${d.name || found.id} for good`; return; }
+        wipeSave(found.id, d.name || found.id).then(() => { card.innerHTML = `<p class="oc-empty">${esc(d.name || found.id)}'s data was wiped.</p>`; });
+      };
+    };
+    body.querySelector('[data-wf]').onclick = find;
+    input.onkeydown = e => { if (e.key === 'Enter') find(); e.stopPropagation(); };
+    body.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { input.value = b.dataset.pick; find(); });
+  }
+  if (tab === 'codes') {
+    const val = k => body.querySelector(`[data-c="${k}"]`).value;
+    body.querySelector('[data-mk]').onclick = async () => {
+      const code = val('code').trim();
+      if (!/^[A-Za-z0-9_-]{3,24}$/.test(code)) { toast('Codes are 3 to 24 letters, numbers, - or _.', 'warn'); return; }
+      const [kind, id] = val('what').split(':'), amount = Math.max(1, Math.floor(+val('amount') || 1));
+      const reward = kind === 'potion' ? { potions: { [id]: amount } } : kind === 'item' ? { items: [id] } : { [kind]: amount };
+      const hours = +val('hours') || 0;
+      try {
+        await API().db.collection('rngCodes').doc(code).set({ reward, maxUses: Math.max(0, Math.floor(+val('uses') || 0)), uses: 0, expires: hours ? now() + hours * 3600000 : 0, by: G.me.name, made: now() });
+        toast(`Code ${code} is live.`, 'gold'); loadCodes(body);
+      } catch (e) { toast('Couldn\'t save that code.', 'warn'); }
+    };
+    body.querySelectorAll('.oc-codeform input').forEach(i => { i.onkeydown = e => e.stopPropagation(); });
+    loadCodes(body);
+  }
+}
+// A save by username, or by the name it was saved under.
+async function findSave(q) {
+  const col = API().db.collection('rngSaves');
+  try {
+    const d = await col.doc(q).get();
+    if (d.exists) return { id: d.id, data: d.data() };
+    const s = await col.where('name', '==', q).limit(1).get();
+    if (!s.empty) return { id: s.docs[0].id, data: s.docs[0].data() };
+  } catch (e) {}
+  return null;
+}
+// Wipe: the save becomes empty, and a game they have open hears about it, stops saving and closes.
+async function wipeSave(id, name) {
+  try {
+    await API().db.collection('rngSaves').doc(id).set({ name, wipedAt: now(), wipedBy: G.me.name });
+    if (G.net) G.net.wipe(id).catch(() => {});
+    toast(`Wiped ${name}'s Overcontrol RNG data.`, 'gold');
+    if (G.chat) G.chat.system(`[Admin]: ${name}'s data was wiped.`, '#ff8a80');
+  } catch (e) { toast('Couldn\'t wipe that save.', 'warn'); }
+}
+function onWiped(at) {
+  if (!G) return;
+  if (G.wipeBase === undefined) { G.wipeBase = at || 0; return; }   // the first value is from before you joined
+  if (!at || at === G.wipeBase) return;
+  G.wiped = true;
+  API().toast('The Owner wiped your Overcontrol RNG data.', 'warn');
+  close();
 }
 async function loadCodes(body) {
   const box = body.querySelector('.oc-codes'); if (!box) return;
@@ -2194,13 +2407,16 @@ function adminAction(a) {
     if (v === 'spawn') { G.player.pos.copy(G.world.spawn); G.player.vel.set(0, 0, 0); }
     if (v === 'summit') { const b = G.world.places.bell.pos; G.player.pos.set(b.x, b.y + 0.5, b.z + 2); G.player.vel.set(0, 0, 0); }
     if (v === 'stella') { G.player.pos.copy(G.world.stellaCamp); G.player.vel.set(0, 0, 0); }
+    if (v === 'pit') { const a = G.world.arena; G.player.pos.set(a.x - 24, 1, a.z); G.player.vel.set(0, 0, 0); }
     return;
   }
   if (!net) return;
   if (k === 'w') { net.setWorld({ weather: v === 'stop' ? null : { type: v, until: n + 5 * 60000, by: G.me.name } }); toast(v === 'stop' ? 'Biome stopped.' : `${WEATHERS[v].name} started for everyone.`); }
   if (k === 't') { net.setWorld({ time: v === 'stop' ? null : { mode: v, until: n + 10 * 60000, by: G.me.name } }); toast(v === 'stop' ? 'Time is back to normal.' : `It is ${v} for everyone now.`); }
   if (k === 'j') { net.setWorld({ jesterUntil: v === 'on' ? n + 15 * 60000 : 0 }); toast(v === 'on' ? 'The Jester has been summoned.' : 'The Jester has gone.'); }
-  if (k === 'x') { net.clearWorld(); toast('Every event ended.'); }
+  if (k === 'x' && v === 'clear') { net.clearWorld(); toast('Every event ended.'); }
+  if (k === 'x' && v === 'boss' && G.xfight) { if (G.xfight.live()) toast('____X____ is already here.', 'warn'); else G.xfight.start(G.me.name).then(r => toast(r && r.committed ? '____X____ is coming to the Pit.' : 'Could not summon him right now.', r && r.committed ? 'gold' : 'warn')); }
+  if (k === 'x' && v === 'bossoff' && G.xfight) { G.xfight.stop(); toast('____X____ was sent away.'); }
   if (k === 'r') { if (v === 'start') { startRaid(-1, G.me.name); toast('The Crawler is coming up in the Pit.'); } else { net.raidUpdate({ gone: true }); toast('The Crawler was sent away.'); } }
   if (k === 'l') { net.setWorld({ luck: v === 'stop' ? null : { mult: +v, until: n + 10 * 60000, by: G.me.name } }); toast(v === 'stop' ? 'Server luck is back to normal.' : `Server luck x${v} for 10 minutes, for everyone.`); if (G.chat && v !== 'stop') G.chat.system(`[Server]: SERVER LUCK x${v} for 10 minutes!`, '#ffd54f'); }
 }
@@ -2298,6 +2514,13 @@ function audio() {
 function sound(kind, n = 0) {
   if (!G || !G.save) return;
   const ctx = G.audio, v0 = vol('sfx'); if (!ctx || v0 <= 0) return;
+  const noise = (d, v, delay = 0, f = 1200) => {
+    const len = Math.max(1, Math.floor(ctx.sampleRate * d)), buf = ctx.createBuffer(1, len, ctx.sampleRate), ch = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src = ctx.createBufferSource(), flt = ctx.createBiquadFilter(), g = ctx.createGain(), t0 = ctx.currentTime + delay;
+    src.buffer = buf; flt.type = 'bandpass'; flt.frequency.value = f; flt.Q.value = 0.8; g.gain.value = v * v0 * 1.6;
+    src.connect(flt); flt.connect(g); g.connect(ctx.destination); src.start(t0);
+  };
   const tone = (f, d, type = 'sine', v = 0.08, delay = 0, slide) => {
     const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + delay;
     o.type = type; o.frequency.setValueAtTime(f, t); if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + d);
@@ -2327,6 +2550,25 @@ function sound(kind, n = 0) {
     case 'bell': chord(880, [0, 12, 19, 24], 2.6, 'sine', 0.07); chord(440, [0, 7], 2.2, 'triangle', 0.05); break;
     case 'splash': for (let i = 0; i < 5; i++) tone(300 + Math.random() * 500, 0.18, 'sine', 0.04, i * 0.03, 120); break;
     case 'slam': tone(70, 0.5, 'sawtooth', 0.12, 0, 35); tone(140, 0.3, 'square', 0.05); break;
+    // ____X____ and team null
+    case 'sword': noise(0.12, 0.09, 0, 2600); tone(520, 0.08, 'triangle', 0.03, 0, 300); break;
+    case 'axe': noise(0.18, 0.12, 0, 900); tone(160, 0.2, 'square', 0.05, 0, 70); break;
+    case 'lunge': noise(0.25, 0.07, 0, 3800); tone(300, 0.2, 'sawtooth', 0.025, 0, 900); break;
+    case 'smash': noise(0.7, 0.22, 0, 420); tone(60, 0.7, 'sawtooth', 0.14, 0, 28); tone(120, 0.4, 'square', 0.06, 0.02, 50); break;
+    case 'gust': noise(0.5, 0.12, 0, 1600); tone(220, 0.45, 'sine', 0.05, 0, 900); break;
+    case 'windthrow': noise(0.2, 0.05, 0, 2400); break;
+    case 'throw': tone(700, 0.15, 'sine', 0.03, 0, 300); break;
+    case 'pearl': tone(1400, 0.3, 'sine', 0.05, 0, 300); tone(300, 0.35, 'triangle', 0.04, 0.05, 1200); noise(0.25, 0.04, 0, 5000); break;
+    case 'totem': for (let i = 0; i < 6; i++) tone(500 + i * 160, 0.5, 'sine', 0.05, i * 0.06); noise(0.8, 0.06, 0, 6000); break;
+    case 'eat': noise(0.07, 0.06, 0, 1200 + Math.random() * 800); break;
+    case 'burp': tone(140, 0.35, 'sawtooth', 0.06, 0, 90); tone(180, 0.3, 'square', 0.03, 0.03, 120); break;
+    case 'block': tone(240, 0.12, 'square', 0.06, 0, 180); noise(0.1, 0.07, 0, 700); break;
+    case 'bosshurt': tone(170, 0.18, 'sawtooth', 0.05, 0, 120); noise(0.12, 0.06, 0, 1100); break;
+    case 'mobhurt': tone(260, 0.15, 'sawtooth', 0.04, 0, 180); break;
+    case 'bossdie': tone(200, 1.2, 'sawtooth', 0.08, 0, 50); tone(400, 0.9, 'square', 0.04, 0.1, 80); break;
+    case 'portal': tone(110, 1.4, 'sine', 0.05, 0, 160); tone(220, 1.2, 'triangle', 0.025, 0.2, 260); break;
+    case 'glass': for (let i = 0; i < 5; i++) noise(0.15, 0.08, i * 0.05, 3000 + i * 600); break;
+    case 'xspawn': tone(55, 2, 'sawtooth', 0.08, 0, 45); tone(82, 1.8, 'square', 0.04, 0.2, 70); noise(1.2, 0.05, 0, 600); break;
     case 'anvil': tone(1600, 0.25, 'triangle', 0.06); tone(2400, 0.4, 'sine', 0.04, 0.05); tone(1600, 0.25, 'triangle', 0.05, 0.3); break;
   }
 }

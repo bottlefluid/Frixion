@@ -160,6 +160,8 @@ export const AURAS = [
   A('limbo', 'Limbo', 99999, '#e0e0e0', [L.motes('#ffffff', 40), L.ring('#9e9e9e', { r: 2.6, half: 1 }), L.glow('#000000', 5, { dark: 1 })], { weather: 'limbo' }),
   A('unknown', 'The Unknown', 9999999, '#9e9e9e', [L.cubes('#ffffff', 10), L.cubes('#000000', 10, { dark: 1 }), L.halo('#ffffff', { eye: 1 }), L.pillar('#bdbdbd', { tall: 1 })], { weather: 'limbo' }),
   // One aura, like Sol's: 『EQUINOX』, the Equilibrium Incarnate. A white sun and a black sun in balance.
+  // only from beating ____X____: be his top damager, never die, and do at least 250 damage
+  A('xboss', '____X____', 999999999, '#b388ff', [{ t: 'weapons' }, L.spiral('#9c6bff', { n: 36 }), L.motes('#b388ff', 26), L.motes('#ffffff', 14), L.ring('#7c4dff', { r: 3.2, runes: 1 })], { boss: true }, { violet: 1 }, { sub: 'Slayer of the Undying' }),
   A('equinox', '『EQUINOX』', 2500000000, '#ffffff', [L.yinyang({ r: 3.4, huge: 1 }), L.ring('#ffffff', { r: 3.8, half: 1, runes: 1 }), L.motes('#ffffff', 30), L.motes('#000000', 30, { dark: 1 })], null, { bw: 1 }, { sub: 'Equilibrium Incarnate', float: true }),
 ];
 // Gem auras: the Jewelry Potion makes these more likely.
@@ -220,6 +222,7 @@ export function rollAura(luck, time, weather, opts = {}, rand = Math.random) {
   for (const a of AURAS_RAREST_FIRST) {
     if (a.id === 'common') continue;
     if (a.only) {
+      if (a.only.boss) continue;   // never rolled
       if (a.only.time && a.only.time !== time) continue;
       const ow = a.only.weather;
       if (ow === 'limbo') { if (weather !== 'limbo') continue; }
@@ -276,6 +279,7 @@ const ELEMENTS = {
   glitch: { z: ['storm', 'Corrupt'], x: ['beam', 'Overwrite'], c: ['vortex', 'Stack Overflow'], v: ['nova', 'Fatal Error'], f: ['blink', 'Teleport'] },
   arcane: { z: ['burst', 'Arcane Pulse'], x: ['orbs', 'Arcane Missiles'], c: ['meteor', 'Starfall'], v: ['nova', 'Arcanum'], f: ['blink', 'Blink'] },
   balance: { z: ['burst', 'Duality'], x: ['beam', 'Twin Lance'], c: ['vortex', 'Yin and Yang'], v: ['nova', 'Equilibrium'], f: ['flight', 'Weightless'] },
+  warrior: { z: ['burst', 'Sweeping Edge'], x: ['beam', 'Axe Cleave'], c: ['dash', 'Spear Lunge'], v: ['meteor', 'Mace Smash'], f: ['blink', 'Ender Pearl'] },
 };
 const ELEMENT_OF = {};
 for (const [el, ids] of Object.entries({
@@ -294,6 +298,7 @@ for (const [el, ids] of Object.entries({
   toxic: 'corrosive parasite monarch',
   glitch: 'matrix fault deleted paradox',
   balance: 'equinox',
+  warrior: 'xboss',
 })) ids.split(' ').forEach(id => { ELEMENT_OF[id] = el; });
 export const elementOf = id => ELEMENT_OF[id] || 'arcane';
 const HAS_F = new Set('wind gale magnetic static comet phantom tempest leviathan aurora dawnbreaker starscourge singularity overcontrol genesis archangel seraphim aether paradox fault monarch pharaoh astral equinox hallowed unknown wraith'.split(' '));
@@ -303,7 +308,7 @@ export function movesFor(key) {
   const t = tierIndex(aura.rarity);
   const el = ELEMENTS[ELEMENT_OF[aura.id] || 'arcane'];
   const keys = [];
-  if (aura.id === 'equinox') keys.push('z', 'x', 'c', 'v', 'f');
+  if (aura.id === 'equinox' || aura.id === 'xboss') keys.push('z', 'x', 'c', 'v', 'f');
   else {
     if (t >= 2) keys.push('z');
     if (t >= 3) keys.push('x');
@@ -638,6 +643,8 @@ export const ACHIEVEMENTS = [
   AC('craft1', 'Tinkerer', 'Craft a gear at Jake\'s Workshop.', s => s.crafted >= 1, { coins: 2500 }, 'Tinkerer'),
   AC('potions100', 'Alchemist', 'Use 100 potions.', s => s.potions >= 100, { potions: { chest2: 1 } }, 'Alchemist'),
   AC('daily10', 'Busy Bee', 'Claim 10 daily quests.', s => s.dailies >= 10, { potions: { chest2: 1 } }),
+  AC('xboss1', 'Pop Goes the Totem', 'Help defeat ____X____.', s => s.xboss >= 1, { void: 2, potions: { chest3: 1 } }, 'Totem Popper'),
+  AC('xaura', 'The Real ____X____', 'Earn the ____X____ aura.', s => s.found.xboss, { void: 5 }, '____X____'),
   AC('pass30', 'Seasoned', 'Reach level 30 on the Season Pass.', s => s.passLevel >= 30, { void: 2 }, 'Seasoned'),
 ];
 export const ACHIEVEMENT = Object.fromEntries(ACHIEVEMENTS.map(a => [a.id, a]));

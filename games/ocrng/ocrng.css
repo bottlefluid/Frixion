@@ -581,3 +581,101 @@ body.ocrng-open { overflow: hidden; }
 .oc-cut.cine.show .cut-sub { animation: ocFade .6s ease 1.5s forwards; }
 .oc-cut.cine .cut-subtitle, .oc-cut.cine .cut-sub { color: #fff; text-shadow: 0 0 4px #000, 0 0 12px #000; }
 @media (max-height: 520px) { .oc-batch { top: 12%; width: min(330px, 70vw); padding: 8px 10px; } .oc-batch-row { font-size: 12px; padding: 2px 0; } .oc-buff.more { height: 30px; } }
+
+/* ---------- 2.3 ---------- */
+/* potions at work, bottom right like Sol's, with a card when you hover one */
+.oc-br .oc-buffs { display: flex; flex-wrap: wrap-reverse; justify-content: flex-end; gap: 4px; max-width: 290px; margin: 0; pointer-events: auto; }
+.oc-buff { cursor: default; }
+.oc-buff b { text-shadow: var(--shadow); }
+.oc-buff-more { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line) !important; background: rgba(0, 0, 0, .55) !important; font-size: 12px; font-weight: 800; }
+.oc-buff-more .ic { width: 16px; height: 16px; }
+.oc-tip { position: absolute; z-index: 30; max-width: 240px; padding: 7px 10px 8px; border: 1.5px solid var(--line); background: rgba(8, 9, 12, .92); display: flex; flex-direction: column; gap: 3px; pointer-events: none !important; text-shadow: var(--shadow); }
+.oc-tip b { font-size: 13.5px; }
+.oc-tip span { font-size: 12px; font-weight: 600; color: #e6e6e6; }
+.oc-tip small { font-size: 11px; color: #b9b9c2; }
+/* chat tabs, like a Roblox chat window */
+.oc-chat-tabs { display: flex; gap: 2px; }
+.oc-chat-tabs button { position: relative; padding: 3px 10px !important; border-radius: 4px 4px 0 0; background: rgba(0, 0, 0, .3) !important; font-size: 12px; font-weight: 700; color: #cfcfcf !important; }
+.oc-chat-tabs button.on { background: rgba(0, 0, 0, .55) !important; color: #fff !important; }
+.oc-chat-new { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: #ff5252; }
+.oc-chat.idle .oc-chat-tabs { opacity: 0; }
+/* leaderboard titles */
+.oc-ttl { width: 16px; height: 16px; flex: none; display: block; }
+.oc-ttl.big { width: 34px; height: 34px; }
+.oc-ttl.none { border: 1.5px dashed rgba(255, 255, 255, .35); border-radius: 3px; }
+.oc-pl-row .n { display: flex; flex-direction: column; min-width: 0; }
+.oc-pl-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oc-pl-row .t { display: flex; align-items: center; gap: 4px; min-width: 0; margin-top: 1px; }
+.oc-pl-row .t small { font-size: 10.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oc-titles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; margin-top: 8px; }
+.oc-title-card { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 6px 8px !important; border: 1px solid var(--line-dim) !important; background: rgba(255, 255, 255, .04) !important; text-align: center; }
+.oc-title-card:hover { background: rgba(255, 255, 255, .1) !important; }
+.oc-title-card.on { border-color: #fff !important; box-shadow: inset 0 0 0 1px #fff; }
+.oc-title-card b { font-size: 13px; }
+.oc-title-card small { font-size: 10.5px; color: var(--ok); }
+/* the admin panel, Sol's style: outlined tiles in each thing's colour, filled in while active */
+.oc-admin h3 { margin: 12px 0 6px !important; font-size: 13px !important; letter-spacing: .06em; }
+.oc-adm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 6px; }
+.oc-adm-tile { position: relative; min-height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 8px 6px !important; border: 1.5px solid color-mix(in srgb, var(--c) 70%, transparent) !important; border-radius: 2px; background: rgba(0, 0, 0, .35) !important; color: var(--c) !important; text-align: center; transition: background .12s; }
+.oc-adm-tile b { font-size: 13px; font-weight: 800; letter-spacing: .04em; text-shadow: 0 1px 2px #000; }
+.oc-adm-tile small { font-size: 10.5px; font-weight: 600; color: #c9c9d2; }
+.oc-adm-tile:hover { background: color-mix(in srgb, var(--c) 16%, rgba(0, 0, 0, .45)) !important; }
+.oc-adm-tile.on { background: var(--c) !important; color: #0b0b0e !important; border-color: #fff !important; }
+.oc-adm-tile.on b { text-shadow: none; }
+.oc-adm-tile.on small { color: #222; }
+.oc-adm-tile i { position: absolute; top: 3px; right: 5px; font-size: 8.5px; font-style: normal; font-weight: 800; letter-spacing: .08em; }
+.oc-adm-tile.stop { border-style: dashed !important; }
+.oc-adm-find { display: flex; gap: 6px; }
+.oc-adm-find input { flex: 1; height: 34px; padding: 0 10px; border: 1.5px solid var(--line-dim); background: rgba(0, 0, 0, .45); font-weight: 600; outline: none; }
+.oc-adm-btn { height: 34px; padding: 0 14px !important; border: 1.5px solid var(--line) !important; background: rgba(0, 0, 0, .45) !important; font-weight: 800; letter-spacing: .03em; }
+.oc-adm-btn.ok { border-color: var(--ok) !important; color: var(--ok) !important; }
+.oc-adm-btn.bad { border-color: var(--bad) !important; color: var(--bad) !important; }
+.oc-adm-btn:hover { background: rgba(255, 255, 255, .1) !important; }
+.oc-adm-online { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 8px; }
+.oc-adm-online small { color: #b9b9c2; }
+.oc-adm-chip { padding: 4px 10px !important; border: 1px solid var(--line-dim) !important; background: rgba(255, 255, 255, .05) !important; font-size: 12px; }
+.oc-adm-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 10px; padding: 10px 12px; border: 1.5px solid var(--line-dim); background: rgba(0, 0, 0, .3); }
+.oc-adm-card b { font-size: 15px; }
+.oc-adm-card span { font-size: 12px; color: #d0d0d8; }
+/* Minecraft-style boss bar and hearts */
+.oc-mcname { font-family: "Courier New", monospace; font-weight: 700; color: #fff; text-shadow: 2px 2px 0 #3f3f3f; letter-spacing: .02em; }
+.oc-mcname.big { font-size: clamp(34px, 6vw, 72px); }
+.oc-bossbar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: min(420px, 60vw); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none !important; }
+.oc-bossbar b { font-size: 15px; }
+.oc-boss-hp { position: relative; width: 100%; height: 11px; background: #3b1449; box-shadow: 0 0 0 2px rgba(0, 0, 0, .7); overflow: hidden; }
+.oc-boss-hp i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(#e18cff, #b235e6 45%, #7d1fa8); transition: width .25s; }
+.oc-boss-hp u { position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 2px), rgba(0, 0, 0, .55) calc(10% - 2px) 10%); }
+.oc-bossbar.p2 .oc-boss-hp { background: #4a0c2c; }
+.oc-bossbar.p2 .oc-boss-hp i { background: linear-gradient(#ffb0e6, #ff3fb4 45%, #b8106f); }
+.oc-bossbar small { font-size: 11.5px; font-weight: 700; color: #e6e6e6; text-shadow: var(--shadow); white-space: nowrap; }
+.oc-hearts { position: absolute; left: 50%; bottom: 112px; transform: translateX(-50%); display: flex; gap: 1px; pointer-events: none !important; }
+.oc-hearts i { width: 18px; height: 18px; image-rendering: pixelated; background: center/contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9' shape-rendering='crispEdges'%3E%3Cpath d='M1 0H4V1H5V0H8V1H9V4H8V5H7V6H6V7H5V8H4V7H3V6H2V5H1V4H0V1H1Z' fill='%23000'/%3E%3Cpath d='M1 1H4V2H5V1H8V4H7V5H6V6H5V7H4V6H3V5H2V4H1Z' fill='%23e01b1b'/%3E%3Cpath d='M2 2H3V3H2Z' fill='%23ffd0d0'/%3E%3C/svg%3E"); }
+.oc-hearts i.h { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9' shape-rendering='crispEdges'%3E%3Cpath d='M1 0H4V1H5V0H8V1H9V4H8V5H7V6H6V7H5V8H4V7H3V6H2V5H1V4H0V1H1Z' fill='%23000'/%3E%3Cpath d='M1 1H4V2H5V1H8V4H7V5H6V6H5V7H4V6H3V5H2V4H1Z' fill='%23401010'/%3E%3Cpath d='M1 1H4V7H3V6H2V5H1Z' fill='%23e01b1b'/%3E%3Cpath d='M2 2H3V3H2Z' fill='%23ffd0d0'/%3E%3C/svg%3E"); }
+.oc-hearts i.e { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9' shape-rendering='crispEdges'%3E%3Cpath d='M1 0H4V1H5V0H8V1H9V4H8V5H7V6H6V7H5V8H4V7H3V6H2V5H1V4H0V1H1Z' fill='%23000'/%3E%3Cpath d='M1 1H4V2H5V1H8V4H7V5H6V6H5V7H4V6H3V5H2V4H1Z' fill='%23401010'/%3E%3C/svg%3E"); }
+.oc-hearts.low i { animation: ocHeartShake .3s steps(2) infinite; }
+.oc-hearts.low i:nth-child(odd) { animation-delay: .15s; }
+@keyframes ocHeartShake { 0% { transform: translateY(0); } 100% { transform: translateY(-2px); } }
+@media (max-height: 520px) {
+  .oc-br .oc-buffs { max-width: 210px; }
+  #ocrng.oc-touch .oc-br .oc-buffs { position: absolute; right: 236px; bottom: 6px; justify-content: flex-end; }
+  .oc-buff-more { width: 30px; height: 30px; }
+  .oc-bossbar { top: 6px; width: min(300px, 46vw); }
+  .oc-bossbar b { font-size: 12px; }
+  .oc-boss-hp { height: 8px; }
+  .oc-bossbar small { font-size: 9.5px; }
+  .oc-hearts { bottom: auto; top: 58px; }
+  .oc-hearts i { width: 13px; height: 13px; }
+  .oc-adm-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+  .oc-adm-tile { min-height: 46px; }
+  .oc-titles { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .oc-chat-tabs button { padding: 2px 8px !important; font-size: 10.5px; }
+}
+@media (max-height: 520px) {
+  #ocrng.oc-touch .oc-br .oc-buffs { width: 300px; max-width: none; }
+  #ocrng.oc-touch .oc-buff { width: 36px; }
+  #ocrng.oc-touch .oc-buff b { font-size: 9px; white-space: nowrap; }
+  #ocrng:has(.oc-admin-btn:not(.hidden)) .oc-chat { left: 132px; }
+  .oc-bossbar { left: auto; right: 168px; transform: none; width: 240px; }
+  .oc-hearts { left: auto; right: 218px; transform: none; top: 52px; }
+}
+@media (max-height: 520px) { #ocrng.oc-touch .oc-br .oc-buffs { right: 6px; bottom: 194px; width: 232px; } }

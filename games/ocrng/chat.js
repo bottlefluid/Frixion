@@ -8,9 +8,22 @@ const nameColor = name => { let h = 0; for (const ch of String(name)) h = (h * 3
 export function createChat({ host, rtdb, uid, name, onMessage, onCommand }) {
   const box = document.createElement('div');
   box.className = 'oc-chat idle';
-  box.innerHTML = '<div class="oc-chat-log"></div><form class="oc-chat-bar"><input class="oc-chat-input" maxlength="150" autocomplete="off" spellcheck="false" placeholder="To chat click here or press &quot;/&quot; key"></form>';
+  // two tabs like a Roblox chat window: General (players and the game) and Server (who found what, everywhere)
+  box.innerHTML = '<div class="oc-chat-tabs"><button type="button" data-ch="general" class="on">General</button><button type="button" data-ch="server">Server<i class="oc-chat-new hidden"></i></button></div>'
+    + '<div class="oc-chat-log" data-ch="general"></div><div class="oc-chat-log hidden" data-ch="server"></div>'
+    + '<form class="oc-chat-bar"><input class="oc-chat-input" maxlength="150" autocomplete="off" spellcheck="false" placeholder="To chat click here or press &quot;/&quot; key"></form>';
   host.appendChild(box);
-  const log = box.querySelector('.oc-chat-log'), form = box.querySelector('form'), input = box.querySelector('input');
+  const logs = { general: box.querySelector('[data-ch="general"].oc-chat-log'), server: box.querySelector('[data-ch="server"].oc-chat-log') };
+  const log = logs.general, form = box.querySelector('form'), input = box.querySelector('input');
+  let tab = 'general';
+  const show = ch => {
+    tab = ch;
+    box.querySelectorAll('.oc-chat-tabs button').forEach(b => b.classList.toggle('on', b.dataset.ch === ch));
+    for (const [k, el] of Object.entries(logs)) el.classList.toggle('hidden', k !== ch);
+    if (ch === 'server') box.querySelector('.oc-chat-new').classList.add('hidden');
+    logs[ch].scrollTop = logs[ch].scrollHeight;
+  };
+  box.querySelectorAll('.oc-chat-tabs button').forEach(b => b.addEventListener('click', () => { show(b.dataset.ch); wake(); }));
   const ref = rtdb ? rtdb.ref('ocrng/chat') : null;
   const joinedAt = Date.now();
   let lastSent = 0, idleTimer = 0, off = null;
@@ -20,13 +33,14 @@ export function createChat({ host, rtdb, uid, name, onMessage, onCommand }) {
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => { if (document.activeElement !== input) box.classList.add('idle'); }, 12000);
   }
-  function line(html, cls = '') {
-    const el = document.createElement('div');
+  function line(html, cls = '', ch = 'general') {
+    const to = logs[ch] || log, el = document.createElement('div');
     el.className = 'oc-chat-line ' + cls;
     el.innerHTML = html;
-    log.appendChild(el);
-    while (log.children.length > 60) log.firstChild.remove();
-    log.scrollTop = log.scrollHeight;
+    to.appendChild(el);
+    while (to.children.length > 60) to.firstChild.remove();
+    to.scrollTop = to.scrollHeight;
+    if (ch !== tab && ch === 'server') box.querySelector('.oc-chat-new').classList.remove('hidden');
     wake();
     return el;
   }
@@ -62,13 +76,13 @@ export function createChat({ host, rtdb, uid, name, onMessage, onCommand }) {
     setTimeout(() => { r.remove().catch(() => {}); r.onDisconnect().cancel(); }, 20000);
   });
   input.addEventListener('keydown', e => { if (e.key === 'Escape') { input.value = ''; input.blur(); } e.stopPropagation(); });
-  input.addEventListener('focus', () => { box.classList.add('typing'); wake(); });
+  input.addEventListener('focus', () => { box.classList.add('typing'); if (tab !== 'general') show('general'); wake(); });
   input.addEventListener('blur', () => { box.classList.remove('typing'); wake(); });
 
   const api = {
     el: box,
     // a line from the game itself, like "[Server]: Starfall has begun"
-    system(text, color = '#ffffff') { line(`<span style="color:${color}">${esc(text)}</span>`, 'sys'); },
+    system(text, color = '#ffffff', ch = 'general') { line(`<span style="color:${color}">${esc(text)}</span>`, 'sys', ch); },
     focus() { input.focus(); },
     get typing() { return document.activeElement === input; },
     destroy() { if (off) off(); clearTimeout(idleTimer); box.remove(); },

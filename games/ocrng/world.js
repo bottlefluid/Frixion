@@ -56,6 +56,57 @@ function rectMinus(r, holes) {
   return cells;
 }
 
+// ---------------- baking ----------------
+// Every block on the map used to be its own mesh with six faces, and a face per material is a draw call: about 1,700 draw
+// calls a frame, twice over with shadows, which is what made the game lag. Blocks that never move are merged here into
+// one mesh per material (same colour, studded or smooth), so the whole island draws in a few dozen calls. Studs keep
+// their size: each face's texture coordinates are scaled to its size in studs, on one shared stud texture.
+const bakedStudMats = new Map();
+function bakedStudMat(m) {
+  const key = m.color.getHexString() + '|' + m.emissive.getHexString() + '|' + m.emissiveIntensity;
+  if (bakedStudMats.has(key)) return bakedStudMats.get(key);
+  const tx = new THREE.CanvasTexture(studImage());
+  tx.colorSpace = THREE.SRGBColorSpace; tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.anisotropy = 4;
+  const mat = new THREE.MeshStandardMaterial({ color: m.color, map: tx, roughness: m.roughness, metalness: m.metalness, emissive: m.emissive, emissiveIntensity: m.emissiveIntensity });
+  bakedStudMats.set(key, mat);
+  return mat;
+}
+function bakeStatic(root) {
+  const buckets = new Map(), nm = new THREE.Matrix3(), v = new THREE.Vector3(), n = new THREE.Vector3();
+  const kids = root.children.filter(o => o.isMesh && o.userData.bake && o.geometry.type === 'BoxGeometry' && (Array.isArray(o.material) ? o.material : [o.material]).every(m => !m.transparent));
+  for (const m of kids) {
+    m.updateMatrix(); nm.getNormalMatrix(m.matrix);
+    const geo = m.geometry, mats = Array.isArray(m.material) ? m.material : [m.material];
+    const pos = geo.attributes.position, nor = geo.attributes.normal, uv = geo.attributes.uv, idx = geo.index;
+    const { width: W = 1, height: H = 1, depth: D = 1 } = geo.parameters;
+    const size = [[D, H], [D, H], [W, D], [W, D], [W, H], [W, H]];   // the box's faces: +x, -x, +y, -y, +z, -z
+    const groups = geo.groups.length ? geo.groups : [{ start: 0, count: idx.count, materialIndex: 0 }];
+    groups.forEach((gr, gi) => {
+      const src = mats[gr.materialIndex] || mats[0];
+      const studded = !!src.map, mat = studded ? bakedStudMat(src) : src;
+      const key = mat.uuid + (m.castShadow ? '|c' : '') + (m.receiveShadow ? '|r' : '');
+      let b = buckets.get(key); if (!b) buckets.set(key, (b = { mat, cast: m.castShadow, receive: m.receiveShadow, p: [], n: [], u: [] }));
+      const [su, sv] = geo.groups.length ? size[gi] : [1, 1];
+      for (let i = gr.start; i < gr.start + gr.count; i++) {
+        const k = idx ? idx.getX(i) : i;
+        v.fromBufferAttribute(pos, k).applyMatrix4(m.matrix); b.p.push(v.x, v.y, v.z);
+        n.fromBufferAttribute(nor, k).applyMatrix3(nm).normalize(); b.n.push(n.x, n.y, n.z);
+        b.u.push(uv.getX(k) * (studded ? su : 1), uv.getY(k) * (studded ? sv : 1));
+      }
+    });
+    root.remove(m); geo.dispose();
+  }
+  for (const b of buckets.values()) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(b.p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(b.n, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(b.u, 2));
+    g.computeBoundingSphere();
+    const mesh = new THREE.Mesh(g, b.mat); mesh.castShadow = b.cast; mesh.receiveShadow = b.receive; mesh.matrixAutoUpdate = false;
+    root.add(mesh);
+  }
+}
+
 // ---------------- the world ----------------
 export function createWorld(scene, quality) {
   const colliders = [];     // { min: Vector3, max: Vector3 }
@@ -71,6 +122,7 @@ export function createWorld(scene, quality) {
     mesh.position.set(x, y + h / 2, z);
     if (o.ry) mesh.rotation.y = o.ry;
     mesh.castShadow = shadows && !o.noShadow; mesh.receiveShadow = shadows;
+    mesh.userData.bake = !o.parent;   // blocks straight on the map never move: they get merged (see bakeStatic)
     (o.parent || root).add(mesh);
     if (!o.noCollide) colliders.push({ min: new THREE.Vector3(x - w / 2, y, z - d / 2), max: new THREE.Vector3(x + w / 2, y + h, z + d / 2), id: o.id });
     return mesh;
@@ -562,8 +614,8 @@ export function createWorld(scene, quality) {
     const x = B.minX + 6 + rand() * (GW - 12), z = B.minZ + 6 + rand() * (GD - 12);
     if (blocked(x, z)) continue;
     const f = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), plainMat(flowerColors[i % 5]));
-    f.position.set(x, 0.6, z); root.add(f);
-    const st = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.6, 0.12), plainMat('#2e7d32')); st.position.set(x, 0.3, z); root.add(st);
+    f.position.set(x, 0.6, z); f.userData.bake = true; root.add(f);
+    const st = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.6, 0.12), plainMat('#2e7d32')); st.position.set(x, 0.3, z); st.userData.bake = true; root.add(st);
   }
   const lamps = [];
   for (const [x, z] of [[4, 26], [-4, 36], [-4, 44], [-22, -2], [-34, -10], [20, -2], [32, -10], [-4, -30], [4, -50], [-36, 10], [-44, 28], [16, 16], [-16, 16], [-60, -2], [-80, -10], [-50, 62], [-90, -50]]) {
@@ -632,6 +684,7 @@ export function createWorld(scene, quality) {
   const tmp = new THREE.Color();
   let glitchT = 0;
 
+  bakeStatic(root);
   const npcs = { mari, jester, finn, marlin, nova, stella, ghost, jake, jack };
   return {
     root, colliders, bounds: B,

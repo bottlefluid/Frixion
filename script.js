@@ -455,6 +455,19 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.40', date: '2026-10-27', title: 'Overcontrol RNG 2.3: the ____X____ raid, a faster game, and titles like Sol\'s',
+    notes: [
+      'Overcontrol RNG runs much faster. The island used to cost about 1,700 draw calls every frame and now costs about 260, and slow computers and phones lower the resolution on their own until it runs smoothly.',
+      'New raid boss: ____X____, in the Pit every 6 hours (or when the Owner summons him). He fights like a Minecraft PvP player: a netherite sword and axe, a spear with Lunge, ender pearls to catch you, wind charges that launch him and you, and a mace that hits harder the further he falls. That is usually one shot.',
+      'He goes after whoever has hurt him most. If they die, their damage goes back to 0 and he picks the next person. When he is far away he pearls to you, or lunges after you and comes down with the mace.',
+      'At 0 health he pops a Totem of Undying and comes back with 1,000. He eats enchanted golden apples (100 health each, standing still for 3 seconds), and team null comes through a nether portal: four soldiers with 100 health and their red-trimmed general with 250, all with random names. The portal breaks 5 seconds after the last one is through.',
+      'The ____X____ aura goes to the top damager if they never died and did at least 250 damage. His weapons circle you, and its Z X C V F moves are his sword, axe, spear, mace and ender pearl. Everyone who helps gets rewards by rank, and there are 2 new achievements.',
+      'During a raid your health shows as 10 Minecraft hearts, under a Minecraft-style boss bar.',
+      'Potions moved to the bottom right, like Sol\'s. Hover (or tap) one to see what it does. Only 6 show until you press the + button.',
+      'Leaderboard titles like Sol\'s: your title and its little picture show under your name on the leaderboard. Pick it in Settings, Leaderboard Titles. Titles no longer float over your head.',
+      'The chat has a Server tab (Roblox calls it Global) for everyone\'s rare rolls. Server roll messages can be turned off in Settings, Miscellaneous.',
+      'The Owner\'s Admin panel has its own button now, with Sol\'s-style tiles, a Players tab that can wipe all of someone\'s data, and buttons to summon or send away ____X____.',
+    ] },
   { v: '4.39', date: '2026-10-27', title: 'Overcontrol RNG 2.2: the real 『EQUINOX』, first person and instant rolls',
     notes: [
       '『EQUINOX』 is like Sol\'s now: a giant white sun and a giant black sun circle you, you float with your arms spread, and "Equilibrium Incarnate" shows above its name. Its F move turns flight on and off.',
@@ -15674,7 +15687,7 @@ function openOcrng() {
       return true;
     }),
   };
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=5');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=6');
   ocrngModule.then(m => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);
