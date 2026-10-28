@@ -98,6 +98,7 @@ export function makeNameTag(name, key) {
     g.clearRect(0, 0, c.width, c.height);
     g.textAlign = 'center';
     const tier = tierIndex(auraKey(k).rarity);
+    if (aura.sub) { g.font = '700 26px Montserrat, "Segoe UI", sans-serif'; g.lineJoin = 'round'; g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,.85)'; const sub = aura.sub.toUpperCase().split('').join(String.fromCharCode(8202)); g.strokeText(sub, 384, 30, 700); g.fillStyle = '#e6e6e6'; g.fillText(sub, 384, 30, 700); }
     // aura title
     g.font = `900 ${tier >= 5 ? 64 : 58}px "Segoe UI", system-ui, sans-serif`;
     const w = Math.min(740, g.measureText(auraName).width);
@@ -149,9 +150,18 @@ export function buildAvatar(name, shirt) {
   return {
     root, body, tag, fxHolder, head,
     // emote: 'dance' or 'wave' (from the chat's /e commands), shown while standing still
-    animate(dt, speed, airborne, emote) {
+    // pose 'float': 『EQUINOX』 lifts you off the ground, arms spread out
+    animate(dt, speed, airborne, emote, pose) {
       walk += dt * Math.min(speed, 24) * 0.55; clock += dt;
-      armL.rotation.z = 0; armR.rotation.z = 0; body.rotation.y = 0; body.position.y = 0;
+      armL.rotation.z = 0; armR.rotation.z = 0; body.rotation.y = 0; body.position.y = 0; body.rotation.x = 0; fxHolder.position.y = 0; tag.position.y = 7.1;
+      if (pose === 'float') {
+        const lift = 1.5 + Math.sin(clock * 1.7) * 0.25;
+        body.position.y = lift; fxHolder.position.y = lift; tag.position.y = 7.1 + 1.5;
+        armL.rotation.x = 0; armR.rotation.x = 0; armL.rotation.z = -1.45; armR.rotation.z = 1.45;
+        legL.rotation.x = 0.12; legR.rotation.x = 0.12;
+        body.rotation.x = Math.min(0.35, speed * 0.02);
+        return;
+      }
       if (emote && speed < 1 && !airborne) {
         if (emote === 'dance') {
           const b = Math.sin(clock * 9);
@@ -381,21 +391,22 @@ export class AuraFX {
     if (L.t === 'yinyang') {
       // Equinox: a white ball and a black ball circling you, always opposite each other, each with a tail.
       const grp = new THREE.Group(); grp.position.y = 2.7;
-      const r = L.r || 2.4, size = L.big ? 0.42 : 0.32, orbs = [];
-      const pairs = L.many ? 2 : 1;
+      // huge: one big white ball and one big black ball, like Sol's 『EQUINOX』
+      const r = L.r || 2.4, size = L.huge ? 1.05 : L.big ? 0.42 : 0.32, orbs = [];
+      const pairs = L.many && !L.huge ? 2 : 1;
       for (let p = 0; p < pairs; p++) for (const white of [true, false]) {
         const o = new THREE.Mesh(new THREE.SphereGeometry(size, 20, 16), new THREE.MeshBasicMaterial({ color: white ? '#ffffff' : '#050505' }));
-        if (white) o.add(glowSprite('#ffffff', size * 8));
+        if (white) o.add(glowSprite('#ffffff', size * (L.huge ? 5 : 8)));
         else { const rim = new THREE.Mesh(new THREE.SphereGeometry(size * 1.18, 20, 16), new THREE.MeshBasicMaterial({ color: '#ffffff', side: THREE.BackSide, transparent: true, opacity: 0.55 })); o.add(rim); }
-        const tail = new Dots({ c: white ? '#ffffff' : '#000000', n: 34, size: size * 2.1, dark: !white }, 'sparkle');
+        const tail = new Dots({ c: white ? '#ffffff' : '#000000', n: L.huge ? 48 : 34, size: size * (L.huge ? 1.1 : 2.1), dark: !white }, 'sparkle');
         grp.add(o); grp.add(tail.obj);
         orbs.push({ o, tail, white, p });
       }
       push(grp, (dt, t) => orbs.forEach(({ o, tail, white, p }) => {
-        const tilt = p ? 0.9 : 0, speed = 1.9;
+        const tilt = p ? 0.9 : 0, speed = L.huge ? 1.15 : 1.9;
         const at = (k) => {
-          const a = t * speed - k * 0.07 + (white ? 0 : Math.PI) + p * 1.2;
-          const x = Math.cos(a) * r, z = Math.sin(a) * r, y = Math.sin(a * 2) * 0.5;
+          const a = t * speed - k * (L.huge ? 0.05 : 0.07) + (white ? 0 : Math.PI) + p * 1.2;
+          const x = Math.cos(a) * r, z = Math.sin(a) * r, y = Math.sin(a * 2) * (L.huge ? 0.9 : 0.5);
           return [x, y * Math.cos(tilt) - z * Math.sin(tilt) * (p ? 0.6 : 0), z];
         };
         const [x, y, z] = at(0); o.position.set(x, y, z);

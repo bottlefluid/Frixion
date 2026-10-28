@@ -20,14 +20,15 @@ import { createNet } from './net.js';
 import { createChat } from './chat.js';
 import { createMusic } from './music.js';
 import { castFx, hitTest } from './moves.js';
+import { createEquinoxCinematic, EQUINOX_MERGE, EQUINOX_LENGTH } from './cinematics.js';
 import { glowTex } from './avatar.js';
 import { IC, potionArt, gearArt, handGearArt, fishArt, coinArt, starArt } from './icons.js';
 
-const VERSION = '2.1';
+const VERSION = '2.2';
 const API = () => window.FrixionGameAPI;
 const WALK = 16, JUMP = 24, GRAVITY = 72, STEP = 1.25, R = 0.6, H = 5;
 const ROLL_ANIM_MS = 2600, ROLL_COOLDOWN_MS = 600;
-const CAM_SENS = 0.0085;   // radians per pixel at sensitivity 1: quick, like Roblox
+const CAM_SENS = 0.016;   // radians per pixel at sensitivity 1 (and the default is 1.5): quick
 let G = null;
 
 const $q = (sel, el) => (el || G.root).querySelector(sel);
@@ -53,7 +54,7 @@ export async function open() {
   document.body.appendChild(G.root);
   document.body.classList.add('ocrng-open');
   // Testing on your own computer only: lets a test script look inside the running game. Never on the live site.
-  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ocrngDebug = { state: () => G, interact: () => interact(), admin: a => adminAction(a), panel: id => openPanel(id), cut: key => cutscene(auraKey(key)), move: k => useMove(k), chat: t => G.chat && G.chat.system(t), spawn: id => spawnPickup(id, true) };
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ocrngDebug = { state: () => G, interact: () => interact(), admin: a => adminAction(a), panel: id => openPanel(id), cut: key => cutscene(auraKey(key)), move: k => useMove(k), chat: t => G.chat && G.chat.system(t), spawn: id => spawnPickup(id, true), equip: k => equip(k), potion: id => usePotion(id, true), tp: (x, y, z) => teleportTo(new THREE.Vector3(x, y, z), 'Test teleport.'), zoom: s => zoomBy(s) };
   try {
     setLoading('Loading the engine', 0.1);
     await sleep(60);
@@ -180,11 +181,13 @@ function buildShell() {
       <div class="oc-abilities"></div>
       <button type="button" class="oc-pvp-btn">PvP: Off</button>
     </div>
+    <div class="oc-crosshair hidden"></div>
     <div class="oc-lockmark hidden">${IC.lock}</div>
     <div class="oc-joy hidden"><span class="knob"></span></div>
     <button type="button" class="oc-jump hidden">Jump</button>
     <button type="button" class="oc-act hidden">E</button>
     <div class="oc-bubbles"></div>
+    <div class="oc-batch hidden"></div>
     <div class="oc-announce"></div>
     <div class="oc-toasts"></div>
   </div>
@@ -233,7 +236,7 @@ function checkOrientation() {
 // ---------------- saving ----------------
 const blankSave = () => ({
   v: 3, name: '', coins: 0, f: 0, void: 0, rolls: 0, auras: { common: 0 }, equipped: 'common', potions: {}, items: {}, fish: {}, quickRoll: false,
-  settings: { auto: false, quick: false, autoEquip: true, cutscenes: 'all', pvp: false, bubbles: true, sens: 1, vol: { music: 0.45, mine: 0.7, others: 0.5, sfx: 0.7 } },
+  settings: { auto: false, quick: false, autoEquip: true, cutscenes: 'all', pvp: false, bubbles: true, sens: 1.5, sensV2: true, vol: { music: 0.45, mine: 0.7, others: 0.5, sfx: 0.7 } },
   eggs: {}, effects: [], queued: [], rollBuffs: [], daily: { day: 0, bought: [] }, best: 'common', bestRarity: 2,
   quests: { day: 0, prog: {}, claimed: [], side: {} }, stats: { fish: 0, pickups: 0, potions: 0, kos: 0, moves: 0, playSecs: 0, raids: 0, crafted: 0, dailies: 0 }, found: {}, redeemed: {}, ownerGear: {},
   lastObby: 0, lastBell: 0, chest: false,
@@ -263,7 +266,10 @@ async function loadSave() {
   G.save = s;
   G.effects = (s.effects || []).filter(e => e.until > now() && POTION[e.id]);
   G.queued = (s.queued || []).filter(id => POTION[id]);
-  G.rollBuffs = (s.rollBuffs || []).filter(r => (POTION[r.id] || r.id === 'gem') && r.left > 0);
+  // Warp and Transcendent roll instantly now: their old leftover speed buffs turn back into potions
+  for (const r of s.rollBuffs || []) if (POTION[r.id] && POTION[r.id].batch && !G.me.owner) s.potions[r.id] = (s.potions[r.id] || 0) + 1;
+  G.rollBuffs = (s.rollBuffs || []).filter(r => (r.id === 'gem' || (POTION[r.id] && POTION[r.id].boost)) && r.left > 0);
+  if (!s.settings.sensV2) { if (s.settings.sens === 1) s.settings.sens = 1.5; s.settings.sensV2 = true; }
   if (!s.auras[s.equipped] && !G.me.owner && s.equipped !== 'common') s.equipped = 'common';
   checkDay();
 }
@@ -304,6 +310,7 @@ function equip(key, silent) {
   G.save.equipped = key;
   drawMyTag();
   G.moves = movesFor(key);
+  if (!G.moves.some(m => m.toggle)) p.flyToggle = false;
   renderAbilities();
   if (G.net) G.net.update({ aura: key });
   if (!silent) { toast(`Equipped ${auraKey(key).name}`); markDirty(); }
@@ -314,7 +321,7 @@ const KONAMI = ['arrowup', 'arrowup', 'arrowdown', 'arrowdown', 'arrowleft', 'ar
 function setupInput() {
   const k = G.input.keys, cvs = $q('.oc-canvas');
   if (document.activeElement && document.activeElement.blur && !G.root.contains(document.activeElement)) document.activeElement.blur();
-  const typing = e => e.target && G.root.contains(e.target) && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || (e.target.tagName === 'INPUT' && /^(text|search|number)$/.test(e.target.type)));
+  const typing = e => e.target instanceof Node && G.root.contains(e.target) && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || (e.target.tagName === 'INPUT' && /^(text|search|number)$/.test(e.target.type)));
   on(window, 'keydown', e => {
     if (!G || !G.playing || typing(e)) return;
     const key = e.key.toLowerCase();
@@ -322,6 +329,7 @@ function setupInput() {
     G.konami.push(key); if (G.konami.length > 10) G.konami.shift();
     if (G.konami.join() === KONAMI.join()) { G.konami = []; findEgg('konami'); }
     if (key === '/' && G.chat) { e.preventDefault(); e.stopImmediatePropagation(); G.chat.focus(); return; }
+    if (key === 'i' || key === 'o') { zoomBy(key === 'i' ? -1 : 1); e.preventDefault(); e.stopImmediatePropagation(); return; }
     if (key === 'tab') { e.preventDefault(); $q('.oc-players').classList.toggle('closed'); return; }
     if (e.repeat && ['e', 'r', 'f', 'z', 'x', 'c', 'v', 'shift'].includes(key)) return;
     k[key] = true;
@@ -339,19 +347,20 @@ function setupInput() {
   on(cvs, 'mousedown', e => {
     if (!G.playing) return;
     if (e.button === 2) { dragging = true; if (!G.shiftLock && cvs.requestPointerLock) cvs.requestPointerLock(); }
-    if (e.button === 0) dragging = true;
+    if (e.button === 0) { dragging = true; if (firstPerson() && cvs.requestPointerLock && document.pointerLockElement !== cvs) cvs.requestPointerLock(); }
   });
-  on(window, 'mouseup', () => { dragging = false; if (!G.shiftLock && document.pointerLockElement === cvs) document.exitPointerLock(); });
+  on(window, 'mouseup', () => { dragging = false; if (!G.shiftLock && !firstPerson() && document.pointerLockElement === cvs) document.exitPointerLock(); });
   on(window, 'mousemove', e => {
     if (!G.playing || G.panel) return;
-    if (!(dragging || G.shiftLock || document.pointerLockElement === cvs)) return;
+    if (!(dragging || G.shiftLock || firstPerson() || document.pointerLockElement === cvs)) return;
+    if (firstPerson() && !dragging && document.pointerLockElement !== cvs) return;
     const s = CAM_SENS * (G.save.settings.sens || 1);
     G.cam.yaw -= e.movementX * s;
     G.cam.pitch = Math.max(-1.2, Math.min(1.35, G.cam.pitch + e.movementY * s));
   });
   on(document, 'pointerlockchange', () => { if (G && G.shiftLock && document.pointerLockElement !== cvs) setShiftLock(false); });
   on(cvs, 'contextmenu', e => e.preventDefault());
-  on(cvs, 'wheel', e => { G.cam.zoom = Math.max(4, Math.min(48, G.cam.zoom + Math.sign(e.deltaY) * 3)); e.preventDefault(); }, { passive: false });
+  on(cvs, 'wheel', e => { zoomBy(Math.sign(e.deltaY)); e.preventDefault(); }, { passive: false });
   // touch: a joystick on the left, drag anywhere else to turn, pinch to zoom
   if (API().isMobile() || (matchMedia('(pointer: coarse)').matches && navigator.maxTouchPoints > 0)) {
     G.touch = true;
@@ -368,11 +377,11 @@ function setupInput() {
           let dx = (t.clientX - cx) / (r.width / 2), dy = (t.clientY - cy) / (r.height / 2); const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; }
           G.input.joy = { x: dx, y: dy }; knob.style.transform = `translate(${dx * 32}px, ${dy * 32}px)`;
         } else if (t.identifier === turnId && last) {
-          const s = 0.014 * (G.save.settings.sens || 1);
+          const s = 0.022 * (G.save.settings.sens || 1);
           G.cam.yaw -= (t.clientX - last.x) * s; G.cam.pitch = Math.max(-1.2, Math.min(1.35, G.cam.pitch + (t.clientY - last.y) * s * 0.8)); last = { x: t.clientX, y: t.clientY };
         }
       }
-      if (e.touches.length === 2 && pinch) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); G.cam.zoom = Math.max(4, Math.min(48, pinch.zoom * pinch.d / d)); }
+      if (e.touches.length === 2 && pinch) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); const z = Math.max(pinch.zoom, 3) * pinch.d / d; G.cam.zoom = z < 3.5 ? 0 : Math.min(48, z); }
     }, { passive: true });
     on(cvs, 'touchstart', e => {
       if (e.touches.length === 2) { pinch = { d: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), zoom: G.cam.zoom }; turnId = null; return; }
@@ -442,7 +451,7 @@ function play() {
   $q('.oc-title').classList.add('gone');
   setTimeout(() => G && $q('.oc-title').classList.add('hidden'), 500);
   $q('.oc-hud').classList.remove('hidden');
-  if (G.me.staff) $q('.oc-admin-btn').classList.remove('hidden');
+  if (G.me.owner) $q('.oc-admin-btn').classList.remove('hidden');   // events and codes are the Frixion Owner's alone, not Co-Owners'
   G.cam.yaw = G.player.yaw + Math.PI;
   const api = API();
   G.chat = createChat({ host: $q('.oc-hud'), rtdb: api.rtdb, uid: G.me.uid, name: G.me.name, onMessage: (uid, name, text) => showBubble(uid, text), onCommand: chatCommand });
@@ -454,7 +463,7 @@ function play() {
     pos: (uid, p) => { const o = G.others.get(uid); if (o) { o.target.set(p.x, p.y, p.z); o.targetYaw = p.r; o.anim = p.a; o.hp = p.hp; if (!o.placed) { o.pos.copy(o.target); o.placed = true; } o.seen = now(); } },
     posGone: uid => { const o = G.others.get(uid); if (o) o.placed = false; },
     hit: h => takeHit(h),
-    fx: f => { const fxo = castFx(G.scene, f); if (fxo) G.fxObjects.push(fxo); },
+    fx: f => { if (f.kind === 'equinox') { remoteEquinox(f); return; } const fxo = castFx(G.scene, f); if (fxo) G.fxObjects.push(fxo); },
     announce: a => announce(a),
     world: w => { G.worldState = w; },
     raid: r => onRaid(r),
@@ -502,7 +511,7 @@ function removeOther(uid) {
 function loop() {
   if (!G) return;
   G.raf = requestAnimationFrame(loop);
-  const dt = Math.min(0.05, G.clock.getDelta()), t = G.clock.elapsedTime, n = now();
+  const raw = G.clock.getDelta(), dt = Math.min(0.05, raw), t = G.clock.elapsedTime, n = now();
   const env = G.env, ws = G.worldState || {};
   const time = timeOfDay(n, ws), weather = weatherAt(n, ws), jester = jesterHere(n, ws);
   if (G.playing) {
@@ -519,9 +528,12 @@ function loop() {
   p.avatar.root.position.copy(p.pos);
   p.avatar.root.rotation.y = p.yaw;
   const want = p.sizeUntil > n ? p.sizeTo : 1; p.scale += (want - p.scale) * Math.min(1, dt * 4); p.avatar.root.scale.setScalar(p.scale);
+  const tk = p.tpAt ? (n - p.tpAt) / 420 : 1;
+  if (tk < 1) { const e = 1 - tk; p.avatar.root.scale.set(p.scale * (1 - 0.75 * e), p.scale * (1 + 1.4 * e), p.scale * (1 - 0.75 * e)); }
   p.fx && p.fx.update(dt, t);
   G.world.update(dt, t, { ...env, weather: G.world.inLimbo(p.pos) ? 'limbo' : env.weather, camPos: G.camera.position, player: p.pos });
   G.fxObjects = G.fxObjects.filter(f => f.update(dt));
+  if (G.cine) G.cine.update(Math.min(0.25, raw));   // real time, so slow devices see it at the same pace as the music
   if (G.fishing) fishingTick(dt);
   if (G.crawler) updateRaid(dt, t);
   if (G.playing) {
@@ -533,7 +545,7 @@ function loop() {
     updateBubbles();
   }
   if ((G.zalgoTick = (G.zalgoTick || 0) + dt) > 0.15) { G.zalgoTick = 0; G.root.querySelectorAll('.oc-tier.t-null').forEach(el => { el.textContent = zalgo('null'); }); }
-  if (weather !== G.filterFor) { G.filterFor = weather; G.renderer.domElement.style.filter = weather === 'null' ? 'grayscale(.85) contrast(1.15)' : ''; }
+  if (!G.cine && weather !== G.filterFor) { G.filterFor = weather; G.renderer.domElement.style.filter = weather === 'null' ? 'grayscale(.85) contrast(1.15)' : ''; }
   G.renderer.render(G.scene, G.camera);
 }
 // Once a second: music, play time, the player list, the new day.
@@ -560,15 +572,15 @@ function movePlayer(dt) {
   const p = G.player, k = G.input.keys, j = G.input.joy, n = now();
   let fx = (k.d || k.arrowright ? 1 : 0) - (k.a || k.arrowleft ? 1 : 0) + j.x;
   let fz = (k.s || k.arrowdown ? 1 : 0) - (k.w || k.arrowup ? 1 : 0) + j.y;
-  if ((G.panel && !G.touch) || G.fishing || (G.chat && G.chat.typing)) { fx = 0; fz = 0; }
+  if ((G.panel && !G.touch) || G.fishing || (G.chat && G.chat.typing) || G.cine) { fx = 0; fz = 0; }
   const m = Math.min(1, Math.hypot(fx, fz));
   const yaw = G.cam.yaw;
   const dirX = fx * Math.cos(yaw) + fz * Math.sin(yaw), dirZ = -fx * Math.sin(yaw) + fz * Math.cos(yaw);
-  const flying = p.fly || p.flyUntil > n;
+  const flying = p.fly || p.flyUntil > n || p.flyToggle;
   const speed = WALK * (flying ? 2.4 : 1);
   if (m > 0.05) { const len = Math.hypot(dirX, dirZ) || 1; p.vel.x = dirX / len * speed * m; p.vel.z = dirZ / len * speed * m; }
   else { p.vel.x = 0; p.vel.z = 0; }
-  const want = G.shiftLock ? yaw + Math.PI : m > 0.05 ? Math.atan2(p.vel.x, p.vel.z) : p.yaw;
+  const want = G.shiftLock || firstPerson() ? yaw + Math.PI : m > 0.05 ? Math.atan2(p.vel.x, p.vel.z) : p.yaw;
   let d = want - p.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); p.yaw += d * Math.min(1, dt * 28);
   p.moving = m > 0.05;
   if (p.moving && p.emote) { p.emote = null; p.emoteUntil = 0; if (G.net) G.net.update({ emote: null }); }
@@ -591,7 +603,7 @@ function movePlayer(dt) {
   if (p.onGround && p.pos.y > -1 && Math.abs(p.pos.z) < 140 && Math.abs(p.pos.x) < 300) G.safe = p.pos.clone();
   if (p.pos.y < -4 && Math.abs(p.pos.z) < 140 && Math.abs(p.pos.x) < 300) { p.pos.copy(G.safe || G.world.spawn); p.vel.set(0, 0, 0); toast('Splash! Back to dry land.'); sound('splash'); }
   if (p.pos.y < -60) { p.pos.copy(G.world.spawn); p.vel.set(0, 0, 0); toast('You fell out of the world. Back to spawn.'); }
-  p.avatar.animate(dt, Math.hypot(p.vel.x, p.vel.z), !p.onGround && !flying, p.emote);
+  p.avatar.animate(dt, Math.hypot(p.vel.x, p.vel.z), !p.onGround && !flying, p.emote, floats(G.save.equipped) ? 'float' : null);
 }
 // Bump into blocks, step up small ledges (like stairs), stand on things.
 function collide(p, prevY) {
@@ -616,8 +628,19 @@ function collide(p, prevY) {
 }
 
 // The camera sits exactly where it should every frame (no drifting behind), like Roblox. Only the zoom eases.
+// Zoom in steps like Roblox (wheel, or I and O). All the way in is first person.
+const firstPerson = () => !!(G && G.cam && G.cam.zoom < 0.5 && !G.cine);
+function zoomBy(step) {
+  const c = G.cam, cvs = $q('.oc-canvas');
+  if (step < 0) c.zoom = c.zoom <= 4 ? 0 : Math.max(4, c.zoom - 3);
+  else c.zoom = c.zoom < 0.5 ? 4 : Math.min(48, c.zoom + 3);
+  if (c.zoom < 0.5 && !G.touch && cvs.requestPointerLock && document.pointerLockElement !== cvs) { try { const r = cvs.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
+  if (c.zoom >= 0.5 && !G.shiftLock && document.pointerLockElement === cvs) document.exitPointerLock();
+}
+const floats = key => !!(key && auraKey(key).aura.float);
 function updateCamera(dt, t) {
   const cam = G.camera;
+  if (G.cine) { G.cine.camera(cam); return; }
   if (G.titleCam) {
     const a = t * 0.06;
     cam.position.set(-20 + Math.cos(a) * 95, 42 + Math.sin(t * 0.2) * 4, Math.sin(a) * 80);
@@ -626,10 +649,16 @@ function updateCamera(dt, t) {
   }
   const p = G.player.pos, c = G.cam, s = G.player.scale;
   c.dist += (c.zoom * Math.max(0.6, s) - c.dist) * Math.min(1, dt * 18);
-  const target = new THREE.Vector3(p.x, p.y + 4.5 * s, p.z);
+  const lift = floats(G.save.equipped) ? 1.5 : 0;
+  const dir = new THREE.Vector3(Math.sin(c.yaw) * Math.cos(c.pitch), Math.sin(c.pitch), Math.cos(c.yaw) * Math.cos(c.pitch));
+  // first person: the camera is your eyes, and you don't see your own body
+  const fp = c.zoom < 0.5 && c.dist < 1;
+  G.player.avatar.root.visible = !fp;
+  $q('.oc-crosshair').classList.toggle('hidden', !fp);
+  if (fp) { const eye = new THREE.Vector3(p.x, p.y + (4.65 + lift) * s, p.z); cam.position.copy(eye); cam.lookAt(eye.sub(dir)); return; }
+  const target = new THREE.Vector3(p.x, p.y + (4.5 + lift) * s, p.z);
   if (G.shiftLock) target.add(new THREE.Vector3(Math.cos(c.yaw), 0, -Math.sin(c.yaw)).multiplyScalar(1.75));
   // like Roblox, the camera slides in when a wall is between it and you
-  const dir = new THREE.Vector3(Math.sin(c.yaw) * Math.cos(c.pitch), Math.sin(c.pitch), Math.cos(c.yaw) * Math.cos(c.pitch));
   let reach = c.dist;
   for (const b of G.world.colliders) { if (b.water || b.cam === false) continue; const hit = rayBox(target, dir, b.min, b.max, reach); if (hit !== null) reach = hit; }
   cam.position.copy(target).addScaledVector(dir, Math.max(1.2, reach - 0.35));
@@ -660,7 +689,7 @@ function updateOthers(dt, t) {
     let d = o.targetYaw - o.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); o.yaw += d * Math.min(1, dt * 14);
     o.avatar.root.position.copy(o.pos); o.avatar.root.rotation.y = o.yaw;
     const sp = before.distanceTo(o.pos) / Math.max(dt, 0.001);
-    o.avatar.animate(dt, o.anim ? Math.max(sp, 8) : 0, o.target.y - o.pos.y > 0.5, o.data && o.data.emote);
+    o.avatar.animate(dt, o.anim ? Math.max(sp, 8) : 0, o.target.y - o.pos.y > 0.5, o.data && o.data.emote, floats(o.key) ? 'float' : null);
     if (o.fx) o.fx.update(dt, t);
     if (o.data && o.data.pvp && o.hp !== o.lastHp) { o.lastHp = o.hp; o.avatar.tag.userData.draw(o.data.name || o.uid, o.key, o.hp < 0 ? 100 : o.hp, { title: o.data.title, afk: o.data.afk }); }
   }
@@ -722,8 +751,8 @@ function checkPlaces() {
     if (Math.hypot(p.x - pl.pos.x, p.z - pl.pos.z) >= pl.r || Math.abs(p.y - pl.pos.y) >= 4 || !placeActive(id)) continue;
     if (pl.auto) {
       if (id === 'obby') finishObby();
-      if (id === 'jukebox_exit') glitchToOnce(G.world.rooms.tower, 'Back at the tower.');
-      if (id === 'limbo_exit') glitchToOnce(G.world.rooms.limboDoor, 'You found your way back.');
+      if (id === 'jukebox_exit') teleportOnce(G.world.rooms.tower, 'Back at the tower.');
+      if (id === 'limbo_exit') teleportOnce(G.world.rooms.limboDoor, 'You found your way back.');
       continue;
     }
     near = id; break;
@@ -742,15 +771,15 @@ function interact() {
   const id = G.near, pl = G.world.places[id];
   if (pl.spot) { if (G.fishing) reelPress(); else startFishing(pl.spot); return; }
   if (id === 'bell') return ringBell();
-  if (id === 'portal_stella') return glitchTo(G.world.stellaCamp, 'The portal takes you to Stella.');
-  if (id === 'portal_back') return glitchTo(G.world.caveMouth, 'Back outside the mountain.');
+  if (id === 'portal_stella') return teleportTo(G.world.stellaCamp, 'The portal takes you to Stella.');
+  if (id === 'portal_back') return teleportTo(G.world.caveMouth, 'Back outside the mountain.');
   if (id === 'chest') return openChest();
   if (id.startsWith('card')) return pickCard(id);
   if (id === 'questboard') return openPanel('quests');
-  if (id === 'towerdoor') return glitchTo(G.world.rooms.jukebox, 'A little room under the tower. Music is playing.');
+  if (id === 'towerdoor') return teleportTo(G.world.rooms.jukebox, 'A little room under the tower. Music is playing.');
   if (id === 'limbodoor') {
     if (!G.save.keys.void) { toast('The black door is locked. Something from the deepest water might open it.', 'warn'); sound('hurt'); return; }
-    return glitchTo(G.world.rooms.limbo, 'The Void Key turns. You are in Limbo. Rolls here can find Limbo auras.');
+    return teleportTo(G.world.rooms.limbo, 'The Void Key turns. You are in Limbo. Rolls here can find Limbo auras.');
   }
   if (id === 'qblock') return hitQBlock();
   openPanel(id);
@@ -795,6 +824,16 @@ function checkEggs() {
   if (G.inNull && p.distanceTo(G.world.nullRoom.portal) < 3.5) { G.inNull = false; glitchTo(G.world.spawn, 'Back to reality.'); }
 }
 // for the automatic exits: only once, until you have walked away
+// Portals and doors: you stretch into a beam of your aura's colour and step out of another one.
+function teleportOnce(where, msg) { if (G.lastGlitch && now() - G.lastGlitch < 1500) return; G.lastGlitch = now(); teleportTo(where, msg); }
+function teleportTo(where, msg) {
+  const p = G.player, f = { kind: 'tp', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), x2: +where.x.toFixed(2), y2: +where.y.toFixed(2), z2: +where.z.toFixed(2), c: auraKey(G.save.equipped).aura.c || '#ffffff', tier: 0 };
+  const fx = castFx(G.scene, f); if (fx) G.fxObjects.push(fx);
+  if (G.net) G.net.fx(f);
+  sound('teleport');
+  p.pos.copy(where); p.vel.set(0, 0, 0); p.tpAt = now();
+  toast(msg);
+}
 function glitchToOnce(where, msg) { if (G.lastGlitch && now() - G.lastGlitch < 1500) return; G.lastGlitch = now(); glitchTo(where, msg); }
 function glitchTo(where, msg) {
   const el = G.root;
@@ -1178,6 +1217,82 @@ async function rollOnce() {
     }
   }
 }
+// Warp and Transcendent, like Sol's: thousands of rolls at once. Everything lands in your storage and counts as rolls,
+// the rarest finds are listed on screen, and the rarest of all gets its cutscene.
+function queueBatch(n, name) {
+  G.batchQueue = (G.batchQueue || 0) + n; G.batchTotal = (G.batchTotal || 0) + n;
+  G.batchLabel = G.batching && G.batchLabel !== name ? 'Instant Rolls' : name;
+  if (!G.batching) runBatch();
+}
+async function runBatch() {
+  G.batching = true;
+  while (G && (G.rolling || G.cutting)) await sleep(100);
+  if (!G) return;
+  G.rolling = true;
+  const s = G.save, got = new Map(), counts = { rare: 0, anom: 0, jackpot: 0, voids: 0 };
+  let done = 0, best = null;
+  showBatch(0, got, false);
+  while (G && G.batchQueue > 0) {
+    const chunk = Math.min(4000, G.batchQueue); G.batchQueue -= chunk;
+    const b = buffs(), bi = bonusInfo(), worn = wornGears(), tide = worn.some(g => g.tide), jack = worn.some(g => g.jackpotCoins);
+    const weather = G.world.inLimbo(G.player.pos) ? 'limbo' : G.env.weather;
+    for (let i = 0; i < chunk; i++) {
+      const bonus = tenthRoll();
+      const res = rollAura(b.luck * (bonus ? (bi.all || bi.mult) : 1) * b.server, G.env.time, weather, { gem: b.gem, mut: b.mut, anyWeather: bonus && tide ? [...b.anyWeather, 'rain'] : b.anyWeather });
+      s.rolls++;
+      s.auras[res.key] = (s.auras[res.key] || 0) + 1;
+      s.found[res.aura.id] = true;
+      if (res.mut && res.mut.id === 'glitched') s.flags.glitchMut = true;
+      if (res.rarity >= 1000) counts.rare++;
+      if (res.rarity >= 10000) counts.anom++;
+      if (jack && res.aura.id === 'jackpot') counts.jackpot++;
+      if (Math.random() < 1 / 1500) counts.voids++;
+      const g = got.get(res.key); if (g) g.n++; else got.set(res.key, { res, n: 1 });
+      if (!best || res.rarity > best.rarity) best = res;
+    }
+    done += chunk;
+    showBatch(done, got, false);
+    await sleep(16);
+  }
+  if (!G) return;
+  if (best.rarity > auraKey(s.best).rarity) s.best = best.key;
+  s.bestTier = Math.max(s.bestTier || 0, tierIndex(best.rarity));
+  if (counts.jackpot) s.coins += 77 * counts.jackpot;
+  if (counts.voids) { s.void += counts.voids; toast(`${counts.voids} Void Coin${counts.voids > 1 ? 's' : ''} fell out of your rolls.`, 'gold'); }
+  progress('rolls', done);
+  if (G.env.weather !== 'clear') progress('biomeRolls', done);
+  if (counts.rare) progress('rare', counts.rare);
+  if (counts.anom) progress('anom', counts.anom);
+  addXp(Math.floor(done / 20));
+  showBatch(done, got, true);
+  G.batching = false; G.batchTotal = 0;
+  markDirty();
+  try {
+    const cut = s.settings.cutscenes, tier = tierIndex(best.rarity);
+    if (cut !== 'off' && tier >= (cut === 'rare' ? 5 : 4)) await cutscene(best);
+  } finally {
+    if (G) {
+      if (best.rarity > auraKey(s.equipped).rarity && s.settings.autoEquip) equip(best.key, true);
+      if (best.rarity >= 100000 && G.net) G.net.announce({ name: G.me.name, key: best.key, rarity: best.rarity });
+      checkAchievements();
+      G.rolling = false;
+      updateHud();
+      clearTimeout(G.batchHide); G.batchHide = setTimeout(() => { if (G && !G.batching) $q('.oc-batch').classList.add('hidden'); }, 8000);   // after any cutscene, so the list gets seen
+    }
+  }
+}
+// what a batch found: the six rarest, with how many of each
+function showBatch(done, got, finished) {
+  const el = $q('.oc-batch'), total = Math.max(done, G.batchTotal || done);
+  el.classList.remove('hidden');
+  const top = [...got.values()].sort((a, b) => b.res.rarity - a.res.rarity).slice(0, 6);
+  el.innerHTML = `<div class="oc-batch-head"><b>${esc(G.batchLabel || 'Instant Rolls')}</b><span>${finished ? `${fmt(done)} rolls` : `Rolling ${fmt(done)} / ${fmt(total)}`}</span></div>
+    <div class="oc-batch-bar"><i style="width:${total ? Math.round(done / total * 100) : 0}%"></i></div>
+    ${top.map(x => `<div class="oc-batch-row"><span class="nm"></span><span class="oc-tier t-${tierOf(x.res.rarity).id}">${tierOf(x.res.rarity).label}</span><b>x${fmt(x.n)}</b></div>`).join('')}`;
+  el.querySelectorAll('.oc-batch-row .nm').forEach((n, i) => paintName(n, top[i].res.name, top[i].res, 'nm'));
+  clearTimeout(G.batchHide);
+  if (finished) el.onclick = () => el.classList.add('hidden');
+}
 function offerEquip(key) {
   G.offer = key;
   $q('.oc-rt-actions').classList.remove('hidden');
@@ -1227,8 +1342,10 @@ function showResult(res, quick) {
 async function cutscene(res) {
   const cut = $q('.oc-cut'), tier = tierOf(res.rarity), bw = res.aura.title && res.aura.title.bw;
   G.cutting = true; G.cutKey = res.aura.id;
+  if (document.pointerLockElement) document.exitPointerLock();
   pickMusic();
   if (G.music) G.music.sting(48 + tierIndex(res.rarity), tierIndex(res.rarity) >= 6);
+  if (res.aura.id === 'equinox' && !G.cine) { await equinoxCutscene(res, cut); return; }
   cut.className = `oc-cut t-${tier.id}${bw ? ' bw' : ''}`;
   cut.style.setProperty('--c', res.mut ? res.mut.color : res.aura.c);
   cut.innerHTML = `<div class="cut-bg"></div><div class="cut-rays"></div>${bw ? '<div class="cut-orb w"></div><div class="cut-orb b"></div>' : '<div class="cut-star"></div>'}
@@ -1242,6 +1359,42 @@ async function cutscene(res) {
     cut.querySelector('.cut-skip').onclick = done;
   });
   if (!G) return;
+  cut.classList.add('out');
+  setTimeout(() => { if (G) { cut.className = 'oc-cut hidden'; cut.innerHTML = ''; } }, 450);
+  G.cutting = false; G.cutKey = null;
+  pickMusic();
+}
+// 『EQUINOX』 plays out in the world, like Sol's: the camera rises over you, a white sun and a black sun circle in
+// closer and faster until they meet in an eight-pointed star, then the world turns black and white and the name lands.
+function remoteEquinox(f) {
+  const c = createEquinoxCinematic(G.scene, new THREE.Vector3(f.x, f.y, f.z), G.camera.position.clone());
+  G.fxObjects.push({ update(dt) { const alive = c.update(dt); if (!alive) c.dispose(); return alive; } });
+}
+async function equinoxCutscene(res, cut) {
+  const cvs = G.renderer.domElement;
+  G.cine = createEquinoxCinematic(G.scene, G.player.pos.clone(), G.camera.position.clone());
+  G.player.avatar.root.visible = true; $q('.oc-crosshair').classList.add('hidden');
+  G.root.classList.add('oc-cine');
+  if (G.net) G.net.fx({ kind: 'equinox', x: G.player.pos.x, y: G.player.pos.y, z: G.player.pos.z });
+  cut.className = 'oc-cut cine bw';
+  cut.style.setProperty('--c', '#ffffff');
+  cut.innerHTML = `<div class="cut-flash"></div><div class="cut-name"></div><div class="cut-subtitle">${esc(res.aura.sub || '')}</div><div class="cut-sub">${tierLine(res.rarity, res.mut)}</div><button type="button" class="cut-skip">Skip</button>`;
+  paintName(cut.querySelector('.cut-name'), res.name, res, 'oc-rt-name cut-name');
+  sound('cut', tierIndex(res.rarity));
+  let skip = false;
+  cut.querySelector('.cut-skip').onclick = () => { skip = true; };
+  await new Promise(resolve => {
+    const tick = () => {
+      if (!G || !G.cine || skip || G.cine.t >= EQUINOX_LENGTH) { resolve(); return; }
+      if (G.cine.t >= EQUINOX_MERGE && !cut.classList.contains('show')) { cut.classList.add('show'); cvs.style.filter = 'grayscale(1) contrast(1.25)'; sound('slam'); }
+      setTimeout(tick, 30);
+    };
+    tick();
+  });
+  if (!G) return;
+  if (G.cine) { G.cine.dispose(); G.cine = null; }
+  G.filterFor = null;   // the loop puts the biome's own filter back
+  G.root.classList.remove('oc-cine');
   cut.classList.add('out');
   setTimeout(() => { if (G) { cut.className = 'oc-cut hidden'; cut.innerHTML = ''; } }, 450);
   G.cutting = false; G.cutKey = null;
@@ -1280,8 +1433,13 @@ function updateHud() {
   $q('.oc-luckline').innerHTML = `Luck <b>${x2(luck)}x</b><span class="sep"></span>Speed <b>${x2(b.speed)}x</b>${sl ? `<span class="sep"></span><b class="oc-server">SERVER LUCK x${sl.mult} ${fmtTime(sl.until - n)}</b>` : ''}`;
   $q('.oc-money').innerHTML = `<span class="oc-pill coin">$ ${fmt(s.coins)}</span><span class="oc-pill f">F ${fmt(s.f)}</span>${s.void ? `<span class="oc-pill void">V ${fmt(s.void)}</span>` : ''}`;
   const chips = activeEffects().filter((e, i, arr) => arr.findIndex(x => x.id === e.id && !x.out === !e.out) === i).map(e => { const p = POTION[e.id]; return `<div class="oc-buff" title="${esc(e.out ? p.name + ': ' + e.out.name : p.name)}">${potionArt(p)}<b>${fmtTime(e.until - n)}</b></div>`; });
-  G.queued.forEach(id => chips.push(`<div class="oc-buff next" title="${esc(POTION[id].name)}">${potionArt(POTION[id])}<b>next</b></div>`));
-  G.rollBuffs.forEach(r => { const p = POTION[r.id] || { name: 'Gemstone Gauntlet', color: '#ff6ec7', shape: 'gem' }; chips.push(`<div class="oc-buff next" title="${esc(p.name)}">${potionArt(p)}<b>${fmt(r.left)}</b></div>`); });
+  // one icon per potion with a count, not one per bottle
+  const queued = new Map(), perRoll = new Map();
+  G.queued.forEach(id => queued.set(id, (queued.get(id) || 0) + 1));
+  G.rollBuffs.forEach(r => perRoll.set(r.id, (perRoll.get(r.id) || 0) + r.left));
+  queued.forEach((c, id) => chips.push(`<div class="oc-buff next" title="${esc(POTION[id].name)}${c > 1 ? ' x' + c : ''}">${potionArt(POTION[id])}<b>${c > 1 ? 'x' + fmt(c) : 'next'}</b></div>`));
+  perRoll.forEach((left, id) => { const p = POTION[id] || { name: 'Gemstone Gauntlet', color: '#ff6ec7', shape: 'gem' }; chips.push(`<div class="oc-buff next" title="${esc(p.name)}: ${fmt(left)} rolls">${potionArt(p)}<b>${fmt(left)}</b></div>`); });
+  if (chips.length > 14) chips.splice(13, chips.length - 13, `<div class="oc-buff more"><b>+${chips.length - 13}</b></div>`);
   const buffsEl = $q('.oc-buffs'), html = chips.join('');
   if (buffsEl.dataset.h !== html) { buffsEl.innerHTML = html; buffsEl.dataset.h = html; }
   // the Roll button counts towards the bonus roll: 9/10 means the next one is twice as lucky (gears can change it)
@@ -1388,9 +1546,10 @@ function useMove(key) {
   const p = G.player, yaw = p.yaw, d = { x: Math.sin(yaw), z: Math.cos(yaw) };
   const f = { kind: m.kind === 'punch' ? 'burst' : m.kind, r: m.kind === 'punch' ? 2.4 : m.r, x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +yaw.toFixed(3), c: m.color, tier: m.tier, len: m.len, w: m.w, dist: m.dist, n: m.n, range: m.range, dur: m.dur, seed: Math.floor(Math.random() * 1e6) };
   if (m.kind === 'dash') { p.dash = { x: d.x * m.dist * 4, z: d.z * m.dist * 4, t: 0.22 }; Object.assign(f, { x2: p.pos.x + d.x * m.dist, y2: p.pos.y, z2: p.pos.z + d.z * m.dist }); }
-  if (m.kind === 'blink') { const to = p.pos.clone().add(new THREE.Vector3(d.x * m.dist, 0.5, d.z * m.dist)); Object.assign(f, { x2: to.x, y2: to.y, z2: to.z }); p.pos.copy(to); p.vel.set(0, 0, 0); }
+  if (m.kind === 'blink') { const to = p.pos.clone().add(new THREE.Vector3(d.x * m.dist, 0.5, d.z * m.dist)); Object.assign(f, { x2: to.x, y2: to.y, z2: to.z }); p.pos.copy(to); p.vel.set(0, 0, 0); p.tpAt = n; sound('teleport'); }
   if (m.kind === 'leap') { p.vel.y = Math.sqrt(2 * GRAVITY * m.h); p.onGround = false; p.dash = { x: d.x * m.dist * 1.6, z: d.z * m.dist * 1.6, t: 0.6 }; Object.assign(f, { x2: p.pos.x + d.x * m.dist, y2: p.pos.y + m.h, z2: p.pos.z + d.z * m.dist }); }
-  if (m.kind === 'flight') { p.flyUntil = n + m.dur * 1000; toast(`${m.name}: you can fly for ${m.dur} seconds. Space goes up, Q goes down.`); }
+  if (m.kind === 'flight' && m.toggle) { p.flyToggle = !p.flyToggle; p.flyUntil = 0; f.dur = 0.8; toast(p.flyToggle ? `${m.name}: flight on. ${G.touch ? 'Jump goes up.' : 'Space goes up, Q goes down.'} Press F again to land.` : `${m.name}: flight off.`); }
+  else if (m.kind === 'flight') { p.flyUntil = n + m.dur * 1000; toast(`${m.name}: you can fly for ${m.dur} seconds. Space goes up, Q goes down.`); }
   Object.keys(f).forEach(k => { if (f[k] === undefined || Number.isNaN(f[k])) delete f[k]; });   // the database refuses empty values
   const fx = castFx(G.scene, f); if (fx) G.fxObjects.push(fx);
   if (G.net) {
@@ -1444,6 +1603,7 @@ const TITLES = { storage: 'Aura Storage', collection: 'Collection', inventory: '
   jake: 'Jake\'s Workshop', jack: 'Jack the Pumpkin', achievements: 'Achievements', pass: 'Season Pass', jukebox: 'Jukebox' };
 function openPanel(id) {
   if (G.fishing) stopFishing();
+  if (document.pointerLockElement) document.exitPointerLock();
   G.panel = id;
   const box = $q('.oc-panel'), body = box.querySelector('.oc-panel-body');
   box.classList.remove('hidden');
@@ -1580,6 +1740,7 @@ function usePotion(id, free = false) {
     if (other) { toast(`${POTION[other.id].name} is already working. Only one of those at a time.`, 'warn'); return false; }
   }
   if (p.biome) return useBiomeItem(p, free);
+  if (p.batch && (G.batchQueue || 0) >= 1000000) { toast('Let the rolls you have going finish first.', 'warn'); return false; }
   if (!free) G.save.potions[id] = potionCount(id) - 1;
   if (p.chest) {   // a potion chest: a handful of random potions
     const c = CHEST_POOLS[p.chest], got = {};
@@ -1599,7 +1760,8 @@ function usePotion(id, free = false) {
     toast(`${p.name}: ${out.name}.`, out.luck < 0 || out.speed < 0 ? 'warn' : 'gold');
   } else if (p.size) { G.player.sizeTo = p.size === 'min' ? 0.45 : 2.2; G.player.sizeUntil = now() + p.secs * 1000; addEffect(id); toast(`${p.name} is working.`, 'gold'); }
   else if (p.oneRoll) { G.queued.push(id); toast(`${p.name} is ready for your next roll.`, 'gold'); }
-  else if (p.rollSpeed || p.boost) { G.rollBuffs.push({ id, left: (p.rollSpeed || p.boost).n }); toast(`${p.name} works on your next ${fmt((p.rollSpeed || p.boost).n)} rolls.`, 'gold'); }
+  else if (p.batch) queueBatch(p.batch, p.name);
+  else if (p.boost) { G.rollBuffs.push({ id, left: p.boost.n }); toast(`${p.name} works on your next ${fmt(p.boost.n)} rolls.`, 'gold'); }
   else { addEffect(id); toast(`${p.name} is working.`, 'gold'); }
   G.save.stats.potions++; progress('potions');
   sound('potion'); markDirty(); updateHud();
@@ -1923,7 +2085,7 @@ function renderSettings(body, tab = G.setTab || 'rolling') {
   if (tab === 'rolling') html = `${check('autoEquip', 'Auto Equip: wear rarer auras as soon as you roll them')}
     <div class="oc-set-row"><b>Cutscenes</b>${[['all', 'Eldritch and up'], ['rare', 'Cataclysmic and up'], ['off', 'Off']].map(([v, l]) => `<button type="button" class="oc-btn sm ${s.cutscenes === v ? 'ok' : ''}" data-cut="${v}">${l}</button>`).join('')}</div>`;
   if (tab === 'sound') html = `${slider('music', 'Background Music')}${slider('mine', 'My Aura BGM')}${slider('others', 'Others\' Aura BGM')}${slider('sfx', 'Sound Effects')}`;
-  if (tab === 'controls') html = `<label class="oc-slider"><span>Camera Sensitivity</span><input type="range" min="25" max="300" value="${Math.round((s.sens || 1) * 100)}" data-sens><b>${(s.sens || 1).toFixed(2)}x</b></label>
+  if (tab === 'controls') html = `<label class="oc-slider"><span>Camera Sensitivity</span><input type="range" min="25" max="800" step="5" value="${Math.round((s.sens || 1) * 100)}" data-sens><b>${(s.sens || 1).toFixed(2)}x</b></label>
     <div class="oc-keys"><b>Keys</b><span>WASD: move. Space: jump. Hold right mouse: turn the camera. Wheel: zoom. Shift: Shift Lock.</span><span>R: roll. E: talk, fish, use. Z X C V: aura moves. F: mobility move. /: chat. Tab: player list.</span></div>`;
   if (tab === 'misc') html = `${check('bubbles', 'Chat bubbles over heads')}
     <div class="oc-set-row"><b>Title</b><select data-title><option value="">None</option>${G.save.titles.map(x => `<option value="${esc(x)}" ${G.save.title === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select><small class="oc-dim">${G.save.titles.length ? '' : 'Achievements give titles.'}</small></div>
@@ -1973,7 +2135,7 @@ async function redeemCode(code) {
 
 // The Owner and Co-Owners: start biomes, change the time, summon the Jester, fly and noclip, and make codes.
 function renderAdmin(body) {
-  if (!G.me.staff) { body.innerHTML = ''; return; }
+  if (!G.me.owner) { body.innerHTML = ''; return; }
   const ws = G.worldState || {}, n = now();
   const btn = (act, label, onNow) => `<button type="button" class="oc-btn sm ${onNow ? 'ok' : ''}" data-a="${act}">${label}</button>`;
   const potionOpts = POTIONS.filter(p => !p.hidden).map(p => `<option value="potion:${p.id}">${esc(p.name)}</option>`).join('');
@@ -2025,7 +2187,7 @@ async function loadCodes(body) {
 }
 function adminAction(a) {
   const [k, v] = a.split(':'), n = now(), net = G.net;
-  if (!G.me.staff) return;
+  if (!G.me.owner) return;
   if (k === 'm') {
     if (v === 'fly') { G.player.fly = !G.player.fly; G.player.vel.y = 0; if (G.player.fly && G.shiftLock) setShiftLock(false); toast(G.player.fly ? 'Fly on.' : 'Fly off.'); }
     if (v === 'noclip') { G.player.noclip = !G.player.noclip; toast(G.player.noclip ? 'Noclip on.' : 'Noclip off.'); }
@@ -2151,6 +2313,7 @@ function sound(kind, n = 0) {
     case 'potion': tone(300, 0.3, 'sine', 0.06, 0, 900); break;
     case 'quack': tone(500, 0.12, 'sawtooth', 0.06, 0, 300); tone(520, 0.12, 'sawtooth', 0.06, 0.16, 310); break;
     case 'secret': chord(523, [0, 4, 7, 12, 16], 0.6, 'triangle', 0.06); break;
+    case 'teleport': tone(300, 0.35, 'sine', 0.05, 0, 1400); tone(1800, 0.3, 'triangle', 0.03, 0.12, 500); break;
     case 'glitch': for (let i = 0; i < 6; i++) tone(100 + Math.random() * 900, 0.05, 'square', 0.05, i * 0.04); break;
     case 'jump': tone(400, 0.12, 'sine', 0.03, 0, 650); break;
     case 'cast': tone(800, 0.25, 'sine', 0.04, 0, 200); break;

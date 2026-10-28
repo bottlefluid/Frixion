@@ -536,3 +536,48 @@ body.ocrng-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) { .oc-load-mark *, .cut-rays, .oc-rotate-phone, .oc-tier.t-null { animation: none !important; } }
 .oc-codeform label { display: flex; align-items: center; gap: 5px; }
 .oc-codeform label small { font-size: 11px; color: #b9b9c2; }
+
+/* ---------- 2.2 ---------- */
+/* Aura Storage, Collection and Inventory: the [ Information ] panel stays put and only the tiles scroll, like Sol's */
+.oc-panel-box:has(.oc-store) { height: min(640px, 100%); }
+.oc-panel-body:has(> .oc-store) { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.oc-panel-body > .oc-store { flex: 1; min-height: 0; }
+.oc-panel-body > .oc-store .oc-info { overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .3) transparent; }
+.oc-panel-body > .oc-store .oc-store-main { min-height: 0; }
+.oc-panel-body > .oc-store .oc-grid { flex: 1; min-height: 0; overflow-y: auto; grid-auto-rows: max-content; padding: 2px 4px 4px 2px; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .3) transparent; }
+@media (max-width: 700px) and (min-height: 521px) { .oc-panel-body > .oc-store .oc-info { max-height: 42%; flex: none; } }
+
+/* first person: a small dot in the middle */
+.oc-crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .7); pointer-events: none !important; }
+
+/* the buff bar's "+3 more" */
+.oc-buff.more { justify-content: center; height: 38px; border: 1px solid var(--line-dim); background: rgba(0, 0, 0, .45); }
+.oc-buff.more b { font-size: 12px; }
+
+/* Warp and Transcendent: what thousands of rolls found */
+.oc-batch { position: absolute; left: 50%; top: 16%; transform: translateX(-50%); width: min(380px, 86vw); padding: 10px 14px 12px; border: 1.5px solid var(--line); background: var(--panel); text-shadow: var(--shadow); cursor: pointer; animation: ocPop .14s ease; z-index: 6; }
+.oc-batch-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 14px; }
+.oc-batch-head span { font-size: 12px; color: #c9c9d2; font-variant-numeric: tabular-nums; }
+.oc-batch-bar { height: 4px; margin: 7px 0 8px; background: rgba(255, 255, 255, .14); }
+.oc-batch-bar i { display: block; height: 100%; background: #fff; transition: width .1s linear; }
+.oc-batch-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; border-top: 1px solid rgba(255, 255, 255, .08); }
+.oc-batch-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 800; }
+.oc-batch-row .nm.gold, .oc-batch-row .nm.violet, .oc-batch-row .nm.rainbow, .oc-batch-row .nm.bw { -webkit-background-clip: text; background-clip: text; color: transparent !important; text-shadow: none; }
+.oc-batch-row .nm.gold { background-image: linear-gradient(180deg, #fff6c2, #ffcc33 55%, #e08a00); }
+.oc-batch-row .nm.violet { background-image: linear-gradient(180deg, #f1e8ff, #a77bff 60%, #6a3fd6); }
+.oc-batch-row .nm.rainbow { background-image: linear-gradient(90deg, #ff5252, #ffd740, #69f0ae, #40c4ff, #b388ff, #ff4081); }
+.oc-batch-row .nm.bw { background-image: linear-gradient(90deg, #fff 0%, #fff 49.5%, #555 50.5%, #555 100%); }
+.oc-batch-row .oc-tier { font-size: 11px; }
+.oc-batch-row b { font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* 『EQUINOX』: the scene plays in the world, so the HUD steps aside and the words float over it */
+#ocrng.oc-cine .oc-hud, #ocrng.oc-cine .oc-chat { opacity: 0; pointer-events: none !important; transition: opacity .3s; }
+.oc-cut.cine { background: transparent; pointer-events: none; }
+.oc-cut.cine .cut-skip { pointer-events: auto; }
+.oc-cut.cine .cut-flash, .oc-cut.cine .oc-rt-name.cut-name, .oc-cut.cine .cut-subtitle, .oc-cut.cine .cut-sub { animation: none; opacity: 0; }
+.oc-cut.cine.show .cut-flash { animation: ocFlash 1.4s ease forwards; }
+.oc-cut.cine.show .oc-rt-name.cut-name { animation: ocCutName 1s cubic-bezier(.2, 1.4, .4, 1) .55s forwards; }
+.oc-cut.cine.show .cut-subtitle { animation: ocFade .8s ease 1.1s forwards; }
+.oc-cut.cine.show .cut-sub { animation: ocFade .6s ease 1.5s forwards; }
+.oc-cut.cine .cut-subtitle, .oc-cut.cine .cut-sub { color: #fff; text-shadow: 0 0 4px #000, 0 0 12px #000; }
+@media (max-height: 520px) { .oc-batch { top: 12%; width: min(330px, 70vw); padding: 8px 10px; } .oc-batch-row { font-size: 12px; padding: 2px 0; } .oc-buff.more { height: 30px; } }

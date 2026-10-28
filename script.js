@@ -455,6 +455,18 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.39', date: '2026-10-27', title: 'Overcontrol RNG 2.2: the real 『EQUINOX』, first person and instant rolls',
+    notes: [
+      '『EQUINOX』 is like Sol\'s now: a giant white sun and a giant black sun circle you, you float with your arms spread, and "Equilibrium Incarnate" shows above its name. Its F move turns flight on and off.',
+      'Rolling 『EQUINOX』 plays a new cutscene in the world: the camera rises over you while the two suns spiral in, they meet in an eight-pointed star, and the world turns black and white. Players nearby see the suns too.',
+      'Warp and Transcendent Potions roll instantly: 2,000 and 20,000 rolls at once, added to your roll count, with a list of the rarest auras they found. If one was still running, you got the bottle back.',
+      'The buff bar shows one icon per potion with a count, instead of one icon per bottle.',
+      'First person: zoom all the way in with the scroll wheel, a pinch on phones, or the I and O keys (I zooms in, O zooms out).',
+      'The camera turns much faster, and the sensitivity slider in Settings, Controls goes up to 8x.',
+      'Teleport effects: blink moves, portals and doors leave a beam of your aura\'s colour where you vanish and where you land.',
+      'Aura Storage, Collection and Inventory: the [ Information ] panel stays put while you scroll, like Sol\'s.',
+      'Events and codes in the Admin panel are for the Frixion Owner only now, not Co-Owners.',
+    ] },
   { v: '4.38', date: '2026-10-27', title: 'Overcontrol RNG 2.1: gears, raids, Halloween and a real island',
     notes: [
       'The map is an island now, like Sol\'s: dirt cliffs, sandy beaches and the ocean all the way out. The mountain is brown dirt and grey rock with snow on top, and there are a lot more trees.',
@@ -15662,7 +15674,7 @@ function openOcrng() {
       return true;
     }),
   };
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=4');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=5');
   ocrngModule.then(m => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);

@@ -160,7 +160,7 @@ export const AURAS = [
   A('limbo', 'Limbo', 99999, '#e0e0e0', [L.motes('#ffffff', 40), L.ring('#9e9e9e', { r: 2.6, half: 1 }), L.glow('#000000', 5, { dark: 1 })], { weather: 'limbo' }),
   A('unknown', 'The Unknown', 9999999, '#9e9e9e', [L.cubes('#ffffff', 10), L.cubes('#000000', 10, { dark: 1 }), L.halo('#ffffff', { eye: 1 }), L.pillar('#bdbdbd', { tall: 1 })], { weather: 'limbo' }),
   // One aura, like Sol's: 『EQUINOX』, the Equilibrium Incarnate. A white sun and a black sun in balance.
-  A('equinox', '『EQUINOX』', 2500000000, '#ffffff', [L.yinyang({ r: 3, many: 1, big: 1 }), L.ring('#ffffff', { r: 3.8, half: 1, runes: 1 }), L.pillar('#ffffff', { tall: 1, split: 1 }), L.spiral('#ffffff', { n: 90, bw: 1 }), L.motes('#ffffff', 30), L.motes('#000000', 30, { dark: 1 })], null, { bw: 1 }, { sub: 'Equilibrium Incarnate' }),
+  A('equinox', '『EQUINOX』', 2500000000, '#ffffff', [L.yinyang({ r: 3.4, huge: 1 }), L.ring('#ffffff', { r: 3.8, half: 1, runes: 1 }), L.motes('#ffffff', 30), L.motes('#000000', 30, { dark: 1 })], null, { bw: 1 }, { sub: 'Equilibrium Incarnate', float: true }),
 ];
 // Gem auras: the Jewelry Potion makes these more likely.
 export const GEM_AURAS = new Set(['crystallized', 'topaz', 'ruby', 'emerald', 'sapphire', 'aquamarine', 'precious', 'jade', 'quartz', 'glacier', 'kyawthuite', 'prism']);
@@ -275,7 +275,7 @@ const ELEMENTS = {
   toxic: { z: ['burst', 'Toxin'], x: ['orbs', 'Spores'], c: ['vortex', 'Infestation'], v: ['nova', 'Plague'], f: ['dash', 'Skitter'] },
   glitch: { z: ['storm', 'Corrupt'], x: ['beam', 'Overwrite'], c: ['vortex', 'Stack Overflow'], v: ['nova', 'Fatal Error'], f: ['blink', 'Teleport'] },
   arcane: { z: ['burst', 'Arcane Pulse'], x: ['orbs', 'Arcane Missiles'], c: ['meteor', 'Starfall'], v: ['nova', 'Arcanum'], f: ['blink', 'Blink'] },
-  balance: { z: ['burst', 'Duality'], x: ['beam', 'Twin Lance'], c: ['vortex', 'Yin and Yang'], v: ['nova', 'Equilibrium'], f: ['blink', 'Balance Step'] },
+  balance: { z: ['burst', 'Duality'], x: ['beam', 'Twin Lance'], c: ['vortex', 'Yin and Yang'], v: ['nova', 'Equilibrium'], f: ['flight', 'Weightless'] },
 };
 const ELEMENT_OF = {};
 for (const [el, ids] of Object.entries({
@@ -314,7 +314,9 @@ export function movesFor(key) {
   const power = (0.7 + t * 0.12) * (mut ? 1.1 : 1);
   return keys.map(k => {
     const [kind, name] = el[k], base = MOVE_KIND[kind];
-    return { key: k, kind, name, ...base, dmg: base.dmg ? Math.round(base.dmg * power) : 0, color: mut ? mut.color : aura.c, tier: t };
+    // 『EQUINOX』's F turns flight on and off instead of lasting a few seconds
+    const toggle = aura.id === 'equinox' && k === 'f' ? { toggle: true, cd: 0.6 } : {};
+    return { key: k, kind, name, ...base, dmg: base.dmg ? Math.round(base.dmg * power) : 0, color: mut ? mut.color : aura.c, tier: t, ...toggle };
   });
 }
 
@@ -360,8 +362,8 @@ export const POTIONS = [
   P('bound', 'Potion of Bound', '#8e24aa', 'ornate', { oneRoll: 50000 }, { src: 'jester stella', price: { coins: 400000 }, recipe: { auras: { blizzard: 3, lostsoul: 20 }, potions: { lucky: 100 } } }, '+5,000,000% luck on your next roll.'),
   P('heavenly', 'Heavenly Potion', '#fff3b0', 'star', { oneRoll: 150000 }, { src: 'jester stella', price: { coins: 1500000 }, recipe: { auras: { celestial: 2, exotic: 1, quartz: 5 }, potions: { lucky: 250 } } }, '+15,000,000% luck on your next roll.'),
   P('oblivion', 'Oblivion Potion', '#3a0f6b', 'void', { oneRoll: 1000000 }, { src: 'jester', price: { void: 5 } }, '+1,000,000 luck on your next roll. Only the Jester has these.'),
-  P('warp', 'Warp Potion', '#7c4dff', 'hourglass', { rollSpeed: { n: 2000, speed: 10 } }, { src: 'stella', recipe: { auras: { arcane: 1, comet: 5, lunar: 50 }, potions: { speed: 500 } } }, '+1,000% roll speed for your next 2,000 rolls.'),
-  P('transcendent', 'Transcendent Potion', '#f5f5f5', 'hourglass', { rollSpeed: { n: 20000, speed: 10 } }, { src: 'quest' }, '+1,000% roll speed for your next 20,000 rolls.'),
+  P('warp', 'Warp Potion', '#7c4dff', 'hourglass', { batch: 2000 }, { src: 'stella', recipe: { auras: { arcane: 1, comet: 5, lunar: 50 }, potions: { speed: 500 } } }, 'Rolls 2,000 times, instantly.'),
+  P('transcendent', 'Transcendent Potion', '#f5f5f5', 'hourglass', { batch: 20000 }, { src: 'quest' }, 'Rolls 20,000 times, instantly.'),
   P('gladiator', 'Gladiator Potion', '#e53935', 'ornate', { luck: 1, secs: 600 }, { src: 'quest' }, '+100% luck for 10 minutes. Earned in PvP.'),
   P('forbidden1', 'Forbidden Potion I', '#6a1b9a', 'dark', { luck: 0.5, speed: 0.2, secs: 1800, group: 'forbidden', level: 1 }, { src: 'stella', recipe: { auras: { forbidden: 1 }, potions: { lucky: 2, speed: 2 } } }, '+50% luck and +20% roll speed for 30 minutes.'),
   P('forbidden2', 'Forbidden Potion II', '#4a148c', 'dark', { luck: 2.5, speed: 0.5, secs: 3600, group: 'forbidden', level: 2 }, { src: 'stella', recipe: { auras: { raven: 1 }, potions: { lucky: 20, speed: 20 } } }, '+250% luck and +50% roll speed for 1 hour.'),

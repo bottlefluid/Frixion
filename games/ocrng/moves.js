@@ -108,13 +108,38 @@ export function castFx(scene, p) {
       const flash = sprite(g, white, 2, 1); flash.position.y = 3;
       return k => { const s = 1 + Math.pow(k, 0.6) * (p.r || 18); r1.scale.setScalar(s); r2.scale.setScalar(s * 0.9); r3.scale.setScalar(s * 0.6); [r1, r2, r3].forEach(r => { r.material.opacity = 1 - k; }); pillar.scale.set(1 + k * 3, 1, 1 + k * 3); pillar.material.opacity = 0.55 * (1 - k); flash.scale.setScalar(4 + k * 40); flash.material.opacity = 1 - k; };
     });
-    case 'dash': case 'leap': case 'flight': case 'blink': return fx(scene, p.kind === 'flight' ? (p.dur || 4) : 0.6, g => {
+    // a teleport (blink moves, portals, doors): a beam and a collapsing ring where you left, a flash and an
+    // expanding ring where you arrive, and sparks streaming between the two, all in your aura's colour
+    case 'blink': case 'tp': return fx(scene, 1.1, g => {
+      const a = new THREE.Vector3(p.x, p.y, p.z), b = new THREE.Vector3(p.x2 ?? p.x, p.y2 ?? p.y, p.z2 ?? p.z), far = a.distanceTo(b) > 40;
+      const end = (at, leaving) => {
+        const h = new THREE.Group(); h.position.copy(at); g.add(h);
+        const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 14, 24, 1, true), basic(c, 0.6)); beam.position.y = 7; h.add(beam);
+        const core = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 14, 12, 1, true), basic(white, 0.9)); core.position.y = 7; h.add(core);
+        const r1 = ring(h, c, 0.12, 0.9, 1.4), r2 = ring(h, white, 0.16, 1.2, 1.45);
+        const flash = sprite(h, leaving ? c : white, 2, 1); flash.position.y = 2.6;
+        const bits = Array.from({ length: 14 }, (_, i) => { const s = sprite(h, i % 2 ? white : c, 0.9, 1); s.userData = { a: i / 14 * Math.PI * 2, r: 1 + Math.random() * 1.5, v: 4 + Math.random() * 6 }; return s; });
+        return k => {
+          const e = leaving ? k : Math.max(0, 1 - k * 1.3);
+          beam.scale.set(leaving ? 1 - k : 0.4 + k, 1, leaving ? 1 - k : 0.4 + k); beam.material.opacity = 0.6 * (1 - k); core.material.opacity = 0.9 * (1 - k);
+          const rs = leaving ? 3.2 * (1 - k) + 0.1 : 0.2 + k * 5; r1.scale.setScalar(rs); r2.scale.setScalar(rs * 0.85); r1.material.opacity = r2.material.opacity = 1 - k;
+          flash.scale.setScalar(leaving ? 6 * (1 - k) + 0.1 : 2 + Math.sin(Math.min(1, k * 2) * Math.PI) * 9); flash.material.opacity = 1 - k;
+          bits.forEach(s => { const u = s.userData, y = leaving ? 0.5 + e * u.v * 1.2 : 0.5 + (1 - k) * u.v; const rr = leaving ? u.r * (1 - k) : u.r * (1 + k * 2); s.position.set(Math.cos(u.a + k * 4) * rr, y, Math.sin(u.a + k * 4) * rr); s.material.opacity = 1 - k; });
+        };
+      };
+      const leave = end(a, true), arrive = end(b, false);
+      const streak = far ? null : Array.from({ length: 12 }, () => sprite(g, c, 1.4, 0.9));
+      return k => {
+        leave(k); arrive(k);
+        if (streak) streak.forEach((s, i) => { const f = Math.min(1, k * 2.4 + i / 24); s.position.copy(a).lerp(b, f); s.position.y += 2.5 + Math.sin(f * Math.PI) * 1.5; s.material.opacity = Math.max(0, 0.9 - k * 1.4); });
+      };
+    });
+    case 'dash': case 'leap': case 'flight': return fx(scene, p.kind === 'flight' ? (p.dur || 4) : 0.6, g => {
       const a = new THREE.Vector3(p.x, p.y + 2.5, p.z), b = new THREE.Vector3(p.x2 ?? p.x, (p.y2 ?? p.y) + 2.5, p.z2 ?? p.z);
       const puffs = [];
-      const n = p.kind === 'blink' ? 2 : 10;
-      for (let i = 0; i < n; i++) { const s = sprite(g, i % 2 ? white : c, p.kind === 'blink' ? 7 : 3, 0.9); s.position.copy(p.kind === 'blink' ? (i ? b : a) : a.clone().lerp(b, i / (n - 1))); puffs.push(s); }
-      if (p.kind === 'blink') { const r = ring(g, c, 0); r.position.copy(b).setY(b.y - 2.2); puffs.push(r); }
-      return k => puffs.forEach(s => { s.material.opacity = 0.9 * (1 - k); if (s.isSprite && p.kind === 'blink') s.scale.setScalar(7 * (1 + k)); });
+      const n = 10;
+      for (let i = 0; i < n; i++) { const s = sprite(g, i % 2 ? white : c, 3, 0.9); s.position.copy(a.clone().lerp(b, i / (n - 1))); puffs.push(s); }
+      return k => puffs.forEach(s => { s.material.opacity = 0.9 * (1 - k); });
     });
   }
   return null;
