@@ -468,7 +468,7 @@ const UPDATES = [
       'Three auras rarer than 『EQUINOX』, and enormous: 『ABYSSAL CROWN』 (1 in 4.4 billion), 『CELESTIAL THRONE』 (1 in 7.8 billion) and 『ETERNITY』 (1 in 12 billion).',
       'Bigger buttons in the same places as Sol\'s: Auras, Index, Items, Quests and Menu down the left side with their names, and a bigger Roll button.',
       'X and team null wear their armour like Minecraft: the helmet, chestplate, sleeves and boots stick out from a black body, with the face and forearms showing black.',
-      'The Owner can set a player\'s roll count in Admin, Players, to put back lost progress.',
+      'The Owner can set a player\'s roll count in Admin, Players, to put back lost progress. The Me button finds your own account.',
     ] },
   { v: '4.40', date: '2026-10-27', title: 'Overcontrol RNG 2.3: the ____X____ raid, a faster game, and titles like Sol\'s',
     notes: [
@@ -15703,7 +15703,7 @@ function openOcrng() {
       return true;
     }),
   };
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=8');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=9');
   ocrngModule.then(m => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);

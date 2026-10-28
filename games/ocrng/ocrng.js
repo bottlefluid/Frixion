@@ -2386,8 +2386,8 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
     <h3>[ Everything ]</h3><div class="oc-adm-grid">${tile('x:clear', 'END EVERY EVENT', 'Biome, time, luck and the Jester', false, '#ff6b6b', 'stop')}</div>`;
   if (tab === 'players') {
     const online = Object.entries((G.net && G.net.roster) || {}).filter(([u]) => u !== G.me.uid);
-    html = `<h3>[ Wipe Data ] <small>everything a player has in Overcontrol RNG, for good</small></h3>
-      <div class="oc-adm-find"><input type="text" data-wn maxlength="40" placeholder="Username" spellcheck="false" autocomplete="off"><button type="button" class="oc-adm-btn" data-wf>Find</button></div>
+    html = `<h3>[ Find a Player ] <small>set their rolls, or wipe everything they have (Me finds you)</small></h3>
+      <div class="oc-adm-find"><input type="text" data-wn maxlength="40" placeholder="Username" spellcheck="false" autocomplete="off"><button type="button" class="oc-adm-btn" data-wf>Find</button><button type="button" class="oc-adm-btn" data-me>Me</button></div>
       ${online.length ? `<div class="oc-adm-online"><small>In the lobby:</small>${online.map(([u, d]) => `<button type="button" class="oc-adm-chip" data-pick="${esc(u)}">${esc(d.name || u)}</button>`).join('')}</div>` : ''}
       <div class="oc-adm-card hidden" data-wc></div>`;
   }
@@ -2431,6 +2431,7 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
       };
     };
     body.querySelector('[data-wf]').onclick = find;
+    body.querySelector('[data-me]').onclick = () => { input.value = G.me.name; find(); };
     input.onkeydown = e => { if (e.key === 'Enter') find(); e.stopPropagation(); };
     body.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { input.value = b.dataset.pick; find(); });
   }
@@ -2459,6 +2460,8 @@ async function setRolls(id, name, n) {
 }
 // A save by username, or by the name it was saved under.
 async function findSave(q) {
+  // yourself: always found (any capitalisation), straight from the game you have open
+  if ([G.me.uid, G.me.name].some(x => String(x).toLowerCase() === q.toLowerCase())) return { id: G.me.uid, data: G.save };
   const col = API().db.collection('rngSaves');
   try {
     const d = await col.doc(q).get();
