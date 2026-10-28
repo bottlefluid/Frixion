@@ -402,7 +402,7 @@ export function createXFight(ctx) {
     // X
     const want = H ? { p: [H.x.pos.x, H.x.pos.y, H.x.pos.z], r: H.x.yaw, a: H.x.act, k: H.x.t, w: H.x.w, up: H.x.up, ring: H.x.data && H.x.data.ring } : s.x;
     if (!want) return;
-    if (!xm) { xm = createMcPerson(scene, { trim: '#e8e4e0', name: '____X____' }); disp = { x: { pos: v3(want.p), r: want.r, a: want.a, t: 0 } }; }
+    if (!xm) { xm = createMcPerson(scene, { trim: '#e4ded8', name: '____X____' }); disp = { x: { pos: v3(want.p), r: want.r, a: want.a, t: 0 } }; }
     const dx = disp.x, wp = v3(want.p);
     if (H || disp.snap || dx.pos.distanceTo(wp) > 14) { dx.pos.copy(wp); disp.snap = false; } else dx.pos.lerp(wp, 1 - Math.exp(-dt * 14));
     let dr = want.r - dx.r; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); dx.r += dr * Math.min(1, dt * 14);
@@ -424,7 +424,7 @@ export function createXFight(ctx) {
     for (const [i, m] of Object.entries(M)) {
       const info = xb.mobs && xb.mobs[i]; if (!info || info.dead || xb.life.dead) continue;
       let o = mobs[i];
-      if (!o) { o = mobs[i] = { model: createMcPerson(scene, { trim: info.gen ? '#c62828' : null, name: info.name, scale: info.gen ? 1.06 : 0.96 }), pos: v3(m.p), r: m.r, a: m.a }; o.model.hold('sword'); }
+      if (!o) { o = mobs[i] = { model: createMcPerson(scene, { trim: info.gen ? '#e3241b' : null, name: info.name, scale: info.gen ? 1.06 : 0.96 }), pos: v3(m.p), r: m.r, a: m.a }; o.model.hold('sword'); }
       const tp = v3(m.p); if (H || o.pos.distanceTo(tp) > 12) o.pos.copy(tp); else o.pos.lerp(tp, 1 - Math.exp(-dt * 14));
       let r2 = m.r - o.r; r2 = Math.atan2(Math.sin(r2), Math.cos(r2)); o.r += r2 * Math.min(1, dt * 14); o.a = m.a;
       o.model.root.position.copy(o.pos); o.model.root.rotation.y = o.r;

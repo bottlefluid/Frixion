@@ -161,7 +161,7 @@ export const AURAS = [
   A('unknown', 'The Unknown', 9999999, '#9e9e9e', [L.cubes('#ffffff', 10), L.cubes('#000000', 10, { dark: 1 }), L.halo('#ffffff', { eye: 1 }), L.pillar('#bdbdbd', { tall: 1 })], { weather: 'limbo' }),
   // One aura, like Sol's: 『EQUINOX』, the Equilibrium Incarnate. A white sun and a black sun in balance.
   // only from beating ____X____: be his top damager, never die, and do at least 250 damage
-  A('xboss', '____X____', 999999999, '#b388ff', [{ t: 'weapons' }, L.spiral('#9c6bff', { n: 36 }), L.motes('#b388ff', 26), L.motes('#ffffff', 14), L.ring('#7c4dff', { r: 3.2, runes: 1 })], { boss: true }, { violet: 1 }, { sub: 'Slayer of the Undying' }),
+  A('xboss', '____X____', 999999999, '#b388ff', [{ t: 'weapons' }, L.spiral('#9c6bff', { n: 36 }), L.motes('#b388ff', 26), L.motes('#ffffff', 14), L.ring('#7c4dff', { r: 3.2, runes: 1 })], { boss: true }, { violet: 1 }),
   A('equinox', '『EQUINOX』', 2500000000, '#ffffff', [L.yinyang({ r: 3.4, huge: 1 }), L.ring('#ffffff', { r: 3.8, half: 1, runes: 1 }), L.motes('#ffffff', 30), L.motes('#000000', 30, { dark: 1 })], null, { bw: 1 }, { sub: 'Equilibrium Incarnate', float: true }),
 ];
 // Gem auras: the Jewelry Potion makes these more likely.

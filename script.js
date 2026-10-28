@@ -466,6 +466,7 @@ const UPDATES = [
       'Potions moved to the bottom right, like Sol\'s. Hover (or tap) one to see what it does. Only 6 show until you press the + button.',
       'Leaderboard titles like Sol\'s: your title and its little picture show under your name on the leaderboard. Pick it in Settings, Leaderboard Titles. Titles no longer float over your head.',
       'The chat has a Server tab (Roblox calls it Global) for everyone\'s rare rolls. Server roll messages can be turned off in Settings, Miscellaneous.',
+      '____X____ and team null wear the exact trims from the reference pictures, are black under their armour, and hold their shields at their side like in Minecraft. The general\'s chestplate trims are red. The ____X____ aura is just called ____X____.',
       'The Owner\'s Admin panel has its own button now, with Sol\'s-style tiles, a Players tab that can wipe all of someone\'s data, and buttons to summon or send away ____X____.',
     ] },
   { v: '4.39', date: '2026-10-27', title: 'Overcontrol RNG 2.2: the real 『EQUINOX』, first person and instant rolls',
@@ -15687,7 +15688,7 @@ function openOcrng() {
       return true;
     }),
   };
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=6');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=7');
   ocrngModule.then(m => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);
