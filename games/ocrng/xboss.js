@@ -19,62 +19,69 @@ function pixTex(w, h, paint) {
   t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
-const NETH = ['#2f2b2f', '#383338', '#433d43', '#2a262a', '#4c464c', '#352f36', '#3d3740'];
-const NETH_LIGHT = ['#4f4a50', '#5a555b', '#625d63', '#4a454b', '#57525a'];
-const pickN = () => NETH[Math.floor(rnd() * NETH.length)];
-const pickL = () => NETH_LIGHT[Math.floor(rnd() * NETH_LIGHT.length)];
-
-// The armour, like the pictures. As in Minecraft it is a shell one pixel bigger all round than the black body under
-// it, so the helmet and shoulders stand out, and where it has holes (the face, the forearms) the black body shows
-// through. On the chestplate: a square spiral on the outside and the back of each shoulder, a band all round the arm
-// at the elbow, a collar and a bracket down each side of the chest, a wave across the lower back. The helmet has a pale
-// ridge down the middle; the boots have dark spirals. Everyone wears the same trims; only the chestplate's colour
-// changes (white for X, red for the general, dark for the soldiers).
-// Faces come in three.js box order: +x, -x, +y, -y, +z (front), -z (back). The figure faces +z, so its right arm and
-// leg are on the -x side. null in a face means a hole.
-function armourSet(chestTrim) {
-  const CT = chestTrim || '#57515a', CT2 = shade(CT, -0.2);
-  const HS = '#8f898f', HS2 = '#7a747b', BT = '#5f595f', BT2 = '#514b51';
-  const tex = (w, h, paint) => {
-    const holes = new Set();
-    const map = pixTex(w, h, set => {
-      const put = (x, y, c) => { set(x, y, c); if (c) holes.delete(x + ',' + y); else holes.add(x + ',' + y); };
-      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) put(x, y, (x === 0 || y === 0 || x === w - 1 || y === h - 1) && rnd() < 0.5 ? '#262226' : pickN());
-      if (paint) paint(put);
-    });
-    const mask = pixTex(w, h, set => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) set(x, y, holes.has(x + ',' + y) ? '#000000' : '#ffffff'); });
-    return { map, mask };
-  };
-  const fill = (set, x0, y0, x1, y1, c) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, typeof c === 'function' ? c() : c); };
-  const T = (set, pts, a = CT, b = CT2) => pts.forEach(([x, y]) => set(x, y, (x * 7 + y * 3) % 5 ? a : b));
-  const ridge = (set, rows) => { for (let y = 0; y < rows; y++) { set(3, y, y % 2 ? HS2 : HS); set(4, y, y % 2 ? HS : HS2); } };
-  const helmet = [
-    tex(8, 8), tex(8, 8), tex(8, 8, set => ridge(set, 8)), tex(8, 8, set => fill(set, 0, 0, 7, 7, null)),
-    tex(8, 8, set => { fill(set, 1, 3, 6, 7, null); ridge(set, 6); }),   // the face opening, split at the top by the ridge
-    tex(8, 8, set => ridge(set, 4)),
-  ];
-  const chest = [
-    tex(4, 12), tex(4, 12), tex(8, 4), tex(8, 4),
-    tex(8, 12, set => { fill(set, 2, 3, 5, 9, pickL); T(set, [[0, 2], [1, 2], [2, 3], [7, 2], [6, 2], [5, 3], [1, 4], [2, 4], [1, 5], [1, 6], [1, 7], [1, 8], [0, 8], [5, 4], [6, 4], [6, 5], [6, 6], [6, 7], [6, 8], [7, 8]]); }),
-    tex(8, 12, set => { fill(set, 2, 2, 5, 6, pickL); T(set, [[2, 7], [3, 7], [4, 7], [5, 7], [0, 8], [2, 8], [5, 8], [7, 8], [1, 9], [2, 9], [5, 9], [6, 9]]); }),
-  ];
-  // the shoulder pieces: armour down to the elbow (with the band), then a hole for the black forearm
-  const SPIRAL = [[0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [3, 2], [0, 3], [2, 3], [3, 3]], BAND = [[0, 4], [1, 4], [2, 4], [3, 4]];
-  const sleeve = (spiral, flip) => tex(4, 12, set => { fill(set, 0, 7, 3, 11, null); fill(set, 0, 0, 3, 0, pickL); T(set, BAND); if (spiral) T(set, flip ? SPIRAL.map(([x, y]) => [3 - x, y]) : SPIRAL); });
-  const sTop = tex(4, 4, set => fill(set, 0, 0, 3, 3, pickL)), sEnd = tex(4, 4, set => fill(set, 0, 0, 3, 3, null));
-  const armR = [sleeve(false), sleeve(true, true), sTop, sEnd, sleeve(false), sleeve(true)];
-  const armL = [sleeve(true), sleeve(false), sTop, sEnd, sleeve(false), sleeve(true, true)];
-  // leggings all the way down (the boots go over them)
-  const legs = () => [tex(4, 12, set => fill(set, 0, 0, 3, 0, '#2b272b')), tex(4, 12, set => fill(set, 0, 0, 3, 0, '#2b272b')), tex(4, 4), tex(4, 4, set => fill(set, 0, 0, 3, 3, null)), tex(4, 12, set => fill(set, 0, 0, 3, 0, '#2b272b')), tex(4, 12, set => fill(set, 0, 0, 3, 0, '#2b272b'))];
-  // the boots: only the bottom of the leg, with a dark spiral on the front and the outside
-  const BOOT = [[1, 8], [2, 8], [3, 8], [1, 9], [1, 10], [3, 10], [1, 11], [2, 11], [3, 11]];
-  const boot = (spiral, flip) => tex(4, 12, set => { fill(set, 0, 0, 3, 6, null); fill(set, 0, 7, 3, 7, '#232023'); if (spiral) T(set, flip ? BOOT.map(([x, y]) => [3 - x, y]) : BOOT, BT, BT2); });
-  const bTop = tex(4, 4, set => fill(set, 0, 0, 3, 3, null)), sole = tex(4, 4, set => fill(set, 0, 0, 3, 3, '#1d1a1d'));
-  const bootR = [boot(false), boot(true, true), bTop, sole, boot(true), boot(false)];
-  const bootL = [boot(true), boot(false), bTop, sole, boot(true, true), boot(false)];
-  return { helmet, chest, armR, armL, legR: legs(), legL: legs(), bootR, bootL };
+// ---------------- the skin, from the reference picture ----------------
+// The picture's front and back, one letter per Minecraft pixel, read straight off it (each pixel there is an 8 x 8 block,
+// so every one is exact). The sides, tops and bottoms aren't in that picture: they join the front up with the back,
+// with the trims the side picture shows. T C F are the trims, H I J K M N O P R S U V c d e f are skin (black on X and
+// on team null), the rest is netherite.
+const PAL = { A: '#3f303b', B: '#51444e', C: '#c0c0c0', D: '#766a76', E: '#5d565d', F: '#a0a0a0', G: '#322727', H: '#aa7259', I: '#b3795e', J: '#ffffff', K: '#523d89', L: '#49393f', M: '#6a4030', N: '#492510', O: '#774235', P: '#421d0a', Q: '#241f20', R: '#9b6349', S: '#049595', T: '#e0e0e0', U: '#00afaf', V: '#058888', W: '#352d2d', X: '#171111', Y: '#241e1f', Z: '#373537', a: '#473e3f', b: '#4d494d', c: '#2b1e0d', d: '#241808', e: '#815339', f: '#261a0a' };
+const SKIN_LETTERS = new Set('HIJKMNOPRSUVcdef'), TRIM_LETTERS = new Set('TCF');
+const FRONT = [
+  '....ABCDECBA....', '....CECDDCEC....', '....CFFDDFFC....', '....GHIDEHHG....', '....AJKELKJA....', '....LHHMMHHL....', '....BENOOPEB....', '....LBPNPNBL....',
+  'EEAEQAHRRHAQEAEE', 'EBABAQSHHSQABABE', 'BLGBTTCUVCTTBGLB', 'AGQETBTBBTBTEQGA', 'TTCCCEDDDDECCCTT', 'GQGQFCTDDTCFQGQG', 'GRGRLETEETELRGRG', 'HHHRAACDDCAARHHH',
+  'HHHRCCFAAFCCRHHH', 'HHHHALEDDELAHHHH', 'HHRHWGLEELGXHRHH', 'RHRRYWGAAGXXRRHR', '....EWYXXYWE....', '....FFCYYCFF....', '....ZECCCCEZ....', '....aEDbbDEa....',
+  '....aaEZZEaa....', '....aabZZbaa....', '....FCTTTTCF....', '....ABBTTBBA....', '....BTBCCBTB....', '....BTCFFCTB....', '....GEEGGEEG....', '....TTCCCCTT....',
+];
+const BACK = [
+  '....QQQBEQQQ....', '....TTCEDCTT....', '....TATEETAT....', '....CAALLAAC....', '....FTAAAATF....', '....QFTGGTFQ....', '....cdCQQCdc....', '....eeffffee....',
+  'EEAEQABEEBAQEAEE', 'TTCBAQDDDDQABCTT', 'CLTBBBEDDEBBBTLC', 'CGQELEBEEBELEQGC', 'FFCCAEDDDDEACCFF', 'QQGQALEDDELAQGQQ', 'HRGHLBBEEBBLHGRH', 'HHHHAATTTTAAHHHH',
+  'HHHHFLTAATLCHHHH', 'HHHHACTBBTCAHHHH', 'HHRHWGLBBLGXHRHH', 'RHRRYWGAAGXXRRHR', '....EWYYYYWE....', '....FFCWWCFF....', '....ZETTTTEZ....', '....aEDZZDEa....',
+  '....aaEZZEaa....', '....aabWWbaa....', '....FCTTTTCF....', '....AALTTLAA....', '....ATBCCBTA....', '....QTCFFCTQ....', '....QGGQQGGQ....', '....CTTCCTTC....',
+];
+const cut = (src, x0, y0, w, h) => src.slice(y0, y0 + h).map(r => r.slice(x0, x0 + w));
+const rev = face => face.map(r => [...r].reverse().join(''));
+// sides are written front edge first; tops back edge first, with the figure's right on the left
+const HEAD_SIDE = ['ABABEABQ', 'CCTTCTTT', 'CFABATAT', 'GALTTCAC', 'ALATAFTF', 'LBACTTFQ', 'BEABABcc', 'LBABeeee'];
+const HEAD_TOP = ['QQQEBQQQ', 'ABCDECBA', 'BATDETAB', 'ABCEDCBA', 'BAADEAAB', 'ATBEDBTA', 'BCADEACB', 'ABCDECBA'];
+const HEAD_BOTTOM = ['LBLBLBLB', 'BHHHHHHL', 'LHHHHHHB', 'BHHHHHHL', 'LHHHHHHB', 'BHHHHHHL', 'LHHHHHHB', 'BLBLBLBL'];
+const BODY_SIDE = ['QABQ', 'ABAA', 'TTCB', 'TATL', 'CCAA', 'FABA', 'LEBL', 'AABA', 'CTTF', 'ALBA', 'WGGW', 'YXXY'];
+const BODY_TOP = ['AEBEEBEA', 'BAEAAEAB', 'EBAHHABE', 'QABEEBAQ'], BODY_BOTTOM = ['WGLEELGX', 'GWYAAYWG', 'WGYAAYGW', 'YWGAAGXX'];
+const ARM_OUT = ['EAEE', 'ATTT', 'BTAC', 'ACTC', 'TTCF', 'GQGQ', 'GRHH', 'HHHH', 'HHHH', 'HHHH', 'HRHH', 'RHRR'];
+const ARM_IN = ['EABE', 'BAEB', 'BEAB', 'EAAE', 'CTTC', 'QGGQ', 'RGGH', 'RHHH', 'RHHH', 'HHHH', 'HHRH', 'RHRR'];
+const ARM_TOP = ['TAEB', 'CEAB', 'TBEA', 'CAEB'], ARM_BOTTOM = ['HHHH', 'HRRH', 'HRRH', 'HHHH'];
+const LEG_OUT = ['EWYE', 'FCCF', 'ZEEZ', 'aDEa', 'aEaa', 'abaa', 'FTTF', 'ATBA', 'BCTA', 'BFCQ', 'GEEQ', 'TCTC'];
+const LEG_IN = ['XYYY', 'YCCW', 'CEET', 'bDDZ', 'ZEEZ', 'ZbbW', 'TCCT', 'TBBT', 'CBBC', 'FCCF', 'GEEQ', 'CTTC'];
+const LEG_TOP = ['EAAE', 'ABBA', 'ABBA', 'EAAE'], LEG_BOTTOM = ['GQQG', 'QGGQ', 'QGGQ', 'GQQG'];
+// each part's six faces, in three.js box order: +x, -x, +y, -y, +z (front), -z (back). The figure faces +z, so its right
+// arm and leg are on the -x side; a side seen from outside has the front on its left on +x and on its right on -x.
+const PARTS = {
+  head: [HEAD_SIDE, rev(HEAD_SIDE), HEAD_TOP, HEAD_BOTTOM, cut(FRONT, 4, 0, 8, 8), cut(BACK, 4, 0, 8, 8)],
+  body: [BODY_SIDE, rev(BODY_SIDE), BODY_TOP, BODY_BOTTOM, cut(FRONT, 4, 8, 8, 12), cut(BACK, 4, 8, 8, 12)],
+  armR: [ARM_IN, rev(ARM_OUT), ARM_TOP, ARM_BOTTOM, cut(FRONT, 0, 8, 4, 12), cut(BACK, 12, 8, 4, 12)],
+  armL: [ARM_OUT, rev(ARM_IN), rev(ARM_TOP), ARM_BOTTOM, cut(FRONT, 12, 8, 4, 12), cut(BACK, 0, 8, 4, 12)],
+  legR: [LEG_IN, rev(LEG_OUT), LEG_TOP, LEG_BOTTOM, cut(FRONT, 4, 20, 4, 12), cut(BACK, 8, 20, 4, 12)],
+  legL: [LEG_OUT, rev(LEG_IN), LEG_TOP, LEG_BOTTOM, cut(FRONT, 8, 20, 4, 12), cut(BACK, 4, 20, 4, 12)],
+};
+// Everyone wears the same trims, and they are black, except on the chestplate: white on X, red on the general, black
+// on the rest of team null.
+const TRIM = { white: null, red: { T: '#ff5a4f', C: '#dd2c20', F: '#a8160e' }, black: { T: '#211b1e', C: '#181316', F: '#100c0e' } };
+// skin goes black, keeping just a hint of its shading
+const blackOf = hex => { const c = new THREE.Color(hex), v = Math.round(2 + (0.3 * c.r + 0.59 * c.g + 0.11 * c.b) * 10).toString(16).padStart(2, '0'); return '#' + v + v + v; };
+const SKIN_CACHE = {};
+// For each part: the black body (inner), the armour just outside it (outer, with holes where the skin shows) and where
+// the armour is (for the enchantment glint).
+function skinSet(chest) {
+  if (SKIN_CACHE[chest]) return SKIN_CACHE[chest];
+  const out = { inner: {}, outer: {}, mask: {} };
+  const paint = (rows, fn) => pixTex(rows[0].length, rows.length, set => rows.forEach((r, y) => [...r].forEach((ch, x) => set(x, y, ch === '.' ? null : fn(ch)))));
+  for (const [k, faces] of Object.entries(PARTS)) {
+    const recolor = k === 'body' || k === 'armR' || k === 'armL' ? TRIM[chest] : TRIM.black;
+    out.inner[k] = faces.map(f => paint(f, ch => (SKIN_LETTERS.has(ch) ? blackOf(PAL[ch]) : '#070707')));
+    out.outer[k] = faces.map(f => paint(f, ch => (SKIN_LETTERS.has(ch) ? null : recolor && TRIM_LETTERS.has(ch) ? recolor[ch] : PAL[ch])));
+    out.mask[k] = faces.map(f => paint(f, ch => (SKIN_LETTERS.has(ch) ? '#000000' : '#ffffff')));
+  }
+  return (SKIN_CACHE[chest] = out);
 }
-function shade(hex, k) { const c = new THREE.Color(hex); if (k < 0) c.multiplyScalar(1 + k); else c.lerp(new THREE.Color('#ffffff'), k); return '#' + c.getHexString(); }
 
 // the enchantment glint: purple streaks that slide across, added on top
 let glintTexture = null;
@@ -153,21 +160,27 @@ export function makeItem(id, size = 2.4, enchanted = true) {
   if (enchanted) { const o = new THREE.Mesh(extrude(id), glintMat(0.55)); o.scale.set(size * 1.01, size * 1.01, size * 1.3); g.add(o); }
   return g;
 }
-// the shield: purple, a light disc in the middle and a pale frame, like the ones in the pictures
-let shieldFace = null;
-function makeShield() {
-  if (!shieldFace) shieldFace = pixTex(12, 22, set => {
-    for (let y = 0; y < 22; y++) for (let x = 0; x < 12; x++) {
-      const edge = x === 0 || y === 0 || x === 11 || y === 21;
-      set(x, y, edge ? '#a98cf0' : (x + y) % 5 === 0 ? '#3e2380' : '#35206e');
-    }
-    for (let y = 0; y < 22; y++) for (let x = 0; x < 12; x++) { const d = Math.hypot(x - 5.5, y - 10.5); if (d < 2.6) set(x, y, d < 1.6 ? '#f1ecff' : '#d9ceff'); }
-    [[2, 4], [3, 4], [8, 4], [9, 4], [2, 17], [3, 17], [8, 17], [9, 17], [5, 3], [6, 3], [5, 18], [6, 18]].forEach(([x, y]) => set(x, y, '#7d62c9'));
-  });
-  const back = new THREE.MeshLambertMaterial({ color: '#4a3a6e' }), front = new THREE.MeshLambertMaterial({ map: shieldFace });
-  const g = new THREE.Group();
-  const s = new THREE.Mesh(new THREE.BoxGeometry(12 * PX * 0.62, 22 * PX * 0.62, 0.16), [back, back, back, back, front, back]); g.add(s);
-  const o = new THREE.Mesh(s.geometry, glintMat(0.2)); o.scale.set(1.02, 1.02, 1.4); g.add(o);
+// The shield, like Minecraft's: a 12 x 22 board with a banner on the front (purple, a pale border and a white roundel,
+// like the ones in the pictures), planks and an iron rim on the back, and a handle. `scale` 1 is Minecraft size next
+// to X; a player's is smaller.
+let shieldTex = null;
+export function makeShield(scale = 1) {
+  if (!shieldTex) shieldTex = {
+    front: pixTex(12, 22, set => {
+      for (let y = 0; y < 22; y++) for (let x = 0; x < 12; x++) set(x, y, ['#3a2378', '#35206e', '#3f2682', '#382172'][(x * 3 + y * 5 + ((x * y) % 3)) % 4]);
+      for (let y = 0; y < 22; y++) for (let x = 0; x < 12; x++) if (x === 0 || y === 0 || x === 11 || y === 21) set(x, y, (x + y) % 3 ? '#a98cf0' : '#9b7de6');
+      for (let y = 0; y < 22; y++) for (let x = 0; x < 12; x++) { const d = Math.hypot(x - 5.5, y - 10.5); if (d < 3.4) set(x, y, d < 2.3 ? '#f3efff' : '#d6cbfb'); }
+    }),
+    back: pixTex(12, 22, set => {
+      for (let y = 0; y < 22; y++) for (let x = 0; x < 12; x++) set(x, y, x % 4 === 0 ? '#6e5233' : ['#8b6a45', '#86663f', '#7d5e3c'][(y + (x >> 2)) % 3]);
+      for (let y = 0; y < 22; y++) for (let x = 0; x < 12; x++) if (x === 0 || y === 0 || x === 11 || y === 21) set(x, y, (x + y) % 2 ? '#9a9a9a' : '#858585');
+    }),
+  };
+  const P = PX * scale, rim = new THREE.MeshLambertMaterial({ color: '#8c8c8c' }), g = new THREE.Group();
+  const board = new THREE.Mesh(new THREE.BoxGeometry(12 * P, 22 * P, 1.2 * P), [rim, rim, rim, rim, new THREE.MeshLambertMaterial({ map: shieldTex.front }), new THREE.MeshLambertMaterial({ map: shieldTex.back })]);
+  board.castShadow = true; g.add(board);
+  const handle = new THREE.Mesh(new THREE.BoxGeometry(2 * P, 6 * P, 3 * P), new THREE.MeshLambertMaterial({ color: '#6e5233' })); handle.position.z = -2.1 * P; g.add(handle);
+  const gl = new THREE.Mesh(board.geometry, glintMat(0.14)); gl.scale.set(1.01, 1.01, 1.3); g.add(gl);
   return g;
 }
 
@@ -187,31 +200,35 @@ export function mcTag(text, color = '#ffffff') {
 }
 
 // ---------------- a Minecraft-style person ----------------
-// opts: { trim, name, nameColor, scale }. pose() is called every frame with what they are doing.
+// opts: { chest: 'white' | 'red' | 'black', name, nameColor, scale }. pose() is called every frame with what they are doing.
 export function createMcPerson(scene, opts = {}) {
   const root = new THREE.Group(); scene.add(root);
-  const set = armourSet(opts.trim), mats = {}, glints = {};
-  for (const k in set) { mats[k] = set[k].map(t => new THREE.MeshLambertMaterial({ map: t.map, alphaTest: 0.5 })); glints[k] = set[k].map(t => new THREE.MeshBasicMaterial({ map: glintTex(), alphaMap: t.mask, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false })); }
-  const skinMat = new THREE.MeshLambertMaterial({ color: '#050505' });   // black all over under the armour
-  const all = [];
-  const box = (w, h, d, m) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w * PX, h * PX, d * PX), m); b.castShadow = true; all.push(b); return b; };
-  // a black body part with an armour piece around it, `grow` pixels bigger on every side
-  const part = (parent, w, h, d, y, pieces) => {
-    const s = box(w, h, d, skinMat); s.position.y = y * PX; parent.add(s);
-    for (const [k, grow] of pieces) { const a = box(w + grow * 2, h + grow * 2, d + grow * 2, mats[k]); const gl = new THREE.Mesh(a.geometry, glints[k]); gl.scale.setScalar(1.01); a.add(gl); a.position.y = y * PX; parent.add(a); }
-    return s;
+  const skin = skinSet(opts.chest || 'black'), all = [];
+  const box = (w, h, d, mats) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w * PX, h * PX, d * PX), mats); b.castShadow = true; all.push(b); return b; };
+  // a part: the black body, and the armour just outside it the way a skin's outer layer sits (half a pixel out on the
+  // head, a quarter everywhere else, like Minecraft)
+  const part = (parent, k, w, h, d, y, grow) => {
+    const inner = box(w, h, d, skin.inner[k].map(t => new THREE.MeshLambertMaterial({ map: t })));
+    inner.position.y = y * PX; parent.add(inner);
+    const outer = box(w + grow * 2, h + grow * 2, d + grow * 2, skin.outer[k].map(t => new THREE.MeshLambertMaterial({ map: t, alphaTest: 0.5 })));
+    const gl = new THREE.Mesh(outer.geometry, skin.mask[k].map(m => new THREE.MeshBasicMaterial({ map: glintTex(), alphaMap: m, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false })));
+    gl.scale.setScalar(1.003); outer.add(gl);
+    outer.position.y = y * PX; parent.add(outer);
+    return inner;
   };
   const body = new THREE.Group(); root.add(body);
-  part(body, 8, 12, 4, 18, [['chest', 1]]);
+  part(body, 'body', 8, 12, 4, 18, 0.25);
   const neck = new THREE.Group(); neck.position.y = 24 * PX; body.add(neck);
-  const head = part(neck, 8, 8, 8, 4, [['helmet', 1]]);
-  const limb = (x, y, pieces) => { const pivot = new THREE.Group(); pivot.position.set(x * PX, y * PX, 0); part(pivot, 4, 12, 4, -6, pieces); body.add(pivot); return pivot; };
-  const armR = limb(-6, 24, [['armR', 1]]), armL = limb(6, 24, [['armL', 1]]);
-  const legR = limb(-2, 12, [['legR', 0.5], ['bootR', 1]]), legL = limb(2, 12, [['legL', 0.5], ['bootL', 1]]);
+  const head = part(neck, 'head', 8, 8, 8, 4, 0.5);
+  const limb = (k, x, y) => { const pivot = new THREE.Group(); pivot.position.set(x * PX, y * PX, 0); part(pivot, k, 4, 12, 4, -6, 0.25); body.add(pivot); return pivot; };
+  const armR = limb('armR', -6, 24), armL = limb('armL', 6, 24), legR = limb('legR', -2, 12), legL = limb('legL', 2, 12);
   const handR = new THREE.Group(); handR.position.set(0, -10.5 * PX, 1 * PX); armR.add(handR);
   const handL = new THREE.Group(); handL.position.set(0, -10.5 * PX, 1 * PX); armL.add(handL);
-  const shield = makeShield(); handL.add(shield);
-  const shieldSide = () => { shield.position.set(0.62, -0.25, 0.25); shield.rotation.set(0, Math.PI / 2 - 0.22, 0); }, shieldFront = () => { shield.position.set(1.4 * PX, -0.5, 1.1); shield.rotation.set(0, -0.15, 0); };
+  // the shield hangs at the left side, facing out, and swings with the arm; blocking brings it round in front
+  const shield = makeShield(1);
+  const sideAnchor = new THREE.Group(); sideAnchor.position.set(4.2 * PX, -11 * PX, 1.5 * PX); sideAnchor.rotation.y = Math.PI / 2 - 0.3; armL.add(sideAnchor);
+  const frontAnchor = new THREE.Group(); frontAnchor.position.set(2 * PX, 16 * PX, 7 * PX); frontAnchor.rotation.y = 0.18; body.add(frontAnchor);
+  const shieldSide = () => { if (shield.parent !== sideAnchor) sideAnchor.add(shield); }, shieldFront = () => { if (shield.parent !== frontAnchor) frontAnchor.add(shield); };
   shieldSide();
   const tag = mcTag(opts.name || '', opts.nameColor); tag.position.y = 36 * PX; root.add(tag);
   root.scale.setScalar(opts.scale || 1);

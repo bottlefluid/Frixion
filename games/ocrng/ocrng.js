@@ -11,10 +11,11 @@ import {
   AURAS, AURA, auraKey, rollAura, POTIONS, POTION, ITEMS, ITEM, WEATHERS, tierOf, tierIndex, STRANGE, POTION_RENAMES,
   timeOfDay, dayProgress, weatherAt, weatherEndsAt, jesterHere, fmt, fmtTime, zalgo, movesFor, elementOf,
   FISH, FISHES, FISHING_SPOTS, catchFish, dailyStock, dayIndex, PICKUPS, DAILY_QUESTS, dailyQuests, SIDE_QUEST, BUILTIN_CODES,
-  GEARS, GEAR, HEX_SHOP, isSpecial, ACHIEVEMENTS, CHEST_POOLS, SEASON, PASS_REWARDS, JACK_SHOP, mariDeals, MARI_SLOT_MS, RAID, loreOf, isHalloween, HALLOWEEN_BIOMES, WEATHER_SLOT_MS,
+  GEARS, GEAR, HEX_SHOP, isSpecial, MUTATIONS, ACHIEVEMENTS, CHEST_POOLS, SEASON, PASS_REWARDS, JACK_SHOP, mariDeals, MARI_SLOT_MS, RAID, loreOf, isHalloween, HALLOWEEN_BIOMES, WEATHER_SLOT_MS,
 } from './data.js';
 import { createCrawler } from './raid.js';
 import { createXFight } from './xfight.js';
+import { makeItem, makeShield, FX as MCFX } from './xboss.js';
 import { buildAvatar, AuraFX, shirtColorFor } from './avatar.js';
 import { createWorld, potionModel } from './world.js';
 import { createNet } from './net.js';
@@ -25,7 +26,7 @@ import { createEquinoxCinematic, EQUINOX_MERGE, EQUINOX_LENGTH } from './cinemat
 import { glowTex } from './avatar.js';
 import { IC, potionArt, gearArt, handGearArt, fishArt, coinArt, starArt, titleArt, titleInfo } from './icons.js';
 
-const VERSION = '2.4';
+const VERSION = '2.5';
 const API = () => window.FrixionGameAPI;
 const WALK = 16, JUMP = 24, GRAVITY = 72, STEP = 1.25, R = 0.6, H = 5;
 const ROLL_ANIM_MS = 2600, ROLL_COOLDOWN_MS = 600;
@@ -55,7 +56,7 @@ export async function open() {
   document.body.appendChild(G.root);
   document.body.classList.add('ocrng-open');
   // Testing on your own computer only: lets a test script look inside the running game. Never on the live site.
-  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ocrngDebug = { state: () => G, interact: () => interact(), admin: a => adminAction(a), panel: id => openPanel(id), cut: key => cutscene(auraKey(key)), move: k => useMove(k), chat: t => G.chat && G.chat.system(t), spawn: id => spawnPickup(id, true), equip: k => equip(k), potion: id => usePotion(id, true), tp: (x, y, z) => teleportTo(new THREE.Vector3(x, y, z), 'Test teleport.'), zoom: s => zoomBy(s) };
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ocrngDebug = { state: () => G, interact: () => interact(), admin: a => adminAction(a), panel: id => openPanel(id), cut: key => cutscene(auraKey(key)), move: k => useMove(k), chat: t => G.chat && G.chat.system(t), spawn: id => spawnPickup(id, true), equip: k => equip(k), hurt: (d, o) => hurtMe(d, o), potion: id => usePotion(id, true), tp: (x, y, z) => teleportTo(new THREE.Vector3(x, y, z), 'Test teleport.'), zoom: s => zoomBy(s) };
   try {
     setLoading('Loading the engine', 0.1);
     await sleep(60);
@@ -154,6 +155,7 @@ function buildShell() {
       <button type="button" class="oc-sq" data-open="collection" title="Collection" data-label="Index">${IC.collection}</button>
       <button type="button" class="oc-sq" data-open="inventory" title="Inventory" data-label="Items">${IC.inventory}</button>
       <button type="button" class="oc-sq" data-open="quests" title="Quests" data-label="Quests">${IC.quests}<i class="oc-dot hidden"></i></button>
+      <button type="button" class="oc-sq oc-set-btn" data-open="settings" title="Settings" data-label="Settings">${IC.settings}</button>
       <button type="button" class="oc-sq oc-menu-btn" title="Menu" data-label="Menu">${IC.menu}<i class="oc-dot hidden"></i></button>
       <div class="oc-more hidden">
         <button type="button" data-open="achievements">${IC.trophy}<span>Achievements</span><i class="oc-dot hidden"></i></button>
@@ -183,7 +185,6 @@ function buildShell() {
       <div class="oc-buffs"></div>
       <div class="oc-hp hidden"><i></i><span>100</span></div>
       <div class="oc-abilities"></div>
-      <button type="button" class="oc-pvp-btn">PvP: Off</button>
     </div>
     <div class="oc-crosshair hidden"></div>
     <div class="oc-lockmark hidden">${IC.lock}</div>
@@ -193,6 +194,7 @@ function buildShell() {
     <div class="oc-bubbles"></div>
     <div class="oc-batch hidden"></div>
     <div class="oc-tip hidden"></div>
+    <div class="oc-lockon hidden"></div>
     <div class="oc-announce"></div>
     <div class="oc-toasts"></div>
   </div>
@@ -270,6 +272,14 @@ async function loadSave() {
   for (const [id, n] of Object.entries(s.potions)) { if (!POTION[id]) { const to = POTION_RENAMES[id]; if (to) s.potions[to] = (s.potions[to] || 0) + n; delete s.potions[id]; } }
   s.equipped = auraKey(s.equipped).key; s.best = auraKey(s.best).key;
   for (const k of Object.keys(s.auras)) if (s.auras[k] > 0) s.found[auraKey(k).aura.id] = true;
+  if (!s.flags.noEquinox) {   // once: every 『EQUINOX』 you had (mutations too) becomes 『LEGACY EQUINOX』
+    let had = 0;
+    for (const k of Object.keys(s.auras)) { const nk = toLegacy(k); if (nk === k) continue; had += s.auras[k]; s.auras[nk] = (s.auras[nk] || 0) + s.auras[k]; delete s.auras[k]; }
+    if (!had && s.found.equinox) { s.auras.legacyequinox = 1; had = 1; }   // rolled it once, even if it was removed since
+    s.equipped = toLegacy(s.equipped); s.best = toLegacy(s.best);
+    if (had) { delete s.found.equinox; s.found.legacyequinox = true; G.equinoxTaken = had; setTimeout(() => markDirty(), 0); }
+    s.flags.noEquinox = true;
+  }
   G.save = s;
   G.effects = (s.effects || []).map(e => (e.left != null ? { ...e, until: now() + e.left } : e)).filter(e => e.until > now() && POTION[e.id]).map(({ left, ...e }) => e);
   G.queued = (s.queued || []).filter(id => POTION[id]);
@@ -285,14 +295,14 @@ async function loadSave() {
 // time and close, so two windows can never save over each other (that is how progress went backwards).
 async function claimSession() {
   let ref; try { ref = API().rtdb.ref('ocrng/session/' + G.me.uid); } catch (e) { return; }
-  G.sessionId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const myId = G.sessionId = Math.random().toString(36).slice(2) + Date.now().toString(36);   // kept here: G is gone once the game closes
   let had = null;
   try { had = (await ref.get()).val(); } catch (e) {}
   try { await ref.set({ id: G.sessionId, t: Date.now() }); } catch (e) { return; }
   if (had && had.id && Date.now() - (had.t || 0) < 12 * 3600000) await sleep(1600);   // let the other window save first
-  const watch = s => { const v = s.val(); if (G && !G.kicked && v && v.id && v.id !== G.sessionId) sessionTaken(); };
+  const watch = s => { const v = s.val(); if (G && G.sessionId === myId && !G.kicked && v && v.id && v.id !== myId) sessionTaken(); };
   ref.on('value', watch);
-  G.sessionOff = () => { ref.off('value', watch); ref.transaction(v => (v && v.id === G.sessionId ? null : v)).catch(() => {}); };
+  G.sessionOff = () => { ref.off('value', watch); ref.transaction(v => (v && v.id === myId ? null : v)).catch(() => {}); };
 }
 function sessionTaken() {
   if (G.save && !G.loadFailed) saveNow();
@@ -338,6 +348,8 @@ function equip(key, silent) {
   drawMyTag();
   G.moves = movesFor(key);
   if (!G.moves.some(m => m.toggle)) p.flyToggle = false;
+  const xa = auraKey(key).aura.id === 'xboss';
+  xGear(p.avatar, xa); if (xa) xHold(p.avatar, 'sword'); else { p.blocking = false; p.eating = null; }
   renderAbilities();
   if (G.net) G.net.update({ aura: key });
   if (!silent) { toast(`Equipped ${auraKey(key).name}`); markDirty(); }
@@ -352,6 +364,7 @@ function setupInput() {
   on(window, 'keydown', e => {
     if (!G || !G.playing || typing(e)) return;
     const key = e.key.toLowerCase();
+    if (G.lockOn) { if (key === 'escape') pickLock(''); else if (/^[1-9]$/.test(key)) pickLock(key === '1' ? 'nearest' : ((G.lockOn.list[+key - 2] || {}).id || '')); e.preventDefault(); e.stopImmediatePropagation(); return; }
     if (e.key === 'Escape') { if (G.panel) closePanel(); else if (G.fishing) stopFishing(); e.stopImmediatePropagation(); return; }
     G.konami.push(key); if (G.konami.length > 10) G.konami.shift();
     if (G.konami.join() === KONAMI.join()) { G.konami = []; findEgg('konami'); }
@@ -366,7 +379,7 @@ function setupInput() {
     if (key === 'shift' && !G.player.fly && !G.touch) setShiftLock(!G.shiftLock);
     if ([' ', 'w', 'a', 's', 'd', 'e', 'r', 'f', 'q', 'z', 'x', 'c', 'v', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(key)) { e.preventDefault(); e.stopImmediatePropagation(); }
   }, true);
-  on(window, 'keyup', e => { if (!G) return; k[e.key.toLowerCase()] = false; }, true);
+  on(window, 'keyup', e => { if (!G) return; const kk = e.key.toLowerCase(); k[kk] = false; if (kk === 'z' && G.player && G.player.blocking) setBlock(false); }, true);
   on(window, 'blur', () => { for (const x in k) k[x] = false; });
   // The camera turns as fast as the mouse moves: hold the right button (the cursor hides while you do), or drag with
   // the left one. Shift Lock keeps it turning without holding anything.
@@ -374,7 +387,10 @@ function setupInput() {
   on(cvs, 'mousedown', e => {
     if (!G.playing) return;
     if (e.button === 2) { dragging = true; if (!G.shiftLock && cvs.requestPointerLock) cvs.requestPointerLock(); }
-    if (e.button === 0) { dragging = true; if (firstPerson() && cvs.requestPointerLock && document.pointerLockElement !== cvs) cvs.requestPointerLock(); }
+    if (e.button === 0) {
+      if (xMoveOf('sword') && !G.panel) { useMove('m1'); if (firstPerson() && cvs.requestPointerLock && document.pointerLockElement !== cvs) cvs.requestPointerLock(); return; }
+      dragging = true; if (firstPerson() && cvs.requestPointerLock && document.pointerLockElement !== cvs) cvs.requestPointerLock();
+    }
   });
   on(window, 'mouseup', () => { dragging = false; if (!G.shiftLock && !firstPerson() && document.pointerLockElement === cvs) document.exitPointerLock(); });
   on(window, 'mousemove', e => {
@@ -424,7 +440,6 @@ function setupInput() {
     on($q('.oc-jump'), 'touchstart', e => { e.preventDefault(); G.input.keys[' '] = true; setTimeout(() => { if (G) G.input.keys[' '] = false; }, 150); }, { passive: false });
     on($q('.oc-act'), 'click', () => interact());
     on($q('.oc-prompt'), 'click', () => interact());   // on phones the prompt itself is the button
-    $q('.oc-bl').appendChild($q('.oc-pvp-btn'));
   }
   // AFK: nothing pressed for 5 minutes
   const awake = () => { G.lastInput = now(); if (G.afk) { G.afk = false; drawMyTag(); if (G.net) G.net.update({ afk: null }); } };
@@ -437,11 +452,13 @@ function setupInput() {
   on($q('.oc-roll'), 'click', () => rollOnce());
   on($q('.oc-auto'), 'click', toggleAuto);
   on($q('.oc-quick'), 'click', toggleQuick);
-  on($q('.oc-pvp-btn'), 'click', togglePvp);
   on($q('.oc-chat-btn'), 'click', () => G.chat && G.chat.focus());
   on($q('.oc-panel-x'), 'click', closePanel);
   on($q('.oc-panel'), 'click', e => { if (e.target.classList.contains('oc-panel')) closePanel(); });
-  on($q('.oc-abilities'), 'click', e => { const b = e.target.closest('[data-move]'); if (b) useMove(b.dataset.move); });
+  const abEl = $q('.oc-abilities'), moveOfBtn = b => b && shownMoves().find(m => m.key === b.dataset.move);
+  on(abEl, 'pointerdown', e => { const m = moveOfBtn(e.target.closest('[data-move]')); if (m && m.kind === 'shield') { e.preventDefault(); setBlock(true); } });
+  on(window, 'pointerup', () => { if (G && G.player && G.player.blocking && !G.input.keys.z) setBlock(false); });
+  on(abEl, 'click', e => { const b = e.target.closest('[data-move]'), m = moveOfBtn(b); if (b && !(m && m.kind === 'shield')) useMove(b.dataset.move); });
   // potions: hover (or tap) one for what it does, and the + button shows them all
   const buffsEl = $q('.oc-buffs'), hideTip = () => { G.tipKey = null; $q('.oc-tip').classList.add('hidden'); };
   on(buffsEl, 'mouseover', e => { const c = e.target.closest('.oc-buff'); if (c && !G.touch) showBuffTip(c.dataset.k); });
@@ -499,7 +516,7 @@ function play() {
     pos: (uid, p) => { const o = G.others.get(uid); if (o) { o.target.set(p.x, p.y, p.z); o.targetYaw = p.r; o.anim = p.a; o.hp = p.hp; if (!o.placed) { o.pos.copy(o.target); o.placed = true; } o.seen = now(); } },
     posGone: uid => { const o = G.others.get(uid); if (o) o.placed = false; },
     hit: h => takeHit(h),
-    fx: f => { if (f.kind === 'equinox') { remoteEquinox(f); return; } if (f.kind === 'death') { G.chat && G.chat.system(String(f.text || '').slice(0, 120), '#ffffff'); return; } const fxo = castFx(G.scene, f); if (fxo) G.fxObjects.push(fxo); },
+    fx: f => { if (String(f.kind).startsWith('mc')) { mcFx(f, false); return; } if (f.kind === 'equinox') { remoteEquinox(f); return; } if (f.kind === 'death') { G.chat && G.chat.system(String(f.text || '').slice(0, 120), '#ffffff'); return; } const fxo = castFx(G.scene, f); if (fxo) G.fxObjects.push(fxo); },
     announce: a => announce(a),
     world: w => { G.worldState = w; },
     raid: r => onRaid(r),
@@ -513,6 +530,7 @@ function play() {
   });
   G.xfight = createXFight({
     scene: G.scene, net: G.net, uid: G.me.uid, arena: G.world.arena, colliders: () => G.world.colliders,
+    spawn: G.world.spawn, lunge: (x, y, z) => playLunge(Math.max(0, 1 - Math.hypot(x - G.player.pos.x, z - G.player.pos.z) / 90)),
     player: () => G.player, isDead: () => !!G.respawning, others: () => [...G.others.values()].filter(o => o.placed).map(o => ({ uid: o.uid, pos: o.pos })),
     hurtMe, addFx: f => G.fxObjects.push(f), sound, shake: k => { G.shake = Math.max(G.shake || 0, k); },
     chat: (text, color) => G.chat && G.chat.system(text, color), banner: (big, small) => bossBanner(big, small),
@@ -521,6 +539,9 @@ function play() {
   });
   G.net.join({ name: G.me.name, aura: G.save.equipped, shirt: shirtColorFor(G.me.name), pvp: false, rolls: G.save.rolls, ...(G.save.title ? { title: G.save.title } : {}) });
   G.music = G.audio ? createMusic(G.audio) : null;
+  loadLunge();
+  setTimeout(() => { if (G) sweepEquinox(); }, 6000);
+  if (G.equinoxTaken) setTimeout(() => { if (G) toast('『EQUINOX』 is 1 in a trillion now. Yours became 『LEGACY EQUINOX』: it is in the Special tab of Aura Storage.', 'gold'); }, 4500);
   refreshToggles();
   updateHud();
   progress('none');
@@ -623,6 +644,10 @@ function slowTick() {
   if ((G.boardTick = (G.boardTick || 0) + 1) >= 120) { G.boardTick = 0; loadBoard(); }
   if (G.raid) renderRaidBar();
   if (G.player.raidHp < 100 && !G.respawning && now() - (G.player.lastHurt || 0) > 4000) G.player.raidHp = Math.min(100, G.player.raidHp + 5);
+  { const p = G.player, n = now();   // the golden apple: Regeneration, and golden hearts that wear off after 2 minutes
+    if ((p.regenUntil || 0) > n) { p.hp = Math.min(100, p.hp + 5); if (p.raidHp !== undefined) p.raidHp = Math.min(100, p.raidHp + 5); if (p.pvp) drawMyTag(); }
+    if (p.absorb && n > (p.absorbUntil || 0)) p.absorb = 0;
+    if (p.absorb || (p.regenUntil || 0) > n - 1500) renderBossBar(); }
   if (G.crawler && (G.player.pos.distanceTo(G.world.arena) < 60) !== !!G.nearArena) renderAbilities();
   if (G.player.emoteUntil && G.player.emoteUntil < now()) { G.player.emote = null; G.player.emoteUntil = 0; if (G.net) G.net.update({ emote: null }); }
   // AFK after 5 minutes of nothing, like Roblox; a secret after 10
@@ -636,6 +661,13 @@ function slowTick() {
 
 function movePlayer(dt) {
   const p = G.player, k = G.input.keys, j = G.input.joy, n = now();
+  if (p.xdive) {
+    const prevY = p.pos.y; diveTick(dt); if (!p.noclip) collide(p, prevY);
+    if (p.xdive && (p.xdive.land || (p.xdive.stage >= 7 && p.onGround))) spearmaceHit(p.xdive);
+    p.avatar.animate(dt, 0, true, null, null, { kind: p.xdive && p.xdive.stage >= 7 && p.xdive.stage < 8 ? 'lunge' : 'raise' });
+    return;
+  }
+  eatTick();
   let fx = (k.d || k.arrowright ? 1 : 0) - (k.a || k.arrowleft ? 1 : 0) + j.x;
   let fz = (k.s || k.arrowdown ? 1 : 0) - (k.w || k.arrowup ? 1 : 0) + j.y;
   if ((G.panel && !G.touch) || G.fishing || (G.chat && G.chat.typing) || G.cine) { fx = 0; fz = 0; }
@@ -643,7 +675,7 @@ function movePlayer(dt) {
   const yaw = G.cam.yaw;
   const dirX = fx * Math.cos(yaw) + fz * Math.sin(yaw), dirZ = -fx * Math.sin(yaw) + fz * Math.cos(yaw);
   const flying = p.fly || p.flyUntil > n || p.flyToggle;
-  const speed = WALK * (flying ? 2.4 : 1);
+  const speed = WALK * (flying ? 2.4 : 1) * (p.blocking ? 0.35 : 1) * (p.eating ? 0.45 : 1);
   if (m > 0.05) { const len = Math.hypot(dirX, dirZ) || 1; p.vel.x = dirX / len * speed * m; p.vel.z = dirZ / len * speed * m; }
   else { p.vel.x = 0; p.vel.z = 0; }
   const want = G.shiftLock || firstPerson() ? yaw + Math.PI : m > 0.05 ? Math.atan2(p.vel.x, p.vel.z) : p.yaw;
@@ -669,7 +701,8 @@ function movePlayer(dt) {
   if (p.onGround && p.pos.y > -1 && Math.abs(p.pos.z) < 140 && Math.abs(p.pos.x) < 300) G.safe = p.pos.clone();
   if (p.pos.y < -4 && Math.abs(p.pos.z) < 140 && Math.abs(p.pos.x) < 300) { p.pos.copy(G.safe || G.world.spawn); p.vel.set(0, 0, 0); toast('Splash! Back to dry land.'); sound('splash'); }
   if (p.pos.y < -60) { p.pos.copy(G.world.spawn); p.vel.set(0, 0, 0); toast('You fell out of the world. Back to spawn.'); }
-  p.avatar.animate(dt, Math.hypot(p.vel.x, p.vel.z), !p.onGround && !flying, p.emote, floats(G.save.equipped) ? 'float' : null);
+  xShieldUp(p.avatar, !!p.blocking);
+  p.avatar.animate(dt, Math.hypot(p.vel.x, p.vel.z), !p.onGround && !flying, p.emote, floats(G.save.equipped) ? 'float' : null, xAct(p));
 }
 // Bump into blocks, step up small ledges (like stairs), stand on things.
 function collide(p, prevY) {
@@ -756,7 +789,10 @@ function updateOthers(dt, t) {
     let d = o.targetYaw - o.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); o.yaw += d * Math.min(1, dt * 14);
     o.avatar.root.position.copy(o.pos); o.avatar.root.rotation.y = o.yaw;
     const sp = before.distanceTo(o.pos) / Math.max(dt, 0.001);
-    o.avatar.animate(dt, o.anim ? Math.max(sp, 8) : 0, o.target.y - o.pos.y > 0.5, o.data && o.data.emote, floats(o.key) ? 'float' : null);
+    const xa = !!(o.key && auraKey(o.key).aura.id === 'xboss');
+    if (xa !== !!o.avatar.xgear) { xGear(o.avatar, xa); if (xa) xHold(o.avatar, 'sword'); }
+    o.blocking = xa && !!(o.data && o.data.blk); if (xa) xShieldUp(o.avatar, o.blocking);
+    o.avatar.animate(dt, o.anim ? Math.max(sp, 8) : 0, o.target.y - o.pos.y > 0.5, o.data && o.data.emote, floats(o.key) ? 'float' : null, xa ? xAct(o) : null);
     if (o.fx) o.fx.update(dt, t);
     if (o.data && o.data.pvp && o.hp !== o.lastHp) { o.lastHp = o.hp; o.avatar.tag.userData.draw(o.data.name || o.uid, o.key, o.hp < 0 ? 100 : o.hp, { afk: o.data.afk }); }
   }
@@ -1225,6 +1261,8 @@ function raidHitFrom(f, dmg) {
 function hurtMe(dmg, o = {}) {
   const p = G.player;
   if (G.respawning || G.portraitBlock) return;
+  if (dmg && !o.smash && blocks(o.fx, o.fz)) { shieldHit(o.axe); if (o.kx || o.kz) p.knock = { x: (o.kx || 0) * 0.25, z: (o.kz || 0) * 0.25 }; return; }
+  dmg = soak(dmg);
   if (o.kx || o.kz) p.knock = { x: o.kx || 0, z: o.kz || 0 };
   if (o.vy) { p.vel.y = o.vy; p.onGround = false; }
   if (!dmg) return;
@@ -1274,12 +1312,15 @@ function renderBossBar() {
     bar.querySelector('i').style.width = (info.dead ? 0 : Math.max(0, Math.min(1, info.hp / info.max)) * 100).toFixed(1) + '%';
     bar.querySelector('small').textContent = info.dead ? 'Defeated' : `${Math.max(0, Math.ceil(info.hp))} / ${info.max}${info.phase === 2 ? '   Phase 2' : ''}${info.mobsTotal ? `   Team null: ${info.mobs} left` : ''}   Your damage: ${fmt(info.myDmg)}${info.rank ? ` (#${info.rank})` : ''}   ${fmtTime(Math.max(0, info.left))}`;
   }
-  const raid = near || (G.crawler && !G.crawler.dying && G.player.pos.distanceTo(G.world.arena) < 70);
+  const p = G.player, raid = near || (G.crawler && !G.crawler.dying && p.pos.distanceTo(G.world.arena) < 70);
+  const show = raid || p.pvp || p.absorb > 0 || (p.regenUntil || 0) > now() || !!p.eating;
   const hearts = $q('.oc-hearts');
-  hearts.classList.toggle('hidden', !raid);
-  if (raid) {
-    const hp = Math.max(0, G.player.raidHp ?? 100);
-    const html = Array.from({ length: 10 }, (_, i) => { const v = hp - i * 10; return `<i class="${v >= 10 ? 'f' : v >= 5 ? 'h' : 'e'}"></i>`; }).join('');
+  hearts.classList.toggle('hidden', !show);
+  if (show) {
+    // 10 red hearts, and the golden ones (Absorption) in a row above them, like Minecraft
+    const hp = Math.max(0, raid ? p.raidHp ?? 100 : p.hp), ab = Math.max(0, Math.ceil(p.absorb || 0));
+    const gold = ab > 0 ? `<div class="gold">${Array.from({ length: Math.ceil(ab / 10) }, (_, i) => `<i class="${ab - i * 10 >= 10 ? 'g' : 'gh'}"></i>`).join('')}</div>` : '';
+    const html = gold + `<div>${Array.from({ length: 10 }, (_, i) => { const v = hp - i * 10; return `<i class="${v >= 10 ? 'f' : v >= 5 ? 'h' : 'e'}"></i>`; }).join('')}</div>`;
     if (hearts.dataset.h !== html) { hearts.innerHTML = html; hearts.dataset.h = html; hearts.classList.toggle('low', hp <= 30); }
   }
 }
@@ -1725,6 +1766,7 @@ function useMove(key) {
   if (!m) return;
   const n = now();
   if ((G.moveCd[key] || 0) > n) return;
+  if (XKINDS.has(m.kind)) { xMove(m, n); return; }
   G.moveCd[key] = n + m.cd * 1000;
   const p = G.player, yaw = p.yaw, d = { x: Math.sin(yaw), z: Math.cos(yaw) };
   const f = { kind: m.kind === 'punch' ? 'burst' : m.kind, r: m.kind === 'punch' ? 2.4 : m.r, x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +yaw.toFixed(3), c: m.color, tier: m.tier, len: m.len, w: m.w, dist: m.dist, n: m.n, range: m.range, dur: m.dur, seed: Math.floor(Math.random() * 1e6) };
@@ -1751,9 +1793,7 @@ function useMove(key) {
 function togglePvp() {
   const p = G.player;
   p.pvp = !p.pvp; p.hp = 100;
-  const b = $q('.oc-pvp-btn'); b.textContent = p.pvp ? 'PvP: On' : 'PvP: Off'; b.classList.toggle('on', p.pvp);
-  $q('.oc-hp').classList.toggle('hidden', !p.pvp);
-  updateHp();
+  renderBossBar();
   drawMyTag();
   if (G.net) G.net.update({ pvp: p.pvp });
   toast(p.pvp ? 'PvP on. Your aura\'s moves (Z, X, C, V) hit other players who have PvP on.' : 'PvP off. Nobody can hit you.');
@@ -1768,7 +1808,9 @@ function takeHit(h) {
     toast(`You knocked out ${h.by}.`, 'gold'); markDirty(); return;
   }
   if (!p.pvp) return;
-  p.hp -= h.dmg || 0;
+  const from = h.fx !== undefined ? [h.fx, h.fz] : [p.pos.x - (h.kx || 0), p.pos.z - (h.kz || 0)];
+  if (!h.smash && blocks(from[0], from[1])) { shieldHit(h.axe); p.knock = { x: (h.kx || 0) * 0.25, z: (h.kz || 0) * 0.25 }; return; }
+  p.hp -= soak(h.dmg || 0);
   p.knock = { x: h.kx || 0, z: h.kz || 0 }; p.vel.y = 12; p.onGround = false;
   G.root.classList.remove('oc-hurt'); void G.root.offsetWidth; G.root.classList.add('oc-hurt');
   sound('hurt');
@@ -1777,8 +1819,232 @@ function takeHit(h) {
     if (G.net && h.from) G.net.hit(h.from, { ko: true, by: G.me.name });
     p.hp = 100; p.pos.copy(G.world.spawn); p.vel.set(0, 0, 0); p.knock = null;
   }
-  updateHp();
+  renderBossBar();
   drawMyTag();
+}
+
+// ---------------- ____X____'s aura: fight like him ----------------
+// M1 swings his sword. Z raises his shield for as long as it is held: it stops hits from the front, and an axe knocks
+// it down for 5 seconds, like Minecraft. X swings his axe. C eats an enchanted golden apple: Regeneration until you are
+// full, and 8 golden hearts on top that take damage first and never heal back (Absorption). V asks who to lock on to,
+// then wind charge, pearl, wind charge, pearl: very high, and down on them with the spear and the mace. F is a spear
+// lunge. His sword is in your right hand and his shield on your left arm, for you and for everyone who sees you.
+const XKINDS = new Set(['sword', 'axe', 'shield', 'egap', 'spearmace', 'lunge']);
+const xMoveOf = kind => (G.moves || []).find(m => m.kind === kind);
+function xMove(m, n) {
+  const p = G.player;
+  if (p.xdive) return;
+  if (m.kind === 'shield') { setBlock(true); return; }
+  if (p.eating) return;
+  if (m.kind === 'spearmace') { openLockOn(m); return; }
+  G.moveCd[m.key] = n + m.cd * 1000;
+  if (m.kind === 'sword' || m.kind === 'axe') xMelee(m);
+  else if (m.kind === 'egap') { p.eating = { until: n + 1600 }; xHold(p.avatar, 'apple'); }
+  else if (m.kind === 'lunge') xLunge();
+  G.save.stats.moves++; progress('moves'); updateAbilityCds();
+}
+// the sword (or axe) in the right hand, and the shield, which hangs at the side and comes round in front to block
+function xGear(av, on) {
+  if (!on) { if (av.xgear) { av.xgear.items.forEach(it => it.parent && it.parent.remove(it)); av.xgear.shield.parent && av.xgear.shield.parent.remove(av.xgear.shield); av.xgear = null; } return; }
+  if (av.xgear) return;
+  const shield = makeShield(0.62), side = new THREE.Group(), front = new THREE.Group();
+  side.position.set(0.72, -1.55, 0.2); side.rotation.y = Math.PI / 2 - 0.3; av.leftArm.add(side);
+  front.position.set(0.3, 3.05, 1.2); front.rotation.y = -0.18; av.body.add(front);
+  side.add(shield);
+  av.xgear = { shield, side, front, items: new Map(), held: null };
+}
+function xHold(av, id) {
+  const g = av.xgear; if (!g || g.held === id) return;
+  g.held = id;
+  g.items.forEach(it => { it.visible = false; });
+  let it = g.items.get(id);
+  if (!it) {
+    const small = id === 'apple' || id === 'pearl' || id === 'wind';
+    it = makeItem(id, small ? 0.9 : 1.7, !small);
+    if (id === 'spear') { it.scale.setScalar(0.62); it.rotation.x = Math.PI / 2; it.position.set(0, -1.9, -0.25); }
+    else { it.rotation.set(0, Math.PI / 2, -Math.PI / 4); it.position.set(0, -1.95, 0.32); }
+    av.rightArm.add(it); g.items.set(id, it);
+  }
+  it.visible = true;
+}
+const xShieldUp = (av, up) => { const g = av.xgear; if (!g) return; const to = up ? g.front : g.side; if (g.shield.parent !== to) to.add(g.shield); };
+// what the body is doing right now (a swing, eating, the shield up), for the animation
+function xAct(who) {
+  const n = now(), a = who.act && n - who.act.t0 < who.act.dur ? { kind: who.act.kind, k: (n - who.act.t0) / who.act.dur } : null;
+  const act = a || (who.eating ? { kind: 'eat' } : null);
+  return who.blocking ? { ...(act || {}), block: true } : act;
+}
+
+// ---- the shield ----
+function setBlock(on) {
+  const p = G.player, n = now();
+  if (on && (p.shieldOffUntil || 0) > n) { if (n - (p.blockWarned || 0) > 1500) { p.blockWarned = n; toast(`Your shield is down for ${Math.ceil((p.shieldOffUntil - n) / 1000)} more seconds.`, 'warn'); } return; }
+  if (on && (!xMoveOf('shield') || p.xdive)) return;
+  if (!!p.blocking === !!on) return;
+  p.blocking = !!on;
+  if (on) sound('shieldup');
+  if (G.net) G.net.update({ blk: on ? 1 : null });
+  updateAbilityCds();
+}
+// is a hit from (fx, fz) in front of you while your shield is up?
+function blocks(fx, fz) {
+  const p = G.player;
+  if (!p.blocking || fx === undefined || fx === null) return false;
+  const dx = fx - p.pos.x, dz = fz - p.pos.z, d = Math.hypot(dx, dz) || 1;
+  return (dx * Math.sin(p.yaw) + dz * Math.cos(p.yaw)) / d > 0.15;
+}
+function shieldHit(axe) {
+  const p = G.player;
+  sound('block');
+  if (!axe) return;
+  p.blocking = false; p.shieldOffUntil = now() + 5000;
+  sound('shieldbreak'); toast('An axe knocked your shield down for 5 seconds.', 'warn');
+  if (G.net) G.net.update({ blk: null });
+}
+// Absorption, the golden hearts: they take damage first
+function soak(dmg) { const p = G.player; if (!p.absorb || dmg <= 0) return dmg; const a = Math.min(p.absorb, dmg); p.absorb -= a; return dmg - a; }
+
+// ---- the sword and the axe ----
+function xMelee(m) {
+  const p = G.player, axe = m.kind === 'axe', yaw = p.yaw, d = { x: Math.sin(yaw), z: Math.cos(yaw) }, reach = axe ? 5.6 : 5;
+  p.act = { kind: axe ? 'axe' : 'swing', t0: now(), dur: axe ? 550 : 360 };
+  xHold(p.avatar, axe ? 'axe' : 'sword');
+  const f = { kind: 'mcsweep', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +yaw.toFixed(3), axe: axe ? 1 : 0 };
+  mcFx(f, true); if (G.net) G.net.fx(f);
+  if (G.net && p.pvp) for (const o of G.others.values()) {
+    if (!o.placed || !o.data || !o.data.pvp) continue;
+    const dx = o.pos.x - p.pos.x, dz = o.pos.z - p.pos.z, dist = Math.hypot(dx, dz);
+    if (dist > reach || Math.abs(o.pos.y - p.pos.y) > 4 || (dx * d.x + dz * d.z) / (dist || 1) < 0.2) continue;
+    G.net.hit(o.uid, { dmg: m.dmg, kx: d.x * 16, kz: d.z * 16, fx: f.x, fz: f.z, by: G.me.name, aura: '____X____', move: m.name, axe: axe ? 1 : 0 });
+  }
+  if (G.xfight) G.xfight.hitFrom({ kind: 'melee', r: reach, x: p.pos.x, z: p.pos.z, yaw }, m.dmg, hitTest);
+  raidHitFrom({ kind: 'punch' }, m.dmg);
+}
+
+// ---- the enchanted golden apple: 1.6 seconds of eating, then Regeneration and 8 golden hearts ----
+function eatTick() {
+  const p = G.player, n = now();
+  if (!p.eating) return;
+  if ((p.eating.chew || 0) < n) { p.eating.chew = n + 240; sound('eat'); G.fxObjects.push(MCFX.crumbs(G.scene, p.pos.x + Math.sin(p.yaw) * 0.7, p.pos.y + 4.4, p.pos.z + Math.cos(p.yaw) * 0.7)); }
+  if (n < p.eating.until) return;
+  p.eating = null;
+  p.regenUntil = n + 20000; p.absorb = 80; p.absorbUntil = n + 120000;
+  const f = { kind: 'mcheal', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2) };
+  mcFx(f, true); if (G.net) G.net.fx(f);
+  toast('Enchanted Golden Apple: Regeneration, and 8 golden hearts.', 'gold');
+  xHold(p.avatar, 'sword');
+  renderBossBar();
+}
+
+// ---- the spear-mace: pick who, then up and down on them ----
+function lockTargets() {
+  const p = G.player, out = [];
+  if (G.xfight) for (const t of G.xfight.targets()) out.push({ ...t, kind: 'boss' });
+  if (p.pvp) for (const o of G.others.values()) if (o.placed && o.data && o.data.pvp) out.push({ id: 'p:' + o.uid, uid: o.uid, name: o.data.name || o.uid, pos: o.pos, kind: 'player' });
+  for (const t of out) t.d = t.pos.distanceTo(p.pos);
+  return out.filter(t => t.d < 220).sort((a, b) => a.d - b.d);
+}
+function openLockOn(m) {
+  const list = lockTargets();
+  if (!list.length) { toast('Nobody to lock on to. Turn PvP on in Settings, or find ____X____.', 'warn'); return; }
+  const el = $q('.oc-lockon');
+  el.innerHTML = `<div class="oc-lockon-card"><b>Spearmace: who?</b><button type="button" data-lock="nearest"><kbd>1</kbd><span>Nearest</span><small>${esc(list[0].name)}, ${Math.round(list[0].d)} studs</small></button>${list.slice(0, 8).map((t, i) => `<button type="button" data-lock="${esc(t.id)}"><kbd>${i + 2}</kbd><span>${esc(t.name)}</span><small>${Math.round(t.d)} studs</small></button>`).join('')}<button type="button" class="cancel" data-lock="">Cancel <small>(Esc)</small></button></div>`;
+  el.classList.remove('hidden');
+  G.lockOn = { m, list };
+  el.querySelectorAll('[data-lock]').forEach(b => b.onclick = () => pickLock(b.dataset.lock));
+}
+function pickLock(id) {
+  const L = G.lockOn; $q('.oc-lockon').classList.add('hidden'); G.lockOn = null;
+  if (!L || !id) return;
+  const t = id === 'nearest' ? L.list[0] : L.list.find(x => x.id === id);
+  if (!t) return;
+  G.moveCd[L.m.key] = now() + L.m.cd * 1000; updateAbilityCds();
+  const p = G.player;
+  setBlock(false); p.eating = null;
+  p.xdive = { m: L.m, t, t0: now(), stage: 0, peak: p.pos.y };
+  G.save.stats.moves++; progress('moves');
+}
+const lockPos = t => { if (t.kind === 'player') { const o = G.others.get(t.uid); return o && o.placed ? o.pos : null; } const cur = G.xfight && G.xfight.targets().find(x => x.id === t.id); return cur ? cur.pos : null; };
+// every frame of the spear-mace (instead of walking)
+function diveTick(dt) {
+  const p = G.player, D = p.xdive, t = (now() - D.t0) / 1000;
+  const at = () => ({ x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2) });
+  const send = f => { mcFx(f, true); if (G.net) G.net.fx(f); };
+  const step = k => (D.stage < k ? ((D.stage = k), true) : false);
+  if (step(1)) { xHold(p.avatar, 'wind'); send({ kind: 'mcgust', ...at() }); p.vel.set(0, 46, 0); p.onGround = false; }
+  if (t > 0.35 && step(2)) { xHold(p.avatar, 'pearl'); send({ kind: 'mcthrow', ...at() }); }
+  if (t > 0.6 && step(3)) { const from = at(); p.pos.y += 14; send({ kind: 'mcpearl', ...from, y2: +p.pos.y.toFixed(2) }); p.vel.y = Math.max(p.vel.y, 10); }
+  if (t > 0.82 && step(4)) { xHold(p.avatar, 'wind'); send({ kind: 'mcgust', ...at() }); p.vel.y = 40; }
+  if (t > 1.05 && step(5)) { xHold(p.avatar, 'pearl'); send({ kind: 'mcthrow', ...at() }); }
+  if (t > 1.3 && step(6)) { const from = at(); p.pos.y += 14; send({ kind: 'mcpearl', ...from, y2: +p.pos.y.toFixed(2) }); p.vel.y = Math.max(p.vel.y, 6); }
+  D.peak = Math.max(D.peak, p.pos.y);
+  if (t < 1.55) { p.vel.x = 0; p.vel.z = 0; p.vel.y -= GRAVITY * dt; p.pos.y += p.vel.y * dt; return; }
+  // down on them, homing all the way: the spear first, the mace at the end
+  const tp = lockPos(D.t) || D.last || p.pos;
+  D.last = new THREE.Vector3(tp.x, tp.y, tp.z);
+  if (step(7)) { xHold(p.avatar, 'spear'); playLunge(1); }
+  const dx = tp.x - p.pos.x, dy = tp.y + 1 - p.pos.y, dz = tp.z - p.pos.z, len = Math.hypot(dx, dy, dz) || 1;
+  if (len < 10 && step(8)) xHold(p.avatar, 'mace');
+  p.vel.set(dx / len * 78, dy / len * 78, dz / len * 78);
+  p.yaw = Math.atan2(dx, dz);
+  p.pos.addScaledVector(p.vel, dt);
+  if ((Math.hypot(dx, dz) < 2.5 && Math.abs(dy) < 4) || t > 4.5) D.land = true;
+}
+function spearmaceHit(D) {
+  const p = G.player, m = D.m, R = 7.5;   // a big hitbox
+  p.xdive = null; p.vel.set(0, 0, 0);
+  const f = { kind: 'mcsmash', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), power: Math.min(2, 0.8 + Math.max(0, D.peak - p.pos.y) / 25) };
+  mcFx(f, true); if (G.net) G.net.fx(f);
+  if (G.net && p.pvp) for (const o of G.others.values()) {
+    if (!o.placed || !o.data || !o.data.pvp) continue;
+    const dx = o.pos.x - p.pos.x, dz = o.pos.z - p.pos.z, dist = Math.hypot(dx, dz);
+    if (dist > R || Math.abs(o.pos.y - p.pos.y) > 6) continue;
+    G.net.hit(o.uid, { dmg: m.dmg, kx: dx / (dist || 1) * 20, kz: dz / (dist || 1) * 20, fx: f.x, fz: f.z, by: G.me.name, aura: '____X____', move: 'Spearmace', smash: 1 });
+  }
+  if (G.xfight) G.xfight.hitFrom({ kind: 'smash', x: p.pos.x, z: p.pos.z, r: R }, m.dmg, hitTest);
+  raidHitFrom({ kind: 'burst', x: p.pos.x, z: p.pos.z, yaw: 0, r: R }, m.dmg);
+  xHold(p.avatar, 'sword');
+}
+
+// ---- the spear lunge: no damage, once a second ----
+function xLunge() {
+  const p = G.player, d = { x: Math.sin(p.yaw), z: Math.cos(p.yaw) };
+  p.dash = { x: d.x * 64, z: d.z * 64, t: 0.24 };
+  p.act = { kind: 'lunge', t0: now(), dur: 380 };
+  xHold(p.avatar, 'spear');
+  const f = { kind: 'mclunge', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +p.yaw.toFixed(3) };
+  mcFx(f, true); if (G.net) G.net.fx(f);
+}
+
+// Minecraft-style effects from the aura, for whoever used it and everyone watching
+function mcFx(f, mine) {
+  const sc = G.scene, add = o => o && G.fxObjects.push(o), o = !mine && f.uid ? G.others.get(f.uid) : null;
+  const near = Math.max(0, 1 - Math.hypot(f.x - G.player.pos.x, f.z - G.player.pos.z) / 90);
+  switch (f.kind) {
+    case 'mcsweep': add(MCFX.sweep(sc, f.x, f.y - 1.4, f.z, f.yaw)); if (near > 0) sound(f.axe ? 'axe' : 'sword'); if (o) { o.act = { kind: f.axe ? 'axe' : 'swing', t0: now(), dur: f.axe ? 550 : 360 }; xHold(o.avatar, f.axe ? 'axe' : 'sword'); } break;
+    case 'mcgust': add(MCFX.gust(sc, f.x, f.y, f.z)); if (near > 0) sound('gust'); if (o) xHold(o.avatar, 'wind'); break;
+    case 'mcthrow': add(MCFX.throw(sc, 'pearl', new THREE.Vector3(f.x, f.y + 4, f.z), new THREE.Vector3(f.x, f.y + 18, f.z), 0.25, 0)); if (near > 0) sound('throw'); if (o) xHold(o.avatar, 'pearl'); break;
+    case 'mcpearl': add(MCFX.portal(sc, f.x, f.y, f.z)); add(MCFX.portal(sc, f.x, f.y2, f.z)); if (near > 0) sound('pearl'); break;
+    case 'mcsmash': add(MCFX.smash(sc, f.x, f.y, f.z, f.power || 1)); add(MCFX.crit(sc, f.x, f.y, f.z)); if (near > 0) { sound('smash'); G.shake = Math.max(G.shake || 0, near * 1.2); } if (o) xHold(o.avatar, 'mace'); break;
+    case 'mclunge': if (mine) playLunge(1); else playLunge(near); add(castFx(sc, { kind: 'dash', x: f.x, y: f.y, z: f.z, x2: f.x + Math.sin(f.yaw) * 15, y2: f.y, z2: f.z + Math.cos(f.yaw) * 15, c: '#b388ff' })); if (o) { o.act = { kind: 'lunge', t0: now(), dur: 380 }; xHold(o.avatar, 'spear'); } break;
+    case 'mcheal': add(MCFX.heal(sc, f.x, f.y - 1.5, f.z)); if (near > 0) sound('burp'); if (o) xHold(o.avatar, 'sword'); break;
+  }
+}
+
+// The spear lunge sound, a recording, for every lunge in the game (yours, other players', and X's)
+let lungeBuf = null, lungeLoad = null;
+function loadLunge() {
+  if (lungeBuf || lungeLoad || !G || !G.audio) return;
+  const get = name => fetch(new URL('./sfx/' + name, import.meta.url)).then(r => { if (!r.ok) throw new Error(name); return r.arrayBuffer(); }).then(b => G.audio.decodeAudioData(b));
+  lungeLoad = get('spear_lunge.ogg').catch(() => get('spear_lunge.wav')).then(b => { lungeBuf = b; }).catch(() => {});
+}
+function playLunge(v = 1) {
+  if (!G || !G.audio) return;
+  if (!lungeBuf) { loadLunge(); return; }
+  const gain = v * vol('sfx'); if (gain < 0.02) return;
+  const src = G.audio.createBufferSource(), g = G.audio.createGain();
+  src.buffer = lungeBuf; src.playbackRate.value = 0.95 + Math.random() * 0.1; g.gain.value = gain;
+  src.connect(g); g.connect(G.audio.destination); src.start();
 }
 
 // ---------------- panels ----------------
@@ -1809,7 +2075,7 @@ const priceText = pr => pr.coins ? `$ ${fmt(pr.coins)}` : pr.f ? `F ${fmt(pr.f)}
 const priceClass = pr => pr.coins ? 'coin' : pr.f ? 'f' : 'void';
 const moneyRow = () => `<div class="oc-money-row"><span class="oc-pill coin">$ ${fmt(G.save.coins)}</span><span class="oc-pill f">F ${fmt(G.save.f)}</span><span class="oc-pill void">V ${fmt(G.save.void)}</span></div>`;
 const tabsHtml = (tabs, cur) => `<div class="oc-tabs">${tabs.map(([id, label]) => `<button type="button" data-tab="${id}" class="${cur === id ? 'on' : ''}">${label}</button>`).join('')}</div>`;
-const onlyText = a => { const o = a.only; if (!o) return a.native ? `${WEATHERS[a.native].name}: ${WEATHERS[a.native].bt}x as likely` : ''; if (o.boss) return 'Only from beating ____X____: most damage, no deaths, 250 damage or more'; if (o.time) return o.time === 'day' ? 'Only during the day' : 'Only at night'; if (o.weather === 'halloween') return 'Only during the Halloween event (or from Hex)'; const w = WEATHERS[o.weather]; return w ? `Only in ${w.name}` : ''; };
+const onlyText = a => { const o = a.only; if (!o) return a.native ? `${WEATHERS[a.native].name}: ${WEATHERS[a.native].bt}x as likely` : ''; if (o.legacy) return 'Only for players who had 『EQUINOX』 before it changed'; if (o.boss) return 'Only from beating ____X____: most damage, no deaths, 250 damage or more'; if (o.time) return o.time === 'day' ? 'Only during the day' : 'Only at night'; if (o.weather === 'halloween') return 'Only during the Halloween event (or from Hex)'; const w = WEATHERS[o.weather]; return w ? `Only in ${w.name}` : ''; };
 
 // The Sol's-style storage screen: information on the left, a grid of tiles on the right.
 function storageLayout(body, { tabs, tab, tiles, info, onTab, after, search = true }) {
@@ -2319,9 +2585,9 @@ function renderSettings(body, tab = G.setTab || 'rolling') {
   if (tab === 'sound') html = `${slider('music', 'Background Music')}${slider('mine', 'My Aura BGM')}${slider('others', 'Others\' Aura BGM')}${slider('sfx', 'Sound Effects')}`;
   if (tab === 'controls') html = `<label class="oc-slider"><span>Camera Sensitivity</span><input type="range" min="25" max="800" step="5" value="${Math.round((s.sens || 1) * 100)}" data-sens><b>${(s.sens || 1).toFixed(2)}x</b></label>
     <div class="oc-keys"><b>Keys</b><span>WASD: move. Space: jump. Hold right mouse: turn the camera. Wheel: zoom. Shift: Shift Lock.</span><span>R: roll. E: talk, fish, use. Z X C V: aura moves. F: mobility move. /: chat. Tab: player list.</span></div>`;
-  if (tab === 'misc') html = `${check('bubbles', 'Chat bubbles over heads')}
+  if (tab === 'misc') html = `<div class="oc-set-row"><b>PvP</b><button type="button" class="oc-btn sm ${G.player.pvp ? 'bad' : ''}" data-pvp>${G.player.pvp ? 'On' : 'Off'}</button><small class="oc-dim">With PvP on, your aura's moves hit other players who have it on too, and theirs hit you.</small></div>
+    ${check('bubbles', 'Chat bubbles over heads')}
     ${check('serverRolls', 'Server roll messages: rare finds from everyone, in the chat\'s Server tab')}
-    <div class="oc-set-row"><b>PvP Mode</b><button type="button" class="oc-btn sm ${G.player.pvp ? 'bad' : ''}" data-pvp>${G.player.pvp ? 'On' : 'Off'}</button></div>
     <div class="oc-set-row"><b>Graphics</b>${['low', 'medium', 'high'].map(q => `<button type="button" class="oc-btn sm ${q === G.quality ? 'ok' : ''}" data-q="${q}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div>
     <p class="oc-empty">Graphics changes apply the next time you open the game.</p>
     <div class="oc-set-row"><b>Redeem Code</b><button type="button" class="oc-btn sm" data-code>Open</button></div>
@@ -2406,11 +2672,14 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
     <p class="oc-empty">Max uses 0 means no limit. Hours 0 means it never expires.</p>
     <h3>[ Codes ]</h3><div class="oc-list oc-codes"><p class="oc-empty">Loading codes...</p></div>`;
   }
-  if (tab === 'me') html = `<h3>[ Movement ] <small>just you</small></h3><div class="oc-adm-grid">${tile('m:fly', 'FLY', 'Space up, Q down', G.player.fly, '#80d8ff')}${tile('m:noclip', 'NOCLIP', 'Walk through walls', G.player.noclip, '#80d8ff')}</div>
+  if (tab === 'me') html = `<h3>[ Equip Any Aura ] <small>with any mutation</small></h3><div class="oc-adm-find"><select data-eqa>${[...AURAS].sort((a, b) => b.rarity - a.rarity).map(a => `<option value="${a.id}" ${auraKey(G.save.equipped).aura.id === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select><select data-eqm><option value="">No mutation</option>${Object.values(MUTATIONS).map(m => `<option value="${m.id}" ${(auraKey(G.save.equipped).mut || {}).id === m.id ? 'selected' : ''}>${m.name} (x${m.mult})</option>`).join('')}</select><button type="button" class="oc-adm-btn ok" data-eqgo>Equip</button></div>
+    <h3>[ Movement ] <small>just you</small></h3><div class="oc-adm-grid">${tile('m:fly', 'FLY', 'Space up, Q down', G.player.fly, '#80d8ff')}${tile('m:noclip', 'NOCLIP', 'Walk through walls', G.player.noclip, '#80d8ff')}</div>
     <h3>[ Teleport ]</h3><div class="oc-adm-grid">${tile('m:spawn', 'SPAWN', 'The plaza', false, '#ffffff')}${tile('m:pit', 'THE PIT', 'Where raids happen', false, '#b388ff')}${tile('m:summit', 'MOUNTAIN TOP', 'The bell', false, '#ffffff')}${tile('m:stella', 'STELLA', 'Her cave', false, '#ffffff')}</div>`;
   body.innerHTML = tabsHtml([['biomes', 'Biomes'], ['events', 'Events'], ['players', 'Players'], ['codes', 'Codes'], ['me', 'Me']], tab) + `<div class="oc-admin">${html}</div>`;
   body.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => renderAdmin(body, b.dataset.tab));
   body.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { adminAction(b.dataset.a); setTimeout(() => G && G.panel === 'admin' && renderAdmin(body), 300); });
+  const eqGo = body.querySelector('[data-eqgo]');
+  if (eqGo) eqGo.onclick = () => { const id = body.querySelector('[data-eqa]').value, mu = body.querySelector('[data-eqm]').value; equip(mu ? `${id}:${mu}` : id); renderAdmin(body, 'me'); };
   if (tab === 'players') {
     const input = body.querySelector('[data-wn]'), card = body.querySelector('[data-wc]');
     const find = async () => {
@@ -2457,6 +2726,35 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
 async function setRolls(id, name, n) {
   if (id === G.me.uid) { G.save.rolls = n; markDirty(); saveNow(); renderPlayers(); toast(`Your rolls are ${fmt(n)} now.`, 'gold'); return; }
   try { await API().db.collection('rngSaves').doc(id).update({ rolls: n }); toast(`${name} has ${fmt(n)} rolls now. If they are playing, they see it after rejoining.`, 'gold'); } catch (e) { toast('Could not change their rolls.', 'warn'); }
+}
+// 『EQUINOX』 (and its mutations) as 『LEGACY EQUINOX』
+const toLegacy = k => { const r = auraKey(k); return r.aura.id === 'equinox' ? 'legacyequinox' + (r.mut ? ':' + r.mut.id : '') : k; };
+// Swap 『EQUINOX』 for 『LEGACY EQUINOX』 in every save, once, from the Owner's game, so players who don't come back
+// get it too (everyone else got it when they loaded).
+async function sweepEquinox() {
+  if (!G || !G.me.owner || !G.net) return;
+  const api = API(), flag = api.rtdb.ref('ocrng/sweeps/equinox1');
+  try { if ((await flag.get()).val()) return; } catch (e) { return; }
+  const col = api.db.collection('rngSaves'), FP = api.firebase.firestore.FieldPath, FV = api.FieldValue;
+  const keys = ['equinox', ...Object.keys(MUTATIONS).map(m => 'equinox:' + m)], found = new Map();
+  for (const k of keys) { try { (await col.where(new FP('auras', k), '>', 0).get()).docs.forEach(d => found.set(d.id, d)); } catch (e) {} }
+  try { (await col.where('best', 'in', keys).get()).docs.forEach(d => found.set(d.id, d)); } catch (e) {}
+  try { (await col.where(new FP('found', 'equinox'), '==', true).get()).docs.forEach(d => found.set(d.id, d)); } catch (e) {}
+  let n = 0;
+  for (const [id, d] of found) {
+    if (id === G.me.uid) continue;
+    const s = d.data(), auras = s.auras || {}, args = [], legacy = {};
+    if ((s.flags || {}).noEquinox) continue;   // they have played since, and got theirs then
+    for (const k of Object.keys(auras)) { const nk = toLegacy(k); if (nk !== k) { args.push(new FP('auras', k), FV.delete()); legacy[nk] = (legacy[nk] || auras[nk] || 0) + auras[k]; } }
+    if (!Object.keys(legacy).length) legacy.legacyequinox = (auras.legacyequinox || 0) + 1;
+    for (const [nk, c] of Object.entries(legacy)) args.push(new FP('auras', nk), c);
+    const best = toLegacy(s.best || 'common');
+    args.push('best', best, 'bestRarity', auraKey(best).rarity, new FP('found', 'equinox'), FV.delete(), new FP('found', 'legacyequinox'), true, new FP('flags', 'noEquinox'), true);
+    if (s.equipped) args.push('equipped', toLegacy(s.equipped));
+    try { await d.ref.update(...args); n++; } catch (e) {}
+  }
+  try { await flag.set({ at: Date.now(), players: n }); } catch (e) {}
+  if (n) toast(`Gave 『LEGACY EQUINOX』 to ${n} player${n > 1 ? 's' : ''} who had 『EQUINOX』 and haven't played since.`, 'gold');
 }
 // A save by username, or by the name it was saved under.
 async function findSave(q) {
@@ -2669,6 +2967,8 @@ function sound(kind, n = 0) {
     case 'portal': tone(110, 1.4, 'sine', 0.05, 0, 160); tone(220, 1.2, 'triangle', 0.025, 0.2, 260); break;
     case 'glass': for (let i = 0; i < 5; i++) noise(0.15, 0.08, i * 0.05, 3000 + i * 600); break;
     case 'xspawn': tone(55, 2, 'sawtooth', 0.08, 0, 45); tone(82, 1.8, 'square', 0.04, 0.2, 70); noise(1.2, 0.05, 0, 600); break;
+    case 'shieldup': tone(330, 0.12, 'triangle', 0.04, 0, 260); noise(0.08, 0.05, 0, 900); break;
+    case 'shieldbreak': noise(0.35, 0.14, 0, 700); tone(180, 0.4, 'sawtooth', 0.06, 0, 70); break;
     case 'anvil': tone(1600, 0.25, 'triangle', 0.06); tone(2400, 0.4, 'sine', 0.04, 0.05); tone(1600, 0.25, 'triangle', 0.05, 0.3); break;
   }
 }

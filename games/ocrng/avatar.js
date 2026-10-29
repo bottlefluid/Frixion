@@ -148,10 +148,24 @@ export function buildAvatar(name, shirt) {
   const fxHolder = new THREE.Group(); root.add(fxHolder);
   let walk = 0, clock = 0;
   return {
-    root, body, tag, fxHolder, head,
+    root, body, tag, fxHolder, head, rightArm: armL, leftArm: armR,
     // emote: 'dance' or 'wave' (from the chat's /e commands), shown while standing still
     // pose 'float': 『EQUINOX』 lifts you off the ground, arms spread out
-    animate(dt, speed, airborne, emote, pose) {
+    animate(dt, speed, airborne, emote, pose, act) {
+      this.base(dt, speed, airborne, emote, pose);
+      armL.rotation.y = 0; armR.rotation.y = 0;
+      if (!act) return;
+      // facing +z, the character's right arm is the one at -x (armL here) and its left the one at +x (armR)
+      const R = armL, Lf = armR, k = act.k || 0;
+      if (act.kind === 'swing' || act.kind === 'axe') { const e2 = k < 0.38 ? k / 0.38 : 1; R.rotation.x = -2.5 + e2 * 2.8; R.rotation.z = 0.25; body.rotation.y = (Math.min(1, k) - 0.5) * (act.kind === 'axe' ? 0.7 : 0.45); }
+      else if (act.kind === 'eat') { R.rotation.x = -1.75 + Math.sin(clock * 22) * 0.1; R.rotation.z = 0.5; head.rotation.x = 0.12 + Math.sin(clock * 22) * 0.06; }
+      else if (act.kind === 'raise') { R.rotation.x = -2.95; Lf.rotation.x = -0.6; }
+      else if (act.kind === 'lunge') { R.rotation.x = -1.55; body.rotation.x = 0.28; legR.rotation.x = -0.8; legL.rotation.x = 0.6; }
+      else if (act.kind === 'throw') { R.rotation.x = -2.6 + Math.min(1, k * 2.4) * 2.8; }
+      if (act.block) { Lf.rotation.x = -1.35; Lf.rotation.z = -0.5; }
+    },
+    base(dt, speed, airborne, emote, pose) {
+      head.rotation.x = 0;
       walk += dt * Math.min(speed, 24) * 0.55; clock += dt;
       armL.rotation.z = 0; armR.rotation.z = 0; body.rotation.y = 0; body.position.y = 0; body.rotation.x = 0; fxHolder.position.y = 0; tag.position.y = 7.1;
       if (pose === 'float') {
@@ -278,6 +292,11 @@ export class AuraFX {
     if (mut && mut.id === 'shiny') layers.push({ t: 'sparkle', c: '#ffe066', n: 30 }, { t: 'glow', c: '#ffd54a', s: 3 });
     if (mut && mut.id === 'corrupted') layers.push({ t: 'motes', c: '#4a0072', n: 22, dark: 1 }, { t: 'bolts', c: '#d580ff' });
     if (mut && mut.id === 'glitched') { layers.push({ t: 'cubes', c: '#00ffd0', n: 6 }, { t: 'cubes', c: '#ff00aa', n: 6 }); this.glitch = true; }
+    if (mut && mut.id === 'frozen') layers.push({ t: 'fall', c: '#e3f6ff', n: 30 }, { t: 'crystals', c: '#9fe8ff', n: 5 }, { t: 'glow', c: '#9fe8ff', s: 3 });
+    if (mut && mut.id === 'infernal') layers.push({ t: 'flames', c: '#ff6a2b', c2: '#ffd54f' }, { t: 'glow', c: '#ff5722', s: 3.4 });
+    if (mut && mut.id === 'celestial') layers.push({ t: 'halo', c: '#ffe082', r: 0.85 }, { t: 'sparkle', c: '#fff8e1', n: 34 }, { t: 'glow', c: '#ffe082', s: 3 });
+    if (mut && mut.id === 'voidborn') layers.push({ t: 'motes', c: '#12001f', n: 30, dark: 1 }, { t: 'cubes', c: '#8c5cff', n: 7 }, { t: 'ring', c: '#8c5cff', r: 2.6, runes: 1 });
+    if (mut && mut.id === 'prismatic') layers.push({ t: 'rainbow' }, { t: 'sparkle', c: '#ffffff', n: 30 });
     for (const L of layers) {
       const spec = lowDetail && L.n ? { ...L, n: Math.ceil(L.n / 2) } : L;
       this.add(spec);

@@ -63,11 +63,8 @@ export function createChat({ host, rtdb, uid, name, onMessage, onCommand }) {
     const text = input.value.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 150);
     input.value = '';
     if (!text) { input.blur(); return; }
-    if (text.startsWith('/')) {
-      const [cmd, ...args] = text.slice(1).split(' ');
-      if (!onCommand || !onCommand(cmd.toLowerCase(), args)) api.system('Unknown command. Type /help to see what you can do.', '#c9c9c9');
-      return;
-    }
+    // a command if it is one; anything else that starts with / is just said, slash and all
+    if (text.startsWith('/') && onCommand) { const [cmd, ...args] = text.slice(1).split(' '); if (cmd && onCommand(cmd.toLowerCase(), args)) return; }
     if (Date.now() - lastSent < 900) { api.system('You are sending messages too fast.', '#ff8a80'); return; }
     lastSent = Date.now();
     if (!ref) { line(`<b style="color:${nameColor(name)}">[${esc(name)}]:</b> <span>${esc(text)}</span>`); if (onMessage) onMessage(uid, name, text); return; }

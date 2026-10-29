@@ -455,6 +455,18 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.42', date: '2026-10-28', title: 'Overcontrol RNG 2.5: fight like ____X____, Legacy Equinox and new mutations',
+    notes: [
+      'The ____X____ aura fights like him. M1: his sword. Z: his shield, which blocks hits from the front for as long as you hold it (an axe knocks it down for 5 seconds). X: his axe. C: an enchanted golden apple that heals you to full over time and gives 8 golden hearts that take damage first. V: the Spearmace: pick who to lock on to, then wind charge, pearl, wind charge, pearl, and down on them for 80 damage. F: a spear lunge, once a second.',
+      '____X____ is much tougher: 1,000 health, then 2,500 after his Totem of Undying. His spear lunge has no cooldown, so once you have hit him he can lunge across the island after you. He is easier to hit, and he hits more often.',
+      '____X____ and team null look like Minecraft players now, wearing the armour from the reference skin pixel for pixel: black trims, with a white chestplate on X, red on the general and black on the soldiers. Their shields are full size, held at the side and raised to block.',
+      'Every lunge has a real spear lunge sound.',
+      '『EQUINOX』 is now 1 in a trillion. Everyone who had it got 『LEGACY EQUINOX』 instead (the Equinox from before) in the Special tab of Aura Storage. It can\'t be rolled.',
+      'New mutations: Frozen (Snowy), Infernal (Hell), Celestial (Heaven), Voidborn (Null and Limbo) and Prismatic (anywhere, rarely). The Owner can equip any aura with any mutation in Admin, Me.',
+      'PvP is in Settings now (Miscellaneous), and Settings has its own button on the left, like Sol\'s.',
+      'Typing / and then something that isn\'t a command just says it in chat, slash and all.',
+      'Fixed: closing the game left an error behind.',
+    ] },
   { v: '4.41', date: '2026-10-28', title: 'Overcontrol RNG 2.4: saves you can trust, Hex the Halloween merchant, and auras bigger than Equinox',
     notes: [
       'Your progress can no longer go backwards. Opening Overcontrol RNG in a second window or tab now closes the first one after it saves, so two copies can never save over each other. A save that fails to load is never written over.',
@@ -15703,7 +15715,7 @@ function openOcrng() {
       return true;
     }),
   };
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=9');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=10');
   ocrngModule.then(m => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);
