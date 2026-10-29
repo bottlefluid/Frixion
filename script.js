@@ -466,6 +466,9 @@ const UPDATES = [
       'PvP is in Settings now (Miscellaneous), and Settings has its own button on the left, like Sol\'s.',
       'Typing / and then something that isn\'t a command just says it in chat, slash and all.',
       'The Owner can give auras, like Sol\'s admins: any aura, any mutation, any amount, to one player (in Admin, Players) or to everyone online. Players who are on get it right away, everyone else the next time they play.',
+      'A new aura picker for the Admin panel: search all the auras, filter by tier or Special, see each name in its own colours with its odds, pick a mutation and an amount.',
+      'OpFun, the Owner\'s fun mode (Admin, Me): no cooldowns on anything, from aura moves to rolling.',
+      'When the ____X____ fight ends, team null and the portal disappear right away, and X goes after his death. Rejoining after he died no longer gives the reward twice.',
       'Fixed: closing the game left an error behind.',
     ] },
   { v: '4.41', date: '2026-10-28', title: 'Overcontrol RNG 2.4: saves you can trust, Hex the Halloween merchant, and auras bigger than Equinox',
@@ -15716,7 +15719,7 @@ function openOcrng() {
       return true;
     }),
   };
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=11');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=12');
   ocrngModule.then(m => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);

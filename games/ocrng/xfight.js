@@ -40,6 +40,7 @@ export function createXFight(ctx) {
     if (!v || !v.id) { teardown(); return; }
     if (v.id !== fightId) { teardown(); fightId = v.id; lastEv = 0; myDmg = 0; dmgSent = 0; lastLife = null; mobLife = {}; disp = null; if (live()) intro(); }
     const L = v.life || {};
+    const sawAlive = !!(lastLife && !lastLife.dead);   // this game watched the fight, rather than joining after it
     // he took damage: flash red; a new phase: the totem
     if (lastLife && xm) {
       if (L.hp < lastLife.hp && L.phase === lastLife.phase) { xm.hurt(); ctx.sound('bosshurt'); }
@@ -54,7 +55,7 @@ export function createXFight(ctx) {
       mobLife[i] = { ...m };
     }
     if (v.s && v.s.ev && !isHost()) for (const e of v.s.ev) if (e.id > lastEv) { lastEv = e.id; play(e); }
-    if (L.dead && rewarded !== v.id) { rewarded = v.id; reward(); }
+    if (L.dead && sawAlive && rewarded !== v.id) { rewarded = v.id; reward(); }
     if (was && was.host !== v.host && v.host === uid) becomeHost();
   }
   function intro() {
@@ -404,9 +405,22 @@ export function createXFight(ctx) {
     if (myDmg !== dmgSent && n - lastDmgSend > 500) { dmgSent = myDmg; lastDmgSend = n; net.xDmg(myDmg); }
     draw(dt, n);
   }
+  // The fight is over (he died, ran out of time or was sent away): team null and the portal go at once, in a puff, and
+  // X goes after his death animation. This doesn't wait for anyone's events, so nothing is ever left standing.
+  function cleanup(dyingX) {
+    for (const [i, o] of Object.entries(mobs)) { ctx.addFx(FX.poof(scene, o.pos.x, o.pos.y, o.pos.z)); o.model.dispose(); delete mobs[i]; }
+    if (portal) { portal.dispose(); portal = null; }
+    if (ringMesh) ringMesh.visible = false;
+    if (xm && !dyingX) { if (!(xb.life || {}).dead) ctx.addFx(FX.portal(scene, xm.root.position.x, xm.root.position.y, xm.root.position.z)); xm.dispose(); xm = null; disp = null; }
+  }
   function draw(dt, n) {
-    const s = xb.s, showing = xb.life && (!xb.gone || (xb.life.dead && n - (xb.life.deadAt || 0) < 9000));
-    if (!showing || (!s && !H)) { if (xm && xb.gone && !xb.life.dead) { ctx.addFx(FX.portal(scene, xm.root.position.x, xm.root.position.y, xm.root.position.z)); teardown(); } return; }
+    const s = xb.s, L = xb.life || {};
+    if (xb.gone || L.dead || (xb.until || 0) < n) {
+      const dying = L.dead && n - (L.deadAt || 0) < 4000;
+      cleanup(dying);
+      if (!dying) return;
+    }
+    if (!s && !H) return;
     // X
     const want = H ? { p: [H.x.pos.x, H.x.pos.y, H.x.pos.z], r: H.x.yaw, a: H.x.act, k: H.x.t, w: H.x.w, up: H.x.up, ring: H.x.data && H.x.data.ring } : s.x;
     if (!want) return;
@@ -469,6 +483,7 @@ export function createXFight(ctx) {
   }
   return {
     onState, update, hitFrom, onMyDeath, start, stop, tryScheduled, targets,
+    models: () => ({ x: !!xm, mobs: Object.keys(mobs).length, portal: !!portal }),
     live, get host() { return isHost(); },
     near: p => !!(xb && live() && flat(p, ctx.arena) < 140),
     // for the boss bar

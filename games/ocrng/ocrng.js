@@ -9,7 +9,7 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 import {
   AURAS, AURA, auraKey, rollAura, POTIONS, POTION, ITEMS, ITEM, WEATHERS, tierOf, tierIndex, STRANGE, POTION_RENAMES,
-  timeOfDay, dayProgress, weatherAt, weatherEndsAt, jesterHere, fmt, fmtTime, zalgo, movesFor, elementOf,
+  timeOfDay, dayProgress, weatherAt, TIERS, weatherEndsAt, jesterHere, fmt, fmtTime, zalgo, movesFor, elementOf,
   FISH, FISHES, FISHING_SPOTS, catchFish, dailyStock, dayIndex, PICKUPS, DAILY_QUESTS, dailyQuests, SIDE_QUEST, BUILTIN_CODES,
   GEARS, GEAR, HEX_SHOP, isSpecial, MUTATIONS, ACHIEVEMENTS, CHEST_POOLS, SEASON, PASS_REWARDS, JACK_SHOP, mariDeals, MARI_SLOT_MS, RAID, loreOf, isHalloween, HALLOWEEN_BIOMES, WEATHER_SLOT_MS,
 } from './data.js';
@@ -166,6 +166,7 @@ function buildShell() {
     </div>
     <div class="oc-raidbar hidden"><b>THE CRAWLER</b><div class="oc-raid-hp"><i></i><span></span></div><small></small></div>
     <div class="oc-bossbar hidden"><b class="oc-mcname">____X____</b><div class="oc-boss-hp"><i></i><u></u></div><small></small></div>
+    <div class="oc-opfun hidden">OPFUN</div>
     <div class="oc-hearts hidden"></div>
     <div class="oc-players"></div>
     <div class="oc-bl">
@@ -323,6 +324,8 @@ function saveNow() {
 
 // What you have. The Owner also has the Owner tabs, with everything.
 const isOwner = () => G.me.owner;
+// OpFun, the Owner's fun mode: no cooldowns on anything (moves, rolling, the shield)
+const opfun = () => !!(G && G.me && G.me.owner && G.save && G.save.settings.opfun);
 const potionCount = id => G.save.potions[id] || 0;
 const hasItem = id => !!G.save.items[id] || (isOwner() && !!G.save.ownerGear[id]);
 const auraCount = key => G.save.auras[key] || 0;
@@ -1336,7 +1339,7 @@ function renderRaidBar() {
 
 // ---------------- rolling ----------------
 async function rollOnce() {
-  if (!G || !G.playing || G.rolling || G.cutting || G.portraitBlock || now() < G.nextRollAt) return;
+  if (!G || !G.playing || G.rolling || G.cutting || G.portraitBlock || (!opfun() && now() < G.nextRollAt)) return;
   G.rolling = true;
   const b = buffs();
   let luck = luckNow(b), used = null;
@@ -1374,7 +1377,7 @@ async function rollOnce() {
   try {
     const t = tierIndex(res.rarity), cut = s.settings.cutscenes;
     if (cut !== 'off' && t >= (cut === 'rare' ? 5 : 4)) await cutscene(res);
-    else if (!quick) await rollAnimation(res, b.speed);
+    else if (!quick && !opfun()) await rollAnimation(res, b.speed);
     if (G && !quick) showResult(res, quick);
   } finally {
     if (G) {
@@ -1383,7 +1386,7 @@ async function rollOnce() {
       else if (rarer && !s.settings.auto && !quick) offerEquip(res.key);
       if (res.rarity >= 100000 && G.net) G.net.announce({ name: G.me.name, key: res.key, rarity: res.rarity });
       checkAchievements();
-      G.nextRollAt = now() + ROLL_COOLDOWN_MS / b.speed;
+      G.nextRollAt = opfun() ? 0 : now() + ROLL_COOLDOWN_MS / b.speed;
       G.rolling = false;
       updateHud();
     }
@@ -1662,6 +1665,7 @@ function updateHud() {
   if (buffsEl.dataset.h !== html) { buffsEl.innerHTML = html; buffsEl.dataset.h = html; }
   if (G.tipKey) showBuffTip(G.tipKey);
   renderBossBar();
+  $q('.oc-opfun').classList.toggle('hidden', !opfun());
   // the Roll button counts towards the bonus roll: 9/10 means the next one is twice as lucky (gears can change it)
   const bi = bonusInfo(), c = s.rolls % bi.every;
   $q('.oc-roll-count').textContent = bi.none ? 'No bonus roll' : bi.all ? `Every roll x${bi.all}` : `${c}/${bi.every}${bi.mult !== 2 ? ` (x${bi.mult})` : ''}`;
@@ -1766,9 +1770,9 @@ function useMove(key) {
   const m = shownMoves().find(x => x.key === key);
   if (!m) return;
   const n = now();
-  if ((G.moveCd[key] || 0) > n) return;
+  if (!opfun() && (G.moveCd[key] || 0) > n) return;
   if (XKINDS.has(m.kind)) { xMove(m, n); return; }
-  G.moveCd[key] = n + m.cd * 1000;
+  G.moveCd[key] = opfun() ? 0 : n + m.cd * 1000;
   const p = G.player, yaw = p.yaw, d = { x: Math.sin(yaw), z: Math.cos(yaw) };
   const f = { kind: m.kind === 'punch' ? 'burst' : m.kind, r: m.kind === 'punch' ? 2.4 : m.r, x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +yaw.toFixed(3), c: m.color, tier: m.tier, len: m.len, w: m.w, dist: m.dist, n: m.n, range: m.range, dur: m.dur, seed: Math.floor(Math.random() * 1e6) };
   if (m.kind === 'dash') { p.dash = { x: d.x * m.dist * 4, z: d.z * m.dist * 4, t: 0.22 }; Object.assign(f, { x2: p.pos.x + d.x * m.dist, y2: p.pos.y, z2: p.pos.z + d.z * m.dist }); }
@@ -1838,7 +1842,7 @@ function xMove(m, n) {
   if (m.kind === 'shield') { setBlock(true); return; }
   if (p.eating) return;
   if (m.kind === 'spearmace') { openLockOn(m); return; }
-  G.moveCd[m.key] = n + m.cd * 1000;
+  G.moveCd[m.key] = opfun() ? 0 : n + m.cd * 1000;
   if (m.kind === 'sword' || m.kind === 'axe') xMelee(m);
   else if (m.kind === 'egap') { p.eating = { until: n + 1600 }; xHold(p.avatar, 'apple'); }
   else if (m.kind === 'lunge') xLunge();
@@ -1879,7 +1883,7 @@ function xAct(who) {
 // ---- the shield ----
 function setBlock(on) {
   const p = G.player, n = now();
-  if (on && (p.shieldOffUntil || 0) > n) { if (n - (p.blockWarned || 0) > 1500) { p.blockWarned = n; toast(`Your shield is down for ${Math.ceil((p.shieldOffUntil - n) / 1000)} more seconds.`, 'warn'); } return; }
+  if (on && !opfun() && (p.shieldOffUntil || 0) > n) { if (n - (p.blockWarned || 0) > 1500) { p.blockWarned = n; toast(`Your shield is down for ${Math.ceil((p.shieldOffUntil - n) / 1000)} more seconds.`, 'warn'); } return; }
   if (on && (!xMoveOf('shield') || p.xdive)) return;
   if (!!p.blocking === !!on) return;
   p.blocking = !!on;
@@ -1897,7 +1901,7 @@ function blocks(fx, fz) {
 function shieldHit(axe) {
   const p = G.player;
   sound('block');
-  if (!axe) return;
+  if (!axe || opfun()) return;
   p.blocking = false; p.shieldOffUntil = now() + 5000;
   sound('shieldbreak'); toast('An axe knocked your shield down for 5 seconds.', 'warn');
   if (G.net) G.net.update({ blk: null });
@@ -1959,7 +1963,7 @@ function pickLock(id) {
   if (!L || !id) return;
   const t = id === 'nearest' ? L.list[0] : L.list.find(x => x.id === id);
   if (!t) return;
-  G.moveCd[L.m.key] = now() + L.m.cd * 1000; updateAbilityCds();
+  G.moveCd[L.m.key] = opfun() ? 0 : now() + L.m.cd * 1000; updateAbilityCds();
   const p = G.player;
   setBlock(false); p.eating = null;
   p.xdive = { m: L.m, t, t0: now(), stage: 0, peak: p.pos.y };
@@ -2674,14 +2678,16 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
     <p class="oc-empty">Max uses 0 means no limit. Hours 0 means it never expires.</p>
     <h3>[ Codes ]</h3><div class="oc-list oc-codes"><p class="oc-empty">Loading codes...</p></div>`;
   }
-  if (tab === 'me') html = `<h3>[ Equip Any Aura ] <small>with any mutation</small></h3><div class="oc-adm-find"><select data-eqa>${[...AURAS].sort((a, b) => b.rarity - a.rarity).map(a => `<option value="${a.id}" ${auraKey(G.save.equipped).aura.id === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select><select data-eqm><option value="">No mutation</option>${Object.values(MUTATIONS).map(m => `<option value="${m.id}" ${(auraKey(G.save.equipped).mut || {}).id === m.id ? 'selected' : ''}>${m.name} (x${m.mult})</option>`).join('')}</select><button type="button" class="oc-adm-btn ok" data-eqgo>Equip</button></div>
+  if (tab === 'me') html = `<h3>[ OpFun ] <small>the Owner's fun mode</small></h3><div class="oc-adm-grid">${tile('m:opfun', 'OPFUN', 'No cooldowns on anything', G.save.settings.opfun, '#ff4fd8')}</div>
+    <h3>[ Equip Any Aura ] <small>with any mutation</small></h3><div class="oc-adm-give">${auraPicker({ key: G.save.equipped, amount: false })}<button type="button" class="oc-adm-btn ok" data-eqgo>Equip</button></div>
     <h3>[ Movement ] <small>just you</small></h3><div class="oc-adm-grid">${tile('m:fly', 'FLY', 'Space up, Q down', G.player.fly, '#80d8ff')}${tile('m:noclip', 'NOCLIP', 'Walk through walls', G.player.noclip, '#80d8ff')}</div>
     <h3>[ Teleport ]</h3><div class="oc-adm-grid">${tile('m:spawn', 'SPAWN', 'The plaza', false, '#ffffff')}${tile('m:pit', 'THE PIT', 'Where raids happen', false, '#b388ff')}${tile('m:summit', 'MOUNTAIN TOP', 'The bell', false, '#ffffff')}${tile('m:stella', 'STELLA', 'Her cave', false, '#ffffff')}</div>`;
   body.innerHTML = tabsHtml([['biomes', 'Biomes'], ['events', 'Events'], ['players', 'Players'], ['codes', 'Codes'], ['me', 'Me']], tab) + `<div class="oc-admin">${html}</div>`;
   body.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => renderAdmin(body, b.dataset.tab));
+  body.querySelectorAll('.oc-apick').forEach(wirePicker);
   body.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { adminAction(b.dataset.a); setTimeout(() => G && G.panel === 'admin' && renderAdmin(body), 300); });
   const eqGo = body.querySelector('[data-eqgo]');
-  if (eqGo) eqGo.onclick = () => { const id = body.querySelector('[data-eqa]').value, mu = body.querySelector('[data-eqm]').value; equip(mu ? `${id}:${mu}` : id); renderAdmin(body, 'me'); };
+  if (eqGo) eqGo.onclick = () => { equip(readPick(eqGo.parentElement).key); renderAdmin(body, 'me'); };
   if (tab === 'players') {
     const input = body.querySelector('[data-wn]'), card = body.querySelector('[data-wc]');
     const find = async () => {
@@ -2694,6 +2700,7 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
       card.innerHTML = `<b>${esc(d.name || found.id)}</b><span>${fmt(d.rolls || 0)} rolls  |  rarest: ${esc(best.name)}  |  ${Object.keys(d.auras || {}).length} kinds of aura</span><div class="oc-adm-find"><input type="number" min="0" data-rolls value="${d.rolls || 0}"><button type="button" class="oc-adm-btn ok" data-setrolls>Set rolls</button></div><div class="oc-adm-give"><small>Give an aura</small>${auraPicker()}<button type="button" class="oc-adm-btn ok" data-give>Give</button></div><button type="button" class="oc-adm-btn bad" data-wipe>Wipe ALL data</button>`;
       const ri = card.querySelector('[data-rolls]'); ri.onkeydown = e => e.stopPropagation();
       card.querySelector('[data-setrolls]').onclick = () => setRolls(found.id, d.name || found.id, Math.max(0, Math.floor(+ri.value || 0)));
+      card.querySelectorAll('.oc-apick').forEach(wirePicker);
       card.querySelector('[data-give]').onclick = () => { const g = readPick(card); giveAura(found.id, d.name || found.id, g.key, g.n); };
       let armed = 0;
       card.querySelector('[data-wipe]').onclick = e => {
@@ -2769,10 +2776,65 @@ async function sweepEquinox() {
 // Giving auras, like Sol's admins: any aura, any mutation, any amount. To yourself it goes straight in; to anyone else it
 // waits in their gift inbox until their game takes it (right away if they are playing), so their own save never
 // writes over it.
-const auraPicker = () => `<select data-ga>${[...AURAS].sort((a, b) => b.rarity - a.rarity).map(a => `<option value="${a.id}">${esc(a.name)} (1 in ${fmt(a.rarity)})</option>`).join('')}</select><select data-gm><option value="">No mutation</option>${Object.values(MUTATIONS).map(m => `<option value="${m.id}">${m.name}</option>`).join('')}</select><input type="number" data-gn min="1" max="1000000" value="1" title="How many">`;
+// The aura picker: the chosen aura in its own colours with its odds, mutation chips, an amount, and a list you can search
+// and filter by tier (arrow keys and Enter work too).
+function auraPicker(o = {}) {
+  const cur = auraKey(o.key || 'common');
+  return `<div class="oc-apick" data-aura="${cur.aura.id}" data-mut="${cur.mut ? cur.mut.id : ''}">
+    <button type="button" class="oc-apick-sel" data-ap-open><span class="oc-apick-name"></span><span class="oc-apick-meta"></span><i class="oc-apick-caret"></i></button>
+    <div class="oc-apick-muts"><button type="button" data-ap-mut="" class="${cur.mut ? '' : 'on'}">No mutation</button>${Object.values(MUTATIONS).map(m => `<button type="button" data-ap-mut="${m.id}" class="${cur.mut && cur.mut.id === m.id ? 'on' : ''}${m.rainbow ? ' rb' : ''}" style="--m:${m.color}">${m.name}<small>x${m.mult}</small></button>`).join('')}</div>
+    ${o.amount === false ? '' : '<div class="oc-amt oc-apick-amt"><button type="button" data-amt="-1">-</button><input type="number" data-gn min="1" max="1000000" value="1" title="How many"><button type="button" data-amt="1">+</button><button type="button" data-amt="10">+10</button><button type="button" data-amt="100">+100</button></div>'}
+    <div class="oc-apick-pop hidden"><label class="oc-search">${IC.search}<input type="search" data-ap-q placeholder="Search ${AURAS.length} auras" spellcheck="false" autocomplete="off"></label><div class="oc-apick-tiers"></div><div class="oc-apick-list"></div></div>
+  </div>`;
+}
+function wirePicker(el) {
+  const pop = el.querySelector('.oc-apick-pop'), list = el.querySelector('.oc-apick-list'), q = el.querySelector('[data-ap-q]'), tiersEl = el.querySelector('.oc-apick-tiers');
+  let tierF = 'all', hi = 0, rows = [], offOutside = null;
+  const show = () => {
+    const r = auraKey(el.dataset.aura + (el.dataset.mut ? ':' + el.dataset.mut : ''));
+    paintName(el.querySelector('.oc-apick-name'), r.name, r, 'oc-apick-name');
+    el.querySelector('.oc-apick-meta').innerHTML = tierLine(r.rarity);
+  };
+  tiersEl.innerHTML = [['all', 'All'], ['special', 'Special'], ...[...TIERS].reverse().map(t => [t.id, t.id === 'null' ? 'null' : t.label])]
+    .map(([id, label]) => `<button type="button" data-ap-tier="${id}" class="${id === 'all' ? 'on' : ''}" style="--t:${(TIERS.find(t => t.id === id) || { color: '#ffffff' }).color}">${esc(label)}</button>`).join('');
+  const draw = () => {
+    const s = q.value.trim().toLowerCase();
+    rows = [...AURAS].filter(a => (tierF === 'all' || (tierF === 'special' ? isSpecial(a) : tierOf(a.rarity).id === tierF)) && (!s || a.name.toLowerCase().includes(s) || a.id.includes(s)))
+      .sort((a, b) => b.rarity - a.rarity);
+    hi = Math.max(0, Math.min(hi, rows.length - 1));
+    list.innerHTML = rows.length ? rows.map((a, i) => `<button type="button" class="oc-apick-row${a.id === el.dataset.aura ? ' sel' : ''}${i === hi ? ' hi' : ''}" data-ap-id="${a.id}"><i style="background:${a.c}"></i><span class="nm"></span>${isSpecial(a) ? '<em>SPECIAL</em>' : ''}<span class="oc-tier t-${tierOf(a.rarity).id}">${tierOf(a.rarity).label}</span><small>1 in ${fmt(a.rarity)}</small></button>`).join('') : '<p class="oc-empty">No aura matches.</p>';
+    list.querySelectorAll('.oc-apick-row').forEach((b, i) => paintName(b.querySelector('.nm'), rows[i].name, rows[i], 'nm'));
+  };
+  const open = on => {
+    pop.classList.toggle('hidden', !on); el.classList.toggle('open', on);
+    if (offOutside) { document.removeEventListener('pointerdown', offOutside, true); offOutside = null; }
+    if (!on) return;
+    q.value = ''; hi = 0; draw();
+    hi = Math.max(0, rows.findIndex(a => a.id === el.dataset.aura)); draw();
+    const sel = list.querySelector('.sel'); if (sel) sel.scrollIntoView({ block: 'center' });
+    q.focus();
+    offOutside = e => { if (!el.contains(e.target)) open(false); };
+    document.addEventListener('pointerdown', offOutside, true);
+  };
+  const choose = id => { el.dataset.aura = id; show(); open(false); sound('tick', 700); };
+  el.querySelector('[data-ap-open]').onclick = () => open(pop.classList.contains('hidden'));
+  q.oninput = () => { hi = 0; draw(); };
+  q.onkeydown = e => {
+    e.stopPropagation();
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); hi = Math.max(0, Math.min(rows.length - 1, hi + (e.key === 'ArrowDown' ? 1 : -1))); draw(); const h = list.querySelector('.hi'); if (h) h.scrollIntoView({ block: 'nearest' }); }
+    else if (e.key === 'Enter' && rows[hi]) choose(rows[hi].id);
+    else if (e.key === 'Escape') open(false);
+  };
+  tiersEl.onclick = e => { const b = e.target.closest('[data-ap-tier]'); if (!b) return; tierF = b.dataset.apTier; tiersEl.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); hi = 0; draw(); q.focus(); };
+  list.onclick = e => { const b = e.target.closest('[data-ap-id]'); if (b) choose(b.dataset.apId); };
+  el.querySelector('.oc-apick-muts').onclick = e => { const b = e.target.closest('[data-ap-mut]'); if (!b) return; el.dataset.mut = b.dataset.apMut; el.querySelectorAll('[data-ap-mut]').forEach(x => x.classList.toggle('on', x === b)); show(); };
+  const amt = el.querySelector('[data-gn]');
+  if (amt) { amt.onkeydown = e => e.stopPropagation(); el.querySelectorAll('.oc-apick-amt [data-amt]').forEach(b => b.onclick = () => { amt.value = Math.max(1, Math.min(1000000, (Math.floor(+amt.value) || 1) + +b.dataset.amt)); }); }
+  show();
+}
 function readPick(el) {
-  const id = el.querySelector('[data-ga]').value, mu = el.querySelector('[data-gm]').value;
-  return { key: mu ? `${id}:${mu}` : id, n: Math.max(1, Math.min(1000000, Math.floor(+el.querySelector('[data-gn]').value || 1))) };
+  const p = el.classList.contains('oc-apick') ? el : el.querySelector('.oc-apick'), amt = p.querySelector('[data-gn]');
+  return { key: p.dataset.mut ? `${p.dataset.aura}:${p.dataset.mut}` : p.dataset.aura, n: amt ? Math.max(1, Math.min(1000000, Math.floor(+amt.value || 1))) : 1 };
 }
 async function giveAura(to, name, key, n) {
   const r = auraKey(key), what = `${n > 1 ? fmt(n) + 'x ' : ''}${r.name}`;
@@ -2845,6 +2907,7 @@ function adminAction(a) {
     if (v === 'spawn') { G.player.pos.copy(G.world.spawn); G.player.vel.set(0, 0, 0); }
     if (v === 'summit') { const b = G.world.places.bell.pos; G.player.pos.set(b.x, b.y + 0.5, b.z + 2); G.player.vel.set(0, 0, 0); }
     if (v === 'stella') { G.player.pos.copy(G.world.stellaCamp); G.player.vel.set(0, 0, 0); }
+    if (v === 'opfun') { const st = G.save.settings; st.opfun = !st.opfun; if (st.opfun) G.moveCd = {}; toast(st.opfun ? 'OpFun on: no cooldowns on anything.' : 'OpFun off.', st.opfun ? 'gold' : undefined); markDirty(); renderAbilities(); updateHud(); }
     if (v === 'pit') { const a = G.world.arena; G.player.pos.set(a.x - 24, 1, a.z); G.player.vel.set(0, 0, 0); }
     return;
   }

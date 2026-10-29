@@ -770,3 +770,43 @@ body.ocrng-open { overflow: hidden; }
 .oc-adm-give select[data-gm] { flex: 1 1 110px; min-width: 0; }
 .oc-adm-give input[data-gn] { width: 84px; }
 .oc-adm-give select option { background: #15161b; }
+/* the aura picker */
+.oc-apick { position: relative; flex: 1 1 100%; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.oc-apick-sel { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 6px 12px !important; border: 1.5px solid var(--line) !important; background: rgba(0, 0, 0, .5) !important; text-align: left; }
+.oc-apick-sel:hover, .oc-apick.open .oc-apick-sel { background: rgba(255, 255, 255, .08) !important; }
+.oc-apick-name { font-size: 17px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px #000, 0 0 8px currentColor; min-width: 0; }
+.oc-apick-meta { display: flex; gap: 8px; align-items: center; margin-left: auto; font-size: 12px; font-weight: 700; color: #d6d6de; white-space: nowrap; }
+.oc-apick-caret { width: 9px; height: 9px; flex: none; border-right: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(45deg) translate(-2px, -2px); transition: transform .15s; }
+.oc-apick.open .oc-apick-caret { transform: rotate(-135deg) translate(-2px, -2px); }
+.oc-apick-muts { display: flex; flex-wrap: wrap; gap: 4px; }
+.oc-apick-muts button { padding: 4px 9px !important; border: 1px solid color-mix(in srgb, var(--m, #ffffff) 55%, transparent) !important; background: rgba(0, 0, 0, .35) !important; color: var(--m, #e6e6e6) !important; font-size: 12px; font-weight: 800; }
+.oc-apick-muts button small { margin-left: 4px; font-size: 10px; opacity: .8; }
+.oc-apick-muts button.on { background: color-mix(in srgb, var(--m, #ffffff) 85%, #000) !important; color: #0b0b0e !important; border-color: #fff !important; }
+.oc-apick-muts button.rb { background-image: linear-gradient(90deg, rgba(255, 82, 82, .25), rgba(255, 215, 64, .25), rgba(105, 240, 174, .25), rgba(64, 196, 255, .25), rgba(179, 136, 255, .25)) !important; }
+.oc-apick-muts button.rb.on { background-image: linear-gradient(90deg, #ff5252, #ffd740, #69f0ae, #40c4ff, #b388ff) !important; }
+.oc-apick-amt { margin-top: 0; max-width: 330px; }
+.oc-apick-pop { position: absolute; top: 50px; left: 0; right: 0; z-index: 8; display: flex; flex-direction: column; gap: 6px; max-height: 360px; padding: 8px; border: 1.5px solid var(--line); background: rgba(10, 11, 15, .97); box-shadow: 0 12px 30px rgba(0, 0, 0, .6); animation: ocPop .12s ease; }
+.oc-apick-pop .oc-search { width: 100%; }
+.oc-apick-tiers { display: flex; flex-wrap: wrap; gap: 4px; }
+.oc-apick-tiers button { padding: 3px 8px !important; border: 1px solid var(--line-dim) !important; background: rgba(255, 255, 255, .04) !important; color: var(--t, #fff) !important; font-size: 11.5px; font-weight: 800; text-shadow: 0 1px 2px #000; }
+.oc-apick-tiers button.on { border-color: #fff !important; background: rgba(255, 255, 255, .14) !important; }
+.oc-apick-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .3) transparent; }
+.oc-apick-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px; padding: 6px 8px !important; border: 1px solid transparent !important; text-align: left; }
+.oc-apick-row > i { width: 10px; height: 10px; border-radius: 2px; box-shadow: 0 0 6px currentColor; }
+.oc-apick-row .nm { font-size: 14px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px #000; }
+.oc-apick-row .nm.gold, .oc-apick-row .nm.violet, .oc-apick-row .nm.rainbow, .oc-apick-row .nm.bw, .oc-apick-name.gold, .oc-apick-name.violet, .oc-apick-name.rainbow, .oc-apick-name.bw { -webkit-background-clip: text; background-clip: text; color: transparent !important; text-shadow: none; }
+.oc-apick-row .nm.gold, .oc-apick-name.gold { background-image: linear-gradient(180deg, #fff6c2, #ffcc33 55%, #e08a00); }
+.oc-apick-row .nm.violet, .oc-apick-name.violet { background-image: linear-gradient(180deg, #f1e8ff, #a77bff 60%, #6a3fd6); }
+.oc-apick-row .nm.rainbow, .oc-apick-name.rainbow { background-image: linear-gradient(90deg, #ff5252, #ffd740, #69f0ae, #40c4ff, #b388ff, #ff4081); }
+.oc-apick-row .nm.bw, .oc-apick-name.bw { background-image: linear-gradient(90deg, #fff 0%, #fff 49.5%, #555 50.5%, #555 100%); }
+.oc-apick-row em { font-style: normal; font-size: 9.5px; font-weight: 800; letter-spacing: .06em; color: #ffd54f; border: 1px solid rgba(255, 213, 79, .5); padding: 1px 4px; }
+.oc-apick-row .oc-tier { font-size: 11px; }
+.oc-apick-row small { font-size: 11px; color: #b9b9c2; font-variant-numeric: tabular-nums; }
+.oc-apick-row:hover, .oc-apick-row.hi { background: rgba(255, 255, 255, .08) !important; }
+.oc-apick-row.sel { border-color: #fff !important; }
+@media (max-height: 520px) { .oc-apick-pop { max-height: 240px; } .oc-apick-row small { display: none; } }
+/* the picker's list: solid, and there at once */
+.oc-apick-pop { background: #0b0c10; animation: none; }
+/* OpFun is on */
+.oc-opfun { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); padding: 3px 12px; border: 1.5px solid #ff4fd8; background: rgba(40, 0, 32, .7); color: #ff9ae9; font-size: 12px; font-weight: 800; letter-spacing: .14em; pointer-events: none !important; text-shadow: 0 0 8px #ff4fd8; z-index: 3; }
+.oc-bossbar:not(.hidden) ~ .oc-opfun { top: 58px; }
