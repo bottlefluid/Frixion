@@ -28,21 +28,22 @@ const opfun = () => !!(G && G.me.owner && G.save && G.save.settings.opfun);
 // ---------------- opening and closing ----------------
 export async function open() {
   if (G) return;
-  ensureCss();
+  const cssReady = ensureCss();
   const api = API(), me = api.me(), rank = api.rank();
   G = {
     me: { uid: me.uid, name: me.name, owner: rank >= 3, staff: rank >= 2 },
     root: null, listeners: [], others: new Map(), input: { keys: {}, joy: { x: 0, y: 0 } }, cam: { yaw: Math.PI, pitch: 0.38, dist: 24 },
     panel: null, effects: [], parade: new Map(), walkers: [], padModels: new Map(), padsData: {}, baseOwner: {}, baseOf: {}, steals: {},
-    traps: new Map(), carry: null, gearCd: {}, held: -1, alerts: new Set(), sold: new Map(), closed: false,
+    traps: new Map(), carry: null, gearCd: {}, held: -1, alerts: new Set(), sold: new Map(), closed: false, cssReady,
   };
   G.root = buildShell();
+  G.root.style.cssText = 'position:fixed;inset:0;z-index:2147482000;overflow:hidden;background:#8fd3ff';   // full screen before the stylesheet arrives
   document.body.appendChild(G.root);
   document.body.classList.add('sac-open');
   if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__sacDebug = { state: () => G, panel: id => openPanel(id), give: (c, m) => ownerGive(c, m) };
   try {
     setLoading('Starting the engine', 0.15);
-    await sleep(40);
+    await G.cssReady;
     G.quality = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || (navigator.hardwareConcurrency || 8) <= 4 ? 'low' : 'high';
     setupRenderer();
     setLoading('Building the city', 0.35);
@@ -88,7 +89,10 @@ export function close() {
 function ensureCss() {
   if (!document.getElementById('ocrng-font')) { const f = document.createElement('link'); f.id = 'ocrng-font'; f.rel = 'stylesheet'; f.href = 'https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800;900&display=swap'; document.head.appendChild(f); }
   const href = new URL('./sac.css?v=' + VERSION, import.meta.url).href;
-  if (!document.querySelector(`link[data-sac-css]`)) { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; l.dataset.sacCss = '1'; document.head.appendChild(l); }
+  let l = document.querySelector('link[data-sac-css]');
+  if (!l) { l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; l.dataset.sacCss = '1'; document.head.appendChild(l); }
+  // the game waits for its stylesheet (at most 4 seconds), so nothing is measured before it's laid out
+  return l.sheet ? Promise.resolve() : new Promise(r => { l.addEventListener('load', r, { once: true }); l.addEventListener('error', r, { once: true }); setTimeout(r, 4000); });
 }
 const ICON = {
   close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
@@ -153,6 +157,8 @@ function setupRenderer() {
   G.camera = new THREE.PerspectiveCamera(70, 1, 0.3, 900);
   const resize = () => { const w = G.root.clientWidth, h = G.root.clientHeight; G.renderer.setSize(w, h, false); G.camera.aspect = w / Math.max(1, h); G.camera.updateProjectionMatrix(); };
   resize(); on(window, 'resize', resize);
+  // and whenever the game's own box changes size (the stylesheet arriving, the browser zooming, a phone turning)
+  if (window.ResizeObserver) { const ro = new ResizeObserver(resize); ro.observe(G.root); G.listeners.push(() => ro.disconnect()); }
 }
 const _camRay = new THREE.Ray(), _camHit = new THREE.Vector3(), _camBox = new THREE.Box3();
 function updateCamera(dt) {

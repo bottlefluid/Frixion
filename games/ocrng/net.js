@@ -62,6 +62,8 @@ export function createNet(rtdb, firebase, uid, on) {
       listen(ref('wipe/' + uid), 'value', s => on.wiped && on.wiped(s.val()));
       listen(ref('gifts/' + uid), 'child_added', s => { const g = s.val(); if (g && on.gift) on.gift(g, () => s.ref.remove().catch(() => {})); });
       listen(ref('raid'), 'value', s => on.raid && on.raid(s.val()));
+      // once: the announcements that piled up before they cleared themselves out after a minute
+      ref('sweeps/announce1').transaction(v => (v ? undefined : Date.now())).then(r => { if (r && r.committed) ref('announce').remove().catch(() => {}); }).catch(() => {});
     },
     update(partial) { myRoster.update(partial).catch(() => {}); },
     // Where you are, at most 10 times a second, and only when something changed.
