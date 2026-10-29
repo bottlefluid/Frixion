@@ -1,6 +1,6 @@
 // Steal a Character: a 3D multiplayer game inside Frixion, in the buy-and-steal genre. Characters parade down the
-// runway: buy them and they stand on the pads in your base, earning money every second (collect it from the plate at
-// the front). Walk into someone else's base, grab one of theirs and carry it home to make it yours, while they chase
+// runway: buy them and they stand on the pedestals in your base, earning money every second (step on the cash button
+// in front of each pedestal to collect it). Walk into someone else's base, grab one of theirs and carry it home to make it yours, while they chase
 // you with a Bonk Bat or a Freeze Ray. Lock your base with a force field for 40 seconds when thieves come. Gear from
 // the Gear Shop goes in your backpack and on the hotbar (1 to 9). Rebirth for more income and more pads.
 // Every character, the map and the gear are original to Frixion.
@@ -32,7 +32,7 @@ export async function open() {
   const api = API(), me = api.me(), rank = api.rank();
   G = {
     me: { uid: me.uid, name: me.name, owner: rank >= 3, staff: rank >= 2 },
-    root: null, listeners: [], others: new Map(), input: { keys: {}, joy: { x: 0, y: 0 } }, cam: { yaw: Math.PI, pitch: 0.38, dist: 24 },
+    root: null, listeners: [], others: new Map(), input: { keys: {}, joy: { x: 0, y: 0 } }, cam: { yaw: Math.PI, pitch: 0.32, dist: 18 },
     panel: null, effects: [], parade: new Map(), walkers: [], padModels: new Map(), padsData: {}, baseOwner: {}, baseOf: {}, steals: {},
     traps: new Map(), carry: null, gearCd: {}, held: -1, alerts: new Set(), sold: new Map(), closed: false, cssReady,
   };
@@ -63,7 +63,7 @@ export async function open() {
     $q('.sac-loading').classList.add('hidden');
     G.playing = true;
     updateHud(); renderHotbar();
-    if (G.offline > 0) toast(`While you were away your characters earned $${fmt(G.offline)}. Collect it from the green plate in your base.`, 'gold');
+    if (G.offline > 0) toast(`While you were away your characters earned $${fmt(G.offline)}. Collect it from the cash buttons in your base.`, 'gold');
   } catch (e) {
     console.error(e);
     api.toast('Steal a Character hit a problem while loading. Try again in a moment.', 'error');
@@ -154,7 +154,7 @@ function setupRenderer() {
   G.renderer.outputColorSpace = THREE.SRGBColorSpace;
   G.renderer.shadowMap.enabled = G.quality !== 'low'; G.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   G.scene = new THREE.Scene();
-  G.camera = new THREE.PerspectiveCamera(70, 1, 0.3, 900);
+  G.camera = new THREE.PerspectiveCamera(65, 1, 0.3, 1400);
   const resize = () => { const w = G.root.clientWidth, h = G.root.clientHeight; G.renderer.setSize(w, h, false); G.camera.aspect = w / Math.max(1, h); G.camera.updateProjectionMatrix(); };
   resize(); on(window, 'resize', resize);
   // and whenever the game's own box changes size (the stylesheet arriving, the browser zooming, a phone turning)
@@ -181,7 +181,7 @@ function updateCamera(dt) {
 // Firestore sacSaves/{uid}. If the database rules don't allow that collection yet, it lives next to your Overcontrol
 // RNG save instead (rngSaves/sac_{uid}), so it saves either way.
 function blankSave() {
-  return { coins: START_COINS, pending: 0, pads: Array(16).fill(null), gears: {}, hot: Array(9).fill(null), index: {}, rebirths: 0, stats: { bought: 0, stole: 0, lost: 0, earned: 0 }, last: now(), settings: { sfx: 0.7, opfun: false }, v: 1 };
+  return { coins: START_COINS, bank: Array(16).fill(0), pads: Array(16).fill(null), gears: {}, hot: Array(9).fill(null), index: {}, rebirths: 0, stats: { bought: 0, stole: 0, lost: 0, earned: 0 }, last: now(), settings: { sfx: 0.7, opfun: false }, v: 1 };
 }
 async function loadSave() {
   const db = API().db, refs = [db.collection('sacSaves').doc(G.me.uid), db.collection('rngSaves').doc('sac_' + G.me.uid)];
@@ -196,11 +196,12 @@ async function loadSave() {
   s.pads = Array.from({ length: 16 }, (_, i) => { const p = (s.pads || [])[i]; return p && CHAR[p.c] ? { c: p.c, m: MUTATIONS[p.m] ? p.m : '' } : null; });
   s.hot = Array.from({ length: 9 }, (_, i) => ((s.hot || [])[i] && GEAR[s.hot[i]] ? s.hot[i] : null));
   s.gears = s.gears || {}; s.index = s.index || {};
-  // money your characters made while you were away: a quarter of it, for up to an hour
+  s.bank = Array.from({ length: 16 }, (_, i) => Math.max(0, +((s.bank || [])[i]) || 0));
+  if (s.pending) { s.coins += Math.floor(s.pending); delete s.pending; }   // from before each pedestal had its own cash button
+  // money your characters made while you were away: a quarter of it, for up to an hour, waiting on their cash buttons
   const away = Math.min(OFFLINE_MAX, Math.max(0, (now() - (s.last || now())) / 1000));
-  G.save = s;
-  G.offline = away > 60 ? Math.floor(away * income() * OFFLINE_SHARE) : 0;
-  s.pending += G.offline;
+  G.save = s; G.offline = 0;
+  if (away > 60) s.pads.forEach((p, i) => { if (!p) return; const got = Math.floor(away * incomeOf(p.c, p.m, s.rebirths) * OFFLINE_SHARE); s.bank[i] += got; G.offline += got; });
 }
 function markDirty() { if (G) G.dirty = true; }
 function saveNow() {
@@ -231,7 +232,7 @@ function setupNet() {
   });
   G.sessionId = Math.random().toString(36).slice(2);
   G.net.claimSession(G.sessionId, () => { if (!G || G.kicked) return; G.kicked = true; toast('You opened Steal a Character somewhere else, so this one is closing.', 'warn'); setTimeout(close, 2500); }).catch(() => {});
-  G.net.join({ name: G.me.name, shirt: shirtColorFor(G.me.name) });
+  G.net.join({ name: G.me.name, shirt: shirtColorFor(G.me.name), rb: G.save.rebirths });
   G.chat = createChat({ host: $q('.sac-hud'), rtdb: api.rtdb, uid: G.me.uid, name: G.me.name, path: 'ocrng/sac/chat', onMessage: () => {}, onCommand: () => false });
 }
 async function claimBase() {
@@ -242,7 +243,7 @@ async function claimBase() {
   G.baseOwner[i] = G.me.uid; G.baseOf[G.me.uid] = i;
   const b = G.world.bases[i];
   G.world.setOwner(b, G.me.name, true);
-  G.player.pos.copy(b.spawn); G.player.yaw = b.side > 0 ? -Math.PI / 2 : Math.PI / 2;
+  G.player.pos.copy(b.spawn); G.player.yaw = b.side * Math.PI / 2;   // facing into the base
   G.cam.yaw = G.player.yaw + Math.PI;
   if (G.net) G.net.update({ base: i });
   publishPads(); syncPads();
@@ -397,7 +398,7 @@ function updateParade(dt) {
     let e = G.parade.get(slot);
     if (!e) { const d = slotChar(slot); const ch = makeCharacter(d.c, d.m, { label: 'price', shadow: G.quality !== 'low' }); G.scene.add(ch.group); e = { slot, c: d.c, m: d.m, ch }; G.parade.set(slot, e); }
     const z = RUNWAY.start + (t - slot * RUNWAY.every) / 1000 * RUNWAY.speed;
-    e.z = z; e.ch.group.position.set(0, 0.07, z); e.ch.group.rotation.y = 0; e.ch.update(dt, true);
+    e.z = z; e.ch.group.position.set(0, 0.62, z); e.ch.group.rotation.y = 0; e.ch.update(dt, true);
   }
   for (const [slot, e] of G.parade) if (!seen.has(slot)) { if (!e.taken) e.ch.dispose(); G.parade.delete(slot); }
 }
@@ -413,7 +414,7 @@ function onSold(slot, uid) {
   if (!b) { addPuff(0, 2, e.z, '#ffffff', 2); e.ch.dispose(); if (done) done(); return; }
   e.ch.setLabel(null);
   const from = e.ch.group.position.clone(), door = new THREE.Vector3(b.front, 0.3, b.cz);
-  const path = [from, new THREE.Vector3(b.front - b.side * 3, 0.3, b.cz), door, new THREE.Vector3(b.plate.x + b.side * 4, 0.3, b.cz)];
+  const path = [from, new THREE.Vector3(b.front - b.side * 3, 0.3, b.cz), door, new THREE.Vector3(b.cx, 0.3, b.cz)];
   const len = path.reduce((a, q, k) => a + (k ? q.distanceTo(path[k - 1]) : 0), 0);
   G.walkers.push({ slot, done, ch: e.ch, path, t: 0, speed: Math.max(24, len / 4.5) });   // home in about 4 seconds
 }
@@ -476,14 +477,16 @@ function syncPads() {
     if (G.padModels.has(key)) continue;
     const pk = parseKey(w.k); if (!pk) continue;
     const ch = makeCharacter(pk.c, pk.m, { label: 'income', shadow: G.quality !== 'low' }), pad = w.b.pads[w.i];
-    ch.group.position.set(pad.x, 0.65, pad.z); ch.group.rotation.y = pad.yaw; G.scene.add(ch.group);
+    ch.group.position.set(pad.x, pad.y, pad.z); ch.group.rotation.y = pad.yaw; G.scene.add(ch.group);
     G.padModels.set(key, { k: w.k, ch, uid: w.uid, pad: w.i, base: +w.b.i, c: pk.c, m: pk.m });
   }
-  // the pads you haven't unlocked yet are dark
-  if (G.base >= 0) { const n = padsFor(G.save.rebirths); G.world.bases[G.base].pads.forEach((p, i) => p.mesh.material = padMat(i < n)); }
+  // each pedestal's ring: its character's rarity colour, grey when empty, dark until it's unlocked
+  G.world.bases.forEach((b, bi) => {
+    const uid = G.baseOwner[bi], list = uid ? padList(uid) : [], stolen = (uid && G.steals[uid]) || {};
+    const n = !uid ? 16 : uid === G.me.uid ? padsFor(G.save.rebirths) : padsFor(((G.net && G.net.roster[uid]) || {}).rb || 0);
+    for (let k = 0; k < 16; k++) { const pk = parseKey(list[k]); G.world.padState(b, k, k >= n ? 'locked' : pk && !stolen[k] ? RARITY[CHAR[pk.c].rarity].color : 'empty'); }
+  });
 }
-const padMats = {};
-const padMat = open => padMats[open] || (padMats[open] = new THREE.MeshLambertMaterial({ color: open ? '#cfd8dc' : '#546e7a' }));
 
 // ---------------- stealing ----------------
 async function startSteal(e) {
@@ -539,7 +542,7 @@ function onSteals(all) {
     if (!G.alerts.has(`${pad}:${v.by}:${v.t}`)) { G.alerts.add(`${pad}:${v.by}:${v.t}`); toast(`${thief} is stealing your ${nameOf(v.c, v.m)}! Bonk them to get it back.`, 'bad'); sound('alarm'); showAlert(`${thief} is stealing your ${nameOf(v.c, v.m)}!`); }
     if (v.done && !v.ok && !G.alerts.has(`ok:${pad}:${v.t}`)) {
       G.alerts.add(`ok:${pad}:${v.t}`);
-      if (p && p.c === v.c && (p.m || '') === (v.m || '') && +pad < n) { G.save.pads[pad] = null; G.save.stats.lost++; saveNow(); publishPads(); toast(`${thief} stole your ${nameOf(v.c, v.m)}.`, 'bad'); sound('lost'); G.net.stealOk(+pad); }
+      if (p && p.c === v.c && (p.m || '') === (v.m || '') && +pad < n) { G.save.coins += Math.floor(G.save.bank[pad]); G.save.bank[pad] = 0; drawBanks(); G.save.pads[pad] = null; G.save.stats.lost++; saveNow(); publishPads(); toast(`${thief} stole your ${nameOf(v.c, v.m)}.`, 'bad'); sound('lost'); G.net.stealOk(+pad); }
       else G.net.clearSteal(G.me.uid, +pad);
     }
   }
@@ -660,18 +663,23 @@ function trapTick() {
 }
 
 // ---------------- the base: collecting, the lock ----------------
+// every second each character puts its income on its own cash button
 function incomeTick() {
-  const s = G.save, inc = income();
-  s.pending += inc; s.stats.earned += inc;
-  if (G.base >= 0) G.world.bases[G.base].plateSign.userData.draw('$' + fmt(s.pending));
-  markDirty();
+  const s = G.save;
+  s.pads.forEach((p, i) => { if (!p || (G.arriving && G.arriving.has(i))) return; const inc = incomeOf(p.c, p.m, s.rebirths); s.bank[i] += inc; s.stats.earned += inc; });
+  drawBanks(); markDirty();
 }
+const drawBanks = () => { if (G.base < 0) return; const b = G.world.bases[G.base], s = G.save; for (let i = 0; i < 16; i++) G.world.padLabel(b, i, s.bank[i] >= 1 ? '$' + fmt(s.bank[i]) : null); };
+// step on a cash button to collect what's on it
 function collectTick() {
   if (G.base < 0) return;
   const b = G.world.bases[G.base], p = G.player.pos, s = G.save;
-  if (Math.abs(p.x - b.plate.x) < 2.6 && Math.abs(p.z - b.plate.z) < 2.6 && s.pending >= 1) {
-    const got = Math.floor(s.pending); s.coins += got; s.pending -= got;
-    b.plateSign.userData.draw('$' + fmt(s.pending)); addPuff(b.plate.x, 1, b.plate.z, '#69f0ae', 1.5); sound('coins'); floatText(`+$${fmt(got)}`); updateHud(); markDirty();
+  for (let i = 0; i < 16; i++) {
+    if (s.bank[i] < 1) continue;
+    const bt = b.pads[i].button;
+    if (Math.abs(p.x - bt.x) > 1.3 || Math.abs(p.z - bt.z) > 1.3 || p.y > 2) continue;
+    const got = Math.floor(s.bank[i]); s.coins += got; s.bank[i] -= got;
+    G.world.padLabel(b, i, null); addPuff(bt.x, 1, bt.z, '#69f0ae', 1.2); sound('coins'); floatText(`+$${fmt(got)}`); updateHud(); markDirty();
   }
 }
 function lockBase() {
@@ -840,7 +848,7 @@ function renderPanel() {
       if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = 'Sure?'; setTimeout(() => { if (b.isConnected) renderPanel(); }, 3000); return; }
       const i = +b.dataset.sell, p = s.pads[i]; if (!p) return;
       if ((G.steals[G.me.uid] || {})[i]) { toast('Someone is carrying that one off. Get it back first.', 'warn'); return; }
-      s.coins += Math.floor(priceOf(p.c, p.m) / 2); s.pads[i] = null; sound('coins'); publishPads(); syncPads(); saveNow(); updateHud(); renderPanel();
+      s.coins += Math.floor(priceOf(p.c, p.m) / 2) + Math.floor(s.bank[i]); s.bank[i] = 0; s.pads[i] = null; drawBanks(); sound('coins'); publishPads(); syncPads(); saveNow(); updateHud(); renderPanel();
     });
   }
   if (id === 'index') {
@@ -861,7 +869,8 @@ function renderPanel() {
     if (rb) rb.onclick = () => {
       if (!rb.classList.contains('armed')) { rb.classList.add('armed'); rb.textContent = 'Sure? Click again'; return; }
       if (s.coins < cost) return;
-      s.rebirths++; s.coins = START_COINS; s.pending = 0; s.pads = Array(16).fill(null);
+      s.rebirths++; s.coins = START_COINS; s.bank = Array(16).fill(0); s.pads = Array(16).fill(null); drawBanks();
+      if (G.net) G.net.update({ rb: s.rebirths });
       if (G.carry) dropCarry();
       publishPads(); syncPads(); saveNow(); updateHud(); sound('rebirth');
       toast(`Rebirth ${s.rebirths}! +${s.rebirths * 50}% income and ${padsFor(s.rebirths)} pads.`, 'gold');
