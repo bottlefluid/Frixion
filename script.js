@@ -15704,8 +15704,8 @@ function mountGameHubs() {
       '<span class="fgf-copy"><span class="fgf-kicker">3D · Multiplayer · Roll for auras</span><span class="fgf-title">Overcontrol RNG</span>' +
       '<span class="fgf-sub">Join the lobby, roll for 50+ auras, fish, trade with the Jester and chase EQUINOX.</span></span>' +
       '<span class="fgf-play">PLAY</span></button>' +
-      // Steal a Character: still being made, so only the Owner sees it (to try it out)
-      (platformRank(myProfile) >= 3 ? '<button type="button" class="fg-feature sac" data-sac="1"><span class="fgs-run" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>' +
+      // Steal a Character: switched off (SAC_ON) until it's finished; then only the Owner sees it at first
+      (SAC_ON && platformRank(myProfile) >= 3 ? '<button type="button" class="fg-feature sac" data-sac="1"><span class="fgs-run" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>' +
       '<span class="fgf-copy"><span class="fgf-kicker">Owner preview · not public yet</span><span class="fgf-title">Steal a Character</span>' +
       '<span class="fgf-sub">Only you can see this until it is finished.</span></span>' +
       '<span class="fgf-play">PLAY</span></button>' : '') +
@@ -15726,6 +15726,8 @@ function mountGameHubs() {
 // The 3D aura-rolling game lives in its own files and only loads when someone presses Play. It gets what it needs from
 // Frixion through window.FrixionGameAPI: the database, who you are, your rank and Premium, and spending Orbs.
 let ocrngModule = null, sacModule = null;
+// Steal a Character (games/sac/) stays off for everyone, the Owner too, until it's finished
+const SAC_ON = false;
 // what the 3D games get from Frixion (Steal a Character uses the same)
 function setGameApi() {
   window.FrixionGameAPI = {
@@ -15755,7 +15757,7 @@ function openOcrng() {
 }
 // ---------- Steal a Character (games/sac/) ----------
 function openSac() {
-  if (!myUid || !myProfile || platformRank(myProfile) < 3) return;   // the Owner only, until it's finished
+  if (!SAC_ON || !myUid || !myProfile || platformRank(myProfile) < 3) return;   // off, and then the Owner only at first
   setGameApi();
   if (!sacModule) sacModule = import('./games/sac/sac.js?v=1');
   sacModule.then(m => m.open()).catch(err => {
