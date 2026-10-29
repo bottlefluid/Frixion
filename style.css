@@ -4592,3 +4592,20 @@ body.is-mobile .thread-curve { top: -14px; height: 32px; }
   .fgf-play { margin-right: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .fgf-ring, .fgf-orb { animation: none; } }
+
+/* Games page: the Steal a Character banner, with characters walking down a runway along its bottom edge */
+.fg-feature.sac { padding-bottom: 50px; background: radial-gradient(120% 140% at 85% 15%, #ff5fa2 0%, #7c3aed 50%, #1b0b3a 100%); }
+.fg-feature.sac:hover { box-shadow: 0 16px 40px rgba(255, 64, 160, .4), inset 0 1px 0 rgba(255, 255, 255, .16); }
+.fg-feature.sac .fgf-kicker { color: #ffc2e2; }
+.fg-feature.sac .fgf-title { background: linear-gradient(90deg, #fff, #ffd1ea 55%, #ff8ac6); -webkit-background-clip: text; background-clip: text; }
+.fg-feature.sac .fgf-play { margin-right: 0; color: #6a1046; background: linear-gradient(180deg, #fff, #ffd6ec); }
+.fgs-run { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; overflow: hidden; pointer-events: none; background: repeating-linear-gradient(90deg, #3a3f4b 0 22px, #454b59 22px 44px); box-shadow: inset 0 3px 0 #ffd54f; }
+.fgs-run i { position: absolute; left: 0; bottom: 5px; width: 18px; height: 22px; border-radius: 4px; animation: fgsWalk 14s linear infinite; }
+.fgs-run i::before { content: ''; position: absolute; left: 3px; top: 6px; width: 3px; height: 3px; border-radius: 50%; background: #111; box-shadow: 8px 0 0 #111; }
+.fgs-run i:nth-child(1) { background: #ffd54f; }
+.fgs-run i:nth-child(2) { background: #66bb6a; height: 26px; animation-delay: -2.8s; }
+.fgs-run i:nth-child(3) { background: #ef5350; animation-delay: -5.6s; }
+.fgs-run i:nth-child(4) { background: #b388ff; height: 18px; animation-delay: -8.4s; }
+.fgs-run i:nth-child(5) { background: #4fc3f7; height: 24px; animation-delay: -11.2s; }
+@keyframes fgsWalk { from { transform: translateX(-30px); } to { transform: translateX(min(1200px, 100vw)); } }
+@media (prefers-reduced-motion: reduce) { .fgs-run i { animation: none; } }

@@ -455,6 +455,14 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.44', date: '2026-10-29', title: 'Steal a Character, a new 3D multiplayer game',
+    notes: [
+      'New game: Steal a Character, on the Games page. Characters parade down a runway: buy one and it walks to your base and stands on a pad, earning money every second. Collect it from the green plate at the front of your base.',
+      '28 characters made just for Frixion, from Common to Secret, like Pebble Pete, Captain Cupcake, Sir Toastalot, King Pudding and Cosmic Cat. Rare ones can be Golden (2x), Diamond (3x) or Rainbow (5x).',
+      'Steal: walk into someone\'s base, grab a character off a pad and carry it home to make it yours. Owners get warned, and a bonk, a freeze or a shock trap makes the thief drop it. Lock your base with a force field for 40 seconds when thieves come.',
+      'The Gear Shop sells a Bonk Bat, Speed Sneakers, Spring Boots, Smoke Bombs, a Grapple Gun, Shock Traps, a Freeze Ray and a Rocket Pack. Gear goes in your Backpack and on the hotbar: press 1 to 9 to hold it and click to use it.',
+      'Rebirth for +50% income for good and 2 more pads each time, an Index of every character you\'ve found, money while you\'re away (a quarter of it, for up to an hour), its own chat, and phone controls.',
+    ] },
   { v: '4.43', date: '2026-10-28', title: 'Overcontrol RNG 2.6: 『EQUINOX』 reworked, X\'s wind charge and totem, and better codes',
     notes: [
       '『EQUINOX』 is reworked, and its two suns are bigger. Z, Liminal Beam: hold Z and the suns charge for 3 seconds, then fire a beam wherever your mouse points for as long as you keep holding (up to 5 seconds): 50 damage a second, exploding where it lands. Hold it to the end for a big finish; let go early and it fizzles out.',
@@ -15704,11 +15712,17 @@ function mountGameHubs() {
       '<span class="fgf-copy"><span class="fgf-kicker">3D · Multiplayer · Roll for auras</span><span class="fgf-title">Overcontrol RNG</span>' +
       '<span class="fgf-sub">Join the lobby, roll for 50+ auras, fish, trade with the Jester and chase EQUINOX.</span></span>' +
       '<span class="fgf-play">PLAY</span></button>' +
+      // Steal a Character: the second big game, with characters walking down a runway along the bottom
+      '<button type="button" class="fg-feature sac" data-sac="1"><span class="fgs-run" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>' +
+      '<span class="fgf-copy"><span class="fgf-kicker">3D · Multiplayer · Buy and steal</span><span class="fgf-title">Steal a Character</span>' +
+      '<span class="fgf-sub">Buy characters off the runway, fill your base, and steal the best ones from everyone else before they bonk you.</span></span>' +
+      '<span class="fgf-play">PLAY</span></button>' +
       GAME_TILES.map(g =>
         `<button class="fg-tile" data-game="${g.id}"><span class="fg-thumb" style="background:linear-gradient(135deg,${g.c},${lighten(g.c, 45)})">` +
         `<span class="fg-ic">${g.ic}</span></span><span class="fg-name">${g.title}</span></button>`).join('') + '</div>';
     root.onclick = e => {
-      if (e.target.closest('.fg-feature')) { openOcrng(); return; }
+      const feature = e.target.closest('.fg-feature');
+      if (feature) { if (feature.dataset.sac) openSac(); else openOcrng(); return; }
       const tile = e.target.closest('.fg-tile');
       if (tile) openGame(tile.dataset.game);
     };
@@ -15719,9 +15733,9 @@ function mountGameHubs() {
 // ---------- Overcontrol RNG (games/ocrng/) ----------
 // The 3D aura-rolling game lives in its own files and only loads when someone presses Play. It gets what it needs from
 // Frixion through window.FrixionGameAPI: the database, who you are, your rank and Premium, and spending Orbs.
-let ocrngModule = null;
-function openOcrng() {
-  if (!myUid || !myProfile) return;
+let ocrngModule = null, sacModule = null;
+// what the 3D games get from Frixion (Steal a Character uses the same)
+function setGameApi() {
   window.FrixionGameAPI = {
     db, rtdb, firebase, FieldValue, esc, toast, isMobile,
     me: () => ({ uid: myUid, name: (myProfile && displayNameOf(myProfile)) || myUid, profile: myProfile }),
@@ -15736,11 +15750,26 @@ function openOcrng() {
       return true;
     }),
   };
+}
+function openOcrng() {
+  if (!myUid || !myProfile) return;
+  setGameApi();
   if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=13');
   ocrngModule.then(m => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);
     toast('Overcontrol RNG could not load. Check your connection and try again.', 'error');
+  });
+}
+// ---------- Steal a Character (games/sac/) ----------
+function openSac() {
+  if (!myUid || !myProfile) return;
+  setGameApi();
+  if (!sacModule) sacModule = import('./games/sac/sac.js?v=1');
+  sacModule.then(m => m.open()).catch(err => {
+    sacModule = null;
+    console.error(err);
+    toast('Steal a Character could not load. Check your connection and try again.', 'error');
   });
 }
 

@@ -1,0 +1,180 @@
+/* Steal a Character: a bright game HUD over the 3D city. Everything lives under #sac. */
+#sac { position: fixed; inset: 0; z-index: 2147482000; overflow: hidden; background: #8fd3ff; color: #fff; font-family: "Montserrat", "Segoe UI", system-ui, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
+#sac * { box-sizing: border-box; }
+#sac button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
+#sac .hidden { display: none !important; }
+#sac svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.sac-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+body.sac-open { overflow: hidden; }
+
+/* loading */
+.sac-loading { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: radial-gradient(120% 120% at 50% 20%, #ff5fa2 0%, #7c3aed 45%, #1b0b3a 100%); }
+.sac-load-card { width: min(420px, 86vw); text-align: center; }
+.sac-load-card h1 { margin: 0 0 18px; font-size: clamp(26px, 6vw, 40px); font-weight: 900; letter-spacing: .04em; text-shadow: 0 4px 0 rgba(0, 0, 0, .35); }
+.sac-bar { height: 12px; border-radius: 99px; background: rgba(0, 0, 0, .35); overflow: hidden; }
+.sac-bar i { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, #ffe066, #69f0ae); transition: width .25s; }
+.sac-load-card p { margin: 10px 0 0; font-weight: 700; opacity: .85; }
+
+/* the HUD */
+.sac-hud { position: absolute; inset: 0; pointer-events: none; }
+.sac-hud > * { pointer-events: auto; }
+.sac-top { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; }
+.sac-top button { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: rgba(0, 0, 0, .45); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .18); }
+.sac-top button:hover { background: rgba(0, 0, 0, .6); }
+.sac-money { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; pointer-events: none; }
+.sac-money b { font-size: 38px; font-weight: 900; color: #69f0ae; -webkit-text-stroke: 1.5px rgba(0, 0, 0, .55); text-shadow: 0 3px 0 rgba(0, 0, 0, .45); letter-spacing: .01em; }
+.sac-money small { margin-top: -2px; font-size: 14px; font-weight: 800; color: #ffe066; text-shadow: 0 2px 0 rgba(0, 0, 0, .55); }
+.sac-side { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; }
+.sac-side button { width: 70px; height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 14px; background: linear-gradient(180deg, #ffffff, #e4e8f0); color: #2a2f45; box-shadow: 0 4px 0 #9aa3b8, 0 6px 14px rgba(0, 0, 0, .25); transition: transform .08s; }
+.sac-side button:nth-child(1) { color: #e65100; } .sac-side button:nth-child(2) { color: #1565c0; } .sac-side button:nth-child(3) { color: #6a1b9a; } .sac-side button:nth-child(4) { color: #c2185b; } .sac-side button:nth-child(5) { color: #37474f; }
+.sac-side button span { font-size: 11px; font-weight: 800; color: #2a2f45; }
+.sac-side button:hover { transform: translateY(-2px); }
+.sac-side button:active { transform: translateY(2px); box-shadow: 0 2px 0 #9aa3b8; }
+.sac-lock { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 112px; padding: 10px 8px; display: flex; flex-direction: column; align-items: center; gap: 2px; border-radius: 14px; background: linear-gradient(180deg, #4fc3ff, #1e88e5); box-shadow: 0 4px 0 #0d5aa7, 0 6px 14px rgba(0, 0, 0, .25); text-shadow: 0 1px 0 rgba(0, 0, 0, .3); }
+.sac-lock svg { width: 26px; height: 26px; }
+.sac-lock b { font-size: 13px; font-weight: 900; }
+.sac-lock small { font-size: 10.5px; font-weight: 700; opacity: .9; }
+.sac-lock.on { background: linear-gradient(180deg, #80deea, #26c6da); box-shadow: 0 4px 0 #00838f, 0 0 22px rgba(79, 195, 255, .8); }
+.sac-lock.cooling { background: linear-gradient(180deg, #90a4ae, #607d8b); box-shadow: 0 4px 0 #37474f; }
+.sac-banner { position: absolute; top: 74px; left: 50%; transform: translateX(-50%); padding: 8px 16px; border-radius: 12px; background: rgba(255, 193, 7, .92); color: #2b1d00; font-size: 14px; font-weight: 700; white-space: nowrap; box-shadow: 0 4px 14px rgba(0, 0, 0, .25); pointer-events: none; }
+.sac-banner b { font-weight: 900; } .sac-banner small { margin-left: 6px; font-weight: 900; }
+.sac-alert { position: absolute; top: 118px; left: 50%; transform: translateX(-50%); padding: 9px 18px; border-radius: 12px; background: #e53935; font-size: 15px; font-weight: 900; white-space: nowrap; box-shadow: 0 0 0 3px rgba(255, 255, 255, .5), 0 6px 18px rgba(0, 0, 0, .3); animation: sacPulse .6s ease-in-out infinite alternate; pointer-events: none; }
+@keyframes sacPulse { from { transform: translateX(-50%) scale(1); } to { transform: translateX(-50%) scale(1.06); } }
+.sac-prompt { position: absolute; left: 50%; bottom: 112px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 16px 8px 8px; border-radius: 12px; background: rgba(0, 0, 0, .6); font-size: 15px; font-weight: 800; white-space: nowrap; pointer-events: none; }
+.sac-prompt kbd { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: #fff; color: #111; font: 900 16px "Montserrat", sans-serif; box-shadow: 0 3px 0 #9aa3b8; }
+.sac-prompt.bad span { color: #ff8a80; }
+.sac-hotbar { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 6px; padding: 6px; border-radius: 14px; background: rgba(0, 0, 0, .35); }
+.sac-slot { position: relative; width: 58px; height: 58px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: rgba(255, 255, 255, .14) !important; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .22); color: var(--c); }
+.sac-slot svg { width: 30px; height: 30px; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, .4)); }
+.sac-slot kbd { position: absolute; top: 3px; left: 6px; font: 800 11px "Montserrat", sans-serif; color: #fff; opacity: .85; }
+.sac-slot em { position: absolute; right: 5px; bottom: 3px; font-style: normal; font-size: 11px; font-weight: 900; color: #fff; text-shadow: 0 1px 2px #000; }
+.sac-slot .cd { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; border-radius: 10px; font-size: 15px; font-weight: 900; color: #fff; text-shadow: 0 1px 3px #000; pointer-events: none; }
+.sac-slot.cooling .cd { background: rgba(0, 0, 0, .55); }
+.sac-slot.on { background: rgba(255, 255, 255, .3) !important; box-shadow: inset 0 0 0 3px #fff, 0 0 14px var(--c); }
+.sac-slot.empty { opacity: .5; }
+.sac-toasts { position: absolute; top: 150px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; width: min(520px, 92vw); pointer-events: none; }
+.sac-toast { padding: 8px 14px; border-radius: 10px; background: rgba(0, 0, 0, .72); font-size: 13.5px; font-weight: 700; text-align: center; animation: sacIn .2s ease; transition: opacity .4s, transform .4s; }
+.sac-toast.gold { background: rgba(46, 125, 50, .92); }
+.sac-toast.warn { background: rgba(183, 110, 0, .92); }
+.sac-toast.bad { background: rgba(198, 40, 40, .94); }
+.sac-toast.out { opacity: 0; transform: translateY(-8px); }
+@keyframes sacIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.sac-float { position: absolute; left: 50%; top: 42%; transform: translateX(-50%); font-size: 30px; font-weight: 900; color: #69f0ae; -webkit-text-stroke: 1.5px rgba(0, 0, 0, .5); text-shadow: 0 3px 0 rgba(0, 0, 0, .4); animation: sacFloat 1.2s ease-out forwards; pointer-events: none; }
+@keyframes sacFloat { from { opacity: 1; transform: translate(-50%, 0) scale(1.15); } to { opacity: 0; transform: translate(-50%, -60px) scale(1); } }
+
+/* the chat (shared with Overcontrol RNG) */
+#sac .oc-chat { position: absolute; top: 60px; left: 10px; width: min(380px, 38vw); display: flex; flex-direction: column; gap: 4px; transition: opacity .4s; }
+#sac .oc-chat-tabs { display: flex; gap: 2px; }
+#sac .oc-chat-tabs button { position: relative; padding: 3px 10px; border-radius: 6px 6px 0 0; background: rgba(0, 0, 0, .3); font-size: 12px; font-weight: 700; color: #ccc; }
+#sac .oc-chat-tabs button.on { background: rgba(0, 0, 0, .55); color: #fff; }
+#sac .oc-chat-new { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: #ff5252; }
+#sac .oc-chat-log { max-height: 140px; overflow-y: auto; padding: 6px 8px; background: rgba(0, 0, 0, .3); border-radius: 6px; font-size: 13.5px; font-weight: 600; line-height: 1.3; scrollbar-width: thin; }
+#sac .oc-chat-line { word-wrap: break-word; padding: 1px 0; text-shadow: 0 1px 2px rgba(0, 0, 0, .7); }
+#sac .oc-chat-line b { font-weight: 800; }
+#sac .oc-chat-bar input { width: 100%; height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: rgba(0, 0, 0, .45); color: #fff; font: 600 13.5px "Montserrat", sans-serif; outline: none; }
+#sac .oc-chat-bar input::placeholder { color: rgba(255, 255, 255, .6); }
+#sac .oc-chat.idle { opacity: .6; }
+#sac .oc-chat.idle .oc-chat-log { background: transparent; }
+#sac .oc-chat.idle .oc-chat-bar, #sac .oc-chat.idle .oc-chat-tabs { opacity: 0; }
+#sac .oc-chat.typing { opacity: 1; }
+#sac .oc-chat.typing .oc-chat-bar input { background: rgba(0, 0, 0, .65); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .7); }
+
+/* panels */
+.sac-panel { position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: rgba(10, 6, 30, .45); }
+.sac-panel-box { width: min(680px, 94vw); max-height: min(78vh, 680px); display: flex; flex-direction: column; border-radius: 18px; background: linear-gradient(180deg, #2c2f4a, #1d1f33); box-shadow: 0 0 0 3px rgba(255, 255, 255, .12), 0 20px 50px rgba(0, 0, 0, .5); animation: sacIn .15s ease; overflow: hidden; }
+.sac-panel-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; background: linear-gradient(180deg, rgba(255, 255, 255, .08), transparent); }
+.sac-panel-head h2 { margin: 0; font-size: 22px; font-weight: 900; letter-spacing: .02em; }
+.sac-panel-x { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: #e53935 !important; box-shadow: 0 3px 0 #9a1d1a; }
+.sac-panel-body { padding: 4px 16px 18px; overflow-y: auto; scrollbar-width: thin; }
+.sac-panel-body h3 { margin: 14px 0 8px; font-size: 14px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+.sac-panel-body h3 small { margin-left: 6px; font-size: 11.5px; font-weight: 600; text-transform: none; letter-spacing: 0; color: #b6b9cf; }
+.sac-note { margin: 4px 0 10px; font-size: 12.5px; font-weight: 600; color: #b6b9cf; }
+.sac-btn { min-width: 86px; height: 36px; padding: 0 12px !important; border-radius: 10px; font-weight: 900 !important; font-size: 13px; background: #5c6380 !important; box-shadow: 0 3px 0 #3a3f58; white-space: nowrap; }
+.sac-btn.ok { background: #2e7d32 !important; box-shadow: 0 3px 0 #1b5e20; }
+.sac-btn.no { background: #6b4040 !important; box-shadow: 0 3px 0 #452828; }
+.sac-btn.bad { background: #c62828 !important; box-shadow: 0 3px 0 #8e1b1b; }
+.sac-btn.owned { background: transparent !important; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .25); color: #b6b9cf !important; }
+.sac-btn.armed { background: #ff9800 !important; box-shadow: 0 3px 0 #b26a00; }
+.sac-btn.big { height: 48px; font-size: 16px; min-width: 200px; }
+.sac-btn:disabled { cursor: default; }
+.sac-shop { display: flex; flex-direction: column; gap: 8px; }
+.sac-item { position: relative; display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, .06); box-shadow: inset 4px 0 0 var(--c); }
+.sac-item > svg { width: 40px; height: 40px; color: var(--c); }
+.sac-item b { display: block; font-size: 15px; font-weight: 900; }
+.sac-item small { display: block; font-size: 12px; font-weight: 600; color: #b6b9cf; }
+.sac-item em { position: absolute; right: 14px; bottom: 2px; font-style: normal; font-size: 10.5px; font-weight: 800; color: #ffe066; }
+.sac-bag-hot { display: flex; flex-wrap: wrap; gap: 6px; }
+.sac-slot.big { width: 60px; height: 60px; }
+.sac-bag-gear { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.sac-gear { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px; border-radius: 12px; background: rgba(255, 255, 255, .06) !important; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .1); }
+.sac-gear svg { width: 30px; height: 30px; color: var(--c); }
+.sac-gear b { font-size: 12.5px; font-weight: 800; }
+.sac-gear small { font-size: 11px; color: #ffe066; font-weight: 700; }
+.sac-gear.on { box-shadow: inset 0 0 0 3px #fff, 0 0 12px var(--c); }
+.sac-chars { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
+.sac-char { display: flex; flex-direction: column; gap: 4px; padding: 9px 10px; border-radius: 12px; background: rgba(255, 255, 255, .06); box-shadow: inset 4px 0 0 var(--c); }
+.sac-char b { font-size: 13.5px; font-weight: 900; }
+.sac-char small { font-size: 11.5px; font-weight: 700; color: #b6b9cf; }
+.sac-char .sac-btn { align-self: flex-start; height: 30px; min-width: 0; font-size: 12px; }
+.sac-char.empty { justify-content: center; min-height: 52px; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .08); background: transparent; }
+.sac-index { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.sac-ix { display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border-radius: 12px; background: rgba(255, 255, 255, .06); box-shadow: inset 0 3px 0 var(--c); }
+.sac-ix b { font-size: 13px; font-weight: 900; color: var(--c); }
+.sac-ix small { font-size: 11px; font-weight: 700; color: #b6b9cf; }
+.sac-ix span { display: flex; gap: 4px; margin-top: 2px; }
+.sac-ix span i { width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--m); opacity: .45; }
+.sac-ix span i.on { background: var(--m); opacity: 1; }
+.sac-ix.unknown b { color: #6f7390; }
+.sac-rebirth { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px 0; text-align: center; }
+.sac-rebirth .big { font-size: 26px; font-weight: 900; color: #e1bee7; }
+.sac-rebirth p { margin: 0; font-size: 14px; font-weight: 600; }
+.sac-progress { position: relative; width: 100%; height: 26px; border-radius: 99px; background: rgba(0, 0, 0, .35); overflow: hidden; }
+.sac-progress i { position: absolute; inset: 0 auto 0 0; border-radius: 99px; background: linear-gradient(90deg, #ab47bc, #ff4081); }
+.sac-progress span { position: relative; display: block; line-height: 26px; font-size: 13px; font-weight: 900; }
+.sac-set label { display: flex; align-items: center; gap: 12px; font-weight: 800; }
+.sac-set input[type="range"] { flex: 1; accent-color: #69f0ae; }
+.sac-owner { display: flex; flex-wrap: wrap; gap: 6px; }
+.sac-owner select { height: 36px; padding: 0 8px; border: 0; border-radius: 10px; background: #3a3f58; color: #fff; font: 700 13px "Montserrat", sans-serif; }
+
+/* phones */
+.sac-touch { position: absolute; inset: 0; pointer-events: none; }
+.sac-touch > * { pointer-events: auto; }
+.sac-joy { position: absolute; left: 24px; bottom: 24px; width: 120px; height: 120px; border-radius: 50%; background: rgba(255, 255, 255, .14); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .25); }
+.sac-joy i { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: rgba(255, 255, 255, .5); }
+.sac-jump, .sac-act, .sac-use { position: absolute; width: 74px; height: 74px; border-radius: 50%; font-weight: 900 !important; font-size: 14px; background: rgba(255, 255, 255, .22) !important; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .35); }
+.sac-jump { right: 24px; bottom: 30px; }
+.sac-act { right: 112px; bottom: 30px; background: rgba(105, 240, 174, .45) !important; }
+.sac-use { right: 40px; bottom: 116px; background: rgba(255, 213, 79, .45) !important; }
+/* on phones: the menu buttons in a row along the top, the chat under them, the hotbar at the bottom between the
+   joystick and Jump */
+#sac.sac-touchy .sac-side { top: 10px; left: 106px; transform: none; flex-direction: row; gap: 4px; }
+#sac.sac-touchy .sac-side button { width: 44px; height: 42px; border-radius: 10px; box-shadow: 0 3px 0 #9aa3b8; }
+#sac.sac-touchy .sac-side button span { display: none; }
+#sac.sac-touchy .oc-chat { top: 58px; width: min(250px, 34vw); }
+#sac.sac-touchy .oc-chat-log { max-height: 64px; font-size: 11.5px; }
+#sac.sac-touchy .sac-money { top: 4px; }
+#sac.sac-touchy .sac-money b { font-size: 26px; }
+#sac.sac-touchy .sac-money small { font-size: 11.5px; }
+#sac.sac-touchy .sac-hotbar { bottom: 6px; padding: 3px; gap: 3px; }
+#sac.sac-touchy .sac-slot { width: 40px; height: 40px; border-radius: 8px; }
+#sac.sac-touchy .sac-slot svg { width: 22px; height: 22px; }
+#sac.sac-touchy .sac-slot kbd { display: none; }
+#sac.sac-touchy .sac-joy { left: 18px; bottom: 14px; width: 104px; height: 104px; }
+#sac.sac-touchy .sac-joy i { width: 46px; height: 46px; margin: -23px 0 0 -23px; }
+#sac.sac-touchy .sac-prompt { bottom: 58px; font-size: 13px; }
+#sac.sac-touchy .sac-prompt kbd { display: none; }
+#sac.sac-touchy .sac-lock { top: 46%; width: 88px; padding: 6px; }
+#sac.sac-touchy .sac-banner { top: 50px; font-size: 12px; }
+#sac.sac-touchy .sac-alert { top: 88px; font-size: 13px; }
+#sac.sac-touchy .sac-toasts { top: 120px; }
+@media (orientation: portrait) {
+  #sac.sac-touchy .sac-money { top: 58px; }
+  #sac.sac-touchy .oc-chat { top: 112px; }
+  #sac.sac-touchy .sac-hotbar { bottom: 140px; }
+}
+@media (max-height: 520px) {
+  .sac-side { top: 54%; gap: 5px; }
+  .sac-side button { width: 58px; height: 48px; }
+  .sac-side button span { font-size: 9.5px; }
+  .sac-money b { font-size: 28px; }
+}

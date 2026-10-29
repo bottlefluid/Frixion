@@ -5,7 +5,8 @@
 const NAME_COLORS = ['#fd2943', '#01a2ff', '#02b857', '#a75ea6', '#f0841c', '#ebc71e', '#e8b0d7', '#d7c59a'];
 const nameColor = name => { let h = 0; for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return NAME_COLORS[h % NAME_COLORS.length]; };
 
-export function createChat({ host, rtdb, uid, name, onMessage, onCommand }) {
+// path: where the messages go (Steal a Character has its own chat)
+export function createChat({ host, rtdb, uid, name, onMessage, onCommand, path = 'ocrng/chat' }) {
   const box = document.createElement('div');
   box.className = 'oc-chat idle';
   // two tabs like a Roblox chat window: General (players and the game) and Server (who found what, everywhere)
@@ -24,7 +25,7 @@ export function createChat({ host, rtdb, uid, name, onMessage, onCommand }) {
     logs[ch].scrollTop = logs[ch].scrollHeight;
   };
   box.querySelectorAll('.oc-chat-tabs button').forEach(b => b.addEventListener('click', () => { show(b.dataset.ch); wake(); }));
-  const ref = rtdb ? rtdb.ref('ocrng/chat') : null;
+  const ref = rtdb ? rtdb.ref(path) : null;
   const joinedAt = Date.now();
   let lastSent = 0, idleTimer = 0, off = null;
 
