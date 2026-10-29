@@ -408,7 +408,7 @@ export const FX = {
 // The ____X____ aura: his sword, axe, mace and spear circle you, and a totem floats over your head.
 EXTRA_LAYERS.weapons = () => {
   const g = new THREE.Group(), items = ['sword', 'axe', 'mace', 'spear'].map((id, i) => { const it = makeItem(id, id === 'spear' ? 1 : 1.5); if (id === 'spear') it.scale.setScalar(0.45); g.add(it); return { it, i }; });
-  const totem = makeItem('totem', 1.1, false); totem.position.y = 6.9; g.add(totem);
+  const totem = makeItem('totem', 1.1, false); totem.name = 'xtotem'; totem.position.y = 6.9; g.add(totem);
   return { obj: g, update: (dt, t) => {
     items.forEach(({ it, i }) => { const a = t * 0.9 + i * Math.PI / 2; it.position.set(Math.cos(a) * 2.7, 3 + Math.sin(t * 2 + i) * 0.35, Math.sin(a) * 2.7); it.rotation.set(0, -a, 0.5); });
     totem.rotation.y = t * 1.6; totem.position.y = 6.9 + Math.sin(t * 2.2) * 0.15;

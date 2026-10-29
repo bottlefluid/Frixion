@@ -810,3 +810,90 @@ body.ocrng-open { overflow: hidden; }
 /* OpFun is on */
 .oc-opfun { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); padding: 3px 12px; border: 1.5px solid #ff4fd8; background: rgba(40, 0, 32, .7); color: #ff9ae9; font-size: 12px; font-weight: 800; letter-spacing: .14em; pointer-events: none !important; text-shadow: 0 0 8px #ff4fd8; z-index: 3; }
 .oc-bossbar:not(.hidden) ~ .oc-opfun { top: 58px; }
+/* ____X____'s aura has seven moves: they still fit beside Quick Roll. On phones the shield (M2) sits beside the sword
+   (M1), and the potions move up out of its way. */
+.oc-abilities:has(.oc-ab:nth-child(7)) .oc-ab { width: 48px; }
+.oc-abilities:has(.oc-ab:nth-child(7)) .oc-ab span { max-width: 46px; font-size: 8.5px; }
+@media (max-height: 520px) {
+  #ocrng.oc-touch .oc-ab[data-move="m2"] { right: 144px; bottom: 150px; }
+  #ocrng.oc-touch:has(.oc-ab[data-move="m2"]) .oc-br .oc-buffs { bottom: 214px; }
+}
+/* the cooldowns: the seconds left, big, on top of the draining bar; the shield lights up while it is held */
+.oc-ab .cdn { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; font: 800 18px "Montserrat", sans-serif; color: #fff; text-shadow: 0 1px 3px #000, 0 0 2px #000; pointer-events: none; }
+.oc-ab.cooling kbd, .oc-ab.cooling span { opacity: .4; }
+.oc-ab.on { background: rgba(255, 255, 255, .2) !important; box-shadow: inset 0 0 0 2px var(--c, #fff); }
+#ocrng.oc-touch .oc-ab .cdn { font-size: 15px; }
+#ocrng.oc-touch .oc-ab.cooling kbd { opacity: 0; }
+/* Admin, Codes: the code maker (rewards as coloured chips, a searchable catalogue by category) and the list of codes */
+.oc-cb { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1.5px solid var(--line-dim); background: rgba(0, 0, 0, .3); }
+.oc-cb-editing { padding: 6px 10px; border: 1px solid #ffd54f; background: rgba(255, 213, 79, .1); font-size: 12.5px; font-weight: 600; color: #ffe9a6; }
+.oc-cb-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.oc-cb-top label { display: flex; flex-direction: column; gap: 3px; }
+.oc-cb-top label small, .oc-cb-sec small { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #a8a8b0; }
+.oc-cb-top input { height: 34px; padding: 0 10px; border: 1.5px solid var(--line-dim); background: rgba(0, 0, 0, .5); outline: none; font-weight: 700; }
+.oc-cb-top input:focus { border-color: var(--line); }
+.oc-cb-name { flex: 1 1 220px; }
+.oc-cb-name span { display: flex; gap: 6px; }
+.oc-cb-name input { flex: 1; min-width: 0; font-size: 15px; letter-spacing: .06em; }
+.oc-cb-top input[type="number"] { width: 110px; }
+.oc-cb-sec { display: flex; align-items: baseline; gap: 8px; margin-top: 2px; }
+.oc-cb-sec b { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.oc-cb-sec small { text-transform: none; letter-spacing: .02em; }
+.oc-cb-rewards { display: flex; flex-wrap: wrap; gap: 6px; min-height: 42px; padding: 6px; border: 1px dashed var(--line-dim); }
+.oc-cb-rewards .oc-empty { margin: 4px; }
+.oc-rws { display: flex; flex-wrap: wrap; gap: 5px; }
+.oc-rw { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 26px; padding: 2px 8px; border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); border-left: 3px solid var(--c); background: rgba(0, 0, 0, .45); font-size: 12.5px; }
+.oc-rw .nm { font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px #000; }
+.oc-rw small { font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
+.oc-rw input { width: 86px; height: 24px; padding: 0 6px; border: 1px solid var(--line-dim); background: rgba(0, 0, 0, .55); outline: none; font-weight: 700; text-align: right; }
+.oc-rw button { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; padding: 0 !important; border: 1px solid transparent !important; background: none !important; opacity: .7; }
+.oc-rw button:hover { opacity: 1; border-color: var(--bad) !important; }
+.oc-rw button .ic { width: 12px; height: 12px; }
+.oc-rw .nm.gold, .oc-rw .nm.violet, .oc-rw .nm.rainbow, .oc-rw .nm.bw { -webkit-background-clip: text; background-clip: text; color: transparent !important; text-shadow: none; }
+.oc-rw .nm.gold { background-image: linear-gradient(180deg, #fff6c2, #ffcc33 55%, #e08a00); }
+.oc-rw .nm.violet { background-image: linear-gradient(180deg, #f1e8ff, #a77bff 60%, #6a3fd6); }
+.oc-rw .nm.rainbow { background-image: linear-gradient(90deg, #ff5252, #ffd740, #69f0ae, #40c4ff, #b388ff, #ff4081); }
+.oc-rw .nm.bw { background-image: linear-gradient(90deg, #fff 0%, #fff 49.5%, #555 50.5%, #555 100%); }
+.oc-cb-cats { display: flex; flex-wrap: wrap; gap: 4px; }
+.oc-cb-cats button { padding: 5px 12px !important; border: 1px solid var(--line-dim) !important; background: rgba(255, 255, 255, .04) !important; font-size: 12px; font-weight: 800; letter-spacing: .04em; color: #c9c9d2 !important; }
+.oc-cb-cats button:hover { color: #fff !important; }
+.oc-cb-cats button.on { border-color: #fff !important; background: rgba(255, 255, 255, .14) !important; color: #fff !important; }
+.oc-cb > .oc-search { flex: none; }
+.oc-cb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 5px; max-height: 250px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .3) transparent; }
+.oc-cb-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; row-gap: 1px; align-items: center; padding: 6px 9px !important; border: 1px solid var(--line-dim) !important; border-left: 3px solid var(--c) !important; background: rgba(255, 255, 255, .03) !important; text-align: left; }
+.oc-cb-item:hover { background: color-mix(in srgb, var(--c) 14%, rgba(0, 0, 0, .4)) !important; }
+.oc-cb-item b { font-size: 13px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.oc-cb-item span { grid-row: 1 / 3; grid-column: 2; font-size: 12px; font-weight: 800; color: var(--c); }
+.oc-cb-item small { font-size: 10.5px; color: #a8a8b0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.oc-cb-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line-dim); }
+.oc-cb-foot span { flex: 1; min-width: 160px; font-size: 11.5px; color: #a8a8b0; }
+.oc-adm-btn:disabled { opacity: .4; cursor: not-allowed; }
+.oc-adm-btn.sm { height: 28px; padding: 0 10px !important; font-size: 12px; }
+.oc-adm-btn.armed { background: var(--bad) !important; color: #fff !important; }
+.oc-cl-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+.oc-coderow { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--line-dim); border-left: 3px solid var(--ok); background: rgba(255, 255, 255, .03); }
+.oc-coderow.ended { border-left-color: #6b6b75; }
+.oc-coderow.ended .oc-codename, .oc-coderow.ended .oc-rws { opacity: .6; }
+.oc-coderow-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.oc-codename { font-size: 15px; font-weight: 800; letter-spacing: .06em; user-select: all; }
+.oc-coderow-top em { font-style: normal; font-size: 10px; font-weight: 800; letter-spacing: .08em; padding: 2px 6px; border: 1px solid currentColor; }
+.oc-coderow-top em.st-live { color: var(--ok); }
+.oc-coderow-top em.st-ended { color: #9e9e9e; }
+.oc-coderow-top .grow { flex: 1; }
+.oc-coderow-info { font-size: 11.5px; color: #a8a8b0; }
+/* Settings: what a code gave you */
+.oc-code-got { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--ok); background: rgba(105, 240, 174, .07); }
+.oc-code-got > b { font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ok); }
+/* 『EQUINOX』: "EQUILIZED" over what you've Equilized, the screen's flash at the end of a full beam, and the beam's
+   button while it charges (gold) and fires (white) */
+.oc-eqtags { position: absolute; inset: 0; z-index: 3; overflow: hidden; pointer-events: none; }
+.oc-eqtag { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 5px; padding: 2px 7px 2px 3px; border: 1px solid #fff; background: rgba(0, 0, 0, .78); font: 800 10px "Montserrat", sans-serif; letter-spacing: .12em; color: #fff; white-space: nowrap; box-shadow: 0 0 10px rgba(255, 255, 255, .35); }
+.oc-eqtag i { width: 12px; height: 12px; border: 1px solid #fff; border-radius: 50%; background: linear-gradient(90deg, #fff 50%, #000 50%); }
+.oc-eqtag small { font-size: 9.5px; letter-spacing: .02em; color: #c9c9d2; }
+#ocrng.oc-eqflash::before { content: ''; position: absolute; inset: 0; z-index: 40; background: #fff; pointer-events: none; animation: ocEqFlash .75s ease-out forwards; }
+@keyframes ocEqFlash { from { opacity: .6; } to { opacity: 0; } }
+.oc-ab.chg .cdn { color: #ffd54f; }
+.oc-ab.chg .cd { background: rgba(255, 213, 79, .25); }
+.oc-ab.firing .cd { background: rgba(255, 255, 255, .28); }
+.oc-ab.chg kbd, .oc-ab.chg span, .oc-ab.firing kbd, .oc-ab.firing span { opacity: .45; }
+#ocrng.oc-touch .oc-ab.chg kbd, #ocrng.oc-touch .oc-ab.firing kbd { opacity: 0; }

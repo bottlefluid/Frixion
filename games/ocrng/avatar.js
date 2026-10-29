@@ -414,10 +414,11 @@ export class AuraFX {
       // Equinox: a white ball and a black ball circling you, always opposite each other, each with a tail.
       const grp = new THREE.Group(); grp.position.y = 2.7;
       // huge: one big white ball and one big black ball, like Sol's 『EQUINOX』
-      const r = L.r || 2.4, size = L.huge ? 1.05 : L.big ? 0.42 : 0.32, orbs = [];
+      const r = L.r || 2.4, size = L.size || (L.huge ? 1.05 : L.big ? 0.42 : 0.32), orbs = [], self = this;
       const pairs = L.many && !L.huge ? 2 : 1;
       for (let p = 0; p < pairs; p++) for (const white of [true, false]) {
         const o = new THREE.Mesh(new THREE.SphereGeometry(size, 20, 16), new THREE.MeshBasicMaterial({ color: white ? '#ffffff' : '#050505' }));
+        if (!p) o.name = white ? 'eqW' : 'eqB';
         if (white) o.add(glowSprite('#ffffff', size * (L.huge ? 5 : 8)));
         else { const rim = new THREE.Mesh(new THREE.SphereGeometry(size * 1.18, 20, 16), new THREE.MeshBasicMaterial({ color: '#ffffff', side: THREE.BackSide, transparent: true, opacity: 0.55 })); o.add(rim); }
         const tail = new Dots({ c: white ? '#ffffff' : '#000000', n: L.huge ? 48 : 34, size: size * (L.huge ? 1.1 : 2.1), dark: !white }, 'sparkle');
@@ -431,7 +432,22 @@ export class AuraFX {
           const x = Math.cos(a) * r, z = Math.sin(a) * r, y = Math.sin(a * 2) * (L.huge ? 0.9 : 0.5);
           return [x, y * Math.cos(tilt) - z * Math.sin(tilt) * (p ? 0.6 : 0), z];
         };
-        const [x, y, z] = at(0); o.position.set(x, y, z);
+        let [x, y, z] = at(0), sc = 1, tailOn = true;
+        // 『EQUINOX』's moves move them: Eclipse spins them into each other, the beam brings them round in front of you
+        const S = self.eq, ms = Date.now();
+        if (S && S.spin && !p) {
+          const k = (ms - S.spin.t0) / S.spin.dur;
+          if (k < 1) { const a = Math.atan2(z, x) + k * k * 18 * Math.PI, rr = r * (1 - k * k) + 0.2; x = Math.cos(a) * rr; z = Math.sin(a) * rr; y *= 1 - k; tailOn = k < 0.5; }
+          else if (k < 1.5) { sc = 0; tailOn = false; }
+          else { sc = Math.min(1, (k - 1.5) * 2.5); if (sc >= 1) S.spin = null; }
+        }
+        if (S && S.beam && !p) {
+          const back = S.beam.phase === 'back', w = back ? 1 - Math.min(1, (ms - S.beam.t0) / 350) : Math.min(1, (ms - S.beam.t0) / 300);
+          x += ((white ? 1.9 : -1.9) - x) * w; y += (0.5 - y) * w; z += (2.6 - z) * w; tailOn = w < 0.3;
+          if (!back) sc *= S.beam.phase === 'fire' ? 1.12 + Math.sin(ms / 35) * 0.05 : 1 + Math.sin(ms / 70) * 0.1 * Math.min(1, (ms - S.beam.t0) / 3000);
+          else if (w <= 0) S.beam = null;
+        }
+        o.position.set(x, y, z); o.scale.setScalar(sc); tail.obj.visible = tailOn;
         const P = tail.pos, C = tail.col;
         for (let j = 0; j < tail.n; j++) {
           const [tx, ty, tz] = at(j + 1); P[j * 3] = tx; P[j * 3 + 1] = ty; P[j * 3 + 2] = tz;

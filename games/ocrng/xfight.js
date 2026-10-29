@@ -166,7 +166,7 @@ export function createXFight(ctx) {
         const r = Math.random(), cd = H.cd;
         const recent = H.recent.filter(h => h.t > n - 2000).reduce((s, h) => s + h.d, 0);
         if (L.phase === 2 && L.hp < L.max * 0.5 && H.gaps < 4 && n > cd.eat) { cd.eat = n + 15000; go(X, 'eat'); break; }
-        if (L.phase === 2 && recent > 45 && n > cd.block) { cd.block = n + 6000; go(X, 'block'); break; }
+        if (L.phase === 2 && recent > 45 && n > cd.block && !((L.shieldOff || 0) > n)) { cd.block = n + 6000; go(X, 'block'); break; }
         if (d > 24) {   // far away: 3 times in 4 he pearls to you, otherwise he lunges after you until he can mace you
           if (r < 0.75 && n > cd.pearl) { cd.pearl = n + 3500; go(X, 'pearl', { to: tg.pos.clone(), who: tg.uid }); }
           else go(X, 'spam', { left: 2 });
@@ -226,7 +226,7 @@ export function createXFight(ctx) {
         if (X.t > DUR.eat + 0.3) go(X, 'chase');
         break;
       }
-      case 'block': { X.vel.x = 0; X.vel.z = 0; if (tg) faceTo(X, tg.pos); if (X.t > DUR.block) go(X, 'chase'); break; }
+      case 'block': { X.vel.x = 0; X.vel.z = 0; if (tg) faceTo(X, tg.pos); if (X.t > DUR.block || (L.shieldOff || 0) > n) go(X, 'chase'); break; }
       // Wind charge at his feet, look up and pearl up, wind charge again: very high in about a second. Then down with
       // the mace onto his target, with a spear lunge on the way if they are far. Damage: 6, plus 5 for every stud he fell.
       case 'air': {
@@ -257,7 +257,7 @@ export function createXFight(ctx) {
     }
     physics(X, dt, X.act === 'dead' && X.onGround);
     if (flat(X.pos, ctx.arena) > CHASE + 40) { X.pos.set(ctx.arena.x, 0, ctx.arena.z); X.vel.set(0, 0, 0); }
-    if (!L.dead) mobTick(dt, n, list);
+    if (!L.dead) mobTick(dt, n);
     // send it all, 8 times a second, and a heartbeat so others know the host is still here
     if (n - H.lastSend > 120) {
       H.lastSend = n; H.ev = H.ev.filter(e => n - e.t < 2500);
@@ -283,55 +283,155 @@ export function createXFight(ctx) {
     if (!poolNames.length) poolNames = ['m0xee11p4', 'kh7fvl', '877px18qg', 'f9eci5j', 'q2Lr0zT'];
     return poolNames;
   }
-  function mobTick(dt, n, list) {
-    const P = xb.portal, M = xb.mobs || {};
+  // ---------------- finding the way ----------------
+  // Team null hunts everyone, anywhere, except in Limbo, on the tiny island out at sea, or very far away. They plan a
+  // route with A* over a map of where you can stand (2-stud cells, each with the height you would stand at: blocks
+  // stacked up from the ground count, roofs and bridges above don't), stepping or jumping up to 4 studs and dropping any
+  // distance, and follow it. With no route (inside a cave, up a tower) or when they get stuck, they throw an ender
+  // pearl to get close, like real players.
+  const CS = 2;
+  let nav = null;
+  function buildNav() {
+    const B = ctx.bounds, x0 = B.minX - 30, z0 = B.minZ - 30, W = Math.ceil((B.maxX - B.minX + 60) / CS), D = Math.ceil((B.maxZ - B.minZ + 60) / CS);
+    const cells = Array.from({ length: W * D }, () => []);
+    for (const b of ctx.colliders()) {
+      if (b.water) continue;
+      const i0 = Math.max(0, Math.floor((b.min.x - x0) / CS)), i1 = Math.min(W - 1, Math.floor((b.max.x - x0 - 0.01) / CS));
+      const j0 = Math.max(0, Math.floor((b.min.z - z0) / CS)), j1 = Math.min(D - 1, Math.floor((b.max.z - z0 - 0.01) / CS));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) cells[j * W + i].push(b);
+    }
+    const h = new Float32Array(W * D);
+    for (let j = 0; j < D; j++) for (let i = 0; i < W; i++) {
+      const x = x0 + (i + 0.5) * CS, z = z0 + (j + 0.5) * CS, k = j * W + i;
+      let y = floorAt(x, -0.4, z); if (y < -5) y = -99;   // the sea, and the chasm in the cave
+      for (const b of cells[k].sort((a, c) => a.min.y - c.min.y)) if (b.min.y <= y + 0.6) y = Math.max(y, b.max.y);
+      h[k] = y;
+    }
+    nav = { x0, z0, W, D, h };
+  }
+  function findPath(from, to) {
+    if (!nav) buildNav();
+    const { x0, z0, W, D, h } = nav;
+    const cellOf = p => Math.max(0, Math.min(D - 1, Math.floor((p.z - z0) / CS))) * W + Math.max(0, Math.min(W - 1, Math.floor((p.x - x0) / CS)));
+    const start = cellOf(from), goal = cellOf(to), ti = goal % W, tj = (goal / W) | 0;
+    if (h[goal] < -50) return null;
+    const g = new Map([[start, 0]]), came = new Map(), closed = new Set(), open = [[0, start]];
+    const est = k => { const dx = Math.abs((k % W) - ti), dz = Math.abs(((k / W) | 0) - tj); return (dx + dz + (Math.SQRT2 - 2) * Math.min(dx, dz)) * CS; };
+    const push = (f, k) => { open.push([f, k]); let c = open.length - 1; while (c > 0) { const p = (c - 1) >> 1; if (open[p][0] <= open[c][0]) break; [open[p], open[c]] = [open[c], open[p]]; c = p; } };
+    const pop = () => { const top = open[0], last = open.pop(); if (open.length) { open[0] = last; let c = 0; for (;;) { const l = 2 * c + 1, r = l + 1; let m = c; if (l < open.length && open[l][0] < open[m][0]) m = l; if (r < open.length && open[r][0] < open[m][0]) m = r; if (m === c) break; [open[m], open[c]] = [open[c], open[m]]; c = m; } } return top; };
+    const ok = (a, b) => h[b] > -50 && h[b] - h[a] <= 4.2;
+    for (let guard = 0; open.length && guard < 9000; guard++) {
+      const k = pop()[1];
+      if (k === goal) { const path = []; for (let c = k; c !== start; c = came.get(c)) path.push(c); path.reverse(); return path.map(c => ({ x: x0 + ((c % W) + 0.5) * CS, z: z0 + (((c / W) | 0) + 0.5) * CS, y: h[c] })); }
+      if (closed.has(k)) continue;
+      closed.add(k);
+      const i = k % W, j = (k / W) | 0;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const ni = i + di, nj = j + dj;
+        if (ni < 0 || nj < 0 || ni >= W || nj >= D) continue;
+        const nk = nj * W + ni;
+        if (!ok(k, nk) || (di && dj && (!ok(k, j * W + ni) || !ok(k, nj * W + i)))) continue;   // no cutting corners
+        const cost = g.get(k) + (di && dj ? Math.SQRT2 : 1) * CS + Math.max(0, h[nk] - h[k]) * 0.5;
+        if (cost < (g.get(nk) ?? Infinity)) { g.set(nk, cost); came.set(nk, k); push(cost + est(nk), nk); }
+      }
+    }
+    return null;
+  }
+  function mobTargets() {
+    const out = [], me = ctx.player();
+    if (!ctx.isDead() && !ctx.safe(me.pos)) out.push({ uid, pos: me.pos.clone() });
+    for (const o of ctx.others()) if (!ctx.safe(o.pos)) out.push({ uid: o.uid, pos: o.pos.clone() });
+    return out;
+  }
+  // a soldier throws a pearl and lands just in front of whoever it's after
+  function mobPearl(e, tg, n) {
+    const back = e.pos.clone().sub(tg.pos).setY(0); if (back.lengthSq() < 0.01) back.set(1, 0, 0);
+    const to = tg.pos.clone().add(back.normalize().multiplyScalar(2.6)), gy = floorAt(to.x, tg.pos.y + 2, to.z);
+    if (Math.abs(gy - tg.pos.y) > 1.5) to.copy(tg.pos); else to.y = gy;
+    emit({ k: 'throw', kind: 'pearl', x: e.pos.x, y: e.pos.y + 5, z: e.pos.z, x2: to.x, y2: to.y + 1, z2: to.z, dur: 0.5, arc: 5 });
+    emit({ k: 'pearl', x: e.pos.x, y: e.pos.y, z: e.pos.z, x2: to.x, y2: to.y, z2: to.z });
+    e.pos.copy(to); e.vel.set(0, 0, 0); e.path = null; e.pearlCd = n + 3500; e.moved = { t: n, p: e.pos.clone() };
+  }
+  // where you would stand at (x, z) coming down from height y: the game's own rules (the sea, the chasm), like a player
+  const floorAt = (x, y, z) => (ctx.ground ? ctx.ground(x, y, z) : groundAt({ x, y: y - 1.3, z }));
+  function mobPhysics(e, dt) {
+    e.vel.y -= GRAV * dt;
+    e.pos.addScaledVector(e.vel, dt);
+    bump(e);
+    const g = floorAt(e.pos.x, e.pos.y + 1.3, e.pos.z);   // steps up to 1.3 studs without jumping
+    if (e.pos.y <= g) { e.pos.y = g; if (e.vel.y < 0) e.vel.y = 0; e.onGround = true; } else e.onGround = e.pos.y - g < 0.05;
+  }
+  // soldiers bump into walls and trees (anything taller than a step), like players do
+  function bump(e) {
+    for (const b of ctx.colliders()) {
+      if (b.water || b.max.y <= e.pos.y + 1.3 || b.min.y >= e.pos.y + 4.5) continue;
+      if (e.pos.x + 0.7 <= b.min.x || e.pos.x - 0.7 >= b.max.x || e.pos.z + 0.7 <= b.min.z || e.pos.z - 0.7 >= b.max.z) continue;
+      const dx1 = b.max.x - (e.pos.x - 0.7), dx2 = e.pos.x + 0.7 - b.min.x, dz1 = b.max.z - (e.pos.z - 0.7), dz2 = e.pos.z + 0.7 - b.min.z, mn = Math.min(dx1, dx2, dz1, dz2);
+      if (mn === dx1) e.pos.x += dx1; else if (mn === dx2) e.pos.x -= dx2; else if (mn === dz1) e.pos.z += dz1; else e.pos.z -= dz2;
+    }
+  }
+  function mobTick(dt, n) {
+    const P = xb.portal, M = xb.mobs || {}, list = mobTargets();
     for (const [i, m] of Object.entries(M)) {
       let e = H.mobs[i];
       if (!e && P && n >= m.at && !m.dead) {
         const f = fwd(P.yaw);
-        e = H.mobs[i] = { pos: new THREE.Vector3(P.x - f.x * 0.5, 0, P.z - f.z * 0.5), vel: new THREE.Vector3(), yaw: P.yaw, onGround: true, act: 'chase', t: 0, cd: n + 1200, out: true, w: 'sword' };
+        e = H.mobs[i] = { pos: new THREE.Vector3(P.x - f.x * 0.5, 0, P.z - f.z * 0.5), vel: new THREE.Vector3(), yaw: P.yaw, onGround: true, act: 'chase', t: 0, cd: n + 1200, out: true, w: 'sword', replan: n + Math.random() * 800 };
         emit({ k: 'join', i: +i, x: e.pos.x, y: 0, z: e.pos.z });
       }
       if (!e || m.dead) { if (e && m.dead && !e.gone) { e.gone = true; emit({ k: 'poof', x: e.pos.x, y: e.pos.y, z: e.pos.z }); } continue; }
       e.t += dt;
-      if (e.act === 'block' && e.t > 1.1) { e.act = 'chase'; e.t = 0; }
+      if (e.act === 'block' && (e.t > 1.1 || (m.shieldOff || 0) > n)) { e.act = 'chase'; e.t = 0; }
+      if (e.act === 'swing' && e.t > 0.45) { e.act = 'chase'; e.t = 0; }
       let tg = null, best = 1e9;
-      for (const f of list) { const d = flat(f.pos, e.pos); if (d < best) { best = d; tg = f; } }
-      if (xb.life && xb.life.dead) tg = null;
-      if (tg) {
-        faceTo(e, tg.pos);
-        const f = fwd(e.yaw), sp = best > 3 && e.act !== 'swing' && e.act !== 'block' ? (m.gen ? 12.5 : 11) : 0;
-        e.vel.x = f.x * sp; e.vel.z = f.z * sp;
-        if (e.onGround && (tg.pos.y - e.pos.y > 2 || Math.random() < dt * 0.4) && best > 5) e.vel.y = 22;
-        if (e.act === 'swing' && e.t > 0.45) { e.act = 'chase'; e.t = 0; }
-        if (best <= 4.6 && n > e.cd && e.act === 'chase') {
-          e.cd = n + (m.gen ? 750 : 950); e.act = 'swing'; e.t = 0;
-          emit({ k: 'mob', i: +i, x: e.pos.x, y: e.pos.y, z: e.pos.z, yaw: e.yaw, r: 5, dmg: m.gen ? 12 : 8, kb: 12 });
-        } else if (e.act === 'chase' && Math.random() < dt * 0.25) { e.act = 'block'; e.t = 0; }
-      } else { e.vel.x = 0; e.vel.z = 0; }
-      physics(e, dt);
+      for (const f of list) { const d = e.pos.distanceTo(f.pos); if (d < best) { best = d; tg = f; } }
+      if (!tg) { e.vel.x = 0; e.vel.z = 0; mobPhysics(e, dt); continue; }
+      // the route: re-planned every couple of seconds, or when the target has moved away from where it was going
+      const close = best < 7 && Math.abs(tg.pos.y - e.pos.y) < 3;
+      if (!close && (n > e.replan || !e.goal || flat(e.goal, tg.pos) > 8)) { e.path = findPath(e.pos, tg.pos); e.pi = 0; e.goal = tg.pos.clone(); e.replan = n + 1800 + Math.random() * 600; }
+      let aim = tg.pos;
+      if (!close && e.path && e.path.length) {
+        while (e.pi < e.path.length - 1 && Math.hypot(e.path[e.pi].x - e.pos.x, e.path[e.pi].z - e.pos.z) < 1.7) e.pi++;
+        aim = e.path[e.pi];
+      }
+      e.yaw = Math.atan2((close ? tg.pos : aim).x - e.pos.x, (close ? tg.pos : aim).z - e.pos.z);
+      const f = fwd(e.yaw), sp = (close ? best > 3 : true) && e.act !== 'swing' && e.act !== 'block' ? (m.gen ? 12.5 : 11) : 0;
+      e.vel.x = f.x * sp; e.vel.z = f.z * sp;
+      if (e.onGround && ((aim.y !== undefined && aim.y - e.pos.y > 0.8) || (close && tg.pos.y - e.pos.y > 2))) e.vel.y = 25;   // up a step on the route (a jump is 4.3 studs)
+      // no route, or stuck in the same place: an ender pearl
+      if (!e.moved || n - e.moved.t > 2500) { if (e.moved && e.pos.distanceTo(e.moved.p) < 1.5 && best > 8 && n > (e.pearlCd || 0)) mobPearl(e, tg, n); else e.moved = { t: n, p: e.pos.clone() }; }
+      if (!close && !e.path && best > 12 && n > (e.pearlCd || 0)) mobPearl(e, tg, n);
+      if (best <= 4.6 && n > e.cd && e.act === 'chase') {
+        e.cd = n + (m.gen ? 750 : 950); e.act = 'swing'; e.t = 0;
+        emit({ k: 'mob', i: +i, x: e.pos.x, y: e.pos.y, z: e.pos.z, yaw: e.yaw, r: 5, dmg: m.gen ? 12 : 8, kb: 12 });
+      } else if (close && e.act === 'chase' && !((m.shieldOff || 0) > n) && Math.random() < dt * 0.25) { e.act = 'block'; e.t = 0; }
+      mobPhysics(e, dt);
+      if (e.pos.y < -8) mobPearl(e, tg, n);   // fell in the sea
     }
     if (P && P.breakAt && n > P.breakAt && !H.portalBroke) { H.portalBroke = true; emit({ k: 'portalbreak' }); }
   }
-
   // ---------------- what everyone sees (and whether it hit you) ----------------
   function play(e) {
     const me = ctx.player(), mp = me.pos, sc = scene;
-    const hurt = (dmg, kx, kz, vy, how, extra) => { if (dmg > 0 || vy) ctx.hurtMe(dmg, { kx, kz, vy, how, fx: e.x, fz: e.z, ...extra }); };
+    const src = e.k === 'mob' ? 'm' + e.i : 'x';
+    const hurt = (dmg, kx, kz, vy, how, extra) => { if (dmg > 0 || vy) ctx.hurtMe(dmg, { kx, kz, vy, how, fx: e.x, fz: e.z, src, ...extra }); };
+    const bots = (hitAt, dmg) => { if (ctx.bots && dmg > 0) for (const b of ctx.bots()) if (hitAt(b.pos)) ctx.hurtBot(b.i, dmg, src); };
     const add = f => f && ctx.addFx(f);
     switch (e.k) {
       case 'sweep': case 'axe': case 'mob': {
         add(FX.sweep(sc, e.x, e.y, e.z, e.yaw)); ctx.sound(e.k === 'axe' ? 'axe' : 'sword');
         if (e.k === 'axe') add(FX.crit(sc, e.x + Math.sin(e.yaw) * 2, e.y, e.z + Math.cos(e.yaw) * 2));
-        const dx = mp.x - e.x, dz = mp.z - e.z, d = Math.hypot(dx, dz);
-        if (d <= e.r && Math.abs(mp.y - e.y) < 6 && (dx * Math.sin(e.yaw) + dz * Math.cos(e.yaw)) / (d || 1) > -0.05) hurt(e.dmg, Math.sin(e.yaw) * e.kb, Math.cos(e.yaw) * e.kb, 9, e.k === 'mob' ? `was slain by ${mobName(e.i)}` : `was slain by ____X____ using [${e.k === 'axe' ? 'Netherite Axe' : 'Netherite Sword'}]`, { axe: !!e.axe });
+        const hitAt = q => { const dx = q.x - e.x, dz = q.z - e.z, d = Math.hypot(dx, dz); return d <= e.r && Math.abs(q.y - e.y) < 6 && (dx * Math.sin(e.yaw) + dz * Math.cos(e.yaw)) / (d || 1) > -0.05; };
+        bots(hitAt, e.dmg);
+        if (hitAt(mp)) hurt(e.dmg, Math.sin(e.yaw) * e.kb, Math.cos(e.yaw) * e.kb, 9, e.k === 'mob' ? `was slain by ${mobName(e.i)}` : `was slain by ____X____ using [${e.k === 'axe' ? 'Netherite Axe' : 'Netherite Sword'}]`, { axe: !!e.axe });
         break;
       }
       case 'lgo': ctx.lunge(e.x, e.y, e.z); break;
       case 'lunge': {
         const ax = e.x2 - e.x, az = e.z2 - e.z, len = Math.hypot(ax, az) || 1, ux = ax / len, uz = az / len;
-        const along = (mp.x - e.x) * ux + (mp.z - e.z) * uz, side = Math.abs((mp.x - e.x) * uz - (mp.z - e.z) * ux);
-        if (along > -1.5 && along < len + 3 && side < e.w && Math.abs(mp.y - e.y) < 6) hurt(e.dmg, ux * e.kb, uz * e.kb, 10, 'was skewered by ____X____ using [Netherite Spear]');
+        const hitAt = q => { const along = (q.x - e.x) * ux + (q.z - e.z) * uz, side = Math.abs((q.x - e.x) * uz - (q.z - e.z) * ux); return along > -1.5 && along < len + 3 && side < e.w && Math.abs(q.y - e.y) < 6; };
+        bots(hitAt, e.dmg);
+        if (hitAt(mp)) hurt(e.dmg, ux * e.kb, uz * e.kb, 10, 'was skewered by ____X____ using [Netherite Spear]');
         break;
       }
       case 'gust': {
@@ -344,6 +444,7 @@ export function createXFight(ctx) {
       case 'smash': {
         add(FX.smash(sc, e.x, e.y, e.z, e.power || 1)); add(FX.crit(sc, e.x, e.y, e.z)); ctx.sound('smash'); ctx.shake(Math.min(1.4, (e.power || 1) * 0.8));
         const d = Math.hypot(mp.x - e.x, mp.z - e.z);
+        bots(q => Math.abs(q.y - e.y) < 5 && Math.hypot(q.x - e.x, q.z - e.z) <= e.r2, e.dmg);
         if (Math.abs(mp.y - e.y) < 5 && d <= e.r2) { const full = d <= e.r1; hurt(full ? e.dmg : Math.round(e.dmg / 2), (mp.x - e.x) / (d || 1) * 16, (mp.z - e.z) / (d || 1) * 16, 14, 'was smashed by ____X____ using [Mace]', { smash: true }); }
         break;
       }
@@ -362,7 +463,7 @@ export function createXFight(ctx) {
 
   // Your move or punch: does it hit X or one of his soldiers? Shields cut hits from the front.
   function hitFrom(f, dmg, hitTest) {
-    if (!live() || !dmg) return;
+    if (!live() || !dmg) return [];
     const me = ctx.player().pos, n = S(), L = xb.life || {}, targets = [];
     if (xm && disp && disp.x && !L.dead && !((L.inv || 0) > n)) targets.push({ uid: 'x', pos: disp.x.pos, act: disp.x.a, yaw: disp.x.r });
     for (const [i, m] of Object.entries(mobs)) if (xb.mobs && xb.mobs[i] && !xb.mobs[i].dead) targets.push({ uid: 'm' + i, pos: m.pos, act: m.a, yaw: m.r });
@@ -374,21 +475,28 @@ export function createXFight(ctx) {
     } else if (f.kind === 'smash') hits = targets.filter(t => Math.hypot(t.pos.x - f.x, t.pos.z - f.z) < f.r + reach(t));
     else { const ring = []; for (const t of targets) { const k = t.uid === 'x' ? XHIT : 1; for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]]) ring.push({ uid: t.uid, pos: { x: t.pos.x + dx * k, z: t.pos.z + dz * k }, t }); } const got = new Set(hitTest(f, ring).map(h => h.uid)); hits = targets.filter(t => got.has(t.uid)); }
     for (const t of hits) {
-      let d = dmg;
-      if (t.act === 'block') { const dx = me.x - t.pos.x, dz = me.z - t.pos.z, dl = Math.hypot(dx, dz) || 1; if ((dx * Math.sin(t.yaw) + dz * Math.cos(t.yaw)) / dl > 0.2) { d = Math.max(1, Math.round(dmg * 0.2)); ctx.sound('block'); } }
-      if (t.uid === 'x') {
-        net.xLife(l => {
-          if (!l || l.dead || (l.inv || 0) > S()) return l;
-          l.hp -= d;
-          if (l.hp <= 0) { if (l.phase === 1) { l.phase = 2; l.hp = X_HP.p2; l.max = X_HP.p2; l.totemAt = S(); l.inv = S() + 2400; } else { l.hp = 0; l.dead = true; l.deadAt = S(); } }
-          return l;
-        }).then(r => { if (r && r.committed) { myDmg += d; if (H) H.recent.push({ t: S(), d }); } }).catch(() => {});
-      } else {
-        const i = t.uid.slice(1);
-        net.xMob(i, m => { if (!m || m.dead) return m; m.hp -= d; if (m.hp <= 0) { m.hp = 0; m.dead = true; m.by = uid; } return m; }).catch(() => {});
-      }
+      let d = dmg, broke = false;
+      // a shield stops most of a hit from the front; an axe knocks it down for 5 seconds instead, like Minecraft
+      if (t.act === 'block') { const dx = me.x - t.pos.x, dz = me.z - t.pos.z, dl = Math.hypot(dx, dz) || 1; if ((dx * Math.sin(t.yaw) + dz * Math.cos(t.yaw)) / dl > 0.2) { if (f.axe) { broke = true; ctx.sound('shieldbreak'); } else { d = Math.max(1, Math.round(dmg * 0.2)); ctx.sound('block'); } } }
+      hurtTarget(t.uid, d, broke);
+    }
+    return hits.map(t => t.uid);
+  }
+  // damage to X ('x') or one of his soldiers ('m3'), counted as yours
+  function hurtTarget(id, d, broke) {
+    if (id === 'x') {
+      net.xLife(l => {
+        if (!l || l.dead || (l.inv || 0) > S()) return l;
+        if (broke) l.shieldOff = S() + 5000;
+        l.hp -= d;
+        if (l.hp <= 0) { if (l.phase === 1) { l.phase = 2; l.hp = X_HP.p2; l.max = X_HP.p2; l.totemAt = S(); l.inv = S() + 2400; } else { l.hp = 0; l.dead = true; l.deadAt = S(); } }
+        return l;
+      }).then(r => { if (r && r.committed) { myDmg += d; if (H) H.recent.push({ t: S(), d }); } }).catch(() => {});
+    } else if (id && id[0] === 'm') {
+      net.xMob(id.slice(1), m => { if (!m || m.dead) return m; if (broke) m.shieldOff = S() + 5000; m.hp -= d; if (m.hp <= 0) { m.hp = 0; m.dead = true; m.by = uid; } return m; }).catch(() => {});
     }
   }
+  const damage = (id, d) => { if (live() && d > 0) hurtTarget(id, Math.round(d)); };
   // you died: your damage counter goes back to 0 (so X looks for someone else) and it counts against the aura
   function onMyDeath() { if (!live()) return; myDmg = 0; net.xDmg(0); dmgSent = 0; net.xDied(); }
 
@@ -482,7 +590,7 @@ export function createXFight(ctx) {
     return out;
   }
   return {
-    onState, update, hitFrom, onMyDeath, start, stop, tryScheduled, targets,
+    onState, update, hitFrom, damage, onMyDeath, start, stop, tryScheduled, targets,
     models: () => ({ x: !!xm, mobs: Object.keys(mobs).length, portal: !!portal }),
     live, get host() { return isHost(); },
     near: p => !!(xb && live() && flat(p, ctx.arena) < 140),

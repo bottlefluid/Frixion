@@ -26,7 +26,7 @@ import { createEquinoxCinematic, EQUINOX_MERGE, EQUINOX_LENGTH } from './cinemat
 import { glowTex } from './avatar.js';
 import { IC, potionArt, gearArt, handGearArt, fishArt, coinArt, starArt, titleArt, titleInfo } from './icons.js';
 
-const VERSION = '2.5';
+const VERSION = '2.6';
 const API = () => window.FrixionGameAPI;
 const WALK = 16, JUMP = 24, GRAVITY = 72, STEP = 1.25, R = 0.6, H = 5;
 const ROLL_ANIM_MS = 2600, ROLL_COOLDOWN_MS = 600;
@@ -167,6 +167,7 @@ function buildShell() {
     <div class="oc-raidbar hidden"><b>THE CRAWLER</b><div class="oc-raid-hp"><i></i><span></span></div><small></small></div>
     <div class="oc-bossbar hidden"><b class="oc-mcname">____X____</b><div class="oc-boss-hp"><i></i><u></u></div><small></small></div>
     <div class="oc-opfun hidden">OPFUN</div>
+    <div class="oc-eqtags"></div>
     <div class="oc-hearts hidden"></div>
     <div class="oc-players"></div>
     <div class="oc-bl">
@@ -348,6 +349,7 @@ function equip(key, silent) {
   p.fx = new AuraFX(key, G.quality === 'low');
   p.avatar.fxHolder.add(p.fx.group);
   G.save.equipped = key;
+  xTotemShow();
   drawMyTag();
   G.moves = movesFor(key);
   if (!G.moves.some(m => m.toggle)) p.flyToggle = false;
@@ -382,20 +384,22 @@ function setupInput() {
     if (key === 'shift' && !G.player.fly && !G.touch) setShiftLock(!G.shiftLock);
     if ([' ', 'w', 'a', 's', 'd', 'e', 'r', 'f', 'q', 'z', 'x', 'c', 'v', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(key)) { e.preventDefault(); e.stopImmediatePropagation(); }
   }, true);
-  on(window, 'keyup', e => { if (!G) return; const kk = e.key.toLowerCase(); k[kk] = false; if (kk === 'z' && G.player && G.player.blocking) setBlock(false); }, true);
-  on(window, 'blur', () => { for (const x in k) k[x] = false; });
+  on(window, 'keyup', e => { if (!G) return; const kk = e.key.toLowerCase(); k[kk] = false; if (kk === 'z' && G.holdPtr == null) eqBeamRelease(); }, true);
+  on(window, 'blur', () => { for (const x in k) k[x] = false; if (G && G.player && G.player.blocking) setBlock(false); eqBeamRelease(); });
+  on(window, 'mousemove', e => { if (G) G.mouse = { x: e.clientX, y: e.clientY }; });
   // The camera turns as fast as the mouse moves: hold the right button (the cursor hides while you do), or drag with
   // the left one. Shift Lock keeps it turning without holding anything.
   let dragging = false;
   on(cvs, 'mousedown', e => {
     if (!G.playing) return;
-    if (e.button === 2) { dragging = true; if (!G.shiftLock && cvs.requestPointerLock) cvs.requestPointerLock(); }
+    // ____X____'s aura: the right button also raises the shield, like Minecraft (the camera still turns while you hold it)
+    if (e.button === 2) { dragging = true; if (!G.shiftLock && cvs.requestPointerLock) cvs.requestPointerLock(); if (xMoveOf('shield') && !G.panel) setBlock(true); }
     if (e.button === 0) {
       if (xMoveOf('sword') && !G.panel) { useMove('m1'); if (firstPerson() && cvs.requestPointerLock && document.pointerLockElement !== cvs) cvs.requestPointerLock(); return; }
       dragging = true; if (firstPerson() && cvs.requestPointerLock && document.pointerLockElement !== cvs) cvs.requestPointerLock();
     }
   });
-  on(window, 'mouseup', () => { dragging = false; if (!G.shiftLock && !firstPerson() && document.pointerLockElement === cvs) document.exitPointerLock(); });
+  on(window, 'mouseup', e => { dragging = false; if (e.button === 2 && G.shieldPtr == null && G.player && G.player.blocking) setBlock(false); if (!G.shiftLock && !firstPerson() && document.pointerLockElement === cvs) document.exitPointerLock(); });
   on(window, 'mousemove', e => {
     if (!G.playing || G.panel) return;
     if (!(dragging || G.shiftLock || firstPerson() || document.pointerLockElement === cvs)) return;
@@ -459,9 +463,11 @@ function setupInput() {
   on($q('.oc-panel-x'), 'click', closePanel);
   on($q('.oc-panel'), 'click', e => { if (e.target.classList.contains('oc-panel')) closePanel(); });
   const abEl = $q('.oc-abilities'), moveOfBtn = b => b && shownMoves().find(m => m.key === b.dataset.move);
-  on(abEl, 'pointerdown', e => { const m = moveOfBtn(e.target.closest('[data-move]')); if (m && m.kind === 'shield') { e.preventDefault(); setBlock(true); } });
-  on(window, 'pointerup', () => { if (G && G.player && G.player.blocking && !G.input.keys.z) setBlock(false); });
-  on(abEl, 'click', e => { const b = e.target.closest('[data-move]'), m = moveOfBtn(b); if (b && !(m && m.kind === 'shield')) useMove(b.dataset.move); });
+  // the shield button blocks for as long as it is held, by that finger (letting go of the joystick doesn't drop it)
+  on(abEl, 'pointerdown', e => { const m = moveOfBtn(e.target.closest('[data-move]')); if (m && m.kind === 'shield') { e.preventDefault(); G.shieldPtr = e.pointerId; setBlock(true); } if (m && m.hold) { e.preventDefault(); G.holdPtr = e.pointerId; useMove(m.key); } });
+  const shieldOff = e => { if (G && G.shieldPtr === e.pointerId) { G.shieldPtr = null; if (G.player && G.player.blocking) setBlock(false); } if (G && G.holdPtr === e.pointerId) { G.holdPtr = null; eqBeamRelease(); } };
+  on(window, 'pointerup', shieldOff); on(window, 'pointercancel', shieldOff);
+  on(abEl, 'click', e => { const b = e.target.closest('[data-move]'), m = moveOfBtn(b); if (b && !(m && (m.kind === 'shield' || m.hold))) useMove(b.dataset.move); });
   // potions: hover (or tap) one for what it does, and the + button shows them all
   const buffsEl = $q('.oc-buffs'), hideTip = () => { G.tipKey = null; $q('.oc-tip').classList.add('hidden'); };
   on(buffsEl, 'mouseover', e => { const c = e.target.closest('.oc-buff'); if (c && !G.touch) showBuffTip(c.dataset.k); });
@@ -516,10 +522,10 @@ function play() {
     joined: (uid, d) => { addOther(uid, d); G.chat.system(`${d.name || uid} joined the game.`, '#bdbdbd'); },
     changed: (uid, d) => updateOther(uid, d),
     left: uid => { const o = G.others.get(uid); if (o) G.chat.system(`${(o.data && o.data.name) || uid} left the game.`, '#bdbdbd'); removeOther(uid); },
-    pos: (uid, p) => { const o = G.others.get(uid); if (o) { o.target.set(p.x, p.y, p.z); o.targetYaw = p.r; o.anim = p.a; o.hp = p.hp; if (!o.placed) { o.pos.copy(o.target); o.placed = true; } o.seen = now(); } },
+    pos: (uid, p) => { const o = G.others.get(uid); if (o) { o.target.set(p.x, p.y, p.z); o.targetYaw = p.r; o.anim = p.a; o.hp = p.hp; o.bm = p.bm || null; o.bt = p.bt || null; if (!o.placed) { o.pos.copy(o.target); o.placed = true; } o.seen = now(); } },
     posGone: uid => { const o = G.others.get(uid); if (o) o.placed = false; },
     hit: h => takeHit(h),
-    fx: f => { if (String(f.kind).startsWith('mc')) { mcFx(f, false); return; } if (f.kind === 'equinox') { remoteEquinox(f); return; } if (f.kind === 'death') { G.chat && G.chat.system(String(f.text || '').slice(0, 120), '#ffffff'); return; } const fxo = castFx(G.scene, f); if (fxo) G.fxObjects.push(fxo); },
+    fx: f => { if (String(f.kind).startsWith('mc')) { mcFx(f, false); return; } if (/^eq(end|spin|clash|bolt|summon)$/.test(f.kind)) { eqFx(f); return; } if (f.kind === 'equinox') { remoteEquinox(f); return; } if (f.kind === 'death') { G.chat && G.chat.system(String(f.text || '').slice(0, 120), '#ffffff'); return; } const fxo = castFx(G.scene, f); if (fxo) G.fxObjects.push(fxo); },
     announce: a => announce(a),
     world: w => { G.worldState = w; },
     raid: r => onRaid(r),
@@ -540,8 +546,12 @@ function play() {
     chat: (text, color) => G.chat && G.chat.system(text, color), banner: (big, small) => bossBanner(big, small),
     busy: () => !!(G.crawler && !G.crawler.dying), onWin: xReward, onMobKill: m => { toast(`You defeated ${m.name}. ` + giveReward({ coins: m.gen ? 6000 : 1500 }), 'gold'); },
     loadNames: () => fetch(new URL('./nullnames.txt', import.meta.url)).then(r => r.text()),
+    bounds: G.world.bounds, ground: groundUnder,
+    bots: () => (G.twins ? G.twins.list.map((b, i) => ({ i, pos: b.pos, dead: b.dead })).filter(b => !b.dead) : []), hurtBot: (i, d, src) => twinHurt(i, d, src),
+    // where team null leaves you alone: Limbo, the tiny island out at sea, and anywhere very far away
+    safe: q => G.world.inLimbo(q) || Math.hypot(q.x - G.world.eggs.islet.pos.x, q.z - G.world.eggs.islet.pos.z) < 14 || Math.hypot(q.x - G.world.arena.x, q.z - G.world.arena.z) > 400,
   });
-  G.net.join({ name: G.me.name, aura: G.save.equipped, shirt: shirtColorFor(G.me.name), pvp: false, rolls: G.save.rolls, ...(G.save.title ? { title: G.save.title } : {}) });
+  G.net.join({ name: G.me.name, aura: G.save.equipped, shirt: shirtColorFor(G.me.name), pvp: false, rolls: G.save.rolls, ...(G.save.title ? { title: G.save.title } : {}), ...(G.save.flags.totemSpent ? { tot: 1 } : {}) });
   G.music = G.audio ? createMusic(G.audio) : null;
   loadLunge();
   setTimeout(() => { if (G) sweepEquinox(); }, 6000);
@@ -569,11 +579,13 @@ function updateOther(uid, d) {
   const o = G.others.get(uid); if (!o) return addOther(uid, d);
   o.data = d;
   if (d.aura !== o.key) { if (o.fx) o.fx.dispose(); o.key = auraKey(d.aura || 'common').key; o.fx = new AuraFX(o.key, true); o.avatar.fxHolder.add(o.fx.group); }
+  { const tt = o.fx && o.fx.group.getObjectByName('xtotem'); if (tt) tt.visible = !d.tot; }   // their totem is gone once it has saved them
   o.avatar.tag.userData.draw(d.name || uid, o.key, d.pvp ? (o.hp ?? 100) : null, { afk: d.afk });
   o.lastHp = o.hp;
 }
 function removeOther(uid) {
   const o = G.others.get(uid); if (!o) return;
+  eqRemoteGone(o);
   if (o.fx) o.fx.dispose(); G.scene.remove(o.avatar.root); o.avatar.dispose(); G.others.delete(uid);
   const b = G.bubbles.get(uid); if (b) { b.el.remove(); G.bubbles.delete(uid); }
 }
@@ -594,7 +606,7 @@ function loop() {
     if (time !== env.time) G.chat && G.chat.system(time === 'night' ? '[Server]: Night has fallen.' : '[Server]: The sun has risen.', time === 'night' ? '#9fb4ff' : '#ffe082');
   }
   env.time = time; env.weather = weather; env.jester = jester; env.progress = dayProgress(n);
-  if (G.playing && !G.portraitBlock) { movePlayer(dt); updateOthers(dt, t); checkPlaces(); checkEggs(); updatePickups(dt, t); }
+  if (G.playing && !G.portraitBlock) { movePlayer(dt); eqTick(dt); updateOthers(dt, t); checkPlaces(); checkEggs(); updatePickups(dt, t); }
   updateCamera(dt, t);
   const p = G.player;
   p.avatar.root.position.copy(p.pos);
@@ -611,8 +623,9 @@ function loop() {
   if (G.xfight) G.xfight.update(dt);
   if (G.playing) {
     if (G.save.settings.auto && canAuto() && !G.rolling && !G.cutting && n >= G.nextRollAt) rollOnce();
-    if (G.net) G.net.sendPos({ x: p.pos.x, y: p.pos.y, z: p.pos.z, r: p.yaw, a: p.moving ? 1 : 0, hp: p.pvp ? p.hp : -1 });
-    if ((G.hudTick = (G.hudTick || 0) + dt) > 0.25) { G.hudTick = 0; updateHud(); updateAbilityCds(); }
+    if (G.net) G.net.sendPos({ x: p.pos.x, y: p.pos.y, z: p.pos.z, r: p.yaw, a: p.moving ? 1 : 0, hp: p.pvp ? p.hp : -1, ex: eqNetState() });
+    if ((G.hudTick = (G.hudTick || 0) + dt) > 0.25) { G.hudTick = 0; updateHud(); }
+    updateAbilityCds();
     const b = buffs();
     $q('.oc-roll-cd').style.transform = `scaleX(${G.rolling ? 1 : Math.max(0, Math.min(1, (G.nextRollAt - n) / (ROLL_COOLDOWN_MS / b.speed)))})`;
     updateBubbles();
@@ -652,7 +665,7 @@ function slowTick() {
     if ((p.regenUntil || 0) > n) { p.hp = Math.min(100, p.hp + 5); if (p.raidHp !== undefined) p.raidHp = Math.min(100, p.raidHp + 5); if (p.pvp) drawMyTag(); }
     if (p.absorb && n > (p.absorbUntil || 0)) p.absorb = 0;
     if (p.absorb || (p.regenUntil || 0) > n - 1500) renderBossBar(); }
-  if (G.crawler && (G.player.pos.distanceTo(G.world.arena) < 60) !== !!G.nearArena) renderAbilities();
+  if (G.crawler) renderAbilities();   // the Punch button comes and goes by the Pit (nothing is rebuilt unless it does)
   if (G.player.emoteUntil && G.player.emoteUntil < now()) { G.player.emote = null; G.player.emoteUntil = 0; if (G.net) G.net.update({ emote: null }); }
   // AFK after 5 minutes of nothing, like Roblox; a secret after 10
   const idle = now() - (G.lastInput || now());
@@ -667,8 +680,8 @@ function movePlayer(dt) {
   const p = G.player, k = G.input.keys, j = G.input.joy, n = now();
   if (p.xdive) {
     const prevY = p.pos.y; diveTick(dt); if (!p.noclip) collide(p, prevY);
-    if (p.xdive && (p.xdive.land || (p.xdive.stage >= 7 && p.onGround))) spearmaceHit(p.xdive);
-    p.avatar.animate(dt, 0, true, null, null, { kind: p.xdive && p.xdive.stage >= 7 && p.xdive.stage < 8 ? 'lunge' : 'raise' });
+    if (p.xdive && (p.xdive.land || (p.xdive.stage >= 100 && p.onGround))) spearmaceHit(p.xdive);
+    p.avatar.animate(dt, 0, true, null, null, { kind: p.xdive && p.xdive.stage === 100 ? 'lunge' : 'raise' });
     return;
   }
   eatTick();
@@ -679,7 +692,7 @@ function movePlayer(dt) {
   const yaw = G.cam.yaw;
   const dirX = fx * Math.cos(yaw) + fz * Math.sin(yaw), dirZ = -fx * Math.sin(yaw) + fz * Math.cos(yaw);
   const flying = p.fly || p.flyUntil > n || p.flyToggle;
-  const speed = WALK * (flying ? 2.4 : 1) * (p.blocking ? 0.35 : 1) * (p.eating ? 0.45 : 1);
+  const speed = WALK * (flying ? 2.4 : 1) * (p.blocking ? 0.35 : 1) * (p.eating ? 0.45 : 1) * (G.eqBeam ? 0.45 : 1);
   if (m > 0.05) { const len = Math.hypot(dirX, dirZ) || 1; p.vel.x = dirX / len * speed * m; p.vel.z = dirZ / len * speed * m; }
   else { p.vel.x = 0; p.vel.z = 0; }
   const want = G.shiftLock || firstPerson() ? yaw + Math.PI : m > 0.05 ? Math.atan2(p.vel.x, p.vel.z) : p.yaw;
@@ -707,6 +720,15 @@ function movePlayer(dt) {
   if (p.pos.y < -60) { p.pos.copy(G.world.spawn); p.vel.set(0, 0, 0); toast('You fell out of the world. Back to spawn.'); }
   xShieldUp(p.avatar, !!p.blocking);
   p.avatar.animate(dt, Math.hypot(p.vel.x, p.vel.z), !p.onGround && !flying, p.emote, floats(G.save.equipped) ? 'float' : null, xAct(p));
+}
+// Where you would land at (x, z) coming down from height y: the island (or the cave's chasm), the sea, and anything
+// you can stand on. The same rules as collide, for the wind charge and team null.
+function groundUnder(x, y, z) {
+  const B = G.world.bounds, pit = G.world.pit;
+  const inPit = x > pit.min.x && x < pit.max.x && z > pit.min.z && z < pit.max.z;
+  let g = (x >= B.minX && x <= B.maxX && z >= B.minZ && z <= B.maxZ) || Math.abs(z - 900) < 20 ? (inPit ? -10 : 0) : -Infinity;
+  for (const b of G.world.colliders) if (!b.water && x > b.min.x && x < b.max.x && z > b.min.z && z < b.max.z && b.max.y <= y + 0.05 && b.max.y > g) g = b.max.y;
+  return g;
 }
 // Bump into blocks, step up small ledges (like stairs), stand on things.
 function collide(p, prevY) {
@@ -798,6 +820,7 @@ function updateOthers(dt, t) {
     o.blocking = xa && !!(o.data && o.data.blk); if (xa) xShieldUp(o.avatar, o.blocking);
     o.avatar.animate(dt, o.anim ? Math.max(sp, 8) : 0, o.target.y - o.pos.y > 0.5, o.data && o.data.emote, floats(o.key) ? 'float' : null, xa ? xAct(o) : null);
     if (o.fx) o.fx.update(dt, t);
+    eqRemote(o, dt);
     if (o.data && o.data.pvp && o.hp !== o.lastHp) { o.lastHp = o.hp; o.avatar.tag.userData.draw(o.data.name || o.uid, o.key, o.hp < 0 ? 100 : o.hp, { afk: o.data.afk }); }
   }
 }
@@ -958,6 +981,16 @@ function giveReward(r, label = true) {
   for (const [id, n] of Object.entries(r.potions || {})) if (POTION[id]) { G.save.potions[id] = potionCount(id) + n; out.push(`+${n} ${POTION[id].name}`); }
   for (const id of r.items || []) if (ITEM[id]) { G.save.items[id] = true; out.push(ITEM[id].name); }
   for (const id of r.gears || []) if (GEAR[id]) { G.save.gears[id] = (G.save.gears[id] || 0) + 1; out.push(GEAR[id].name); }
+  let gotAura = false;
+  for (const [key, n0] of Object.entries(r.auras || {})) {   // auras, mutated ones too ("xboss:prismatic")
+    const a = auraKey(key), n = Math.max(1, Math.min(1000000, Math.floor(+n0) || 1));
+    if (a.key !== key) continue;
+    G.save.auras[a.key] = auraCount(a.key) + n; G.save.found[a.aura.id] = true; gotAura = true;
+    if (a.rarity > auraKey(G.save.best).rarity) G.save.best = a.key;
+    G.save.bestTier = Math.max(G.save.bestTier || 0, tierIndex(a.rarity));
+    out.push(`${n > 1 ? fmt(n) + 'x ' : ''}${a.name}`);
+  }
+  if (gotAura) checkAchievements();
   if (r.title && !G.save.titles.includes(r.title)) { G.save.titles.push(r.title); out.push(`the title ${r.title}`); }
   markDirty(); updateHud();
   return label ? out.join(', ') : out;
@@ -1238,27 +1271,27 @@ function updateRaid(dt, t) {
     G.crawler.telegraph(at.x, at.z, rad, 1.15, () => {
       if (!G) return;
       sound('slam');
+      if (G.twins) G.twins.list.forEach((b, i) => { if (!b.dead && Math.hypot(b.pos.x - at.x, b.pos.z - at.z) <= rad) twinHurt(i, 22, 'raid'); });
       const d = Math.hypot(G.player.pos.x - at.x, G.player.pos.z - at.z);
       if (d > rad || G.player.pos.y - at.y > 5) return;
-      G.player.raidHp = (G.player.raidHp ?? 100) - 22;
-      G.player.knock = { x: (G.player.pos.x - at.x) / (d || 1) * 30, z: (G.player.pos.z - at.z) / (d || 1) * 30 }; G.player.vel.y = 16; G.player.onGround = false;
-      G.root.classList.remove('oc-hurt'); void G.root.offsetWidth; G.root.classList.add('oc-hurt');
-      if (G.player.raidHp <= 0) { G.player.raidHp = 100; G.player.pos.copy(G.world.spawn); G.player.vel.set(0, 0, 0); toast('The Crawler got you. Back to spawn.', 'warn'); }
+      // like every other hit: the golden hearts take it first, and ____X____'s totem can save you
+      hurtMe(22, { src: 'raid', kx: (G.player.pos.x - at.x) / (d || 1) * 30, kz: (G.player.pos.z - at.z) / (d || 1) * 30, vy: 16, smash: true, how: 'was crushed by The Crawler', toast: 'The Crawler got you. Back to spawn.' });
       renderRaidBar();
     });
   }
 }
 // How much of a move hits the worm. It is big, so it counts as a circle around where it stands.
 function raidHitFrom(f, dmg) {
-  if (!G.crawler || !G.raid || G.raid.dead || !dmg) return;
+  if (!G.crawler || !G.raid || G.raid.dead || !dmg) return false;
   const a = G.world.arena;
   const ring = [[0, 0], [2.8, 0], [-2.8, 0], [0, 2.8], [0, -2.8]].map(([dx, dz]) => ({ uid: 'b', pos: { x: a.x + dx, z: a.z + dz } }));
   const pts = f.kind === 'punch' ? (Math.hypot(G.player.pos.x - a.x, G.player.pos.z - a.z) < 12 ? 1 : 0) : hitTest(f, ring).length;
-  if (!pts) return;
+  if (!pts) return false;
   const total = Math.round(dmg * (f.kind === 'punch' ? 1 : 3));
   G.raidDmg = (G.raidDmg || 0) + total;
   G.crawler.flash();
   G.net.raidHit(total).catch(() => {});
+  return true;
 }
 // Something in a raid hit you. Raid health is 10 hearts (100), like Minecraft; at 0 you die, go back to spawn, and
 // (against ____X____) your damage counter starts over.
@@ -1266,21 +1299,24 @@ function hurtMe(dmg, o = {}) {
   const p = G.player;
   if (G.respawning || G.portraitBlock) return;
   if (dmg && !o.smash && blocks(o.fx, o.fz)) { shieldHit(o.axe); if (o.kx || o.kz) p.knock = { x: (o.kx || 0) * 0.25, z: (o.kz || 0) * 0.25 }; return; }
-  dmg = soak(dmg);
+  const raw = dmg || 0;
+  dmg = soak(raw);   // golden hearts (Absorption) take it first
   if (o.kx || o.kz) p.knock = { x: o.kx || 0, z: o.kz || 0 };
   if (o.vy) { p.vel.y = o.vy; p.onGround = false; }
-  if (!dmg) return;
+  if (!raw) return;
+  if (o.src) { twinsNote(o.src); if (((G.equilized || {})[o.src] || 0) > now()) eqReflect(o.src, raw); }
   p.raidHp = (p.raidHp ?? 100) - dmg; p.lastHurt = now();
   G.root.classList.remove('oc-hurt'); void G.root.offsetWidth; G.root.classList.add('oc-hurt');
   sound('hurt');
-  if (p.raidHp <= 0) {
-    G.respawning = true;
+  if (p.raidHp <= 0 && !xTotemPop()) {
     const text = `${G.me.name} ${o.how || 'died'}`;
     if (G.chat) G.chat.system(text, '#ffffff');
     if (G.net) G.net.fx({ kind: 'death', text });
+    const xlive = !!(G.xfight && G.xfight.live());
     if (G.xfight) G.xfight.onMyDeath();
-    toast('You died! Your damage to ____X____ is back to 0.', 'warn');
-    setTimeout(() => { if (!G) return; G.respawning = false; p.raidHp = 100; p.pos.copy(G.world.spawn); p.vel.set(0, 0, 0); p.knock = null; renderBossBar(); }, 1200);
+    toast(o.toast || (xlive ? 'You died! Your damage to ____X____ is back to 0.' : 'You died!'), 'warn');
+    p.raidHp = 100; p.pos.copy(G.world.spawn); p.vel.set(0, 0, 0); p.knock = null;   // straight back at spawn, no waiting
+    diedForReal();
   }
   renderBossBar();
 }
@@ -1753,17 +1789,32 @@ function renderAbilities() {
   const el = $q('.oc-abilities');
   if (!el) return;
   const list = shownMoves(); G.nearArena = list !== G.moves;
-  el.innerHTML = list.map(m => `<button type="button" class="oc-ab" data-move="${m.key}" style="--c:${m.color}"><kbd>${m.key.toUpperCase()}</kbd><span>${esc(m.name)}</span><i class="cd"></i></button>`).join('');
+  // rebuilt only when the moves change, so the buttons (and their cooldowns) never blink
+  const sig = list.map(m => `${m.key}:${m.name}:${m.color}`).join('|');
+  if (el.dataset.sig !== sig || !G.abBtns) {
+    el.dataset.sig = sig;
+    el.innerHTML = list.map(m => `<button type="button" class="oc-ab" data-move="${m.key}" style="--c:${m.color}"><kbd>${m.key.toUpperCase()}</kbd><span>${esc(m.name)}</span><i class="cd"></i><b class="cdn"></b></button>`).join('');
+    G.abBtns = list.map((m, i) => { const b = el.children[i]; return { m, b, cd: b.querySelector('.cd'), cdn: b.querySelector('.cdn'), k: -1, t: null, on: null }; });
+  }
   el.classList.toggle('hidden', !list.length);
+  updateAbilityCds();
 }
+// Every frame: a dark bar that drains, with the seconds left on top of it. The shield's counts down while an axe has
+// knocked it out of your hands, and it lights up while you hold it up.
 function updateAbilityCds() {
-  const n = now();
-  G.root.querySelectorAll('.oc-ab').forEach(b => {
-    const m = shownMoves().find(x => x.key === b.dataset.move); if (!m) return;
-    const left = Math.max(0, (G.moveCd[m.key] || 0) - n), k = left / (m.cd * 1000);
-    b.classList.toggle('cooling', left > 0);
-    b.querySelector('.cd').style.transform = `scaleY(${k})`;
-  });
+  const n = now(), p = G.player;
+  for (const a of G.abBtns || []) {
+    const m = a.m, shield = m.kind === 'shield', B = m.kind === 'eqbeam' ? G.eqBeam : null;
+    let left = shield ? (opfun() ? 0 : Math.max(0, (p.shieldOffUntil || 0) - n)) : Math.max(0, (G.moveCd[m.key] || 0) - n), full = shield ? 5000 : m.cd * 1000;
+    if (B) { left = Math.max(0, B.phase === 'charge' ? B.fireAt - n : B.fireAt + EQ.fire - n); full = B.phase === 'charge' ? EQ.charge : EQ.fire; }
+    const k = full > 0 ? Math.min(1, left / full) : 0, state = B ? (B.phase === 'charge' ? 'chg' : 'firing') : left > 0 ? 'cooling' : '';
+    const txt = left <= 0 ? '' : left >= 10000 ? String(Math.ceil(left / 1000)) : (left / 1000).toFixed(1);
+    if (a.k !== k) { a.k = k; a.cd.style.transform = `scaleY(${k})`; }
+    if (a.t !== txt) { a.t = txt; a.cdn.textContent = txt; }
+    if (a.s !== state) { a.s = state; ['cooling', 'chg', 'firing'].forEach(c => a.b.classList.toggle(c, c === state)); }
+    const on = (shield && !!p.blocking) || !!B;
+    if (a.on !== on) { a.on = on; a.b.classList.toggle('on', on); }
+  }
 }
 function useMove(key) {
   if (!G || !G.playing || G.portraitBlock) return;
@@ -1772,9 +1823,13 @@ function useMove(key) {
   const n = now();
   if (!opfun() && (G.moveCd[key] || 0) > n) return;
   if (XKINDS.has(m.kind)) { xMove(m, n); return; }
+  if (EQKINDS.has(m.kind)) { eqMove(m, n); return; }
   G.moveCd[key] = opfun() ? 0 : n + m.cd * 1000;
-  const p = G.player, yaw = p.yaw, d = { x: Math.sin(yaw), z: Math.cos(yaw) };
+  const p = G.player, aim = (m.kind === 'beam' || m.kind === 'vortex') && /^(legacyequinox|equinox)$/.test(auraKey(G.save.equipped).aura.id) ? aimPoint() : null;
+  const yaw = aim ? Math.atan2(aim.x - p.pos.x, aim.z - p.pos.z) : p.yaw, d = { x: Math.sin(yaw), z: Math.cos(yaw) };
+  if (aim) { p.yaw = yaw; p.avatar.root.rotation.y = yaw; }   // the old 『EQUINOX』 aims at the mouse
   const f = { kind: m.kind === 'punch' ? 'burst' : m.kind, r: m.kind === 'punch' ? 2.4 : m.r, x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +yaw.toFixed(3), c: m.color, tier: m.tier, len: m.len, w: m.w, dist: m.dist, n: m.n, range: m.range, dur: m.dur, seed: Math.floor(Math.random() * 1e6) };
+  if (aim && m.kind === 'vortex') f.dist = +Math.max(4, Math.min(40, Math.hypot(aim.x - p.pos.x, aim.z - p.pos.z))).toFixed(2);
   if (m.kind === 'dash') { p.dash = { x: d.x * m.dist * 4, z: d.z * m.dist * 4, t: 0.22 }; Object.assign(f, { x2: p.pos.x + d.x * m.dist, y2: p.pos.y, z2: p.pos.z + d.z * m.dist }); }
   if (m.kind === 'blink') { const to = p.pos.clone().add(new THREE.Vector3(d.x * m.dist, 0.5, d.z * m.dist)); Object.assign(f, { x2: to.x, y2: to.y, z2: to.z }); p.pos.copy(to); p.vel.set(0, 0, 0); p.tpAt = n; sound('teleport'); }
   if (m.kind === 'leap') { p.vel.y = Math.sqrt(2 * GRAVITY * m.h); p.onGround = false; p.dash = { x: d.x * m.dist * 1.6, z: d.z * m.dist * 1.6, t: 0.6 }; Object.assign(f, { x2: p.pos.x + d.x * m.dist, y2: p.pos.y + m.h, z2: p.pos.z + d.z * m.dist }); }
@@ -1784,13 +1839,11 @@ function useMove(key) {
   const fx = castFx(G.scene, f); if (fx) G.fxObjects.push(fx);
   if (G.net) {
     G.net.fx(f);
-    if (p.pvp && m.dmg) {
-      const targets = [...G.others.values()].filter(o => o.placed && o.data && o.data.pvp);
-      for (const h of hitTest(f, targets)) G.net.hit(h.uid, { dmg: m.dmg, kx: h.kx, kz: h.kz, by: G.me.name, aura: auraKey(G.save.equipped).name, move: m.name });
-    }
+    if (p.pvp && m.dmg) for (const h of hitTest(f, pvpTargets())) { sendHit(h.uid, { dmg: m.dmg, kx: h.kx, kz: h.kz, by: G.me.name, aura: auraKey(G.save.equipped).name, move: m.name }); twinsNote('p:' + String(h.uid).split('#')[0]); }
   }
-  raidHitFrom(m.kind === 'punch' ? { kind: 'punch' } : f, m.dmg);
-  if (G.xfight) G.xfight.hitFrom(m.kind === 'punch' ? { kind: 'punch' } : f, m.dmg, hitTest);
+  if (raidHitFrom(m.kind === 'punch' ? { kind: 'punch' } : f, m.dmg)) twinsNote('raid');
+  if (G.xfight) { const ids = G.xfight.hitFrom(m.kind === 'punch' ? { kind: 'punch' } : f, m.dmg, hitTest); if (ids.length) twinsNote(ids[0]); }
+  if (G.twins) twinsMirror(m, f);
   G.save.stats.moves++; progress('moves');
   sound('attack', m.tier);
   updateAbilityCds();
@@ -1813,28 +1866,32 @@ function takeHit(h) {
     toast(`You knocked out ${h.by}.`, 'gold'); markDirty(); return;
   }
   if (!p.pvp) return;
+  if (h.bot !== undefined) { twinHurt(+h.bot, h.dmg || 0, 'p:' + h.from); return; }   // they hit one of your reflections
   const from = h.fx !== undefined ? [h.fx, h.fz] : [p.pos.x - (h.kx || 0), p.pos.z - (h.kz || 0)];
   if (!h.smash && blocks(from[0], from[1])) { shieldHit(h.axe); p.knock = { x: (h.kx || 0) * 0.25, z: (h.kz || 0) * 0.25 }; return; }
+  if (h.from && h.dmg > 0) { twinsNote('p:' + h.from); if (!h.reflect && ((G.equilized || {})['p:' + h.from] || 0) > now() && G.net) G.net.hit(h.from, { dmg: Math.max(1, Math.round(h.dmg * EQ.reflect)), by: G.me.name, aura: '『EQUINOX』', move: 'Equilized', reflect: 1 }); }
+  if (h.eq) setEffect('equilized', EQ.eqFor);   // their beam Equilized you
   p.hp -= soak(h.dmg || 0);
-  p.knock = { x: h.kx || 0, z: h.kz || 0 }; p.vel.y = 12; p.onGround = false;
-  G.root.classList.remove('oc-hurt'); void G.root.offsetWidth; G.root.classList.add('oc-hurt');
-  sound('hurt');
-  if (p.hp <= 0) {
+  p.knock = { x: h.kx || 0, z: h.kz || 0 }; p.vel.y = h.vy || 12; p.onGround = false;
+  if (h.dmg > 0) { G.root.classList.remove('oc-hurt'); void G.root.offsetWidth; G.root.classList.add('oc-hurt'); sound('hurt'); }
+  if (p.hp <= 0 && !xTotemPop()) {
     toast(`${h.by || 'Someone'} knocked you out with ${h.move || h.aura || 'their aura'}.`, 'warn');
     if (G.net && h.from) G.net.hit(h.from, { ko: true, by: G.me.name });
     p.hp = 100; p.pos.copy(G.world.spawn); p.vel.set(0, 0, 0); p.knock = null;
+    diedForReal();
   }
   renderBossBar();
   drawMyTag();
 }
 
 // ---------------- ____X____'s aura: fight like him ----------------
-// M1 swings his sword. Z raises his shield for as long as it is held: it stops hits from the front, and an axe knocks
-// it down for 5 seconds, like Minecraft. X swings his axe. C eats an enchanted golden apple: Regeneration until you are
+// M1 swings his sword. M2 (the right mouse button) raises his shield for as long as it is held: it stops hits from the
+// front, and an axe knocks it down for 5 seconds, like Minecraft. Z throws a wind charge at your feet that launches you
+// up. X swings his axe. C eats an enchanted golden apple: Regeneration until you are
 // full, and 8 golden hearts on top that take damage first and never heal back (Absorption). V asks who to lock on to,
 // then wind charge, pearl, wind charge, pearl: very high, and down on them with the spear and the mace. F is a spear
 // lunge. His sword is in your right hand and his shield on your left arm, for you and for everyone who sees you.
-const XKINDS = new Set(['sword', 'axe', 'shield', 'egap', 'spearmace', 'lunge']);
+const XKINDS = new Set(['sword', 'axe', 'shield', 'wind', 'egap', 'spearmace', 'lunge']);
 const xMoveOf = kind => (G.moves || []).find(m => m.kind === kind);
 function xMove(m, n) {
   const p = G.player;
@@ -1842,10 +1899,15 @@ function xMove(m, n) {
   if (m.kind === 'shield') { setBlock(true); return; }
   if (p.eating) return;
   if (m.kind === 'spearmace') { openLockOn(m); return; }
+  if (p.blocking && (m.kind === 'sword' || m.kind === 'axe' || m.kind === 'egap')) {   // like Minecraft: no swinging or eating behind the shield
+    if (n - (p.blockHint || 0) > 4000) { p.blockHint = n; toast('Let go of the shield (right mouse button) to swing or eat.'); }
+    return;
+  }
   G.moveCd[m.key] = opfun() ? 0 : n + m.cd * 1000;
   if (m.kind === 'sword' || m.kind === 'axe') xMelee(m);
   else if (m.kind === 'egap') { p.eating = { until: n + 1600 }; xHold(p.avatar, 'apple'); }
   else if (m.kind === 'lunge') xLunge();
+  else if (m.kind === 'wind') xWind();
   G.save.stats.moves++; progress('moves'); updateAbilityCds();
 }
 // the sword (or axe) in the right hand, and the shield, which hangs at the side and comes round in front to block
@@ -1922,7 +1984,7 @@ function xMelee(m) {
     if (dist > reach || Math.abs(o.pos.y - p.pos.y) > 4 || (dx * d.x + dz * d.z) / (dist || 1) < 0.2) continue;
     G.net.hit(o.uid, { dmg: m.dmg, kx: d.x * 16, kz: d.z * 16, fx: f.x, fz: f.z, by: G.me.name, aura: '____X____', move: m.name, axe: axe ? 1 : 0 });
   }
-  if (G.xfight) G.xfight.hitFrom({ kind: 'melee', r: reach, x: p.pos.x, z: p.pos.z, yaw }, m.dmg, hitTest);
+  if (G.xfight) G.xfight.hitFrom({ kind: 'melee', r: reach, x: p.pos.x, z: p.pos.z, yaw, axe: axe ? 1 : 0 }, m.dmg, hitTest);
   raidHitFrom({ kind: 'punch' }, m.dmg);
 }
 
@@ -1945,13 +2007,15 @@ function eatTick() {
 function lockTargets() {
   const p = G.player, out = [];
   if (G.xfight) for (const t of G.xfight.targets()) out.push({ ...t, kind: 'boss' });
+  const r = G.raid, a = G.world.arena;   // The Crawler, while it's up
+  if (G.crawler && !G.crawler.dying && r && !r.dead && !r.gone && r.until > now()) out.push({ id: 'crawler', name: 'The Crawler', pos: new THREE.Vector3(a.x, 0, a.z), kind: 'raid' });
   if (p.pvp) for (const o of G.others.values()) if (o.placed && o.data && o.data.pvp) out.push({ id: 'p:' + o.uid, uid: o.uid, name: o.data.name || o.uid, pos: o.pos, kind: 'player' });
   for (const t of out) t.d = t.pos.distanceTo(p.pos);
   return out.filter(t => t.d < 220).sort((a, b) => a.d - b.d);
 }
 function openLockOn(m) {
   const list = lockTargets();
-  if (!list.length) { toast('Nobody to lock on to. Turn PvP on in Settings, or find ____X____.', 'warn'); return; }
+  if (!list.length) { toast('Nobody to lock on to. Turn PvP on in Settings, or find ____X____ or The Crawler.', 'warn'); return; }
   const el = $q('.oc-lockon');
   el.innerHTML = `<div class="oc-lockon-card"><b>Spearmace: who?</b><button type="button" data-lock="nearest"><kbd>1</kbd><span>Nearest</span><small>${esc(list[0].name)}, ${Math.round(list[0].d)} studs</small></button>${list.slice(0, 8).map((t, i) => `<button type="button" data-lock="${esc(t.id)}"><kbd>${i + 2}</kbd><span>${esc(t.name)}</span><small>${Math.round(t.d)} studs</small></button>`).join('')}<button type="button" class="cancel" data-lock="">Cancel <small>(Esc)</small></button></div>`;
   el.classList.remove('hidden');
@@ -1963,52 +2027,110 @@ function pickLock(id) {
   if (!L || !id) return;
   const t = id === 'nearest' ? L.list[0] : L.list.find(x => x.id === id);
   if (!t) return;
+  if (t.kind === 'raid') { const dx = G.player.pos.x - t.pos.x, dz = G.player.pos.z - t.pos.z, d = Math.hypot(dx, dz) || 1; t.land = new THREE.Vector3(t.pos.x + dx / d * 4, 0, t.pos.z + dz / d * 4); }   // beside the worm, not inside it
   G.moveCd[L.m.key] = opfun() ? 0 : now() + L.m.cd * 1000; updateAbilityCds();
   const p = G.player;
   setBlock(false); p.eating = null;
-  p.xdive = { m: L.m, t, t0: now(), stage: 0, peak: p.pos.y };
+  // more pearl catches (higher up) the further away they are: 2 close by, up to 6 from across the map
+  const far = Math.hypot(t.pos.x - p.pos.x, t.pos.z - p.pos.z), catches = Math.max(2, Math.min(6, 2 + Math.floor((far - 30) / 25)));
+  p.xdive = { m: L.m, t, t0: now(), stage: 0, peak: p.pos.y, start: p.pos.y, catches, diveAt: catches * 0.5 + 0.05 };
   G.save.stats.moves++; progress('moves');
 }
-const lockPos = t => { if (t.kind === 'player') { const o = G.others.get(t.uid); return o && o.placed ? o.pos : null; } const cur = G.xfight && G.xfight.targets().find(x => x.id === t.id); return cur ? cur.pos : null; };
-// every frame of the spear-mace (instead of walking)
+const lockPos = t => { if (t.kind === 'player') { const o = G.others.get(t.uid); return o && o.placed ? o.pos : null; } if (t.kind === 'raid') return G.crawler && !G.crawler.dying ? t.land : null; const cur = G.xfight && G.xfight.targets().find(x => x.id === t.id); return cur ? cur.pos : null; };
+// every frame of the spear-mace (instead of walking): a wind charge and a pearl catch, again and again (more of them
+// the further away they are), then down on them, homing all the way
 function diveTick(dt) {
   const p = G.player, D = p.xdive, t = (now() - D.t0) / 1000;
   const at = () => ({ x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2) });
   const send = f => { mcFx(f, true); if (G.net) G.net.fx(f); };
   const step = k => (D.stage < k ? ((D.stage = k), true) : false);
-  if (step(1)) { xHold(p.avatar, 'wind'); send({ kind: 'mcgust', ...at() }); p.vel.set(0, 46, 0); p.onGround = false; }
-  if (t > 0.35 && step(2)) { xHold(p.avatar, 'pearl'); send({ kind: 'mcthrow', ...at() }); }
-  if (t > 0.6 && step(3)) { const from = at(); p.pos.y += 14; send({ kind: 'mcpearl', ...from, y2: +p.pos.y.toFixed(2) }); p.vel.y = Math.max(p.vel.y, 10); }
-  if (t > 0.82 && step(4)) { xHold(p.avatar, 'wind'); send({ kind: 'mcgust', ...at() }); p.vel.y = 40; }
-  if (t > 1.05 && step(5)) { xHold(p.avatar, 'pearl'); send({ kind: 'mcthrow', ...at() }); }
-  if (t > 1.3 && step(6)) { const from = at(); p.pos.y += 14; send({ kind: 'mcpearl', ...from, y2: +p.pos.y.toFixed(2) }); p.vel.y = Math.max(p.vel.y, 6); }
+  for (let c = 0; c < D.catches; c++) {
+    const t0 = c * 0.5;
+    if (t >= t0 && step(c * 3 + 1)) { xHold(p.avatar, 'wind'); send({ kind: 'mcgust', ...at() }); p.vel.set(0, c ? 40 : 46, 0); p.onGround = false; }
+    if (t >= t0 + 0.22 && step(c * 3 + 2)) { xHold(p.avatar, 'pearl'); send({ kind: 'mcthrow', ...at() }); }
+    if (t >= t0 + 0.42 && step(c * 3 + 3)) { const from = at(); p.pos.y += 14; send({ kind: 'mcpearl', ...from, y2: +p.pos.y.toFixed(2) }); p.vel.y = Math.max(p.vel.y, 8); }
+  }
   D.peak = Math.max(D.peak, p.pos.y);
-  if (t < 1.55) { p.vel.x = 0; p.vel.z = 0; p.vel.y -= GRAVITY * dt; p.pos.y += p.vel.y * dt; return; }
-  // down on them, homing all the way: the spear first, the mace at the end
+  if (t < D.diveAt) { p.vel.x = 0; p.vel.z = 0; p.vel.y -= GRAVITY * dt; p.pos.y += p.vel.y * dt; return; }
+  // down on them: the spear first, the mace at the end, faster from higher up
   const tp = lockPos(D.t) || D.last || p.pos;
   D.last = new THREE.Vector3(tp.x, tp.y, tp.z);
-  if (step(7)) { xHold(p.avatar, 'spear'); playLunge(1); }
+  if (step(100)) { xHold(p.avatar, 'spear'); playLunge(1); }
   const dx = tp.x - p.pos.x, dy = tp.y + 1 - p.pos.y, dz = tp.z - p.pos.z, len = Math.hypot(dx, dy, dz) || 1;
-  if (len < 10 && step(8)) xHold(p.avatar, 'mace');
-  p.vel.set(dx / len * 78, dy / len * 78, dz / len * 78);
+  if (len < 10 && step(101)) xHold(p.avatar, 'mace');
+  const sp = 78 + Math.min(60, (D.peak - D.start) * 0.3);
+  p.vel.set(dx / len * sp, dy / len * sp, dz / len * sp);
   p.yaw = Math.atan2(dx, dz);
   p.pos.addScaledVector(p.vel, dt);
-  if ((Math.hypot(dx, dz) < 2.5 && Math.abs(dy) < 4) || t > 4.5) D.land = true;
+  if ((Math.hypot(dx, dz) < 2.5 && Math.abs(dy) < 4) || t > D.diveAt + 5) D.land = true;
 }
+// Like the mace, it hits harder the further you fall: 1.5 damage a stud, and never less than 80.
 function spearmaceHit(D) {
   const p = G.player, m = D.m, R = 7.5;   // a big hitbox
   p.xdive = null; p.vel.set(0, 0, 0);
-  const f = { kind: 'mcsmash', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), power: Math.min(2, 0.8 + Math.max(0, D.peak - p.pos.y) / 25) };
+  const fall = Math.max(0, D.peak - p.pos.y), dmg = Math.max(m.dmg, Math.round(fall * 1.5));
+  const f = { kind: 'mcsmash', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), power: Math.min(2.4, 0.8 + fall / 40) };
   mcFx(f, true); if (G.net) G.net.fx(f);
   if (G.net && p.pvp) for (const o of G.others.values()) {
     if (!o.placed || !o.data || !o.data.pvp) continue;
     const dx = o.pos.x - p.pos.x, dz = o.pos.z - p.pos.z, dist = Math.hypot(dx, dz);
     if (dist > R || Math.abs(o.pos.y - p.pos.y) > 6) continue;
-    G.net.hit(o.uid, { dmg: m.dmg, kx: dx / (dist || 1) * 20, kz: dz / (dist || 1) * 20, fx: f.x, fz: f.z, by: G.me.name, aura: '____X____', move: 'Spearmace', smash: 1 });
+    G.net.hit(o.uid, { dmg, kx: dx / (dist || 1) * 20, kz: dz / (dist || 1) * 20, fx: f.x, fz: f.z, by: G.me.name, aura: '____X____', move: 'Spearmace', smash: 1 });
   }
-  if (G.xfight) G.xfight.hitFrom({ kind: 'smash', x: p.pos.x, z: p.pos.z, r: R }, m.dmg, hitTest);
-  raidHitFrom({ kind: 'burst', x: p.pos.x, z: p.pos.z, yaw: 0, r: R }, m.dmg);
+  if (G.xfight) G.xfight.hitFrom({ kind: 'smash', x: p.pos.x, z: p.pos.z, r: R }, dmg, hitTest);
+  raidHitFrom({ kind: 'burst', x: p.pos.x, z: p.pos.z, yaw: 0, r: R }, dmg);
   xHold(p.avatar, 'sword');
+  toast(`Spearmace: ${Math.round(fall)} studs down, ${dmg} damage.`, dmg > 80 ? 'gold' : undefined);
+}
+
+// ---- the wind charge: thrown down at your feet, it bursts and launches you up (and anyone right next to you) ----
+// Like Minecraft, it needs something under you to burst on: from high in the air it lands too far below to lift you.
+function xWind() {
+  const p = G.player, g = groundUnder(p.pos.x, p.pos.y + 0.05, p.pos.z), below = p.pos.y - g;
+  xHold(p.avatar, 'wind');
+  p.act = { kind: 'throw', t0: now(), dur: 300 };
+  const f = { kind: 'mcwind', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), y2: +(Number.isFinite(g) ? Math.max(g, p.pos.y - 40) : p.pos.y - 40).toFixed(2) };
+  mcFx(f, true); if (G.net) G.net.fx(f);
+  setTimeout(() => { if (G && G.player === p && !p.xdive && !p.eating) xHold(p.avatar, 'sword'); }, 450);
+  if (!(below < 9)) return;
+  p.vel.y = 48; p.onGround = false;
+  if (G.net && p.pvp) for (const o of G.others.values()) {
+    if (!o.placed || !o.data || !o.data.pvp) continue;
+    const dx = o.pos.x - p.pos.x, dz = o.pos.z - p.pos.z, dist = Math.hypot(dx, dz);
+    if (dist > 4.5 || Math.abs(o.pos.y - g) > 4) continue;
+    G.net.hit(o.uid, { dmg: 0, kx: dx / (dist || 1) * 10, kz: dz / (dist || 1) * 10, vy: 30, fx: f.x, fz: f.z, by: G.me.name, aura: '____X____', move: 'Wind Charge', smash: 1 });
+  }
+}
+
+// ---- ____X____'s totem: the hit that would kill you pops it instead, like Minecraft. Full health and a row of golden
+// hearts, and the totem over your head is gone until you really die; then it comes back.
+function xTotemPop() {
+  const p = G.player, s = G.save, n = now();
+  if (auraKey(s.equipped).aura.id !== 'xboss' || s.flags.totemSpent) return false;
+  s.flags.totemSpent = true; markDirty();
+  p.raidHp = 100; p.hp = 100; p.knock = null;
+  p.absorb = Math.max(p.absorb || 0, 100); p.absorbUntil = n + 120000; p.regenUntil = Math.max(p.regenUntil || 0, n + 10000);
+  const f = { kind: 'mctotem', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2) };
+  mcFx(f, true);
+  if (G.net) { G.net.fx(f); G.net.update({ tot: 1 }); }
+  xTotemShow();
+  if (G.chat) G.chat.system(`${G.me.name} used a Totem of Undying`, '#ffff55');
+  toast('Your Totem of Undying popped: full health and a row of golden hearts. It comes back the next time you die.', 'gold');
+  return true;
+}
+const xTotemShow = () => { const t = G.player.fx && G.player.fx.group.getObjectByName('xtotem'); if (t) t.visible = !G.save.flags.totemSpent; };
+// a real death: the totem comes back, and the apple's (and the totem's) effects end, like Minecraft
+function diedForReal() {
+  const p = G.player, s = G.save;
+  if (G.eqBeam) eqBeamEnd(false);
+  p.absorb = 0; p.regenUntil = 0; p.eating = null; p.xdive = null; p.shieldOffUntil = 0;
+  if (p.blocking) setBlock(false);
+  if (s.flags.totemSpent) {
+    s.flags.totemSpent = false; markDirty(); xTotemShow();
+    if (G.net) G.net.update({ tot: null });
+    if (auraKey(s.equipped).aura.id === 'xboss') setTimeout(() => { if (G) toast('Your Totem of Undying is back.', 'gold'); }, 1500);
+  }
+  renderBossBar();
 }
 
 // ---- the spear lunge: no damage, once a second ----
@@ -2019,6 +2141,486 @@ function xLunge() {
   xHold(p.avatar, 'spear');
   const f = { kind: 'mclunge', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +p.yaw.toFixed(3) };
   mcFx(f, true); if (G.net) G.net.fx(f);
+}
+
+// ---------------- 『EQUINOX』, reworked: the white sun and the black sun fight for you ----------------
+// Z (hold it): Liminal Beam. The suns come round in front of you and charge for 3 seconds, then fire wherever your
+//   mouse points for as long as you hold Z (5 seconds at most): 50 damage a second, an explosion where it ends, and
+//   whatever it hits is Equilized (when it hurts you, 10% of the damage goes back to it). Held to the end it finishes
+//   in a burst; let go early and it just fizzles out.
+// X: Eclipse. The suns spin round you faster and faster and smash together: 100 damage to everything near you.
+// C: Equilibrium, the old V. V: Reflections, two copies of you (100 HP each) for 30 seconds. They stay at your sides,
+//   go after whoever you hit or whoever hits you, and copy your moves at a third of the damage. F: flight, as before.
+const EQKINDS = new Set(['eqbeam', 'eqeclipse', 'eqtwins']);
+const EQ = { charge: 3000, fire: 5000, tick: 200, perTick: 10, eqFor: 15000, reflect: 0.1, twinsFor: 30000, bolt: 8 };
+const isEquinox = () => auraKey(G.save.equipped).aura.id === 'equinox';
+function eqMove(m, n) {
+  if (G.player.xdive || G.eqBeam) return;
+  if (m.kind === 'eqbeam') { eqBeamStart(m); return; }
+  G.moveCd[m.key] = opfun() ? 0 : n + m.cd * 1000;
+  if (m.kind === 'eqeclipse') eqEclipse(m);
+  else if (m.kind === 'eqtwins') twinsSummon();
+  G.save.stats.moves++; progress('moves'); updateAbilityCds();
+}
+
+// ---- aiming with the mouse: the enemy under it, else the ground under it, else far out along it. In first person,
+// in Shift Lock, while turning the camera and on phones it's the middle of the screen. ----
+const _aimRay = new THREE.Raycaster(), _aimNdc = new THREE.Vector2();
+function aimTargets() {
+  const out = [], p = G.player, r = G.raid;
+  if (G.xfight) for (const t of G.xfight.targets()) out.push({ id: t.id, pos: new THREE.Vector3(t.pos.x, (t.pos.y || 0) + 3, t.pos.z), r: t.id === 'x' ? 4.5 : 3 });
+  if (G.crawler && !G.crawler.dying && r && !r.dead && !r.gone) out.push({ id: 'raid', pos: G.crawler.headPos ? G.crawler.headPos.clone() : new THREE.Vector3(G.world.arena.x, 8, G.world.arena.z), r: 7 });
+  if (p.pvp) for (const o of G.others.values()) if (o.placed && o.data && o.data.pvp) out.push({ id: 'p:' + o.uid, pos: new THREE.Vector3(o.pos.x, o.pos.y + 2.5, o.pos.z), r: 3 });
+  return out;
+}
+function aimPoint(maxDist = 90) {
+  const cvs = $q('.oc-canvas'), rc = cvs.getBoundingClientRect(), p = G.player.pos;
+  const mid = G.touch || !G.mouse || document.pointerLockElement === cvs || firstPerson() || G.shiftLock;
+  const mx = mid ? rc.left + rc.width / 2 : G.mouse.x, my = mid ? rc.top + rc.height / 2 : G.mouse.y;
+  _aimNdc.set((mx - rc.left) / rc.width * 2 - 1, -((my - rc.top) / rc.height) * 2 + 1);
+  _aimRay.setFromCamera(_aimNdc, G.camera);
+  const o = _aimRay.ray.origin, d = _aimRay.ray.direction;
+  let best = null;
+  for (const t of aimTargets()) {
+    const v = t.pos.clone().sub(o), along = v.dot(d);
+    if (along <= 0) continue;
+    if (v.addScaledVector(d, -along).length() < t.r * (G.touch ? 1.6 : 1) && (!best || along < best.along)) best = { along, pos: t.pos };
+  }
+  if (best && best.pos.distanceTo(p) < maxDist * 1.5) return best.pos.clone();
+  const gy = groundUnder(p.x, p.y + 0.05, p.z), floor = Number.isFinite(gy) ? gy : p.y;
+  if (d.y < -0.02) { const k = (floor - o.y) / d.y; if (k > 0) { const g = o.clone().addScaledVector(d, k); if (g.distanceTo(p) < maxDist) return g; } }
+  return o.clone().addScaledVector(d, o.distanceTo(p) + maxDist * 0.7);
+}
+
+// ---- hitting things: players with PvP on (and their reflections), ____X____ and team null, and The Crawler ----
+function pvpTargets() {
+  const out = [];
+  for (const o of G.others.values()) {
+    if (!o.placed || !o.data || !o.data.pvp) continue;
+    out.push(o);
+    if (o.eqT) o.eqT.forEach((t, i) => { if (t) out.push({ uid: o.uid + '#' + i, pos: t.pos }); });
+  }
+  return out;
+}
+const sendHit = (uid, h) => { const [u, bot] = String(uid).split('#'); G.net.hit(u, bot === undefined ? h : { ...h, bot: +bot }); };
+// Returns who it hit ('p:uid', 'x', 'm3', 'raid'), for Equilized and for the reflections to go after.
+function hitEverything(f, dmg, o = {}) {
+  const ids = [];
+  if (G.net && G.player.pvp) for (const h of hitTest(f, pvpTargets())) {
+    sendHit(h.uid, { dmg, kx: h.kx, kz: h.kz, fx: +f.x.toFixed(2), fz: +f.z.toFixed(2), by: o.by || G.me.name, aura: '『EQUINOX』', move: o.move || 'Equinox', ...(o.eq ? { eq: 1 } : {}) });
+    if (!String(h.uid).includes('#')) ids.push('p:' + h.uid);
+  }
+  if (G.xfight) ids.push(...G.xfight.hitFrom(f, dmg, hitTest));
+  if (raidHitFrom(f, dmg)) ids.push('raid');
+  return ids;
+}
+// Equilized: when it hurts you, 10% of the damage goes back to it
+function eqReflect(src, dmg) {
+  const d = Math.max(1, Math.round(dmg * EQ.reflect));
+  if (src === 'raid') { if (G.crawler && G.raid && !G.raid.dead) { G.raidDmg = (G.raidDmg || 0) + d; G.crawler.flash(); G.net.raidHit(d).catch(() => {}); } }
+  else if (G.xfight) G.xfight.damage(src, d);
+}
+function setEffect(id, ms) {
+  const cur = G.effects.find(e => e.id === id && !e.out);
+  if (cur) cur.until = Math.max(cur.until, now() + ms); else G.effects.push({ id, until: now() + ms });
+  updateHud();
+}
+// "EQUILIZED" over everything you've Equilized, with how long it has left
+function updateEqTags() {
+  const box = $q('.oc-eqtags'), E = G.equilized, n = now();
+  if (!box) return;
+  const live = E ? Object.entries(E).filter(([, u]) => u > n) : [];
+  if (!live.length) { if (box.childElementCount) box.innerHTML = ''; return; }
+  const at = new Map(aimTargets().map(t => [t.id, t.pos])), rc = $q('.oc-canvas').getBoundingClientRect(), br = box.getBoundingClientRect(), v = new THREE.Vector3(), seen = new Set();
+  for (const [id, until] of live) {
+    const q = at.get(id); if (!q) continue;
+    v.set(q.x, q.y + (id === 'x' ? 5 : id === 'raid' ? 5 : 3), q.z).project(G.camera);
+    if (v.z > 1) continue;
+    let el = box.querySelector(`[data-eq="${CSS.escape(id)}"]`);
+    if (!el) { el = document.createElement('div'); el.className = 'oc-eqtag'; el.dataset.eq = id; el.innerHTML = '<i></i>EQUILIZED<small></small>'; box.appendChild(el); }
+    el.style.transform = `translate(${(rc.left - br.left + (v.x + 1) / 2 * rc.width).toFixed(1)}px, ${(rc.top - br.top + (1 - v.y) / 2 * rc.height).toFixed(1)}px) translate(-50%, -100%)`;
+    el.lastChild.textContent = Math.ceil((until - n) / 1000) + 's';
+    seen.add(id);
+  }
+  box.querySelectorAll('.oc-eqtag').forEach(el => { if (!seen.has(el.dataset.eq)) el.remove(); });
+}
+
+// ---- the look of it ----
+const eqGlow = (color, scale, opacity = 1, blend = THREE.AdditiveBlending) => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color, transparent: true, opacity, depthWrite: false, blending: blend })); s.scale.set(scale, scale, 1); return s; };
+const _up = new THREE.Vector3(0, 1, 0), _dir = new THREE.Vector3();
+function placeBeam(mesh, a, b) { _dir.subVectors(b, a); const len = _dir.length() || 0.01; mesh.position.copy(a).addScaledVector(_dir, 0.5); mesh.quaternion.setFromUnitVectors(_up, _dir.multiplyScalar(1 / len)); mesh.scale.y = len; }
+const dropFx = g => { G.scene.remove(g); g.traverse(o => { if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose(); if (o.material) o.material.dispose(); }); };
+// where someone's two suns are (in front of them while they beam)
+function sunsOf(fx, pos, yaw) {
+  if (fx) { fx._eqW = fx._eqW || fx.group.getObjectByName('eqW'); fx._eqB = fx._eqB || fx.group.getObjectByName('eqB'); }
+  if (fx && fx._eqW && fx._eqB) return [fx._eqW.getWorldPosition(new THREE.Vector3()), fx._eqB.getWorldPosition(new THREE.Vector3())];
+  const f = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), r = new THREE.Vector3(-f.z, 0, f.x), c = pos.clone().setY(pos.y + 3.2).addScaledVector(f, 2.6);
+  return [c.clone().addScaledVector(r, 1.8), c.clone().addScaledVector(r, -1.8)];
+}
+// The beam as everyone sees it: a white beam and a black one from the two suns to where it ends, a bright knot there,
+// and the suns glowing brighter and brighter while it charges. thin: a reflection's beam.
+function makeEqBeam(thin) {
+  const sc = G.scene, g = new THREE.Group(), s = thin ? 0.45 : 1; sc.add(g);
+  const cyl = (rad, color, opacity, blend, side) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(rad * s, rad * s, 1, 14, 1, true), new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: blend || THREE.NormalBlending, side: side || THREE.FrontSide })); m.visible = false; g.add(m); return m; };
+  const beams = [{ core: cyl(0.34, '#ffffff', 1), glow: cyl(0.95, '#ffffff', 0.3, THREE.AdditiveBlending) }, { core: cyl(0.34, '#050505', 1), glow: cyl(0.6, '#ffffff', 0.3, THREE.NormalBlending, THREE.BackSide) }];
+  const knot = new THREE.Mesh(new THREE.SphereGeometry(1.3 * s, 18, 14), new THREE.MeshBasicMaterial({ color: '#ffffff' })); knot.visible = false; g.add(knot);
+  knot.add(new THREE.Mesh(new THREE.SphereGeometry(1.6 * s, 18, 14), new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.55, side: THREE.BackSide, depthWrite: false })));
+  knot.add(eqGlow('#ffffff', 9 * s, 0.8));
+  const charges = [eqGlow('#ffffff', 1, 0.95), eqGlow('#9d8cff', 1, 0.7)]; charges.forEach(c => { c.visible = false; g.add(c); });
+  const st = { from: [new THREE.Vector3(), new THREE.Vector3()], to: new THREE.Vector3(), phase: 'charge', k: 0, w: 0, t: 0, ending: null };
+  const obj = {
+    set(phase, k, a, b, to) { st.phase = phase; st.k = k; st.from[0].copy(a); st.from[1].copy(b); st.to.copy(to); },
+    finish(full) { if (!st.ending) st.ending = { full, t: 0 }; },
+    update(dt) {
+      st.t += dt;
+      const firing = st.phase === 'fire' && !st.ending;
+      st.w += ((firing ? 1 : 0) - st.w) * Math.min(1, dt * (firing ? 14 : 10));
+      if (st.ending) { st.ending.t += dt; st.w = Math.max(0, 1 - st.ending.t / (st.ending.full ? 0.15 : 0.3)); }
+      beams.forEach((b, i) => {
+        const on = st.w > 0.02; b.core.visible = b.glow.visible = on;
+        if (!on) return;
+        placeBeam(b.core, st.from[i], st.to); placeBeam(b.glow, st.from[i], st.to);
+        const r = st.w * (1 + Math.sin(st.t * 40 + i * 1.7) * 0.12);
+        b.core.scale.x = b.core.scale.z = r; b.glow.scale.x = b.glow.scale.z = r * (1.1 + Math.sin(st.t * 23 + i * 2) * 0.15);
+      });
+      knot.visible = st.w > 0.02; knot.position.copy(st.to); knot.scale.setScalar(st.w * (1 + Math.sin(st.t * 30) * 0.15));
+      charges.forEach((c, i) => { const on = st.phase === 'charge' && !st.ending; c.visible = on; if (on) { c.position.copy(st.from[i]); const z = (2 + st.k * 8 + Math.sin(st.t * 18) * 0.6) * s; c.scale.set(z, z, 1); } });
+      if (st.ending && st.ending.t > 0.35) { dropFx(g); return false; }
+      return true;
+    },
+  };
+  G.fxObjects.push(obj);
+  return obj;
+}
+// little squares, black and white, Minecraft style
+let eqCube = null;
+function eqBits(g, n, speed, size) {
+  if (!eqCube) { eqCube = new THREE.BoxGeometry(0.35, 0.35, 0.35); eqCube.userData.shared = true; }
+  return Array.from({ length: n }, (_, i) => {
+    const m = new THREE.Mesh(eqCube, new THREE.MeshBasicMaterial({ color: i % 2 ? '#ffffff' : '#000000' })), a = Math.random() * Math.PI * 2, e = Math.random() * 1.2;
+    m.scale.setScalar(size); m.userData.v = new THREE.Vector3(Math.cos(a) * Math.cos(e), Math.sin(e) + 0.3, Math.sin(a) * Math.cos(e)).multiplyScalar(speed * (0.6 + Math.random() * 0.8)); g.add(m); return m;
+  });
+}
+// an explosion: a flash, a black ring and the squares
+function eqBlast(x, y, z, size = 1) {
+  const g = new THREE.Group(); g.position.set(x, y, z); G.scene.add(g);
+  const flash = eqGlow('#ffffff', 1, 1), ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 32), new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2; g.add(flash, ring);
+  const bits = eqBits(g, Math.round(8 * size), 9 * size, Math.min(2, size));
+  let t = 0; const life = 0.55 * Math.sqrt(size);
+  G.fxObjects.push({ update(dt) {
+    t += dt; const k = Math.min(1, t / life);
+    flash.scale.setScalar((2 + k * 7) * size); flash.material.opacity = 1 - k;
+    ring.scale.setScalar((1 + k * 9) * size); ring.material.opacity = 0.8 * (1 - k);
+    bits.forEach(b => { b.position.addScaledVector(b.userData.v, dt); b.userData.v.y -= 30 * dt; b.scale.setScalar(Math.min(2, size) * (1 - k)); });
+    if (k >= 1) { dropFx(g); return false; }
+    return true;
+  } });
+}
+// a full beam's ending: the light where it ended swells into a white ball in a black shell, a black shockwave runs out
+// along the ground, and the screen flashes white
+function eqFinale(x, y, z, near) {
+  eqBlast(x, y, z, 2.6);
+  const g = new THREE.Group(); g.position.set(x, y, z); G.scene.add(g);
+  const core = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 20), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true }));
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(1.12, 28, 20), new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.75, side: THREE.BackSide, depthWrite: false }));
+  const wave = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 64), new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+  const wave2 = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 64), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+  const gy = groundUnder(x, y + 0.1, z); wave.rotation.x = wave2.rotation.x = -Math.PI / 2; wave.position.y = wave2.position.y = (Number.isFinite(gy) ? gy : y) - y + 0.25;
+  const halo = eqGlow('#ffffff', 1, 1); g.add(core, shell, wave, wave2, halo);
+  sound('eqboom');
+  if (near > 0) { G.shake = Math.max(G.shake || 0, 0.6 + near); G.root.classList.remove('oc-eqflash'); void G.root.offsetWidth; G.root.classList.add('oc-eqflash'); }
+  let t = 0;
+  G.fxObjects.push({ update(dt) {
+    t += dt;
+    const grow = Math.min(1, t / 0.35), fade = Math.max(0, (t - 0.35) / 0.6), R = 7 * (1 - Math.pow(1 - grow, 3));
+    core.scale.setScalar(Math.max(0.01, R * (1 - fade * 0.9))); core.material.opacity = 1 - fade;
+    shell.scale.setScalar(Math.max(0.01, R)); shell.material.opacity = 0.75 * (1 - fade);
+    wave.scale.setScalar(2 + t * 42); wave.material.opacity = Math.max(0, 1 - t / 0.95);
+    wave2.scale.setScalar(1 + t * 30); wave2.material.opacity = Math.max(0, 0.8 - t / 0.95);
+    halo.scale.setScalar(Math.max(0.01, R * 3)); halo.material.opacity = 1 - fade;
+    if (t > 0.95) { dropFx(g); return false; }
+    return true;
+  } });
+}
+// let go early: it just fizzles out
+function eqFizzle(x, y, z) { eqBlast(x, y, z, 0.6); sound('eqfizzle'); }
+// charging: specks of light and dark fly into the suns
+function eqSpark(at, white) {
+  const s = eqGlow(white ? '#ffffff' : '#2a2a2a', 0.9, 1, white ? THREE.AdditiveBlending : THREE.NormalBlending);
+  const off = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize().multiplyScalar(3 + Math.random() * 2);
+  G.scene.add(s); let t = 0;
+  G.fxObjects.push({ update(dt) { t += dt; const k = Math.min(1, t / 0.35); s.position.copy(at()).addScaledVector(off, 1 - k); s.material.opacity = k < 0.8 ? 1 : (1 - k) * 5; if (k >= 1) { G.scene.remove(s); s.material.dispose(); return false; } return true; } });
+}
+// Eclipse: the suns smash together; a flash and a white and a black ring racing out along the ground
+function eqClashFx(x, y, z, small, near) {
+  const s = small ? 0.55 : 1;
+  eqBlast(x, y + 3, z, 1.8 * s);
+  const g = new THREE.Group(); g.position.set(x, y + 0.3, z); G.scene.add(g);
+  const rings = ['#ffffff', '#000000'].map(c => { const m = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 64), new THREE.MeshBasicMaterial({ color: c, transparent: true, side: THREE.DoubleSide, depthWrite: false })); m.rotation.x = -Math.PI / 2; g.add(m); return m; });
+  sound('eqclash');
+  if (near > 0) G.shake = Math.max(G.shake || 0, near * (small ? 0.5 : 1.1));
+  let t = 0;
+  G.fxObjects.push({ update(dt) { t += dt; rings.forEach((m, i) => { m.scale.setScalar((1 + t * (i ? 26 : 34)) * s); m.material.opacity = Math.max(0, 1 - t / 0.6); }); if (t > 0.6) { dropFx(g); return false; } return true; } });
+}
+// a reflection's bolt
+function eqBolt(from, to, dark) {
+  const s = eqGlow(dark ? '#1b1b1b' : '#ffffff', 2.2, 1, dark ? THREE.NormalBlending : THREE.AdditiveBlending), ring = eqGlow(dark ? '#ffffff' : '#9d8cff', 3, 0.35);
+  G.scene.add(s, ring); let t = 0;
+  G.fxObjects.push({ update(dt) { t += dt; const k = Math.min(1, t / 0.25); s.position.lerpVectors(from, to, k); ring.position.copy(s.position); if (k >= 1) { G.scene.remove(s, ring); s.material.dispose(); ring.material.dispose(); eqBlast(to.x, to.y, to.z, 0.45); return false; } return true; } });
+  sound('eqbolt');
+}
+// someone else's Equinox moves, as they arrive
+function eqFx(f) {
+  const o = f.uid ? G.others.get(f.uid) : null, near = Math.max(0, 1 - Math.hypot(f.x - G.player.pos.x, f.z - G.player.pos.z) / 90);
+  if (f.kind === 'eqend') { if (f.full) eqFinale(f.x, f.y, f.z, near); else eqFizzle(f.x, f.y, f.z); }
+  else if (f.kind === 'eqspin') { if (o && o.fx) o.fx.eq = { ...(o.fx.eq || {}), spin: { t0: now(), dur: 900 } }; sound('eqspin'); setTimeout(() => { if (!G) return; const q = o && o.placed ? o.pos : f; eqClashFx(q.x, q.y, q.z, false, near); }, 900); }
+  else if (f.kind === 'eqclash') eqClashFx(f.x, f.y, f.z, !!f.small, near * 0.6);
+  else if (f.kind === 'eqbolt') eqBolt(new THREE.Vector3(f.x, f.y, f.z), new THREE.Vector3(f.x2, f.y2, f.z2), !!f.dark);
+  else if (f.kind === 'eqsummon') { eqBlast(f.x, f.y + 3, f.z, 1.2); sound('eqsummon'); }
+}
+
+// ---- Z: Liminal Beam ----
+function eqBeamStart(m) {
+  const p = G.player, n = now();
+  if (p.blocking) setBlock(false);
+  G.eqBeam = { m, t0: n, fireAt: n + EQ.charge, phase: 'charge', aim: aimPoint(), tickAt: 0, sparkAt: 0, humAt: 0, ticks: 0, vis: makeEqBeam(false) };
+  if (p.fx) p.fx.eq = { ...(p.fx.eq || {}), beam: { phase: 'charge', t0: n } };
+  updateAbilityCds();
+}
+const eqBeamRelease = () => { if (G && G.eqBeam) eqBeamEnd(false); };
+function eqBeamEnd(full) {
+  const B = G.eqBeam, p = G.player;
+  if (!B) return;
+  G.eqBeam = null;
+  const fired = B.phase === 'fire', e = B.aim;
+  G.moveCd[B.m.key] = opfun() ? 0 : now() + (fired ? B.m.cd * 1000 : 1500);
+  if (p.fx && p.fx.eq) p.fx.eq.beam = { phase: 'back', t0: now() };
+  B.vis.finish(full);
+  const at = fired ? e : sunsOf(p.fx, p.pos, p.yaw)[0];
+  const f = { kind: 'eqend', x: +at.x.toFixed(2), y: +at.y.toFixed(2), z: +at.z.toFixed(2), full: full ? 1 : 0 };
+  if (full) eqFinale(f.x, f.y, f.z, 1); else eqFizzle(f.x, f.y, f.z);
+  if (G.net) G.net.fx(f);
+  if (G.twins) for (const b of G.twins.list) if (b.beam) { b.beam.finish(full); b.beam = null; }
+  updateAbilityCds();
+}
+function eqBeamHit(B) {
+  const p = G.player, e = B.aim, gy = groundUnder(e.x, e.y + 0.5, e.z);
+  // it explodes where it ends, unless that's up in the sky
+  const f = { kind: 'eqbeam', x: p.pos.x, y: p.pos.y + 3.2, z: p.pos.z, x2: e.x, y2: e.y, z2: e.z, w: 1.8, r: !Number.isFinite(gy) || e.y - gy < 8 ? 4.5 : 0, tier: 12 };
+  const ids = hitEverything(f, EQ.perTick, { move: 'Liminal Beam', eq: true });
+  G.equilized = G.equilized || {};
+  for (const id of ids) G.equilized[id] = now() + EQ.eqFor;
+  if (ids.length) twinsNote(ids[0]);
+  eqBlast(e.x, e.y, e.z, 0.7);
+  if (B.ticks++ % 2 === 0) sound('eqfire');
+  // the reflections fire too, a third as hard
+  if (G.twins) for (const b of G.twins.list) {
+    if (b.dead) continue;
+    b.acc = (b.acc || 0) + EQ.perTick / 3; const d = Math.floor(b.acc); b.acc -= d;
+    if (d) { const ids2 = hitEverything({ ...f, x: b.pos.x, y: b.pos.y + 3, z: b.pos.z, w: 1.2, r: f.r ? 2.5 : 0 }, d, { move: 'Liminal Beam', by: `${G.me.name}'s Reflection` }); for (const id of ids2) G.equilized[id] = now() + EQ.eqFor; }
+  }
+}
+// every frame: the beam (aim, charge, fire), Eclipse's clash, the reflections and the Equilized tags
+function eqTick(dt) {
+  const p = G.player, n = now(), B = G.eqBeam;
+  if (B && (!isEquinox() || G.panel)) eqBeamEnd(false);
+  else if (B) {
+    B.aim.lerp(aimPoint(), 1 - Math.exp(-dt * 16));
+    p.yaw = Math.atan2(B.aim.x - p.pos.x, B.aim.z - p.pos.z); p.avatar.root.rotation.y = p.yaw;
+    if (B.phase === 'charge' && n >= B.fireAt) { B.phase = 'fire'; B.tickAt = n; if (p.fx && p.fx.eq && p.fx.eq.beam) p.fx.eq.beam.phase = 'fire'; G.save.stats.moves++; progress('moves'); }
+    const [a, b] = sunsOf(p.fx, p.pos, p.yaw);
+    B.vis.set(B.phase, Math.min(1, (n - B.t0) / EQ.charge), a, b, B.aim);
+    if (B.phase === 'charge') {
+      if (n > B.sparkAt) { B.sparkAt = n + 70; eqSpark(() => sunsOf(p.fx, p.pos, p.yaw)[0], true); eqSpark(() => sunsOf(p.fx, p.pos, p.yaw)[1], false); }
+      if (n > B.humAt) { B.humAt = n + 500; sound('eqcharge', Math.floor((n - B.t0) / 500)); }
+    } else {
+      const stop = B.fireAt + EQ.fire;
+      while (n >= B.tickAt && B.tickAt < stop) { B.tickAt += EQ.tick; eqBeamHit(B); }
+      if (n >= stop) eqBeamEnd(true);
+    }
+  }
+  if (G.eqSpin && n - G.eqSpin.t0 >= 900) { const s = G.eqSpin; G.eqSpin = null; eqClash(p.pos.x, p.pos.y, p.pos.z, s.m.dmg, s.m.r || 14, false); }
+  twinsTick(dt);
+  updateEqTags();
+}
+
+// ---- X: Eclipse ----
+function eqEclipse(m) {
+  const p = G.player, n = now();
+  G.eqSpin = { t0: n, m };
+  if (p.fx) p.fx.eq = { ...(p.fx.eq || {}), spin: { t0: n, dur: 900 } };
+  sound('eqspin');
+  if (G.net) G.net.fx({ kind: 'eqspin', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2) });
+  twinsMirror(m);
+}
+function eqClash(x, y, z, dmg, r, small) {
+  eqClashFx(x, y, z, small, 1);
+  const ids = hitEverything({ kind: 'burst', x, y, z, r, yaw: 0, tier: 12 }, dmg, { move: 'Eclipse', ...(small ? { by: `${G.me.name}'s Reflection` } : {}) });
+  if (ids.length) twinsNote(ids[0]);
+}
+
+// ---- V: Reflections ----
+function twinsSummon() {
+  twinsClear(false);
+  const p = G.player;
+  G.twins = { until: now() + EQ.twinsFor, target: null, list: [-1, 1].map(side => makeTwin(side)) };
+  for (const b of G.twins.list) eqBlast(b.pos.x, b.pos.y + 3, b.pos.z, 1.2);
+  sound('eqsummon');
+  if (G.net) G.net.fx({ kind: 'eqsummon', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2) });
+  toast('Reflections: two copies of you fight at your side for 30 seconds.', 'gold');
+}
+// a reflection: you, all in white (on your left) or all in black (on your right), with a sun over its head
+function twinAvatar(name, dark) {
+  const a = buildAvatar(name, dark ? '#141414' : '#f2f2f2');
+  const tint = m0 => { const m = m0.clone(); if (m.color) m.color.set(dark ? '#161616' : '#f4f4f4'); m.map = null; if (m.emissive) m.emissive.set(dark ? '#000000' : '#5a5a5a'); m.needsUpdate = true; return m; };
+  a.root.traverse(o => { if (!o.isMesh || !o.material) return; let t = o; while (t && t !== a.tag) t = t.parent; if (t === a.tag) return; o.material = Array.isArray(o.material) ? o.material.map(tint) : tint(o.material); });
+  const sun = new THREE.Mesh(new THREE.SphereGeometry(0.55, 16, 12), new THREE.MeshBasicMaterial({ color: dark ? '#050505' : '#ffffff' }));
+  sun.position.y = 7.6; sun.add(eqGlow(dark ? '#ffffff' : '#ffffff', dark ? 2.2 : 3.4, dark ? 0.35 : 0.8)); a.root.add(sun);
+  G.scene.add(a.root);
+  return a;
+}
+function makeTwin(side) {
+  const p = G.player, dark = side > 0, right = new THREE.Vector3(-Math.cos(p.yaw), 0, Math.sin(p.yaw));
+  const a = twinAvatar(`${G.me.name}'s Reflection`, dark), pos = p.pos.clone().addScaledVector(right, 4.5 * side);
+  a.root.position.copy(pos);
+  a.tag.userData.draw(`${G.me.name}'s Reflection`, 'equinox', 100, {});
+  return { side, dark, pos, yaw: p.yaw, hp: 100, avatar: a, atkAt: now() + 900, acc: 0, act: null, beam: null };
+}
+const twinsNote = id => { if (G.twins && id) G.twins.target = { id, at: now() }; };
+// who they're after: whoever you hit last or whoever hit you last (for 20 seconds), while it's still there
+function twinTarget() {
+  const T = G.twins, t = T && T.target;
+  if (!t || now() - t.at > 20000) return null;
+  const id = t.id, r = G.raid;
+  if (id === 'raid') return G.crawler && !G.crawler.dying && r && !r.dead && !r.gone ? { id, pos: new THREE.Vector3(G.world.arena.x, 0, G.world.arena.z) } : null;
+  if (id.startsWith('p:')) { const o = G.others.get(id.slice(2)); return o && o.placed && o.data && o.data.pvp && G.player.pvp ? { id, pos: o.pos, uid: o.uid } : null; }
+  const x = G.xfight && G.xfight.targets().find(q => q.id === id);
+  return x ? { id, pos: x.pos } : null;
+}
+function twinsTick(dt) {
+  const T = G.twins;
+  if (!T) return;
+  const n = now(), p = G.player;
+  if (n > T.until || T.list.every(b => b.dead) || !isEquinox()) { twinsClear(true); return; }
+  const tg = twinTarget(), fwd = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw)), right = new THREE.Vector3(-fwd.z, 0, fwd.x), flying = !!(p.flyToggle || (p.flyUntil || 0) > n || p.fly);
+  for (const b of T.list) {
+    if (b.dead) continue;
+    let want;
+    if (tg) { const dx = b.pos.x - tg.pos.x, dz = b.pos.z - tg.pos.z, d = Math.hypot(dx, dz) || 1; want = new THREE.Vector3(tg.pos.x + dx / d * 7, 0, tg.pos.z + dz / d * 7); }
+    else want = p.pos.clone().addScaledVector(right, 4.5 * b.side).addScaledVector(fwd, -1.2);
+    const dx = want.x - b.pos.x, dz = want.z - b.pos.z, d = Math.hypot(dx, dz);
+    let sp = 0;
+    if (d > 90) b.pos.set(want.x, p.pos.y, want.z);
+    else if (d > 0.05) { sp = Math.min(30, d * 5); b.pos.x += dx / d * sp * dt; b.pos.z += dz / d * sp * dt; }
+    const gy = groundUnder(b.pos.x, Math.max(b.pos.y, p.pos.y) + 3, b.pos.z), wy = flying || !Number.isFinite(gy) ? p.pos.y : gy;
+    b.pos.y += (wy - b.pos.y) * Math.min(1, dt * 8);
+    const face = tg ? tg.pos : sp > 2 ? want : null;
+    if (face) b.yaw = Math.atan2(face.x - b.pos.x, face.z - b.pos.z);
+    else { let r = p.yaw - b.yaw; r = Math.atan2(Math.sin(r), Math.cos(r)); b.yaw += r * Math.min(1, dt * 8); }
+    b.avatar.root.position.copy(b.pos); b.avatar.root.rotation.y = b.yaw;
+    const act = b.act && n - b.act.t0 < b.act.dur ? { kind: b.act.kind, k: (n - b.act.t0) / b.act.dur } : null;
+    b.avatar.animate(dt, sp > 2 ? Math.max(sp, 8) : 0, false, null, 'float', act);
+    if (tg && n > b.atkAt && tg.pos.distanceTo(b.pos) < 40) { b.atkAt = n + 1400; twinBolt(b, tg); }
+    // your beam: theirs, thinner, to the same place
+    const B = G.eqBeam;
+    if (B && B.phase === 'fire') { if (!b.beam) b.beam = makeEqBeam(true); const c = b.pos.clone().setY(b.pos.y + 3); b.beam.set('fire', 1, c, c, B.aim); }
+    else if (b.beam && !B) { b.beam.finish(false); b.beam = null; }
+  }
+}
+function twinBolt(b, tg) {
+  const from = b.pos.clone().setY(b.pos.y + 3), to = new THREE.Vector3(tg.pos.x, (tg.pos.y || 0) + (tg.id === 'raid' ? 6 : 2.5), tg.pos.z);
+  b.act = { kind: 'throw', t0: now(), dur: 320 };
+  eqBolt(from, to, b.dark);
+  if (G.net) G.net.fx({ kind: 'eqbolt', x: +from.x.toFixed(1), y: +from.y.toFixed(1), z: +from.z.toFixed(1), x2: +to.x.toFixed(1), y2: +to.y.toFixed(1), z2: +to.z.toFixed(1), dark: b.dark ? 1 : 0 });
+  setTimeout(() => {
+    if (!G) return;
+    if (tg.id === 'raid') { if (G.crawler && G.raid && !G.raid.dead) { G.raidDmg = (G.raidDmg || 0) + EQ.bolt; G.crawler.flash(); G.net.raidHit(EQ.bolt).catch(() => {}); } }
+    else if (tg.id.startsWith('p:')) { if (G.net && G.player.pvp) G.net.hit(tg.uid, { dmg: EQ.bolt, fx: +from.x.toFixed(2), fz: +from.z.toFixed(2), by: `${G.me.name}'s Reflection`, aura: '『EQUINOX』', move: 'Reflection' }); }
+    else if (G.xfight) G.xfight.damage(tg.id, EQ.bolt);
+  }, 250);
+}
+// your moves, copied by the reflections a third as hard (the beam is in eqBeamHit)
+function twinsMirror(m, f) {
+  const T = G.twins;
+  if (!T) return;
+  for (const b of T.list) {
+    if (b.dead) continue;
+    if (m.kind === 'eqeclipse') setTimeout(() => { if (!G || !G.twins || b.dead) return; eqClash(b.pos.x, b.pos.y, b.pos.z, Math.round(m.dmg / 3), 10, true); if (G.net) G.net.fx({ kind: 'eqclash', x: +b.pos.x.toFixed(2), y: +b.pos.y.toFixed(2), z: +b.pos.z.toFixed(2), small: 1 }); }, 900);
+    else if (f && m.dmg) {
+      const g = { ...f, x: +b.pos.x.toFixed(2), y: +b.pos.y.toFixed(2), z: +b.pos.z.toFixed(2), seed: Math.floor(Math.random() * 1e6) };
+      if (m.kind === 'dash' || m.kind === 'blink' || m.kind === 'leap' || m.kind === 'flight') continue;
+      const fx = castFx(G.scene, g); if (fx) G.fxObjects.push(fx);
+      if (G.net) G.net.fx(g);
+      const ids = hitEverything(g, Math.max(1, Math.round(m.dmg / 3)), { move: m.name, by: `${G.me.name}'s Reflection` });
+      if (ids.length) twinsNote(ids[0]);
+    }
+  }
+}
+// something hit one of them
+function twinHurt(i, dmg, src) {
+  const T = G.twins, b = T && T.list[i];
+  if (!b || b.dead || !(dmg > 0)) return;
+  b.hp -= dmg; twinsNote(src);
+  b.avatar.tag.userData.draw(`${G.me.name}'s Reflection`, 'equinox', Math.max(0, Math.round(b.hp)), {});
+  if (b.hp > 0) return;
+  b.dead = true;
+  eqBlast(b.pos.x, b.pos.y + 3, b.pos.z, 1);
+  G.scene.remove(b.avatar.root); b.avatar.dispose();
+  if (b.beam) { b.beam.finish(false); b.beam = null; }
+  toast('One of your reflections shattered.', 'warn');
+}
+function twinsClear(faded) {
+  const T = G.twins;
+  if (!T) return;
+  G.twins = null;
+  for (const b of T.list) { if (b.beam) b.beam.finish(false); if (b.dead) continue; eqBlast(b.pos.x, b.pos.y + 3, b.pos.z, 0.8); G.scene.remove(b.avatar.root); b.avatar.dispose(); }
+  if (faded) toast('Your reflections faded.');
+}
+// for the network: your beam (where it points, charging or firing) and your reflections
+function eqNetState() {
+  const B = G.eqBeam, T = G.twins;
+  if (!B && !T) return undefined;
+  const ex = {};
+  if (B) ex.bm = [+B.aim.x.toFixed(1), +B.aim.y.toFixed(1), +B.aim.z.toFixed(1), B.phase === 'fire' ? 2 : 1];
+  if (T) ex.bt = T.list.flatMap(b => [+b.pos.x.toFixed(1), +b.pos.y.toFixed(1), +b.pos.z.toFixed(1), +b.yaw.toFixed(2), b.dead ? 0 : Math.max(1, Math.round(b.hp))]);
+  return ex;
+}
+// someone else's beam and reflections, every frame
+function eqRemote(o, dt) {
+  const n = now(), bm = o.bm;
+  if (bm && o.fx) {
+    const phase = bm[3] === 2 ? 'fire' : 'charge';
+    if (!o.eqB) o.eqB = { vis: makeEqBeam(false), aim: new THREE.Vector3(bm[0], bm[1], bm[2]), t0: n, blastAt: 0 };
+    const E = o.eqB;
+    o.fx.eq = { ...(o.fx.eq || {}), beam: { phase, t0: E.t0 } };
+    E.aim.lerp(new THREE.Vector3(bm[0], bm[1], bm[2]), 1 - Math.exp(-dt * 12));
+    const [a, b] = sunsOf(o.fx, o.pos, o.yaw);
+    E.vis.set(phase, Math.min(1, (n - E.t0) / EQ.charge), a, b, E.aim);
+    if (phase === 'fire' && n > E.blastAt) { E.blastAt = n + 200; eqBlast(E.aim.x, E.aim.y, E.aim.z, 0.7); }
+  } else if (o.eqB) { o.eqB.vis.finish(false); o.eqB = null; if (o.fx && o.fx.eq) o.fx.eq.beam = { phase: 'back', t0: n }; }
+  const bt = o.bt;
+  if (!bt && !o.eqT) return;
+  o.eqT = o.eqT || [null, null];
+  for (let i = 0; i < 2; i++) {
+    const v = bt ? bt.slice(i * 5, i * 5 + 5) : [], cur = o.eqT[i];
+    if (v.length < 5 || !v[4]) { if (cur) { eqBlast(cur.pos.x, cur.pos.y + 3, cur.pos.z, 0.8); G.scene.remove(cur.avatar.root); cur.avatar.dispose(); if (cur.beam) cur.beam.finish(false); o.eqT[i] = null; } continue; }
+    let t = cur;
+    if (!t) { t = o.eqT[i] = { avatar: twinAvatar(`${(o.data && o.data.name) || 'Someone'}'s Reflection`, i === 1), pos: new THREE.Vector3(v[0], v[1], v[2]), yaw: v[3], hp: null, beam: null }; t.avatar.root.position.copy(t.pos); }
+    const before = t.pos.clone();
+    t.pos.lerp(new THREE.Vector3(v[0], v[1], v[2]), 1 - Math.exp(-dt * 12));
+    let r = v[3] - t.yaw; r = Math.atan2(Math.sin(r), Math.cos(r)); t.yaw += r * Math.min(1, dt * 12);
+    t.avatar.root.position.copy(t.pos); t.avatar.root.rotation.y = t.yaw;
+    t.avatar.animate(dt, before.distanceTo(t.pos) / Math.max(dt, 0.001) > 2 ? 12 : 0, false, null, 'float', null);
+    if (t.hp !== v[4]) { t.hp = v[4]; t.avatar.tag.userData.draw(`${(o.data && o.data.name) || 'Someone'}'s Reflection`, 'equinox', v[4], {}); }
+    if (o.eqB && bm && bm[3] === 2) { if (!t.beam) t.beam = makeEqBeam(true); const c = t.pos.clone().setY(t.pos.y + 3); t.beam.set('fire', 1, c, c, o.eqB.aim); }
+    else if (t.beam) { t.beam.finish(false); t.beam = null; }
+  }
+  if (!bt) o.eqT = null;
+}
+function eqRemoteGone(o) {
+  if (o.eqB) { o.eqB.vis.finish(false); o.eqB = null; }
+  if (o.eqT) { for (const t of o.eqT) if (t) { G.scene.remove(t.avatar.root); t.avatar.dispose(); if (t.beam) t.beam.finish(false); } o.eqT = null; }
 }
 
 // Minecraft-style effects from the aura, for whoever used it and everyone watching
@@ -2033,6 +2635,14 @@ function mcFx(f, mine) {
     case 'mcsmash': add(MCFX.smash(sc, f.x, f.y, f.z, f.power || 1)); add(MCFX.crit(sc, f.x, f.y, f.z)); if (near > 0) { sound('smash'); G.shake = Math.max(G.shake || 0, near * 1.2); } if (o) xHold(o.avatar, 'mace'); break;
     case 'mclunge': if (mine) playLunge(1); else playLunge(near); add(castFx(sc, { kind: 'dash', x: f.x, y: f.y, z: f.z, x2: f.x + Math.sin(f.yaw) * 15, y2: f.y, z2: f.z + Math.cos(f.yaw) * 15, c: '#b388ff' })); if (o) { o.act = { kind: 'lunge', t0: now(), dur: 380 }; xHold(o.avatar, 'spear'); } break;
     case 'mcheal': add(MCFX.heal(sc, f.x, f.y - 1.5, f.z)); if (near > 0) sound('burp'); if (o) xHold(o.avatar, 'sword'); break;
+    case 'mcwind': {   // a wind charge thrown down, and its burst where it lands
+      const dur = Math.min(0.35, Math.max(0.08, (f.y - f.y2) / 70));
+      add(MCFX.throw(sc, 'wind', new THREE.Vector3(f.x, f.y + 3.2, f.z), new THREE.Vector3(f.x, f.y2 + 0.4, f.z), dur, 0)); if (near > 0) sound('windthrow');
+      setTimeout(() => { if (G) { G.fxObjects.push(MCFX.gust(G.scene, f.x, f.y2, f.z)); if (near > 0) sound('gust'); } }, dur * 1000);
+      if (o) { o.act = { kind: 'throw', t0: now(), dur: 300 }; xHold(o.avatar, 'wind'); }
+      break;
+    }
+    case 'mctotem': add(MCFX.totem(sc, f.x, f.y, f.z)); if (near > 0) { sound('totem'); if (mine) G.shake = Math.max(G.shake || 0, 0.5); } break;
   }
 }
 
@@ -2596,7 +3206,7 @@ function renderSettings(body, tab = G.setTab || 'rolling') {
     <div class="oc-set-row"><b>Graphics</b>${['low', 'medium', 'high'].map(q => `<button type="button" class="oc-btn sm ${q === G.quality ? 'ok' : ''}" data-q="${q}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div>
     <p class="oc-empty">Graphics changes apply the next time you open the game.</p>
     <div class="oc-set-row"><b>Redeem Code</b><button type="button" class="oc-btn sm" data-code>Open</button></div>
-    <div class="oc-code hidden"><input type="text" maxlength="32" placeholder="Enter Code..." spellcheck="false" autocomplete="off"><button type="button" class="oc-btn ok sm" data-redeem>Redeem</button></div>`;
+    <div class="oc-code hidden"><input type="text" maxlength="32" placeholder="Enter Code..." spellcheck="false" autocomplete="off"><button type="button" class="oc-btn ok sm" data-redeem>Redeem</button></div><div class="oc-code-got hidden"></div>`;
   if (tab === 'titles') html = `<p class="oc-empty">Your title shows next to your name on the leaderboard, with its picture. Achievements give titles.</p>
     <div class="oc-titles">${[''].concat(G.save.titles).map(x => `<button type="button" class="oc-title-card${(G.save.title || '') === x ? ' on' : ''}" data-ttl="${esc(x)}">${x ? titleArt(x, 'oc-ttl big') : '<i class="oc-ttl big none"></i>'}<b style="color:${x ? titleInfo(x).color : '#bdbdbd'}">${x ? esc(x) : 'No title'}</b>${(G.save.title || '') === x ? '<small>Equipped</small>' : ''}</button>`).join('')}</div>`;
   body.innerHTML = tabsHtml([['rolling', 'Rolling'], ['sound', 'Sound'], ['controls', 'Controls'], ['titles', 'Leaderboard Titles'], ['misc', 'Miscellaneous']], tab) + `<div class="oc-set">${html}</div>`;
@@ -2614,7 +3224,8 @@ function renderSettings(body, tab = G.setTab || 'rolling') {
   const red = body.querySelector('[data-redeem]');
   if (red) {
     const input = body.querySelector('.oc-code input');
-    const go = () => redeemCode(input.value.trim()).then(ok => { if (ok) input.value = ''; });
+    const got = body.querySelector('.oc-code-got');
+    const go = () => { const code = input.value.trim(); redeemCode(code).then(r => { if (!r) return; input.value = ''; got.innerHTML = `<b>Redeemed ${esc(code)}</b><div class="oc-rws">${fromReward(r).map(e => rewardChip(e)).join('')}</div>`; got.classList.remove('hidden'); }); };
     red.onclick = go; input.onkeydown = e => { if (e.key === 'Enter') go(); e.stopPropagation(); };
   }
 }
@@ -2636,7 +3247,7 @@ async function redeemCode(code) {
   }
   G.save.redeemed[code] = now();
   toast('Code redeemed: ' + giveReward(reward), 'gold'); sound('secret'); saveNow();
-  return true;
+  return reward;
 }
 
 // The Owner and Co-Owners: start biomes, change the time, summon the Jester, fly and noclip, and make codes.
@@ -2663,21 +3274,7 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
       <div class="oc-adm-card hidden" data-wc></div>
       <h3>[ Give Everyone Online ] <small>${online.length + 1} in the lobby, you included</small></h3><div class="oc-adm-give" data-gall>${auraPicker()}<button type="button" class="oc-adm-btn ok" data-giveall>Give everyone</button></div>`;
   }
-  if (tab === 'codes') {
-    const potionOpts = POTIONS.filter(p => !p.hidden).map(p => `<option value="potion:${p.id}">${esc(p.name)}</option>`).join('');
-    const gearOpts = ITEMS.map(i => `<option value="item:${i.id}">${esc(i.name)} (gear)</option>`).join('');
-    html = `<h3>[ Make a Code ] <small>players redeem them in Settings, Miscellaneous</small></h3>
-    <div class="oc-codeform">
-      <input type="text" data-c="code" maxlength="24" placeholder="CODE (case-sensitive)" spellcheck="false">
-      <select data-c="what"><option value="coins">Coins</option><option value="f">F (blue coins)</option><option value="void">Void Coins</option>${potionOpts}${gearOpts}</select>
-      <label><small>Amount</small><input type="number" data-c="amount" min="1" max="1000000000" value="1"></label>
-      <label><small>Max uses</small><input type="number" data-c="uses" min="0" value="0"></label>
-      <label><small>Hours</small><input type="number" data-c="hours" min="0" value="0"></label>
-      <button type="button" class="oc-adm-btn ok" data-mk>Make code</button>
-    </div>
-    <p class="oc-empty">Max uses 0 means no limit. Hours 0 means it never expires.</p>
-    <h3>[ Codes ]</h3><div class="oc-list oc-codes"><p class="oc-empty">Loading codes...</p></div>`;
-  }
+  if (tab === 'codes') html = codesHtml();
   if (tab === 'me') html = `<h3>[ OpFun ] <small>the Owner's fun mode</small></h3><div class="oc-adm-grid">${tile('m:opfun', 'OPFUN', 'No cooldowns on anything', G.save.settings.opfun, '#ff4fd8')}</div>
     <h3>[ Equip Any Aura ] <small>with any mutation</small></h3><div class="oc-adm-give">${auraPicker({ key: G.save.equipped, amount: false })}<button type="button" class="oc-adm-btn ok" data-eqgo>Equip</button></div>
     <h3>[ Movement ] <small>just you</small></h3><div class="oc-adm-grid">${tile('m:fly', 'FLY', 'Space up, Q down', G.player.fly, '#80d8ff')}${tile('m:noclip', 'NOCLIP', 'Walk through walls', G.player.noclip, '#80d8ff')}</div>
@@ -2721,22 +3318,7 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
     input.onkeydown = e => { if (e.key === 'Enter') find(); e.stopPropagation(); };
     body.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { input.value = b.dataset.pick; find(); });
   }
-  if (tab === 'codes') {
-    const val = k => body.querySelector(`[data-c="${k}"]`).value;
-    body.querySelector('[data-mk]').onclick = async () => {
-      const code = val('code').trim();
-      if (!/^[A-Za-z0-9_-]{3,24}$/.test(code)) { toast('Codes are 3 to 24 letters, numbers, - or _.', 'warn'); return; }
-      const [kind, id] = val('what').split(':'), amount = Math.max(1, Math.floor(+val('amount') || 1));
-      const reward = kind === 'potion' ? { potions: { [id]: amount } } : kind === 'item' ? { items: [id] } : { [kind]: amount };
-      const hours = +val('hours') || 0;
-      try {
-        await API().db.collection('rngCodes').doc(code).set({ reward, maxUses: Math.max(0, Math.floor(+val('uses') || 0)), uses: 0, expires: hours ? now() + hours * 3600000 : 0, by: G.me.name, made: now() });
-        toast(`Code ${code} is live.`, 'gold'); loadCodes(body);
-      } catch (e) { toast('Couldn\'t save that code.', 'warn'); }
-    };
-    body.querySelectorAll('.oc-codeform input').forEach(i => { i.onkeydown = e => e.stopPropagation(); });
-    loadCodes(body);
-  }
+  if (tab === 'codes') wireCodes(body);
 }
 // Put a player's roll count back (or change it). Your own changes at once; someone playing right now sees it after
 // they rejoin.
@@ -2888,15 +3470,176 @@ function onWiped(at) {
   API().toast('The Owner wiped your Overcontrol RNG data.', 'warn');
   close();
 }
+// ---- Admin, Codes: a code gives any mix of money, potions, gear and auras (with mutations), as many as you like ----
+// What can go in a code, by category, with how much one click adds.
+function codeCatalog(cat) {
+  if (cat === 'money') return [
+    { kind: 'coins', id: 'coins', name: 'Coins', c: '#ffd54f', def: 1000, sub: 'For the shops' },
+    { kind: 'f', id: 'f', name: 'F', c: '#4fc3f7', def: 100, sub: 'The blue coins' },
+    { kind: 'void', id: 'void', name: 'Void Coins', c: '#b388ff', def: 1, sub: 'For the Void shop' }];
+  if (cat === 'potions') return POTIONS.filter(p => !p.hidden).map(p => ({ kind: 'potion', id: p.id, name: p.name, c: p.color, def: 1, sub: p.desc }));
+  if (cat === 'gear') return [...GEARS.map(g => ({ kind: 'gear', id: g.id, name: g.name, c: g.color, def: 1, sub: 'Gear. ' + g.desc })),
+    ...ITEMS.map(i => ({ kind: 'item', id: i.id, name: i.name, c: i.color, def: 1, sub: 'Item, kept forever. ' + i.desc, once: true }))];
+  return [];
+}
+const CODE_CAT_OF = { coins: 'money', f: 'money', void: 'money', potion: 'potions', gear: 'gear', item: 'gear' };
+// a code's reward as a list of { kind, id, n }, and back
+function fromReward(r) {
+  const gears = {}; for (const id of r.gears || []) gears[id] = (gears[id] || 0) + 1;
+  return [...['coins', 'f', 'void'].filter(k => r[k]).map(k => ({ kind: k, id: k, n: r[k] })),
+    ...Object.entries(r.potions || {}).map(([id, n]) => ({ kind: 'potion', id, n })),
+    ...Object.entries(gears).map(([id, n]) => ({ kind: 'gear', id, n })),
+    ...(r.items || []).map(id => ({ kind: 'item', id, n: 1 })),
+    ...Object.entries(r.auras || {}).map(([id, n]) => ({ kind: 'aura', id, n })),
+    ...(r.title ? [{ kind: 'title', id: r.title, n: 1 }] : [])];
+}
+function toReward(list) {
+  const r = {};
+  for (const e of list) {
+    if (CODE_CAT_OF[e.kind] === 'money') r[e.kind] = (r[e.kind] || 0) + e.n;
+    else if (e.kind === 'potion') { r.potions = r.potions || {}; r.potions[e.id] = (r.potions[e.id] || 0) + e.n; }
+    else if (e.kind === 'gear') { r.gears = r.gears || []; for (let i = 0; i < Math.min(100, e.n); i++) r.gears.push(e.id); }
+    else if (e.kind === 'item') { r.items = r.items || []; if (!r.items.includes(e.id)) r.items.push(e.id); }
+    else if (e.kind === 'aura') { r.auras = r.auras || {}; r.auras[e.id] = (r.auras[e.id] || 0) + e.n; }
+    else if (e.kind === 'title') r.title = e.id;
+  }
+  return r;
+}
+function rewardInfo(e) {
+  if (e.kind === 'aura') { const r = auraKey(e.id); return { name: r.name, c: r.mut ? r.mut.color : r.aura.c, aura: r }; }
+  if (e.kind === 'title') return { name: 'the title ' + e.id, c: '#ffd54f', once: true };
+  const it = codeCatalog(CODE_CAT_OF[e.kind]).find(x => x.kind === e.kind && x.id === e.id) || { name: e.id, c: '#ffffff' };
+  return { name: it.name, c: it.c, once: it.once };
+}
+// One reward as a chip in its colour ("5,000 Coins", "____X____ Prismatic"). In the code maker (i given) it has an
+// amount box and a remove button.
+function rewardChip(e, i) {
+  const info = rewardInfo(e), edit = i !== undefined, t = info.aura ? info.aura.aura.title || {} : {};
+  const fx = t.bw ? ' bw' : t.rainbow ? ' rainbow' : t.gold ? ' gold' : t.violet ? ' violet' : '';
+  const name = `<b class="nm${fx}"${info.aura && !fx ? ` style="color:${info.c}"` : ''}>${esc(info.name)}</b>`;
+  if (edit) return `<span class="oc-rw" style="--c:${info.c}">${name}${info.once ? '' : `<input type="number" min="1" max="1000000000" value="${e.n}" data-rw-n="${i}" title="How many">`}<button type="button" data-rw-x="${i}" title="Remove">${IC.close}</button></span>`;
+  return `<span class="oc-rw" style="--c:${info.c}">${info.once || (e.n === 1 && !CODE_CAT_OF[e.kind]) ? '' : `<small>${fmt(e.n)}</small>`}${name}</span>`;
+}
+const codeState = c => (c.expires && c.expires < now() ? 'expired' : c.maxUses && (c.uses || 0) >= c.maxUses ? 'used up' : 'live');
+const CODE_RE = /^[A-Za-z0-9_-]{3,24}$/;
+function codesHtml() {
+  return `<h3>[ Make a Code ] <small>players redeem them in Settings, Miscellaneous</small></h3>
+    <div class="oc-cb">
+      <div class="oc-cb-editing hidden"></div>
+      <div class="oc-cb-top">
+        <label class="oc-cb-name"><small>Code</small><span><input type="text" data-c="code" maxlength="24" placeholder="SUMMER-2026" spellcheck="false" autocomplete="off"><button type="button" class="oc-adm-btn" data-c-rand>Random</button></span></label>
+        <label><small>Max uses</small><input type="number" data-c="uses" min="0" value="0"></label>
+        <label><small>Lasts (hours)</small><input type="number" data-c="hours" min="0" value="0"></label>
+      </div>
+      <div class="oc-cb-sec"><b>Rewards</b><small data-c-count></small></div>
+      <div class="oc-cb-rewards"></div>
+      <div class="oc-cb-sec"><b>Add a reward</b><small>click to add, click again for more</small></div>
+      <div class="oc-cb-cats" data-c-cats>${[['money', 'Money'], ['potions', 'Potions'], ['gear', 'Gear and Items'], ['auras', 'Auras']].map(([id, l]) => `<button type="button" data-c-cat="${id}">${l}</button>`).join('')}</div>
+      <label class="oc-search" data-c-search>${IC.search}<input type="search" data-c-q placeholder="Search" spellcheck="false" autocomplete="off"></label>
+      <div class="oc-cb-grid"></div>
+      <div class="oc-cb-aura hidden"><div class="oc-adm-give">${auraPicker({})}<button type="button" class="oc-adm-btn ok" data-c-addaura>Add aura</button></div></div>
+      <div class="oc-cb-foot"><span>Max uses 0: no limit. Hours 0: it never ends.</span><button type="button" class="oc-adm-btn" data-c-clear>Clear</button><button type="button" class="oc-adm-btn ok" data-mk>Make code</button></div>
+    </div>
+    <h3>[ Codes ] <small data-codes-count></small></h3>
+    <div class="oc-cl-bar"><label class="oc-search">${IC.search}<input type="search" data-codes-q placeholder="Search codes, rewards or who made them" spellcheck="false" autocomplete="off"></label><div class="oc-cb-cats" data-codes-f>${[['all', 'All'], ['live', 'Live'], ['ended', 'Ended']].map(([id, l]) => `<button type="button" data-f="${id}">${l}</button>`).join('')}</div></div>
+    <div class="oc-list oc-codes"><p class="oc-empty">Loading codes...</p></div>`;
+}
+function wireCodes(body) {
+  const F = G.codeForm = G.codeForm || { code: '', uses: 0, hours: 0, list: [], cat: 'money', q: '', edit: null, listQ: '', listF: 'all' };
+  const $ = s => body.querySelector(s), inp = k => $(`[data-c="${k}"]`);
+  const drawFoot = () => {
+    const ed = F.edit, mk = $('[data-mk]'), same = !!(ed && ed.id === F.code);
+    mk.textContent = same ? 'Save changes' : 'Make code';
+    mk.disabled = !F.list.length || !CODE_RE.test(F.code);
+    const bar = $('.oc-cb-editing'); bar.classList.toggle('hidden', !ed);
+    if (ed) bar.innerHTML = same ? `Editing <b>${esc(ed.id)}</b>. Saving keeps its uses (${fmt(ed.uses || 0)}).` : `Editing <b>${esc(ed.id)}</b>, but the name changed: saving makes a new code.`;
+  };
+  const drawList = () => {
+    const box = $('.oc-cb-rewards');
+    box.innerHTML = F.list.length ? F.list.map((e, i) => rewardChip(e, i)).join('') : '<p class="oc-empty">No rewards yet. Add some below: a code can give as many as you like.</p>';
+    box.querySelectorAll('[data-rw-n]').forEach(x => x.oninput = () => { F.list[+x.dataset.rwN].n = Math.max(1, Math.min(1e9, Math.floor(+x.value || 1))); });
+    box.querySelectorAll('[data-rw-x]').forEach(b => b.onclick = () => { F.list.splice(+b.dataset.rwX, 1); drawList(); });
+    $('[data-c-count]').textContent = F.list.length ? `${F.list.length} reward${F.list.length > 1 ? 's' : ''}` : '';
+    drawFoot();
+  };
+  const add = e => { const same = F.list.find(x => x.kind === e.kind && x.id === e.id); if (same) { if (!rewardInfo(e).once) same.n += e.n; } else F.list.push({ ...e }); sound('tick', 700); drawList(); };
+  const drawGrid = () => {
+    body.querySelectorAll('[data-c-cat]').forEach(b => b.classList.toggle('on', b.dataset.cCat === F.cat));
+    const aura = F.cat === 'auras';
+    $('.oc-cb-aura').classList.toggle('hidden', !aura); $('[data-c-search]').classList.toggle('hidden', aura); $('.oc-cb-grid').classList.toggle('hidden', aura);
+    if (aura) return;
+    const q = F.q.toLowerCase(), items = codeCatalog(F.cat).filter(it => !q || it.name.toLowerCase().includes(q) || it.sub.toLowerCase().includes(q));
+    $('.oc-cb-grid').innerHTML = items.length ? items.map(it => `<button type="button" class="oc-cb-item" data-add="${it.kind}:${it.id}" style="--c:${it.c}"><b>${esc(it.name)}</b><span>${it.once ? 'Add' : '+' + fmt(it.def)}</span><small>${esc(it.sub)}</small></button>`).join('') : '<p class="oc-empty">Nothing matches.</p>';
+  };
+  inp('code').value = F.code; inp('uses').value = F.uses; inp('hours').value = F.hours;
+  inp('code').oninput = () => { F.code = inp('code').value.trim(); drawFoot(); };
+  ['uses', 'hours'].forEach(k => { inp(k).oninput = () => { F[k] = Math.max(0, Math.floor(+inp(k).value || 0)); }; });
+  $('[data-c-rand]').onclick = () => { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; F.code = Array.from({ length: 8 }, () => A[Math.floor(Math.random() * A.length)]).join(''); inp('code').value = F.code; drawFoot(); };
+  body.querySelectorAll('[data-c-cat]').forEach(b => b.onclick = () => { F.cat = b.dataset.cCat; F.q = ''; $('[data-c-q]').value = ''; drawGrid(); });
+  $('[data-c-q]').oninput = e => { F.q = e.target.value.trim(); drawGrid(); };
+  $('.oc-cb-grid').onclick = e => { const b = e.target.closest('[data-add]'); if (!b) return; const [kind, id] = b.dataset.add.split(':'), it = codeCatalog(F.cat).find(x => x.kind === kind && x.id === id); if (it) add({ kind, id, n: it.def }); };
+  wirePicker($('.oc-cb-aura .oc-apick'));
+  $('[data-c-addaura]').onclick = () => { const g = readPick($('.oc-cb-aura')); add({ kind: 'aura', id: g.key, n: g.n }); };
+  $('[data-c-clear]').onclick = () => { Object.assign(F, { code: '', uses: 0, hours: 0, list: [], edit: null }); inp('code').value = ''; inp('uses').value = 0; inp('hours').value = 0; drawList(); };
+  $('[data-mk]').onclick = () => saveCode(body);
+  drawList(); drawGrid();
+  // the list: search it, and show the live ones or the ended ones
+  const lq = $('[data-codes-q]'); lq.value = F.listQ; lq.oninput = () => { F.listQ = lq.value.trim(); drawCodes(body); };
+  body.querySelectorAll('[data-codes-f] [data-f]').forEach(b => { b.classList.toggle('on', b.dataset.f === F.listF); b.onclick = () => { F.listF = b.dataset.f; body.querySelectorAll('[data-codes-f] [data-f]').forEach(x => x.classList.toggle('on', x === b)); drawCodes(body); }; });
+  loadCodes(body);
+}
+async function saveCode(body) {
+  const F = G.codeForm, code = F.code, editing = !!(F.edit && F.edit.id === code);
+  if (!CODE_RE.test(code)) { toast('Codes are 3 to 24 letters, numbers, - or _.', 'warn'); return; }
+  if (!F.list.length) { toast('Add at least one reward.', 'warn'); return; }
+  const ref = API().db.collection('rngCodes').doc(code);
+  try {
+    if (!editing && (await ref.get()).exists) { toast(`${code} already exists. Press Edit on it in the list to change it.`, 'warn'); return; }
+    const ed = editing ? F.edit : {};
+    await ref.set({ reward: toReward(F.list), maxUses: F.uses, uses: ed.uses || 0, expires: F.hours ? now() + F.hours * 3600000 : 0, by: ed.by || G.me.name, made: ed.made || now(), ...(editing ? { edited: now() } : {}) });
+    toast(editing ? `Saved ${code}.` : `Code ${code} is live.`, 'gold'); sound('secret');
+    Object.assign(F, { code: '', uses: 0, hours: 0, list: [], edit: null });
+    renderAdmin(body, 'codes');
+  } catch (e) { toast('Couldn\'t save that code.', 'warn'); }
+}
 async function loadCodes(body) {
   const box = body.querySelector('.oc-codes'); if (!box) return;
   try {
-    const snap = await API().db.collection('rngCodes').orderBy('made', 'desc').limit(30).get();
-    if (!G || G.panel !== 'admin') return;
-    const describe = r => [r.coins ? `$ ${fmt(r.coins)}` : '', r.f ? `F ${fmt(r.f)}` : '', r.void ? `${r.void} Void` : '', ...Object.entries(r.potions || {}).map(([id, n]) => `${n} ${(POTION[id] || { name: id }).name}`), ...(r.items || []).map(id => (ITEM[id] || { name: id }).name)].filter(Boolean).join(', ');
-    box.innerHTML = snap.empty ? '<p class="oc-empty">No codes yet.</p>' : snap.docs.map(d => { const c = d.data(); return `<div class="oc-row"><div class="oc-row-text"><b>${esc(d.id)}</b><span>${esc(describe(c.reward || {}))} · used ${c.uses || 0}${c.maxUses ? '/' + c.maxUses : ''}${c.expires ? (c.expires < now() ? ' · expired' : ' · ends in ' + fmtTime(c.expires - now())) : ''} · by ${esc(c.by || '?')}</span></div><button type="button" class="oc-btn sm bad" data-del="${esc(d.id)}">Delete</button></div>`; }).join('');
-    box.querySelectorAll('[data-del]').forEach(b => b.onclick = () => API().db.collection('rngCodes').doc(b.dataset.del).delete().then(() => loadCodes(body)).catch(() => toast('Couldn\'t delete that code.', 'warn')));
+    const snap = await API().db.collection('rngCodes').orderBy('made', 'desc').limit(200).get();
+    if (!G || G.panel !== 'admin' || !box.isConnected) return;
+    G.codesList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    drawCodes(body);
   } catch (e) { box.innerHTML = '<p class="oc-empty">Couldn\'t load codes.</p>'; }
+}
+function drawCodes(body) {
+  const box = body.querySelector('.oc-codes'), F = G.codeForm, list = G.codesList || [];
+  if (!box) return;
+  const q = F.listQ.toLowerCase();
+  const rows = list.filter(c => {
+    const st = codeState(c);
+    if ((F.listF === 'live' && st !== 'live') || (F.listF === 'ended' && st === 'live')) return false;
+    return !q || [c.id, c.by || '', ...fromReward(c.reward || {}).map(e => rewardInfo(e).name)].join(' ').toLowerCase().includes(q);
+  });
+  body.querySelector('[data-codes-count]').textContent = `${list.length} code${list.length === 1 ? '' : 's'}, ${list.filter(c => codeState(c) === 'live').length} live`;
+  box.innerHTML = rows.length ? rows.map(c => {
+    const st = codeState(c);
+    return `<div class="oc-coderow${st === 'live' ? '' : ' ended'}">
+      <div class="oc-coderow-top"><b class="oc-codename">${esc(c.id)}</b><em class="st-${st === 'live' ? 'live' : 'ended'}">${st.toUpperCase()}</em><span class="grow"></span><button type="button" class="oc-adm-btn sm" data-copy="${esc(c.id)}">Copy</button><button type="button" class="oc-adm-btn sm" data-edit="${esc(c.id)}">Edit</button><button type="button" class="oc-adm-btn sm bad" data-del="${esc(c.id)}">Delete</button></div>
+      <div class="oc-rws">${fromReward(c.reward || {}).map(e => rewardChip(e)).join('') || '<small>No rewards</small>'}</div>
+      <small class="oc-coderow-info">Used ${fmt(c.uses || 0)}${c.maxUses ? ' of ' + fmt(c.maxUses) : ', no limit'} · ${c.expires ? (c.expires < now() ? 'ended ' + fmtTime(now() - c.expires) + ' ago' : 'ends in ' + fmtTime(c.expires - now())) : 'never ends'} · by ${esc(c.by || '?')}</small>
+    </div>`;
+  }).join('') : `<p class="oc-empty">${list.length ? 'No code matches.' : 'No codes yet.'}</p>`;
+  box.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => { const code = b.dataset.copy; (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(() => toast(`Copied ${code}.`)).catch(() => toast(`The code is ${code}.`)); });
+  box.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
+    const c = list.find(x => x.id === b.dataset.edit); if (!c) return;
+    Object.assign(F, { code: c.id, uses: c.maxUses || 0, hours: c.expires && c.expires > now() ? Math.ceil((c.expires - now()) / 3600000) : 0, list: fromReward(c.reward || {}),
+      edit: { id: c.id, uses: c.uses || 0, made: c.made, by: c.by } });
+    renderAdmin(body, 'codes'); body.scrollTop = 0;
+  });
+  box.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {   // twice to be sure
+    if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = 'Sure?'; setTimeout(() => { if (b.isConnected) { b.classList.remove('armed'); b.textContent = 'Delete'; } }, 3000); return; }
+    API().db.collection('rngCodes').doc(b.dataset.del).delete().then(() => { toast(`Deleted ${b.dataset.del}.`); loadCodes(body); }).catch(() => toast('Couldn\'t delete that code.', 'warn'));
+  });
 }
 function adminAction(a) {
   const [k, v] = a.split(':'), n = now(), net = G.net;
@@ -3041,6 +3784,15 @@ function sound(kind, n = 0) {
     case 'glitch': for (let i = 0; i < 6; i++) tone(100 + Math.random() * 900, 0.05, 'square', 0.05, i * 0.04); break;
     case 'jump': tone(400, 0.12, 'sine', 0.03, 0, 650); break;
     case 'cast': tone(800, 0.25, 'sine', 0.04, 0, 200); break;
+    // 『EQUINOX』
+    case 'eqcharge': tone(150 + n * 60, 0.48, 'sine', 0.05, 0, 210 + n * 80); tone(75 + n * 30, 0.48, 'triangle', 0.03); break;
+    case 'eqfire': noise(0.24, 0.06, 0, 1100); tone(95, 0.22, 'sawtooth', 0.03); break;
+    case 'eqboom': noise(1.3, 0.3, 0, 260); tone(48, 1.3, 'sawtooth', 0.16, 0, 22); chord(523, [0, 7, 12, 19], 1.6, 'triangle', 0.05); break;
+    case 'eqfizzle': tone(700, 0.35, 'sine', 0.05, 0, 140); noise(0.2, 0.05, 0, 2400); break;
+    case 'eqspin': tone(260, 0.9, 'sine', 0.05, 0, 1500); tone(130, 0.9, 'triangle', 0.03, 0, 760); break;
+    case 'eqclash': noise(0.9, 0.26, 0, 480); tone(70, 0.7, 'square', 0.1, 0, 36); tone(1760, 0.6, 'triangle', 0.04, 0.04, 440); break;
+    case 'eqsummon': chord(392, [0, 7, 12, 19], 0.9, 'triangle', 0.06); tone(220, 0.7, 'sine', 0.05, 0, 880); break;
+    case 'eqbolt': tone(900, 0.15, 'sine', 0.03, 0, 300); break;
     case 'bite': tone(660, 0.1, 'square', 0.06); tone(660, 0.1, 'square', 0.06, 0.15); break;
     case 'attack': tone(160 + n * 30, 0.35, 'sawtooth', 0.07, 0, 60); tone(900 + n * 60, 0.15, 'triangle', 0.04, 0, 400); break;
     case 'hurt': tone(220, 0.2, 'square', 0.06, 0, 110); break;

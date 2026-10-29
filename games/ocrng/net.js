@@ -54,7 +54,8 @@ export function createNet(rtdb, firebase, uid, on) {
       listen(rr, 'child_removed', s => { delete roster[s.key]; if (s.key !== uid) on.left(s.key); checkStreaming(); });
       listen(ref('hits/' + uid), 'child_added', s => { const h = s.val(); s.ref.remove().catch(() => {}); if (h && Date.now() - (h.t || 0) < 5000) on.hit(h); });
       listen(ref('fx').limitToLast(8), 'child_added', s => { const f = s.val(); if (f && f.uid !== uid && Date.now() - (f.t || 0) < 4000) on.fx(f); });
-      listen(ref('announce').limitToLast(1), 'child_added', s => { const a = s.val(); if (a && (a.t || 0) > joinedAt - 15000) on.announce(a); });
+      const shown = new Set();   // announcements clear themselves out, which can bring an older one back to the end: show each once
+      listen(ref('announce').limitToLast(1), 'child_added', s => { const a = s.val(); if (a && !shown.has(s.key) && (a.t || 0) > joinedAt - 15000) { shown.add(s.key); on.announce(a); } });
       listen(ref('world'), 'value', s => on.world(s.val() || {}));
       listen(rtdb.ref('.info/serverTimeOffset'), 'value', s => { offset = s.val() || 0; });
       listen(ref('xboss'), 'value', s => on.xboss && on.xboss(s.val()));
@@ -68,14 +69,15 @@ export function createNet(rtdb, firebase, uid, on) {
       if (!streaming) return;
       const now = Date.now();
       if (now - lastSent < 100) return;
-      const key = `${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)},${p.r.toFixed(2)},${p.a},${p.hp}`;
+      const ex = p.ex ? JSON.stringify(p.ex) : '';
+      const key = `${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)},${p.r.toFixed(2)},${p.a},${p.hp},${ex}`;
       if (key === lastKey && now - lastSent < 3000) return;
       lastSent = now; lastKey = key;
-      myPos.set({ x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2), r: +p.r.toFixed(3), a: p.a, hp: p.hp, t: now }).catch(() => {});
+      myPos.set({ x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2), r: +p.r.toFixed(3), a: p.a, hp: p.hp, t: now, ...(p.ex || {}) }).catch(() => {});
     },
     hit(target, h) { ref('hits/' + target).push({ ...h, from: uid, t: Date.now() }).catch(() => {}); },
     fx(f) { const r = ref('fx').push({ ...f, uid, t: Date.now() }); setTimeout(() => r.remove().catch(() => {}), 4000); },
-    announce(a) { ref('announce').push({ ...a, uid, t: Date.now() }).catch(() => {}); },
+    announce(a) { const r = ref('announce').push({ ...a, uid, t: Date.now() }); r.catch(() => {}); r.onDisconnect().remove(); setTimeout(() => { r.remove().catch(() => {}); r.onDisconnect().cancel(); }, 60000); },
     setWorld(partial) { return ref('world').update(partial); },
     // only starts if nothing is being fought already (or the last fight is over)
     raidStart(state) { return ref('raid').transaction(cur => (!cur || cur.dead || cur.gone || cur.until < Date.now() ? state : undefined)); },

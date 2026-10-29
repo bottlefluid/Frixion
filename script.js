@@ -455,6 +455,23 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.43', date: '2026-10-28', title: 'Overcontrol RNG 2.6: 『EQUINOX』 reworked, X\'s wind charge and totem, and better codes',
+    notes: [
+      '『EQUINOX』 is reworked, and its two suns are bigger. Z, Liminal Beam: hold Z and the suns charge for 3 seconds, then fire a beam wherever your mouse points for as long as you keep holding (up to 5 seconds): 50 damage a second, exploding where it lands. Hold it to the end for a big finish; let go early and it fizzles out.',
+      'Whatever the beam hits is Equilized for 15 seconds: when it hurts you, 10% of the damage goes back to it. Players who get Equilized see it next to their potions.',
+      'X, Eclipse: the suns spin round you faster and faster and smash together for 100 damage to everything around you. C is Equilibrium (the old V), and F still flies.',
+      'V, Reflections: two copies of you, one white and one black, with 100 health each, for 30 seconds. They stay at your sides, go after whoever you hit or whoever hits you, and copy your moves at a third of the damage.',
+      '『LEGACY EQUINOX』\'s Twin Lance and Yin and Yang go where your mouse points.',
+      'The ____X____ aura: Z is a wind charge that launches you up (it needs ground under you, like Minecraft), and the shield is on the right mouse button (M2 on phones). An axe knocks a raised shield down for 5 seconds, and that works on X and team null too.',
+      'The totem over the ____X____ aura works now: the hit that would kill you pops it instead, for full health and a row of golden hearts. It\'s gone until you really die, then it comes back.',
+      'The Spearmace pearl-catches more times the further away its target is (up to 6), and hits harder the higher you fall from: 1.5 damage a stud, never less than 80. It can lock on to The Crawler too.',
+      'Team null hunts you anywhere on the island, finding its way round walls, up the mountain and into the caves, and throws ender pearls when it gets stuck. Only Limbo and the tiny island out at sea are safe.',
+      'You come back at spawn the moment you die.',
+      'Golden hearts take The Crawler\'s hits first, like every other hit.',
+      'The move buttons count down the seconds left on each cooldown, and they no longer flash during raids.',
+      'Codes can give any mix of rewards: coins, F, Void Coins, potions, gear, items, and auras with mutations. Admin, Codes has a new code maker with search, and the list of codes can be searched, filtered, copied, edited and deleted (it asks first).',
+      'Rare-roll announcements clear themselves out of the database after a minute, so it stays small.',
+    ] },
   { v: '4.42', date: '2026-10-28', title: 'Overcontrol RNG 2.5: fight like ____X____, Legacy Equinox and new mutations',
     notes: [
       'The ____X____ aura fights like him. M1: his sword. Z: his shield, which blocks hits from the front for as long as you hold it (an axe knocks it down for 5 seconds). X: his axe. C: an enchanted golden apple that heals you to full over time and gives 8 golden hearts that take damage first. V: the Spearmace: pick who to lock on to, then wind charge, pearl, wind charge, pearl, and down on them for 80 damage. F: a spear lunge, once a second.',
@@ -15719,7 +15736,7 @@ function openOcrng() {
       return true;
     }),
   };
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=12');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=13');
   ocrngModule.then(m => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);

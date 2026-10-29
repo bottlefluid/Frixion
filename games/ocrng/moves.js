@@ -153,7 +153,13 @@ export function hitTest(p, others) {
     let hit = false, kx = dx / dist * push, kz = dz / dist * push;
     if (p.kind === 'burst' || p.kind === 'nova') hit = dist <= p.r;
     else if (p.kind === 'orbs') { const along = dx * d.x + dz * d.z, side = Math.abs(dx * d.z - dz * d.x); hit = along > 0 && along < (p.range || 26) && side < 2.5 + along * 0.35; }
-    else if (p.kind === 'beam') { const along = dx * d.x + dz * d.z, side = Math.abs(dx * d.z - dz * d.x); hit = along > 0 && along < (p.len || 32) && side < (p.w || 2.4) + 0.6; kx = d.x * push; kz = d.z * push; }
+    else if (p.kind === 'eqbeam') {   // a beam from (x, z) to (x2, z2) that explodes where it ends
+      const sx = p.x2 - p.x, sz = p.z2 - p.z, k = Math.max(0, Math.min(1, ((o.pos.x - p.x) * sx + (o.pos.z - p.z) * sz) / (sx * sx + sz * sz || 1)));
+      const side = Math.hypot(o.pos.x - (p.x + sx * k), o.pos.z - (p.z + sz * k)), end = Math.hypot(o.pos.x - p.x2, o.pos.z - p.z2);
+      const by = p.y === undefined || o.pos.y === undefined ? null : p.y + ((p.y2 ?? p.y) - p.y) * k;   // how high the beam is there
+      hit = end < (p.r || 0) || (side < (p.w || 1.8) && (by === null || Math.abs(o.pos.y + 2 - by) < 4));
+      kx = (o.pos.x - p.x2) / (end || 1) * push * 0.15; kz = (o.pos.z - p.z2) / (end || 1) * push * 0.15;
+    } else if (p.kind === 'beam') { const along = dx * d.x + dz * d.z, side = Math.abs(dx * d.z - dz * d.x); hit = along > 0 && along < (p.len || 32) && side < (p.w || 2.4) + 0.6; kx = d.x * push; kz = d.z * push; }
     else if (p.kind === 'meteor' || p.kind === 'vortex') {
       const at = targetOf(p), ex = o.pos.x - at.x, ez = o.pos.z - at.z, e = Math.hypot(ex, ez) || 0.001;
       hit = e <= (p.r || 8);

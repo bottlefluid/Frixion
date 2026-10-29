@@ -166,7 +166,7 @@ export const AURAS = [
   A('abyssalcrown', '『ABYSSAL CROWN』', 4444444444, '#9c6bff', [L.wings('#12001f', { big: 1, many: 1, S: 2.6, dark: 1 }), L.halo('#b388ff', { r: 1.1, S: 2.2 }), L.ring('#7c4dff', { r: 4, runes: 1, S: 2.6 }), L.pillar('#4a148c', { tall: 1, S: 1.5 }), L.orbit('#d1c4e9', 6, { r: 3, size: 0.35, S: 2 }), L.motes('#000000', 60, { dark: 1, S: 2.4 }), L.motes('#b388ff', 50, { S: 2.4 })], null, { violet: 1 }, { sub: 'The Throne Beneath' }),
   A('celestialthrone', '『CELESTIAL THRONE』', 7777777777, '#ffe082', [L.wings('#fff8e1', { big: 1, many: 1, S: 3 }), L.halo('#ffd54f', { r: 1.2, S: 2.4 }), L.ring('#ffe082', { r: 4.5, rays: 1, S: 2.8 }), L.pillar('#fff59d', { tall: 1, S: 2 }), L.sparkle('#fffde7', { n: 70, S: 2.6 }), L.crystals('#ffecb3', 8, { S: 2.2 })], null, { gold: 1 }, { sub: 'Seated Above the Sky' }),
   A('eternity', '『ETERNITY』', 12000000000, '#ffffff', [L.rainbow({ S: 3 }), L.ring('#ffffff', { r: 5, runes: 1, rays: 1, S: 3 }), L.wings('#e1f5fe', { big: 1, many: 1, S: 3.2 }), L.halo('#ffffff', { r: 1.3, S: 2.6 }), L.orbit('#80deea', 8, { r: 3.4, size: 0.4, S: 2.4 }), L.pillar('#ffffff', { tall: 1, S: 2.2 }), L.spiral('#b388ff', { n: 80, S: 2.4 })], null, { rainbow: 1 }, { sub: 'Beyond Every Ending' }),
-  A('equinox', '『EQUINOX』', 1000000000000, '#ffffff', [L.yinyang({ r: 3.4, huge: 1 }), L.ring('#ffffff', { r: 3.8, half: 1, runes: 1 }), L.motes('#ffffff', 30), L.motes('#000000', 30, { dark: 1 })], null, { bw: 1 }, { sub: 'Equilibrium Incarnate', float: true }),
+  A('equinox', '『EQUINOX』', 1000000000000, '#ffffff', [L.yinyang({ r: 3.9, huge: 1, size: 1.6 }), L.ring('#ffffff', { r: 3.8, half: 1, runes: 1 }), L.motes('#ffffff', 30), L.motes('#000000', 30, { dark: 1 })], null, { bw: 1 }, { sub: 'Equilibrium Incarnate', float: true }),
   // the 『EQUINOX』 from before it changed: everyone who had that one got this, and it can't be rolled
   A('legacyequinox', '『LEGACY EQUINOX』', 2500000000, '#ffffff', [L.yinyang({ r: 3.4, huge: 1 }), L.ring('#ffffff', { r: 3.8, half: 1, runes: 1 }), L.motes('#ffffff', 30), L.motes('#000000', 30, { dark: 1 })], { legacy: true }, { bw: 1 }, { sub: 'Equilibrium Incarnate', float: true }),
 ];
@@ -322,20 +322,34 @@ for (const [el, ids] of Object.entries({
 export const elementOf = id => ELEMENT_OF[id] || 'arcane';
 const HAS_F = new Set('abyssalcrown celestialthrone eternity wind gale magnetic static comet phantom tempest leviathan aurora dawnbreaker starscourge singularity overcontrol genesis archangel seraphim aether paradox fault monarch pharaoh astral equinox hallowed unknown wraith'.split(' '));
 // The moves an aura gives you: [{ key: 'z', kind, name, cd, dmg, ... }]
-// ____X____'s aura fights like him: his sword on the left mouse button, a shield that blocks while Z is held, his axe,
-// an enchanted golden apple (Regeneration and Absorption, like Minecraft's), the spear-mace and a spear lunge.
+// ____X____'s aura fights like him: his sword on the left mouse button and his shield on the right (it blocks while
+// held), wind charges, his axe, an enchanted golden apple (Regeneration and Absorption, like Minecraft's), the
+// spear-mace and a spear lunge. His totem saves you once, and comes back when you really die.
 const X_MOVES = [
   { key: 'm1', kind: 'sword', name: 'Sword', cd: 0.6, dmg: 12 },
-  { key: 'z', kind: 'shield', name: 'Shield', cd: 0, dmg: 0 },
+  { key: 'm2', kind: 'shield', name: 'Shield', cd: 0, dmg: 0 },
+  { key: 'z', kind: 'wind', name: 'Wind Charge', cd: 0.5, dmg: 0 },
   { key: 'x', kind: 'axe', name: 'Axe', cd: 1.2, dmg: 26 },
   { key: 'c', kind: 'egap', name: 'EGap', cd: 25, dmg: 0 },   // an enchanted golden apple
   { key: 'v', kind: 'spearmace', name: 'Spearmace', cd: 15, dmg: 80 },
   { key: 'f', kind: 'lunge', name: 'Spear Lunge', cd: 1, dmg: 0 },
 ];
+// 『EQUINOX』, reworked: its two suns fight for you (ocrng.js has how each move works). C is the old V.
+const EQ_MOVES = [
+  { key: 'z', kind: 'eqbeam', name: 'Liminal Beam', cd: 8, dmg: 50, hold: true },
+  { key: 'x', kind: 'eqeclipse', name: 'Eclipse', cd: 10, dmg: 100, r: 14 },
+  { key: 'c', kind: 'nova', name: 'Equilibrium' },
+  { key: 'v', kind: 'eqtwins', name: 'Reflections', cd: 45, dmg: 0 },
+  { key: 'f', kind: 'flight', name: 'Weightless', toggle: true, cd: 0.6 },
+];
 export function movesFor(key) {
   const { aura, mut } = auraKey(key);
   if (aura.id === 'xboss') return X_MOVES.map(m => ({ ...m, color: mut ? mut.color : aura.c, tier: tierIndex(aura.rarity) }));
   const t = tierIndex(aura.rarity);
+  if (aura.id === 'equinox') {
+    const power = (0.7 + t * 0.12) * (mut ? 1.1 : 1);
+    return EQ_MOVES.map(m => ({ ...(MOVE_KIND[m.kind] || {}), ...m, ...(m.kind === 'nova' ? { dmg: Math.round(MOVE_KIND.nova.dmg * power) } : {}), color: mut ? mut.color : aura.c, tier: t }));
+  }
   const el = ELEMENTS[ELEMENT_OF[aura.id] || 'arcane'];
   const keys = [];
   if (aura.id === 'equinox' || aura.id === 'legacyequinox' || aura.id === 'xboss') keys.push('z', 'x', 'c', 'v', 'f');
@@ -433,6 +447,7 @@ export const POTIONS = [
   P('candy', 'Candy Corn Brew', '#ff9800', 'round', { luck: 0.5, speed: 0.1, secs: 300 }, { src: 'jack event', cat: 'potion' }, '+50% luck and +10% roll speed for 5 minutes. Halloween only.'),
   // not real potions: the bonuses for the Sky Parkour and the bell on the mountain
   P('parkour', 'Head in the Clouds', '#9fd8ff', 'round', { luck: 0.3, secs: 60 }, { hidden: true }, '+30% luck for 1 minute, for finishing the Sky Parkour.'),
+  P('equilized', 'Equilized', '#d9d9d9', 'round', {}, { hidden: true, secs: 15 }, 'Someone Equilized you with 『EQUINOX』: when you hurt them, 10% of it comes back to you.'),
   P('summit', 'Summit Blessing', '#ffffff', 'round', { luck: 0.5, secs: 120 }, { hidden: true }, '+50% luck for 2 minutes, for ringing the bell on the mountain.'),
 ];
 export const POTION = Object.fromEntries(POTIONS.map(p => [p.id, p]));
