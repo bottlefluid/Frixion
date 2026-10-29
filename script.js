@@ -465,6 +465,7 @@ const UPDATES = [
       'New mutations: Frozen (Snowy), Infernal (Hell), Celestial (Heaven), Voidborn (Null and Limbo) and Prismatic (anywhere, rarely). The Owner can equip any aura with any mutation in Admin, Me.',
       'PvP is in Settings now (Miscellaneous), and Settings has its own button on the left, like Sol\'s.',
       'Typing / and then something that isn\'t a command just says it in chat, slash and all.',
+      'The Owner can give auras, like Sol\'s admins: any aura, any mutation, any amount, to one player (in Admin, Players) or to everyone online. Players who are on get it right away, everyone else the next time they play.',
       'Fixed: closing the game left an error behind.',
     ] },
   { v: '4.41', date: '2026-10-28', title: 'Overcontrol RNG 2.4: saves you can trust, Hex the Halloween merchant, and auras bigger than Equinox',
@@ -15715,7 +15716,7 @@ function openOcrng() {
       return true;
     }),
   };
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=10');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=11');
   ocrngModule.then(m => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);

@@ -762,3 +762,11 @@ body.ocrng-open { overflow: hidden; }
 .oc-hearts { bottom: 98px; }
 .oc-toasts { bottom: 142px; }
 @media (max-height: 520px) { .oc-menu { top: 48px; gap: 3px; } .oc-menu > .oc-sq { width: 44px; height: 42px; } .oc-more { left: 52px; } .oc-hearts { bottom: auto; } .oc-toasts { bottom: auto; } }
+/* Admin, Players: giving auras */
+.oc-adm-give { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; }
+.oc-adm-give small { width: 100%; font-size: 11.5px; color: #b9b9c2; }
+.oc-adm-give select, .oc-adm-give input { height: 34px; padding: 0 8px; border: 1.5px solid var(--line-dim); background: rgba(0, 0, 0, .45); font-weight: 600; outline: none; }
+.oc-adm-give select[data-ga] { flex: 2 1 180px; min-width: 0; }
+.oc-adm-give select[data-gm] { flex: 1 1 110px; min-width: 0; }
+.oc-adm-give input[data-gn] { width: 84px; }
+.oc-adm-give select option { background: #15161b; }

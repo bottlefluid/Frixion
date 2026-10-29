@@ -522,6 +522,7 @@ function play() {
     raid: r => onRaid(r),
     xboss: v => G.xfight && G.xfight.onState(v),
     wiped: at => onWiped(at),
+    gift: (g, done) => onGift(g, done),
     denied: () => {
       if (!G || G.netDenied) return;
       G.netDenied = true;
@@ -2652,10 +2653,11 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
     <h3>[ Everything ]</h3><div class="oc-adm-grid">${tile('x:clear', 'END EVERY EVENT', 'Biome, time, luck and the Jester', false, '#ff6b6b', 'stop')}</div>`;
   if (tab === 'players') {
     const online = Object.entries((G.net && G.net.roster) || {}).filter(([u]) => u !== G.me.uid);
-    html = `<h3>[ Find a Player ] <small>set their rolls, or wipe everything they have (Me finds you)</small></h3>
+    html = `<h3>[ Find a Player ] <small>give them auras, set their rolls, or wipe everything they have (Me finds you)</small></h3>
       <div class="oc-adm-find"><input type="text" data-wn maxlength="40" placeholder="Username" spellcheck="false" autocomplete="off"><button type="button" class="oc-adm-btn" data-wf>Find</button><button type="button" class="oc-adm-btn" data-me>Me</button></div>
       ${online.length ? `<div class="oc-adm-online"><small>In the lobby:</small>${online.map(([u, d]) => `<button type="button" class="oc-adm-chip" data-pick="${esc(u)}">${esc(d.name || u)}</button>`).join('')}</div>` : ''}
-      <div class="oc-adm-card hidden" data-wc></div>`;
+      <div class="oc-adm-card hidden" data-wc></div>
+      <h3>[ Give Everyone Online ] <small>${online.length + 1} in the lobby, you included</small></h3><div class="oc-adm-give" data-gall>${auraPicker()}<button type="button" class="oc-adm-btn ok" data-giveall>Give everyone</button></div>`;
   }
   if (tab === 'codes') {
     const potionOpts = POTIONS.filter(p => !p.hidden).map(p => `<option value="potion:${p.id}">${esc(p.name)}</option>`).join('');
@@ -2689,9 +2691,10 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
       if (!G || G.panel !== 'admin') return;
       if (!found) { card.innerHTML = `<p class="oc-empty">Nobody called ${esc(q)} has Overcontrol RNG data.</p>`; return; }
       const d = found.data, best = auraKey(d.best || 'common');
-      card.innerHTML = `<b>${esc(d.name || found.id)}</b><span>${fmt(d.rolls || 0)} rolls  |  rarest: ${esc(best.name)}  |  ${Object.keys(d.auras || {}).length} kinds of aura</span><div class="oc-adm-find"><input type="number" min="0" data-rolls value="${d.rolls || 0}"><button type="button" class="oc-adm-btn ok" data-setrolls>Set rolls</button></div><button type="button" class="oc-adm-btn bad" data-wipe>Wipe ALL data</button>`;
+      card.innerHTML = `<b>${esc(d.name || found.id)}</b><span>${fmt(d.rolls || 0)} rolls  |  rarest: ${esc(best.name)}  |  ${Object.keys(d.auras || {}).length} kinds of aura</span><div class="oc-adm-find"><input type="number" min="0" data-rolls value="${d.rolls || 0}"><button type="button" class="oc-adm-btn ok" data-setrolls>Set rolls</button></div><div class="oc-adm-give"><small>Give an aura</small>${auraPicker()}<button type="button" class="oc-adm-btn ok" data-give>Give</button></div><button type="button" class="oc-adm-btn bad" data-wipe>Wipe ALL data</button>`;
       const ri = card.querySelector('[data-rolls]'); ri.onkeydown = e => e.stopPropagation();
       card.querySelector('[data-setrolls]').onclick = () => setRolls(found.id, d.name || found.id, Math.max(0, Math.floor(+ri.value || 0)));
+      card.querySelector('[data-give]').onclick = () => { const g = readPick(card); giveAura(found.id, d.name || found.id, g.key, g.n); };
       let armed = 0;
       card.querySelector('[data-wipe]').onclick = e => {
         const b = e.currentTarget;
@@ -2701,6 +2704,13 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
     };
     body.querySelector('[data-wf]').onclick = find;
     body.querySelector('[data-me]').onclick = () => { input.value = G.me.name; find(); };
+    body.querySelector('[data-giveall]').onclick = async () => {
+      const g = readPick(body.querySelector('[data-gall]')), r = auraKey(g.key), roster = Object.entries((G.net && G.net.roster) || {}).filter(([u]) => u !== G.me.uid);
+      applyGift(r.key, g.n, G.me.name, true);
+      for (const [u] of roster) await G.net.gift(u, { key: r.key, n: g.n, by: G.me.name }).catch(() => {});
+      toast(`Gave everyone in the lobby (${roster.length + 1}) ${g.n > 1 ? fmt(g.n) + 'x ' : ''}${r.name}.`, 'gold');
+      if (G.chat && roster.length) G.chat.system(`[Admin]: ${G.me.name} gave everyone ${g.n > 1 ? fmt(g.n) + 'x ' : ''}${r.name}!`, '#ffd54f', 'server');
+    };
     input.onkeydown = e => { if (e.key === 'Enter') find(); e.stopPropagation(); };
     body.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { input.value = b.dataset.pick; find(); });
   }
@@ -2755,6 +2765,36 @@ async function sweepEquinox() {
   }
   try { await flag.set({ at: Date.now(), players: n }); } catch (e) {}
   if (n) toast(`Gave 『LEGACY EQUINOX』 to ${n} player${n > 1 ? 's' : ''} who had 『EQUINOX』 and haven't played since.`, 'gold');
+}
+// Giving auras, like Sol's admins: any aura, any mutation, any amount. To yourself it goes straight in; to anyone else it
+// waits in their gift inbox until their game takes it (right away if they are playing), so their own save never
+// writes over it.
+const auraPicker = () => `<select data-ga>${[...AURAS].sort((a, b) => b.rarity - a.rarity).map(a => `<option value="${a.id}">${esc(a.name)} (1 in ${fmt(a.rarity)})</option>`).join('')}</select><select data-gm><option value="">No mutation</option>${Object.values(MUTATIONS).map(m => `<option value="${m.id}">${m.name}</option>`).join('')}</select><input type="number" data-gn min="1" max="1000000" value="1" title="How many">`;
+function readPick(el) {
+  const id = el.querySelector('[data-ga]').value, mu = el.querySelector('[data-gm]').value;
+  return { key: mu ? `${id}:${mu}` : id, n: Math.max(1, Math.min(1000000, Math.floor(+el.querySelector('[data-gn]').value || 1))) };
+}
+async function giveAura(to, name, key, n) {
+  const r = auraKey(key), what = `${n > 1 ? fmt(n) + 'x ' : ''}${r.name}`;
+  if (to === G.me.uid) { applyGift(r.key, n, G.me.name, true); return; }
+  try { await G.net.gift(to, { key: r.key, n, by: G.me.name }); toast(`Gave ${name} ${what}. ${G.net.roster[to] ? 'They have it now.' : 'They get it the next time they play.'}`, 'gold'); }
+  catch (e) { toast('Could not send that.', 'warn'); }
+}
+function applyGift(key, n, by, self) {
+  const s = G.save, r = auraKey(key), what = `${n > 1 ? fmt(n) + 'x ' : ''}${r.name}`;
+  s.auras[r.key] = auraCount(r.key) + n; s.found[r.aura.id] = true;
+  if (r.rarity > auraKey(s.best).rarity) s.best = r.key;
+  s.bestTier = Math.max(s.bestTier || 0, tierIndex(r.rarity));
+  if (self) toast(`Added ${what} to your Aura Storage.`, 'gold');
+  else { toast(`${by} gave you ${what}!`, 'gold'); if (G.chat) G.chat.system(`[Admin]: ${by} gave you ${what}.`, '#ffd54f'); }
+  sound('secret'); checkAchievements(); markDirty();
+}
+// a gift arrived: take it, save, then clear it from the inbox (a game that couldn't load its save leaves it for later)
+function onGift(g, done) {
+  if (!G || !G.save || G.loadFailed || G.wiped) return;
+  const n = Math.floor(+g.n || 0), r = auraKey(g.key);
+  if (n >= 1 && n <= 1000000 && r.key === String(g.key)) applyGift(r.key, n, String(g.by || 'The Owner').slice(0, 40));
+  saveNow(); done();
 }
 // A save by username, or by the name it was saved under.
 async function findSave(q) {

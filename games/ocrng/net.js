@@ -9,6 +9,8 @@
 //   ocrng/chat           chat messages (chat.js), each one deleted after 20 seconds.
 //   ocrng/xboss          ____X____: his health (life), what the host game sees him do (s), everyone's damage, team null.
 //   ocrng/wipe/{name}    when the Owner wiped this player's data, so a game they have open stops saving and closes.
+//   ocrng/gifts/{name}   auras the Owner gave this player, waiting until their game picks them up (right away if they
+//                        are playing), so their own save can never write over a gift.
 // Everyone leaves the roster automatically when they disconnect.
 export function createNet(rtdb, firebase, uid, on) {
   const ref = p => rtdb.ref('ocrng/' + p);
@@ -57,6 +59,7 @@ export function createNet(rtdb, firebase, uid, on) {
       listen(rtdb.ref('.info/serverTimeOffset'), 'value', s => { offset = s.val() || 0; });
       listen(ref('xboss'), 'value', s => on.xboss && on.xboss(s.val()));
       listen(ref('wipe/' + uid), 'value', s => on.wiped && on.wiped(s.val()));
+      listen(ref('gifts/' + uid), 'child_added', s => { const g = s.val(); if (g && on.gift) on.gift(g, () => s.ref.remove().catch(() => {})); });
       listen(ref('raid'), 'value', s => on.raid && on.raid(s.val()));
     },
     update(partial) { myRoster.update(partial).catch(() => {}); },
@@ -90,6 +93,7 @@ export function createNet(rtdb, firebase, uid, on) {
     xDied() { return ref('xboss/died/' + uid).transaction(n => (n || 0) + 1).catch(() => {}); },
     xHost(me) { const n = Date.now() + offset; return ref('xboss').transaction(cur => (cur && !cur.gone && !(cur.life && cur.life.dead) && (cur.hb || 0) < n - 3500 ? { ...cur, host: me, hb: n } : undefined)); },
     wipe(name) { return ref('wipe/' + name).set(Date.now() + offset); },
+    gift(to, g) { return ref('gifts/' + to).push({ ...g, t: Date.now() + offset }); },
     leave() {
       offs.forEach(f => f()); offs.length = 0;
       stopStreaming();
