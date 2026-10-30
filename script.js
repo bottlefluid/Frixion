@@ -460,6 +460,7 @@ const UPDATES = [
       'A server channel can be linked with a channel in your Discord server, so both act like one room. Open the channel\'s settings and pick Discord: add the Frixion bot to your Discord server, paste the Discord channel\'s ID, and post the code it gives you in that channel.',
       'Messages sent here show up in Discord with your Frixion name and profile picture, and messages sent in Discord show up here with the Discord user\'s name and picture and a DISCORD tag. Replies, pictures and files come along too.',
       'A linked channel has a DISCORD tag next to its name at the top, so you always know your messages go to Discord as well.',
+      'Messages cross over in about a second while a conversation is going.',
     ] },
   { v: '4.43', date: '2026-10-28', title: 'Overcontrol RNG 2.6: 『EQUINOX』 reworked, X\'s wind charge and totem, and better codes',
     notes: [
@@ -4183,8 +4184,9 @@ function noteChannelMessage(sid, cid, payload, ref, tid, channelName) {
 //  - Out: after a message goes into a linked channel (not a thread), bridgeOut asks the function to post it. The
 //    function claims the message first, so it's posted once however often this is called, then writes dc (the
 //    Discord message's id) on it.
-//  - In: while a linked channel is open and the tab is visible, bridgeTick asks for new Discord messages every 3
-//    seconds and adds each one as messages/dc_<Discord id> in a transaction, so two people with it open can't add it
+//  - In: while a linked channel is open and the tab is visible, bridgeTick asks for new Discord messages (every
+//    second while a conversation is going, every 2.5 seconds otherwise, slower if the function says Discord wants
+//    that) and adds each one as messages/dc_<Discord id> in a transaction, so two people with it open can't add it
 //    twice. Its uid is "discord:<their id>" and ext has their name and picture (discordProfile turns that into a
 //    profileCache entry; there's no users/ doc). Discord's file links expire, so whoever added it copies its files to
 //    Cloudinary.
@@ -4203,17 +4205,22 @@ async function bridgeCall(path, body) {
   if (!r.ok) { const e = new Error(j.error || 'The Discord bridge isn\'t answering right now.'); e.status = r.status; e.retry = j.retry; throw e; }
   return j;
 }
-// a message just sent in a linked channel goes to Discord too
+// a message just sent in a linked channel goes to Discord too (and the channel listens closely for an answer)
 function bridgeOut(sid, cid, ref, ch) {
   if (!bridgeLinked(ch) || !ref || !ref.id) return;
-  const go = n => bridgeCall('send', { sid, cid, mid: ref.id }).catch(e => {
+  bridgeHot();
+  const go = n => bridgeCall('send', { sid, cid, mid: ref.id, uid: myUid }).catch(e => {
     if ((e.status === 429 || e.status === 404 || e.status >= 500 || !e.status) && n < 2) setTimeout(() => go(n + 1), Math.min(15, e.retry || 3) * 1000);
     else console.warn('Discord bridge:', e.message);
   });
   go(0);
 }
 // ---- bringing Discord's messages over while a linked channel is open ----
-let bridgePoll = null;   // { key, sid, cid, after, timer }
+// Every second for a minute after anything was said (here or there), every 2.5 seconds otherwise.
+const BRIDGE_FAST = 1000, BRIDGE_SLOW = 2500;
+let bridgePoll = null;   // { key, sid, cid, after, timer, hot (fast until), busy }
+const bridgeHot = () => { if (bridgePoll) bridgePoll.hot = Date.now() + 60000; };
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && bridgePoll && !bridgePoll.busy) { clearTimeout(bridgePoll.timer); bridgeTick(); } });
 function bridgeWatch() {
   const ch = currentView === 'channel' && currentServerId ? currentChannelObj() : null;
   const key = bridgeLinked(ch) ? `${currentServerId}/${ch.id}/${ch.discord.channel}` : '';
@@ -4224,42 +4231,50 @@ function bridgeWatch() {
 }
 async function bridgeTick() {
   const P = bridgePoll;
-  if (!P) return;
-  const again = ms => { if (bridgePoll === P) P.timer = setTimeout(bridgeTick, ms); };
+  if (!P || P.busy) return;
+  const t0 = Date.now(), again = ms => { if (bridgePoll === P) P.timer = setTimeout(bridgeTick, Math.max(0, ms)); };
   const ch = currentView === 'channel' && currentServerId === P.sid && currentChannelId === P.cid ? lastChannelsList.find(c => c.id === P.cid) : null;
   if (!bridgeLinked(ch)) { bridgePoll = null; bridgeWatch(); return; }
-  if (document.visibilityState !== 'visible') { again(3000); return; }
+  if (document.visibilityState !== 'visible') { again(BRIDGE_SLOW); return; }
+  P.busy = true;
   try {
     const r = await bridgeCall(`pull?sid=${encodeURIComponent(P.sid)}&cid=${encodeURIComponent(P.cid)}&after=${maxSnowflake(P.after, ch.discord.last, ch.discord.since)}`);
     if (bridgePoll !== P) return;
-    await bridgeImport(P, ch, r.messages || [], r.last);
+    if (await bridgeImport(P, ch, r.messages || [], r.last)) bridgeHot();
     P.after = maxSnowflake(P.after, r.last);
-    again(3000);
+    // the next one a set time after this one started, so slow answers don't stretch the gap
+    again(Math.max(r.pace || 0, (Date.now() < (P.hot || 0) ? BRIDGE_FAST : BRIDGE_SLOW) - (Date.now() - t0)));
   } catch (e) { again(e.status === 429 ? Math.min(30, e.retry || 5) * 1000 : e.status === 503 ? 60000 : e.status === 404 ? 5000 : 10000); }
+  finally { P.busy = false; }
 }
+// Adds what came over (all at once), and says whether anything did.
 async function bridgeImport(P, ch, list, last) {
   const chRef = db.collection('servers').doc(P.sid).collection('channels').doc(P.cid), coll = chRef.collection('messages');
   const ours = new Map(lastRawMessages.filter(m => m.dc).map(m => [m.dc, m]));   // this channel's own messages, already in Discord
-  let added = null;
-  for (const d of list) {
-    if (!d || !isSnowflake(d.id) || !d.author || ours.has(d.id)) continue;
+  const have = new Set(lastRawMessages.map(m => m.id));   // someone else already brought these over
+  const one = async d => {
+    if (!d || !isSnowflake(d.id) || !d.author || ours.has(d.id) || have.has('dc_' + d.id)) return null;
     const ext = { src: 'discord', id: String(d.author.id), name: String(d.author.name || 'Discord user').slice(0, 80), tag: String(d.author.tag || '').slice(0, 40), avatar: /^https:\/\//.test(d.author.avatar || '') ? d.author.avatar : '', bot: !!d.author.bot };
     const payload = { uid: 'discord:' + ext.id, username: ext.name, ext, dc: d.id, createdAt: firebase.firestore.Timestamp.fromMillis(d.at || Date.now()), text: String(d.text || (d.stickers && d.stickers.length ? `[sticker: ${d.stickers[0]}]` : '')).slice(0, 4000) };
     const files = (d.files || []).filter(f => f && /^https?:\/\//.test(f.url || '')).slice(0, 10);
     if (files.length) payload.attachments = files.map(f => ({ url: f.url, name: String(f.name || 'file').slice(0, 200), type: /^image\//.test(f.type || '') ? 'image' : 'file', size: +f.size || 0 }));
     if (d.reply) { const o = d.reply.hook ? ours.get(d.reply.id) : null; payload.replyTo = { id: o ? o.id : 'dc_' + d.reply.id, uid: o ? o.uid : 'discord:' + d.reply.uid, username: o ? (o.username || '') : String(d.reply.name || ''), text: String(d.reply.text || '').slice(0, 200) }; }
-    if (!payload.text && !payload.attachments) continue;
+    if (!payload.text && !payload.attachments) return null;
     const ref = coll.doc('dc_' + d.id);
     try {
-      if (await db.runTransaction(async t => { if ((await t.get(ref)).exists) return false; t.set(ref, payload); return true; })) { added = { ref, payload }; bridgeRehost(ref, payload.attachments); }
+      if (await db.runTransaction(async t => { if ((await t.get(ref)).exists) return false; t.set(ref, payload); return true; })) { bridgeRehost(ref, payload.attachments); return { ref, payload, id: d.id }; }
     } catch (e) { console.warn('Discord bridge: could not add a message.', e); }
-  }
+    return null;
+  };
+  const done = (await Promise.all(list.map(one))).filter(Boolean);
+  const added = done.reduce((a, b) => (!a || BigInt(b.id) > BigInt(a.id) ? b : a), null);
   // How far it got (a page opening the channel later starts there) and, for whoever added something, the channel's
   // unread dot. Only written when something was added, or the saved place is more than 10 minutes behind.
   const up = {}, newest = maxSnowflake(last, ...list.map(d => d && d.id));
   if (isSnowflake(newest) && BigInt(newest) > BigInt(maxSnowflake(ch.discord.last)) && (added || snowflakeMs(newest) - snowflakeMs(maxSnowflake(ch.discord.last, ch.discord.since)) > 600000)) up['discord.last'] = newest;
   if (added) { up.lastMessageAt = FieldValue.serverTimestamp(); up.lastMessage = { uid: added.payload.uid, text: previewForMessage(added.payload).slice(0, 200), everyone: false, mid: added.ref.id }; }
   if (Object.keys(up).length) chRef.update(up).catch(() => {});
+  return list.length > 0;
 }
 // Discord's file links stop working after a day, so files coming over are copied to Cloudinary like files sent here.
 async function bridgeRehost(ref, atts) {

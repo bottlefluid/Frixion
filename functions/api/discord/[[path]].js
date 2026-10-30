@@ -58,8 +58,15 @@ export async function onRequest({ request, env, params }) {
 
 // ---------------- Discord ----------------
 const api = env => env.DISCORD_API || DISCORD;
-async function dc(env, method, path, body) {
+// What Discord says is left of a channel's allowance for reading messages, so screens can be told to slow down
+// before Discord starts refusing.
+const buckets = new Map();
+async function dc(env, method, path, body, bucket) {
   const r = await fetch(api(env) + path, { method, headers: { Authorization: 'Bot ' + env.DISCORD_BOT_TOKEN, 'Content-Type': 'application/json', 'User-Agent': UA }, body: body ? JSON.stringify(body) : undefined });
+  if (bucket) {
+    const left = parseFloat(r.headers.get('x-ratelimit-remaining')), after = parseFloat(r.headers.get('x-ratelimit-reset-after'));
+    if (Number.isFinite(left) && Number.isFinite(after)) buckets.set(bucket, { left, until: Date.now() + after * 1000 });
+  }
   if (r.status === 204) return null;
   const j = await r.json().catch(() => null);
   if (r.status === 429) fail(429, 'Discord is busy. Trying again in a moment.', { retry: (j && j.retry_after) || 2 });
@@ -93,9 +100,9 @@ async function hookFor(env, channel, create) {
   if (out) hooks.set(channel, { at: Date.now(), hook: out });
   return out;
 }
-async function hookSend(env, channel, msg) {
+async function hookSend(env, channel, msg, known) {
   for (let tries = 0; tries < 2; tries++) {
-    const h = await hookFor(env, channel, true);
+    const h = (tries === 0 && known) || await hookFor(env, channel, true);
     const r = await fetch(`${api(env)}/webhooks/${h.id}/${h.token}?wait=true`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'User-Agent': UA }, body: JSON.stringify(msg) });
     if (r.status === 404) { hooks.delete(channel); continue; }   // someone deleted the webhook in Discord: make a new one
     const j = await r.json().catch(() => null);
@@ -139,6 +146,16 @@ async function fsPatch(env, path, data, updateTime) {
   const write = { update: { name, fields: encFields(data) }, updateMask: { fieldPaths: Object.keys(data) }, currentDocument: updateTime ? { updateTime } : { exists: true } };
   const r = await fetch(`${fsBase(env)}:commit?key=${encodeURIComponent(env.FIREBASE_KEY || FIREBASE_KEY)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ writes: [write] }) });
   return r.ok;
+}
+// Claims a message for sending in one trip: adds 1 to its dcClaim and says what that came to. Only the request that
+// gets 1 sends it. (null if the message isn't there.)
+async function fsClaim(env, path) {
+  const name = new URL(fsBase(env)).pathname.replace(/^\/v1\//, '') + '/' + path;
+  const write = { update: { name, fields: {} }, updateMask: { fieldPaths: [] }, updateTransforms: [{ fieldPath: 'dcClaim', increment: { integerValue: '1' } }], currentDocument: { exists: true } };
+  const r = await fetch(`${fsBase(env)}:commit?key=${encodeURIComponent(env.FIREBASE_KEY || FIREBASE_KEY)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ writes: [write] }) });
+  if (!r.ok) return null;
+  const j = await r.json().catch(() => null), v = j && j.writeResults && j.writeResults[0] && (j.writeResults[0].transformResults || [])[0];
+  return v ? Number(v.integerValue ?? v.doubleValue) : null;
 }
 
 // ---------------- links ----------------
@@ -210,28 +227,35 @@ function discordText(m) {
   const text = out.join('\n').trim();
   return text.length > 2000 ? text.slice(0, 1997) + '...' : text;
 }
-async function send(env, { sid, cid, mid }, origin) {
+// Everything it needs is fetched at once (the link and its webhook, the message, a claim on it, who wrote it and the
+// server's nicknames), so the message reaches Discord one database trip after the request arrives. uid is the
+// sender's, as their Frixion says; if the message says otherwise, its own author is looked up instead.
+const PROFILE = ['username', 'displayName', 'avatarUrl'];
+async function send(env, { sid, cid, mid, uid }, origin) {
   if (!ID.test(sid || '') || !ID.test(cid || '') || !ID.test(mid || '')) fail(400, 'Something is missing.');
-  const link = await linkOf(env, sid, cid);
+  const path = `servers/${sid}/channels/${cid}/messages/${mid}`, hint = ID.test(uid || '') ? uid : null, linkP = linkOf(env, sid, cid);
+  const [link, hook, doc, claim, user, server] = await Promise.all([
+    linkP, linkP.then(l => (l ? hookFor(env, l.channel, true) : null)).catch(e => e),
+    fsGet(env, path), fsClaim(env, path),
+    hint ? fsGet(env, `users/${hint}`, PROFILE) : null, fsGet(env, `servers/${sid}`, ['nicknames']),
+  ]);
   if (!link) fail(404, 'This channel isn\'t linked to Discord.');
-  const path = `servers/${sid}/channels/${cid}/messages/${mid}`, doc = await fsGet(env, path);
   if (!doc) fail(404, 'That message is gone.');
   const m = doc.data;
-  if (m.dc || m.dcSend || m.ext || m.system || !m.uid || String(m.uid).startsWith('discord:')) return { ok: true, skipped: 'not new' };
+  if (m.dc || m.ext || m.system || !m.uid || String(m.uid).startsWith('discord:')) return { ok: true, skipped: 'not new' };
   if (!m.createdAt || Math.abs(Date.now() - m.createdAt) > 5 * 60000) return { ok: true, skipped: 'old' };
+  if (claim !== 1) return { ok: true, skipped: 'taken' };   // another request is sending it
   const content = discordText(m);
   if (!content) return { ok: true, skipped: 'empty' };
-  // claim it: if another request got here first, the message has changed and this fails
-  if (!(await fsPatch(env, path, { dcSend: Date.now() }, doc.updateTime))) return { ok: true, skipped: 'taken' };
   try {
-    const [user, server] = await Promise.all([fsGet(env, `users/${m.uid}`, ['username', 'displayName', 'avatarUrl']), fsGet(env, `servers/${sid}`, ['nicknames'])]);
-    const p = (user && user.data) || {}, nick = server && server.data.nicknames && server.data.nicknames[m.uid];
+    if (hook instanceof Error) throw hook;
+    const p = ((m.uid === hint ? user : await fsGet(env, `users/${m.uid}`, PROFILE)) || {}).data || {}, nick = server && server.data.nicknames && server.data.nicknames[m.uid];
     const avatar = /^https:\/\//.test(p.avatarUrl || '') ? p.avatarUrl : `${origin}/default-avatar.png`;
-    const sent = await hookSend(env, link.channel, { content, username: hookName(nick || p.displayName || p.username || m.username), avatar_url: avatar, allowed_mentions: { parse: [] } });
+    const sent = await hookSend(env, link.channel, { content, username: hookName(nick || p.displayName || p.username || m.username), avatar_url: avatar, allowed_mentions: { parse: [] } }, hook);
     await fsPatch(env, path, { dc: sent.id });
     return { ok: true, id: sent.id };
   } catch (e) {
-    await fsPatch(env, path, { dcSend: undefined }).catch(() => {});   // let it be tried again
+    await fsPatch(env, path, { dcClaim: 0 }).catch(() => {});   // so it can be tried again
     throw e;
   }
 }
@@ -259,7 +283,9 @@ function fromDiscord(m) {
     reply: r && ra ? { id: r.id, uid: ra.id, name: ra.global_name || ra.username, text: oneLine(plainText(r)).slice(0, 200), hook: !!r.webhook_id } : null,
   };
 }
-const pulls = new Map();   // the same question asked by two screens at once gets one answer
+// Screens asking the same thing within a moment of each other share one answer (never an old one: that would hold
+// messages back). pace, when Discord's allowance for the channel is nearly used up, is how long to wait (in ms).
+const pulls = new Map();
 async function pull(env, url) {
   const sid = url.searchParams.get('sid'), cid = url.searchParams.get('cid');
   if (!ID.test(sid || '') || !ID.test(cid || '')) fail(400, 'Something is missing.');
@@ -267,14 +293,20 @@ async function pull(env, url) {
   if (!link) fail(404, 'This channel isn\'t linked to Discord.');
   let after = url.searchParams.get('after') || '';
   if (!SNOWFLAKE.test(after) || BigInt(after) < BigInt(link.since)) after = link.since;
-  const key = link.channel + ':' + after, hit = pulls.get(key);
-  if (hit && Date.now() - hit.at < 2000) return hit.out;
-  const [list, hook, me] = await Promise.all([dc(env, 'GET', `/channels/${link.channel}/messages?after=${after}&limit=50`), hookFor(env, link.channel, false).catch(() => null), botUser(env)]);
-  const sorted = (list || []).slice().sort((x, y) => (BigInt(x.id) < BigInt(y.id) ? -1 : 1));
-  // not the bot's own posts (Frixion's messages, already there) or the link codes; just people talking
-  const keep = m => (m.type === 0 || m.type === 19) && m.author && m.author.id !== me.id && !(m.webhook_id && ((hook && m.webhook_id === hook.id) || m.application_id === me.id)) && !/frixion-link-[a-z0-9]{6}/i.test(m.content || '');
-  const out = { last: sorted.length ? sorted[sorted.length - 1].id : after, messages: sorted.filter(keep).map(fromDiscord) };
-  pulls.set(key, { at: Date.now(), out });
-  for (const [k, v] of pulls) if (Date.now() - v.at > 10000) pulls.delete(k);
-  return out;
+  const key = link.channel + ':' + after, hit = pulls.get(key), n = Date.now();
+  if (hit && n - hit.at < 700) return hit.p;
+  const b = buckets.get(link.channel);
+  if (b && b.left <= 0 && b.until > n) return { last: after, messages: [], pace: b.until - n };
+  const p = (async () => {
+    const [list, hook, me] = await Promise.all([dc(env, 'GET', `/channels/${link.channel}/messages?after=${after}&limit=50`, null, link.channel), hookFor(env, link.channel, false).catch(() => null), botUser(env)]);
+    const sorted = (list || []).slice().sort((x, y) => (BigInt(x.id) < BigInt(y.id) ? -1 : 1));
+    // not the bot's own posts (Frixion's messages, already there) or the link codes; just people talking
+    const keep = m => (m.type === 0 || m.type === 19) && m.author && m.author.id !== me.id && !(m.webhook_id && ((hook && m.webhook_id === hook.id) || m.application_id === me.id)) && !/frixion-link-[a-z0-9]{6}/i.test(m.content || '');
+    const nb = buckets.get(link.channel);
+    return { last: sorted.length ? sorted[sorted.length - 1].id : after, messages: sorted.filter(keep).map(fromDiscord), pace: nb && nb.left <= 1 && nb.until > Date.now() ? Math.ceil(nb.until - Date.now()) : 0 };
+  })();
+  pulls.set(key, { at: n, p });
+  p.catch(() => pulls.delete(key));
+  for (const [k, v] of pulls) if (n - v.at > 10000) pulls.delete(k);
+  return p;
 }
