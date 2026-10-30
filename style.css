@@ -4609,3 +4609,23 @@ body.is-mobile .thread-curve { top: -14px; height: 32px; }
 .fgs-run i:nth-child(5) { background: #4fc3f7; height: 24px; animation-delay: -11.2s; }
 @keyframes fgsWalk { from { transform: translateX(-30px); } to { transform: translateX(min(1200px, 100vw)); } }
 @media (prefers-reduced-motion: reduce) { .fgs-run i { animation: none; } }
+
+/* ---------- the Discord bridge (v4.45) ---------- */
+.bot-tag.discord-tag { background: #5865f2; color: #fff; }
+.chat-discord-pill { flex: none; margin-left: 8px; padding: 1px 6px; border-radius: 4px; background: #5865f2; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .04em; line-height: 16px; cursor: default; }
+.cs-dc-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin: 4px 0 14px; border-radius: 8px; background: var(--bg-secondary, rgba(255,255,255,.04)); border: 1px solid rgba(88,101,242,.45); }
+.cs-dc-card.off { border-color: rgba(255,255,255,.12); }
+.cs-dc-icon { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: #5865f2; color: #fff; }
+.cs-dc-card.off .cs-dc-icon { background: rgba(255,255,255,.12); }
+.cs-dc-icon svg { width: 18px; height: 18px; }
+.cs-dc-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cs-dc-card-text b { font-size: 15px; }
+.cs-dc-card-text span { font-size: 13px; opacity: .75; }
+.cs-dc-steps { margin: 6px 0 10px; padding-left: 20px; display: flex; flex-direction: column; gap: 14px; line-height: 1.45; }
+.cs-dc-steps li b { display: block; margin-bottom: 2px; }
+.cs-dc-steps a { color: #00a8fc; }
+.cs-dc-steps .fld-input { display: block; width: 100%; max-width: 360px; margin-top: 8px; }
+.cs-dc-code { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.cs-dc-code code { padding: 6px 10px; border-radius: 6px; background: rgba(0,0,0,.3); font-size: 14px; user-select: all; overflow-wrap: anywhere; }
+.cs-dc-msg:empty { display: none; }
+.cs-dc-msg { color: #f0b232; }

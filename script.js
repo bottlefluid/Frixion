@@ -455,6 +455,12 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.45', date: '2026-10-29', title: 'Link a channel with Discord',
+    notes: [
+      'A server channel can be linked with a channel in your Discord server, so both act like one room. Open the channel\'s settings and pick Discord: add the Frixion bot to your Discord server, paste the Discord channel\'s ID, and post the code it gives you in that channel.',
+      'Messages sent here show up in Discord with your Frixion name and profile picture, and messages sent in Discord show up here with the Discord user\'s name and picture and a DISCORD tag. Replies, pictures and files come along too.',
+      'A linked channel has a DISCORD tag next to its name at the top, so you always know your messages go to Discord as well.',
+    ] },
   { v: '4.43', date: '2026-10-28', title: 'Overcontrol RNG 2.6: 『EQUINOX』 reworked, X\'s wind charge and totem, and better codes',
     notes: [
       '『EQUINOX』 is reworked, and its two suns are bigger. Z, Liminal Beam: hold Z and the suns charge for 3 seconds, then fire a beam wherever your mouse points for as long as you keep holding (up to 5 seconds): 50 damage a second, exploding where it lands. Hold it to the end for a big finish; let go early and it fizzles out.',
@@ -1678,7 +1684,7 @@ function canManagePlatformUser(target) {
   if (theirs >= 2) return mine > theirs;
   return mine >= 1;
 }
-function botTag(profile) { return profile && profile.bot ? `<span class="bot-tag" title="Verified App">${icon('check')}<span>APP</span></span>` : ''; }
+function botTag(profile) { return profile && profile.discord ? `<span class="bot-tag discord-tag" title="Sent from Discord"><span>DISCORD</span></span>` : profile && profile.bot ? `<span class="bot-tag" title="Verified App">${icon('check')}<span>APP</span></span>` : ''; }
 
 // ============================================================
 // SERVER ROLES & PERMISSIONS (per-server, Discord-style)
@@ -1935,6 +1941,7 @@ function dayStr(ts) {
 }
 async function getProfile(uid) {
   if (profileCache[uid]) return profileCache[uid];
+  if (String(uid).startsWith('discord:')) return discordProfile({});   // someone on Discord (see DISCORD BRIDGE): no Frixion profile
   try {
     const snap = await db.collection('users').doc(uid).get();
     const data = snap.exists ? snap.data() : { username: uid, avatarColor: '#5865f2', status: 'offline', premiumUntil: null };
@@ -4162,6 +4169,161 @@ function noteChannelMessage(sid, cid, payload, ref, tid, channelName) {
   }).catch(() => {}));
 }
 
+// ============================================================
+// DISCORD BRIDGE  (v4.45)
+// NOTES FOR AI MODELS:
+//  - A server channel can be linked with one Discord channel (Channel Settings > Discord). Messages sent here are
+//    posted there through a webhook with the sender's Frixion name and profile picture; messages sent there show up
+//    here with the Discord user's name and picture and a DISCORD tag.
+//  - The Discord side is functions/api/discord on the main site. It holds the bot's token (a Cloudflare secret), so
+//    every copy of Frixion (the beta site, the computer app) calls it there. Its comment has the setup steps.
+//  - The link is on the channel doc: discord: { channel, name, guild, since, sig, last }. sig is made by the function
+//    from the token, so a link typed into the database by hand does nothing. last is the newest Discord message
+//    brought over (a page that opens the channel starts from there).
+//  - Out: after a message goes into a linked channel (not a thread), bridgeOut asks the function to post it. The
+//    function claims the message first, so it's posted once however often this is called, then writes dc (the
+//    Discord message's id) on it.
+//  - In: while a linked channel is open and the tab is visible, bridgeTick asks for new Discord messages every 3
+//    seconds and adds each one as messages/dc_<Discord id> in a transaction, so two people with it open can't add it
+//    twice. Its uid is "discord:<their id>" and ext has their name and picture (discordProfile turns that into a
+//    profileCache entry; there's no users/ doc). Discord's file links expire, so whoever added it copies its files to
+//    Cloudinary.
+//  - Nothing comes over while nobody has the channel open; it all arrives the next time someone opens it.
+// ============================================================
+const BRIDGE_API = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'http://127.0.0.1:8788/api/discord' : 'https://equilibrium-incarnate.pages.dev/api/discord';
+const bridgeLinked = ch => !!(ch && ch.discord && ch.discord.channel && ch.discord.sig);
+const isSnowflake = s => /^\d{15,22}$/.test(s || '');
+const maxSnowflake = (...ids) => ids.filter(isSnowflake).reduce((a, b) => (BigInt(b) > BigInt(a) ? b : a), '0');
+const snowflakeMs = id => (isSnowflake(id) ? Number((BigInt(id) >> 22n) + 1420070400000n) : 0);
+const discordProfile = ext => ({ username: ext.name || 'Discord user', displayName: ext.name || 'Discord user', avatarUrl: ext.avatar || '', avatarColor: '#5865f2', status: 'offline', premiumUntil: null, discord: true, discordTag: ext.tag || '' });
+async function bridgeCall(path, body) {
+  // text/plain, so the beta site and the computer app can call the main site without a CORS preflight
+  const r = await fetch(`${BRIDGE_API}/${path}`, body ? { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) } : undefined);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.error || 'The Discord bridge isn\'t answering right now.'); e.status = r.status; e.retry = j.retry; throw e; }
+  return j;
+}
+// a message just sent in a linked channel goes to Discord too
+function bridgeOut(sid, cid, ref, ch) {
+  if (!bridgeLinked(ch) || !ref || !ref.id) return;
+  const go = n => bridgeCall('send', { sid, cid, mid: ref.id }).catch(e => {
+    if ((e.status === 429 || e.status === 404 || e.status >= 500 || !e.status) && n < 2) setTimeout(() => go(n + 1), Math.min(15, e.retry || 3) * 1000);
+    else console.warn('Discord bridge:', e.message);
+  });
+  go(0);
+}
+// ---- bringing Discord's messages over while a linked channel is open ----
+let bridgePoll = null;   // { key, sid, cid, after, timer }
+function bridgeWatch() {
+  const ch = currentView === 'channel' && currentServerId ? currentChannelObj() : null;
+  const key = bridgeLinked(ch) ? `${currentServerId}/${ch.id}/${ch.discord.channel}` : '';
+  if ((bridgePoll ? bridgePoll.key : '') === key) return;
+  if (bridgePoll) clearTimeout(bridgePoll.timer);
+  bridgePoll = key ? { key, sid: currentServerId, cid: ch.id, after: '', timer: 0 } : null;
+  if (bridgePoll) bridgeTick();
+}
+async function bridgeTick() {
+  const P = bridgePoll;
+  if (!P) return;
+  const again = ms => { if (bridgePoll === P) P.timer = setTimeout(bridgeTick, ms); };
+  const ch = currentView === 'channel' && currentServerId === P.sid && currentChannelId === P.cid ? lastChannelsList.find(c => c.id === P.cid) : null;
+  if (!bridgeLinked(ch)) { bridgePoll = null; bridgeWatch(); return; }
+  if (document.visibilityState !== 'visible') { again(3000); return; }
+  try {
+    const r = await bridgeCall(`pull?sid=${encodeURIComponent(P.sid)}&cid=${encodeURIComponent(P.cid)}&after=${maxSnowflake(P.after, ch.discord.last, ch.discord.since)}`);
+    if (bridgePoll !== P) return;
+    await bridgeImport(P, ch, r.messages || [], r.last);
+    P.after = maxSnowflake(P.after, r.last);
+    again(3000);
+  } catch (e) { again(e.status === 429 ? Math.min(30, e.retry || 5) * 1000 : e.status === 503 ? 60000 : e.status === 404 ? 5000 : 10000); }
+}
+async function bridgeImport(P, ch, list, last) {
+  const chRef = db.collection('servers').doc(P.sid).collection('channels').doc(P.cid), coll = chRef.collection('messages');
+  const ours = new Map(lastRawMessages.filter(m => m.dc).map(m => [m.dc, m]));   // this channel's own messages, already in Discord
+  let added = null;
+  for (const d of list) {
+    if (!d || !isSnowflake(d.id) || !d.author || ours.has(d.id)) continue;
+    const ext = { src: 'discord', id: String(d.author.id), name: String(d.author.name || 'Discord user').slice(0, 80), tag: String(d.author.tag || '').slice(0, 40), avatar: /^https:\/\//.test(d.author.avatar || '') ? d.author.avatar : '', bot: !!d.author.bot };
+    const payload = { uid: 'discord:' + ext.id, username: ext.name, ext, dc: d.id, createdAt: firebase.firestore.Timestamp.fromMillis(d.at || Date.now()), text: String(d.text || (d.stickers && d.stickers.length ? `[sticker: ${d.stickers[0]}]` : '')).slice(0, 4000) };
+    const files = (d.files || []).filter(f => f && /^https?:\/\//.test(f.url || '')).slice(0, 10);
+    if (files.length) payload.attachments = files.map(f => ({ url: f.url, name: String(f.name || 'file').slice(0, 200), type: /^image\//.test(f.type || '') ? 'image' : 'file', size: +f.size || 0 }));
+    if (d.reply) { const o = d.reply.hook ? ours.get(d.reply.id) : null; payload.replyTo = { id: o ? o.id : 'dc_' + d.reply.id, uid: o ? o.uid : 'discord:' + d.reply.uid, username: o ? (o.username || '') : String(d.reply.name || ''), text: String(d.reply.text || '').slice(0, 200) }; }
+    if (!payload.text && !payload.attachments) continue;
+    const ref = coll.doc('dc_' + d.id);
+    try {
+      if (await db.runTransaction(async t => { if ((await t.get(ref)).exists) return false; t.set(ref, payload); return true; })) { added = { ref, payload }; bridgeRehost(ref, payload.attachments); }
+    } catch (e) { console.warn('Discord bridge: could not add a message.', e); }
+  }
+  // How far it got (a page opening the channel later starts there) and, for whoever added something, the channel's
+  // unread dot. Only written when something was added, or the saved place is more than 10 minutes behind.
+  const up = {}, newest = maxSnowflake(last, ...list.map(d => d && d.id));
+  if (isSnowflake(newest) && BigInt(newest) > BigInt(maxSnowflake(ch.discord.last)) && (added || snowflakeMs(newest) - snowflakeMs(maxSnowflake(ch.discord.last, ch.discord.since)) > 600000)) up['discord.last'] = newest;
+  if (added) { up.lastMessageAt = FieldValue.serverTimestamp(); up.lastMessage = { uid: added.payload.uid, text: previewForMessage(added.payload).slice(0, 200), everyone: false, mid: added.ref.id }; }
+  if (Object.keys(up).length) chRef.update(up).catch(() => {});
+}
+// Discord's file links stop working after a day, so files coming over are copied to Cloudinary like files sent here.
+async function bridgeRehost(ref, atts) {
+  if (!atts || !atts.length) return;
+  const out = await Promise.all(atts.map(async a => {
+    if (!/^https:\/\/(cdn|media)\.discordapp\.(com|net)\//.test(a.url) || (a.size || 0) > 10 * 1024 * 1024) return a;
+    try {
+      const fd = new FormData(); fd.append('file', a.url); fd.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+      const r = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${a.type === 'image' ? 'image' : 'auto'}/upload`, { method: 'POST', body: fd });
+      const j = await r.json();
+      return j && j.secure_url ? { ...a, url: j.secure_url } : a;
+    } catch (e) { return a; }
+  }));
+  if (out.some((a, i) => a.url !== atts[i].url)) ref.update({ attachments: out }).catch(() => {});
+}
+// ---- Channel Settings > Discord ----
+let csDiscordCode = '';
+async function renderChannelDiscordPane() {
+  const box = $('cs-discord'), ch = csChannel && (lastChannelsList.find(c => c.id === csChannel.id) || csChannel);
+  if (!box || !ch) return;
+  const d = ch.discord || {}, linkIcon = `<span class="cs-dc-icon">${icon('link')}</span>`;
+  if (bridgeLinked(ch)) {
+    box.innerHTML = `<div class="cs-dc-card">${linkIcon}<div class="cs-dc-card-text"><b>Linked with #${esc(d.name || 'channel')}</b><span>in ${esc(d.guild || 'a Discord server')}</span></div></div>
+      <p class="ss-hint">Messages sent in #${esc(ch.name)} are posted in that Discord channel with the sender's Frixion name and profile picture, and messages sent there show up here with a DISCORD tag. Discord's messages come over while someone has this channel open.</p>
+      <div class="ss-footer-actions"><button type="button" class="ds-btn ds-btn-danger-outline" id="cs-dc-unlink">Unlink</button></div>`;
+    $('cs-dc-unlink').onclick = () => confirmAction({ title: 'Unlink from Discord', body: `Stop linking #${ch.name} with #${d.name || 'channel'} on Discord? Messages already sent stay where they are.`, confirmLabel: 'Unlink',
+      onConfirm: async () => { try { await channelRef(ch.id).update({ discord: FieldValue.delete() }); toast('Unlinked from Discord.'); logAudit(currentServerId, `unlinked #${ch.name} from Discord`); } catch (e) { toast('Could not unlink it.', 'error'); } setTimeout(renderChannelDiscordPane, 300); } });
+    return;
+  }
+  box.innerHTML = '<p class="ss-hint">Checking the Discord bridge...</p>';
+  let info = null;
+  try { info = await bridgeCall('info'); } catch (e) {}
+  if (!csChannel || csChannel.id !== ch.id || $('cs-pane-discord').classList.contains('hidden')) return;
+  if (!info || !info.ready) { box.innerHTML = `<div class="cs-dc-card off">${linkIcon}<div class="cs-dc-card-text"><b>Not set up yet</b><span>${esc((info && info.error) || 'The Discord bridge needs a Discord bot first. The site\'s owner sets that up.')}</span></div></div>`; return; }
+  if (!csDiscordCode) { const a = new Uint8Array(6); crypto.getRandomValues(a); csDiscordCode = [...a].map(x => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[x % 32]).join(''); }
+  const code = `frixion-link-${csDiscordCode}`;
+  box.innerHTML = `
+    <p class="ss-hint">Link #${esc(ch.name)} with a channel in your Discord server. Messages sent in either one show up in both, with each person's name and profile picture.</p>
+    <ol class="cs-dc-steps">
+      <li><b>Add the bot to your Discord server.</b> <a href="${esc(info.invite)}" target="_blank" rel="noopener">Invite ${esc(info.bot)}</a>, and make sure it can see the channel.</li>
+      <li><b>Copy the Discord channel's ID.</b> In Discord, turn on Developer Mode (User Settings, Advanced), then right-click the channel and pick Copy Channel ID.
+        <input type="text" id="cs-dc-id" class="fld-input" placeholder="Channel ID (a long number)" inputmode="numeric" maxlength="22" autocomplete="off" spellcheck="false"></li>
+      <li><b>Post this code in that Discord channel.</b> The server's owner has to post it, or someone who can manage the server or its channels.
+        <div class="cs-dc-code"><code>${code}</code><button type="button" class="ds-btn ds-btn-brand ds-btn-sm" id="cs-dc-copy">Copy</button></div></li>
+    </ol>
+    <p class="ss-hint cs-dc-msg" id="cs-dc-msg" role="status"></p>
+    <div class="ss-footer-actions"><button type="button" class="ds-btn ds-btn-green" id="cs-dc-verify">Verify and Link</button></div>`;
+  $('cs-dc-copy').onclick = () => { navigator.clipboard.writeText(code).then(() => toast('Code copied.')).catch(() => toast(code)); };
+  $('cs-dc-verify').onclick = async () => {
+    const id = $('cs-dc-id').value.trim(), msg = $('cs-dc-msg'), btn = $('cs-dc-verify');
+    if (!isSnowflake(id)) { msg.textContent = 'That doesn\'t look like a channel ID. It\'s a long number, like 1234567890123456789.'; return; }
+    btn.disabled = true; msg.textContent = 'Checking Discord...';
+    try {
+      const r = await bridgeCall('verify', { sid: currentServerId, cid: ch.id, channel: id, code: csDiscordCode });
+      await channelRef(ch.id).update({ discord: { channel: r.channel, name: r.name, guild: r.guild, since: r.since, sig: r.sig, by: myUid, at: Date.now() } });
+      csDiscordCode = '';
+      toast(`#${ch.name} is linked with #${r.name} on Discord.`);
+      logAudit(currentServerId, `linked #${ch.name} with #${r.name} on Discord`);
+      setTimeout(renderChannelDiscordPane, 300);
+    } catch (e) { msg.textContent = e.message || 'Could not link it.'; }
+    finally { btn.disabled = false; }
+  };
+}
+
 // ---------- notifications ----------
 // Like Discord: a DM, a group message, or a message that mentions you (or @everyone) shows a notification while you
 // aren't looking at Frixion. Muted chats stay quiet. In the computer app it pops up over the game you're playing
@@ -4613,6 +4775,11 @@ function openGiftModal(username) {
 }
 
 async function openProfileModal(username) {
+  if (String(username).startsWith('discord:')) {   // someone on Discord, through a linked channel
+    const p = profileCache[username] || {};
+    toast(`${p.username || 'This person'}${p.discordTag ? ` (@${p.discordTag})` : ''} is on Discord. Their messages come through this channel's link.`);
+    return;
+  }
   const isSelf = username === myUid;
   const isBot = !!BOT_PROFILES[username];
   let p;
@@ -6420,8 +6587,9 @@ function refreshChannelComposerState() {
     $('attach-btn').classList.remove('hidden');
     $('sticker-btn').classList.remove('hidden');
     $('gif-btn').classList.remove('hidden');
-    $('slowmode-indicator').classList.add('hidden'); $('chat-header-topic').classList.add('hidden');
+    $('slowmode-indicator').classList.add('hidden'); $('chat-header-topic').classList.add('hidden'); $('chat-header-discord').classList.add('hidden');
     updateComposerSendBtn();
+    bridgeWatch();
     return;
   }
   const channel = currentChannelObj();
@@ -6444,8 +6612,12 @@ function refreshChannelComposerState() {
   $('chat-header-topic').title = thread ? `Back to #${channel.name}` : topic;
   $('chat-header-topic').classList.toggle('hidden', !topic);
   $('chat-header-topic').classList.toggle('is-parent-link', !!thread);
+  const dcPill = $('chat-header-discord'), linked = !thread && bridgeLinked(channel);
+  dcPill.classList.toggle('hidden', !linked);
+  if (linked) dcPill.title = `Linked with #${channel.discord.name || 'channel'} on Discord: messages here show up there too`;
   renderSlowmodeIndicator();
   updateComposerSendBtn();
+  bridgeWatch();
 }
 
 // ---- channel settings (Discord-style overview + permission overrides) ----
@@ -6471,6 +6643,7 @@ function openChannelSettings(channel) {
     });
   }
   csTarget = 'everyone';
+  csDiscordCode = '';
   $('cs-title').textContent = '# ' + channel.name;
   $('cs-name').value = channel.name;
   $('cs-topic').value = channel.topic || '';
@@ -6486,7 +6659,9 @@ function openChannelSettingsTab(tab) {
   document.querySelectorAll('.cs-tab').forEach(t => t.classList.toggle('on', t.dataset.csTab === tab));
   $('cs-pane-overview').classList.toggle('hidden', tab !== 'overview');
   $('cs-pane-permissions').classList.toggle('hidden', tab !== 'permissions');
+  $('cs-pane-discord').classList.toggle('hidden', tab !== 'discord');
   if (tab === 'permissions') renderChannelPermsPane();
+  if (tab === 'discord') renderChannelDiscordPane();
 }
 document.querySelectorAll('.cs-tab').forEach(t => { t.onclick = () => openChannelSettingsTab(t.dataset.csTab); });
 $('cs-slowmode').addEventListener('input', () => { $('cs-slowmode-val').textContent = formatSlowmode(SLOWMODE_STEPS[+$('cs-slowmode').value]); });
@@ -7713,6 +7888,8 @@ async function renderMessages(rawMsgs) {
   }
   if (searching) $('search-count').textContent = q ? `${msgs.length} result${msgs.length === 1 ? '' : 's'}` : '';
 
+  // a message from Discord brings its author's name and picture with it
+  msgs.forEach(m => { if (m.ext && m.ext.src === 'discord' && m.uid) profileCache[m.uid] = discordProfile(m.ext); });
   const uids = [...new Set(msgs.flatMap(m => [m.uid, m.replyTo && m.replyTo.uid, ...(m.targets || [])]).filter(Boolean))];
   if (uids.some(u => !profileCache[u])) await Promise.all(uids.map(u => getProfile(u)));
   if (seq !== messagesRenderSeq) return;
@@ -8191,6 +8368,7 @@ async function sendToCurrentConversation(payload) {
   } else if (currentView === 'channel') {
     ref = await db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').add(payload);
     noteChannelMessage(currentServerId, currentChannelId, payload, ref, null);
+    bridgeOut(currentServerId, currentChannelId, ref, currentChannelObj());
     db.collection('users').doc(myUid).update({ 'dailyStats.channelsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else if (currentView === 'dm') {
     ref = await db.collection('dms').doc(currentDMId).collection('messages').add(payload);
@@ -16451,6 +16629,7 @@ async function ovSend(chat, input) {
       if (ch.slowmode) lastChannelSendAt[ch.id] = Date.now();
       const sent = await db.collection('servers').doc(chat.sid).collection('channels').doc(chat.cid).collection('messages').add(payload);
       noteChannelMessage(chat.sid, chat.cid, payload, sent, null, chat.channel && chat.channel.name);
+      bridgeOut(chat.sid, chat.cid, sent, ch);
       db.collection('users').doc(myUid).update({
         'dailyStats.channelsMessaged': FieldValue.increment(1),
         'stats.messagesSent': FieldValue.increment(1),

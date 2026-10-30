@@ -12,7 +12,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=97">
+<link rel="stylesheet" href="style.css?v=98">
 </head>
 <body>
 
@@ -236,6 +236,7 @@
       <span class="chat-header-avatar" id="chat-header-avatar" aria-hidden="true"></span>
       <span class="hash" id="chat-header-hash">#</span>
       <span class="title" id="chat-header-title">Select a conversation</span>
+      <span class="chat-discord-pill hidden" id="chat-header-discord">DISCORD</span>
       <svg class="chat-header-chev" id="chat-header-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
       <span class="chat-topic hidden" id="chat-header-topic"></span>
       <div class="chat-header-actions">
@@ -597,6 +598,7 @@
         <div class="ds-nav-label" id="cs-title"># channel</div>
         <button type="button" class="cs-tab ds-nav-item on" data-cs-tab="overview">Overview</button>
         <button type="button" class="cs-tab ds-nav-item" data-cs-tab="permissions">Permissions</button>
+        <button type="button" class="cs-tab ds-nav-item" data-cs-tab="discord">Discord</button>
         <div class="ds-nav-sep"></div>
         <button type="button" class="ds-nav-item ds-nav-danger" id="cs-delete-btn"><span>Delete Channel</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button>
       </div>
@@ -642,6 +644,10 @@
             <div class="cs-perm-col" id="cs-perm-list"></div>
           </div>
           <div class="ss-footer-actions"><button type="button" class="ds-btn ds-btn-green" id="cs-save-perms">Save Changes</button></div>
+        </section>
+        <section class="cs-pane hidden" id="cs-pane-discord">
+          <h2 class="ss-h2">Discord</h2>
+          <div id="cs-discord"></div>
         </section>
       </div>
       <div class="ds-close-wrap">
@@ -1650,6 +1656,6 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=111"></script>
+<script defer src="script.js?v=112"></script>
 </body>
 </html>
