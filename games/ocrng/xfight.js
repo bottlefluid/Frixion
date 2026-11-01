@@ -18,7 +18,7 @@ const WINDOW = 30 * 60000, FIGHT_MS = 12 * 60000, ZONE = 62, CHASE = 230, SAFE =
 // lunges that is a few seconds), except into the plaza around the spawn (SAFE), so the dead are left alone.
 const XHIT = 2.6;   // he is easier to hit than his size: hits count from this much further away
 export const X_HP = { p1: 1000, p2: 2500, gap: 100, mob: 100, general: 250 };
-const DUR = { spawn: 2.6, sword: 0.42, axe: 0.7, lunge: 0.36, pearl: 1.05, charge: 0.5, eat: 3, block: 1.4, totem: 2.4, smash: 0.45, dead: 9, air: 6 };
+const DUR = { spawn: 2.6, sword: 0.42, axe: 0.7, lunge: 0.36, pearl: 1.05, charge: 0.5, eat: 3, block: 1.4, totem: 2.4, smash: 0.45, dead: 9, air: 9 };
 const v3 = (a) => new THREE.Vector3(a[0], a[1], a[2]);
 const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
@@ -167,8 +167,9 @@ export function createXFight(ctx) {
         const recent = H.recent.filter(h => h.t > n - 2000).reduce((s, h) => s + h.d, 0);
         if (L.phase === 2 && L.hp < L.max * 0.5 && H.gaps < 4 && n > cd.eat) { cd.eat = n + 15000; go(X, 'eat'); break; }
         if (L.phase === 2 && recent > 45 && n > cd.block && !((L.shieldOff || 0) > n)) { cd.block = n + 6000; go(X, 'block'); break; }
-        if (d > 24) {   // far away: 3 times in 4 he pearls to you, otherwise he lunges after you until he can mace you
-          if (r < 0.75 && n > cd.pearl) { cd.pearl = n + 3500; go(X, 'pearl', { to: tg.pos.clone(), who: tg.uid }); }
+        if (d > 24) {   // far away: half the time he spear-maces you, otherwise mostly he pearls to you, or lunges after you until he can mace you
+          if (n > cd.air && r < 0.5) { go(X, 'air'); break; }
+          if (r < 0.85 && n > cd.pearl) { cd.pearl = n + 3500; go(X, 'pearl', { to: tg.pos.clone(), who: tg.uid }); }
           else go(X, 'spam', { left: 2 });
           break;
         }
@@ -227,20 +228,30 @@ export function createXFight(ctx) {
         break;
       }
       case 'block': { X.vel.x = 0; X.vel.z = 0; if (tg) faceTo(X, tg.pos); if (X.t > DUR.block || (L.shieldOff || 0) > n) go(X, 'chase'); break; }
-      // Wind charge at his feet, look up and pearl up, wind charge again: very high in about a second. Then down with
-      // the mace onto his target, with a spear lunge on the way if they are far. Damage: 6, plus 5 for every stud he fell.
+      // Wind charge at his feet, look up and pearl up, wind charge again: very high in about a second. Then across to
+      // his target in spear lunges, as many as it takes, staying up there, and down on them with the mace. Damage: 6,
+      // plus 5 for every stud he fell.
       case 'air': {
         const tgp = tg ? tg.pos : X.pos;
-        if (X.t < 0.05 && once(X, 'g1')) { X.w = 'wind'; emit({ k: 'gust', x: X.pos.x, y: X.pos.y, z: X.pos.z, r: 3.6, dmg: 2, vy: 30, self: 1 }); X.vel.y = 42; X.vel.x = 0; X.vel.z = 0; X.peak = X.pos.y; D.from = X.pos.y; }
+        if (once(X, 'g1')) { X.w = 'wind'; emit({ k: 'gust', x: X.pos.x, y: X.pos.y, z: X.pos.z, r: 3.6, dmg: 2, vy: 30, self: 1 }); X.vel.y = 42; X.vel.x = 0; X.vel.z = 0; X.peak = X.pos.y; D.from = X.pos.y; }
         if (X.t > 0.3 && once(X, 'p')) { X.w = 'pearl'; X.up = 1; emit({ k: 'throw', kind: 'pearl', x: X.pos.x, y: X.pos.y + 6, z: X.pos.z, x2: X.pos.x, y2: X.pos.y + 18, z2: X.pos.z, dur: 0.3, arc: 0 }); }
         if (X.t > 0.6 && once(X, 'tp')) { emit({ k: 'pearl', x: X.pos.x, y: X.pos.y, z: X.pos.z, x2: X.pos.x, y2: X.pos.y + 9, z2: X.pos.z }); X.pos.y += 9; X.vel.y = Math.max(X.vel.y, 8); }
         if (X.t > 0.78 && once(X, 'g2')) { X.w = 'wind'; X.up = 0; emit({ k: 'gust', x: X.pos.x, y: X.pos.y, z: X.pos.z, r: 3.2, dmg: 0, vy: 0 }); X.vel.y = 36; }
         X.peak = Math.max(X.peak, X.pos.y);
-        if (X.t > 0.9 && X.vel.y < 0) {
+        if (X.t > 0.9 && X.vel.y < 0 && !D.lunging && !D.mace) { if (flat(X.pos, tgp) > 9 && X.pos.y - groundAt(X.pos) > 6) D.lunging = X.t; else D.mace = X.t; }
+        if (D.lunging && !D.mace) {   // lunge after lunge, a third of a second apart, no falling in between
+          const hd = flat(X.pos, tgp), since = X.t - D.lunging, nth = Math.floor(since / 0.3);
+          if (hd < 9 || nth >= 14) D.mace = X.t;
+          else {
+            X.w = 'spear'; faceTo(X, tgp);
+            if (once(X, 'lg' + nth)) emit({ k: 'lgo', x: X.pos.x, y: X.pos.y, z: X.pos.z });
+            const f = fwd(X.yaw), sp = since % 0.3 < 0.23 ? 96 : 8; X.vel.set(f.x * sp, 0, f.z * sp);
+            D.ring = [tgp.x, tgp.z];
+          }
+        }
+        if (D.mace) {
           const hd = flat(X.pos, tgp);
-          if (!D.spear && hd > 7 && X.pos.y - groundAt(X.pos) > 6) { D.spear = X.t; }
-          if (D.spear && X.t - D.spear < 0.28) { X.w = 'spear'; faceTo(X, tgp); const f = fwd(X.yaw); X.vel.x = f.x * 44; X.vel.z = f.z * 44; }
-          else { X.w = 'mace'; faceTo(X, tgp); const f = fwd(X.yaw), sp = Math.min(17, hd * 2.2); X.vel.x = f.x * sp; X.vel.z = f.z * sp; }
+          { X.w = 'mace'; faceTo(X, tgp); const f = fwd(X.yaw), sp = Math.min(17, hd * 2.2); X.vel.x = f.x * sp; X.vel.z = f.z * sp; }
           // where he will land, for the red ring everyone sees
           const h = X.pos.y - groundAt(X.pos), vy = -X.vel.y, tt = (-vy + Math.sqrt(vy * vy + 2 * GRAV * h)) / GRAV;
           D.ring = [X.pos.x + X.vel.x * tt, X.pos.z + X.vel.z * tt];
@@ -248,14 +259,14 @@ export function createXFight(ctx) {
         if (X.t > 0.9 && X.onGround && once(X, 'smash')) {
           const fell = Math.max(0, X.peak - X.pos.y), dmg = Math.round(6 + 5 * fell);
           emit({ k: 'smash', x: X.pos.x, y: X.pos.y, z: X.pos.z, dmg, r1: 5, r2: 9, power: Math.min(2, 0.6 + fell / 22) });
-          H.cd.air = n + 6000 + Math.random() * 4000; D.ring = null; go(X, 'smash');
+          H.cd.air = n + 4500 + Math.random() * 3000; D.ring = null; go(X, 'smash');
         }
         if (X.t > DUR.air) go(X, 'chase');
         break;
       }
       case 'smash': X.w = 'mace'; X.vel.x = 0; X.vel.z = 0; if (X.t > DUR.smash) go(X, 'chase'); break;
     }
-    physics(X, dt, X.act === 'dead' && X.onGround);
+    physics(X, dt, (X.act === 'dead' && X.onGround) || (X.act === 'air' && X.data.lunging && !X.data.mace));
     if (flat(X.pos, ctx.arena) > CHASE + 40) { X.pos.set(ctx.arena.x, 0, ctx.arena.z); X.vel.set(0, 0, 0); }
     if (!L.dead) mobTick(dt, n);
     // send it all, 8 times a second, and a heartbeat so others know the host is still here
@@ -593,6 +604,7 @@ export function createXFight(ctx) {
     onState, update, hitFrom, damage, onMyDeath, start, stop, tryScheduled, targets,
     models: () => ({ x: !!xm, mobs: Object.keys(mobs).length, portal: !!portal }),
     live, get host() { return isHost(); },
+    state: () => H,   // the host's side of the fight, for tests
     near: p => !!(xb && live() && flat(p, ctx.arena) < 140),
     // for the boss bar
     info() {

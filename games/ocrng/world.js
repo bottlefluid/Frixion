@@ -501,6 +501,15 @@ export function createWorld(scene, quality) {
   const ARENA = new THREE.Vector3(76, 0, 18);
   const arenaSand = new THREE.Mesh(new THREE.CircleGeometry(17, 40), studMat('#d9b56e', 34, 34)); arenaSand.rotation.x = -Math.PI / 2; arenaSand.position.set(ARENA.x, 0.04, ARENA.z); root.add(arenaSand);
   for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2; box(ARENA.x + Math.cos(a) * 18.5, 0, ARENA.z + Math.sin(a) * 18.5, 2.2, 1 + (i % 3) * 0.7, 2.2, '#a1887f', { ry: a }); }
+  // ---- the Commander's Gate, east of the Pit: walk in to fight _________ alone ----
+  const GTX = 92, GTZ = 42;
+  for (const dz of [-4.5, 4.5]) box(GTX, 0, GTZ + dz, 2, 11, 2, '#1a1418', { studsAllOver: true });
+  box(GTX, 11, GTZ, 2.4, 2, 11, '#1a1418', { studsAllOver: true });
+  const gateGlow = new THREE.Mesh(new THREE.PlaneGeometry(7, 11), new THREE.MeshBasicMaterial({ color: '#ff1a1a', transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
+  gateGlow.rotation.y = Math.PI / 2; gateGlow.position.set(GTX, 5.5, GTZ); root.add(gateGlow);
+  glow('#ff2a2a', 16, GTX, 6, GTZ, root, 0.45);
+  animated.push(dt => { gateGlow.material.opacity = 0.38 + Math.sin(performance.now() / 300) * 0.1; });
+  const gateSign = signBoard('_________', 'The Commander. Alone, one life.', '#e0e0e0'); gateSign.position.set(GTX - 4, 0, GTZ - 9); gateSign.rotation.y = -Math.PI / 2; root.add(gateSign);
   const arenaSign = signBoard('THE PIT', 'Something lives under the sand', '#f0c87a'); arenaSign.position.set(ARENA.x - 20, 0, ARENA.z - 10); arenaSign.rotation.y = Math.PI * 0.35; root.add(arenaSign);
 
   // ---- Halloween: pumpkins everywhere, and Jack, who trades Pumpkin Tokens ----
@@ -593,7 +602,7 @@ export function createWorld(scene, quality) {
     || (Math.abs(x - PX) < 28 && Math.abs(z - PZ) < 22) || z < -68 || (Math.abs(x - 66) < 18 && Math.abs(z + 36) < 16) || (x < -78 && z > 8 && z < 72) || (Math.abs(x - 23) < 6 && Math.abs(z - 11) < 6) || (Math.abs(x - TX) < 12 && Math.abs(z - TZ) < 12) || (Math.abs(x - SX) < 8 && Math.abs(z - SZ) < 8)
     || Math.abs(x) < 5 || (Math.abs(z + 6) < 5 && Math.abs(x) < 45) || (Math.abs(x + 40) < 5 && z > 0 && z < 40) || (Math.abs(x - GX) < 6 && Math.abs(z - GZ) < 6)
     || (x < -92 && z < 4) || (Math.abs(x - OB.x) < 14 && Math.abs(z - OB.z) < 14) || (Math.abs(x - GYX) < 15 && Math.abs(z - GYZ) < 12) || (Math.abs(z + 18) < 4 && Math.abs(x) < 20) || (Math.abs(z + 6) < 5 && x < -40 && x > -96)
-    || (Math.abs(x - JKX) < 12 && z > JKZ - 10 && z < JKZ + 16) || Math.hypot(x - ARENA.x, z - ARENA.z) < 22 || (Math.abs(x + 33) < 4 && Math.abs(z - 70) < 4);
+    || (Math.abs(x - JKX) < 12 && z > JKZ - 10 && z < JKZ + 16) || Math.hypot(x - ARENA.x, z - ARENA.z) < 22 || Math.hypot(x - 92, z - 42) < 11 || (Math.abs(x + 33) < 4 && Math.abs(z - 70) < 4);
   let trees = 0;
   for (let i = 0; i < 1400 && trees < 120; i++) {
     const x = B.minX + 6 + rand() * (GW - 12), z = B.minZ + 6 + rand() * (GD - 12);
@@ -717,6 +726,7 @@ export function createWorld(scene, quality) {
       jake: { pos: new THREE.Vector3(JKX, 0.6, JKZ + 3), r: 5, label: 'Talk to Jake' },
       jack: { pos: new THREE.Vector3(-35, 0, 70), r: 4.5, label: 'Talk to Jack' },
       hex: { pos: new THREE.Vector3(-35, 0, 62), r: 4.5, label: 'Talk to Hex' },
+      cmdgate: { pos: new THREE.Vector3(GTX, 0, GTZ), r: 6, label: 'Face _________ alone' },
       towerdoor: { pos: new THREE.Vector3(TX - 4.2, 0, TZ), r: 2.6, label: 'Open the little door' },
       jukebox: { pos: new THREE.Vector3(JBX, 1, JBZ - 6), r: 3.5, label: 'Use the jukebox' },
       jukebox_exit: { pos: new THREE.Vector3(JBX, 1, JBZ + 9), r: 2.6, auto: true },

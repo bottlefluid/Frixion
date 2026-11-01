@@ -455,6 +455,18 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.46', date: '2026-11-01', title: 'Overcontrol RNG 2.7: _________, the Commander',
+    notes: [
+      '_________, the Commander, is here. Walk through the Commander\'s Gate east of the Pit to fight him alone, in his own arena, with one life: die and you\'re back at the gate.',
+      'He has 5,000 health, a shield, a spear and a mace, and he flies with an elytra. He rockets up, swaps it for his chestplate at the top, dives back down and swaps again right before his mace lands: 250 damage at the very least, and 15 more for every stud he fell. A red ring shows where he\'s coming down, so keep moving. He jousts too, straight at you on his elytra with his spear lowered.',
+      'Team null comes through two portals in waves: 50 soldiers with 250 health each and 2 generals with 1,000. They circle you, jump for critical hits and put their shields up when you swing.',
+      'Beat him for the _________ aura (Commander), a special aura in the null tier, along with 60,000 coins, Void Coins and potions.',
+      'The _________ aura fights like him. M1: his mace, which hits harder the further you fall (three times as hard as ____X____\'s) and bounces you back up with Wind Burst. M2: his shield. Z: hold it to pearl-catch up to 3 times, even while gliding. X: a firework rocket while you glide, or a wind charge. C: Elytra Spear, straight at whoever you pick for 80. V: Elytra Mace, 16 dives onto them, 250 damage at the very least. F: swaps your chestplate for your elytra.',
+      'Elytra flight works like Minecraft: jump, then jump again in the air, and you glide where you look, faster the steeper you dive. A rocket boosts you for 3 seconds.',
+      'Admins can join anyone\'s fight with _________ from Admin, Events. Nobody else sees you while you\'re in there, and a fight uses no data at all unless an admin joins it.',
+      'The ____X____ aura: tap Z for a wind charge, or hold it to pearl-catch up to 3 times. The Spearmace crosses to its target in spear lunges, and the F lunge goes much further from a jump, because the speed carries.',
+      '____X____ himself spear-maces you now, more often: up high, across to you in spear lunges, and down with the mace.',
+    ] },
   { v: '4.45', date: '2026-10-29', title: 'Link a channel with Discord',
     notes: [
       'A server channel can be linked with a channel in your Discord server, so both act like one room. Open the channel\'s settings and pick Discord: add the Frixion bot to your Discord server, paste the Discord channel\'s ID, and post the code it gives you in that channel.',
@@ -15941,7 +15953,7 @@ function setGameApi() {
 function openOcrng() {
   if (!myUid || !myProfile) return;
   setGameApi();
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=13');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=14');
   ocrngModule.then(m => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);

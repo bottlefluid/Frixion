@@ -162,6 +162,7 @@ export const AURAS = [
   // One aura, like Sol's: 『EQUINOX』, the Equilibrium Incarnate. A white sun and a black sun in balance.
   // only from beating ____X____: be his top damager, never die, and do at least 250 damage
   A('xboss', '____X____', 999999999, '#b388ff', [{ t: 'weapons' }, L.spiral('#9c6bff', { n: 36 }), L.motes('#b388ff', 26), L.motes('#ffffff', 14), L.ring('#7c4dff', { r: 3.2, runes: 1 })], { boss: true }, { violet: 1 }),
+  A('commander', '_________', 1500000000, '#e0e0e0', [{ t: 'commander' }, L.spiral('#f5f5f5', { n: 30 }), L.motes('#e0e0e0', 24), L.motes('#000000', 16, { dark: 1 }), L.ring('#9e9e9e', { r: 3.4, runes: 1 })], { boss: true }, {}, { sub: 'Commander' }),
   // rarer than 『EQUINOX』, and enormous
   A('abyssalcrown', '『ABYSSAL CROWN』', 4444444444, '#9c6bff', [L.wings('#12001f', { big: 1, many: 1, S: 2.6, dark: 1 }), L.halo('#b388ff', { r: 1.1, S: 2.2 }), L.ring('#7c4dff', { r: 4, runes: 1, S: 2.6 }), L.pillar('#4a148c', { tall: 1, S: 1.5 }), L.orbit('#d1c4e9', 6, { r: 3, size: 0.35, S: 2 }), L.motes('#000000', 60, { dark: 1, S: 2.4 }), L.motes('#b388ff', 50, { S: 2.4 })], null, { violet: 1 }, { sub: 'The Throne Beneath' }),
   A('celestialthrone', '『CELESTIAL THRONE』', 7777777777, '#ffe082', [L.wings('#fff8e1', { big: 1, many: 1, S: 3 }), L.halo('#ffd54f', { r: 1.2, S: 2.4 }), L.ring('#ffe082', { r: 4.5, rays: 1, S: 2.8 }), L.pillar('#fff59d', { tall: 1, S: 2 }), L.sparkle('#fffde7', { n: 70, S: 2.6 }), L.crystals('#ffecb3', 8, { S: 2.2 })], null, { gold: 1 }, { sub: 'Seated Above the Sky' }),
@@ -328,7 +329,7 @@ const HAS_F = new Set('abyssalcrown celestialthrone eternity wind gale magnetic 
 const X_MOVES = [
   { key: 'm1', kind: 'sword', name: 'Sword', cd: 0.6, dmg: 12 },
   { key: 'm2', kind: 'shield', name: 'Shield', cd: 0, dmg: 0 },
-  { key: 'z', kind: 'wind', name: 'Wind Charge', cd: 0.5, dmg: 0 },
+  { key: 'z', kind: 'wind', name: 'Wind Charge', cd: 0.5, dmg: 0, hold: true },   // tap: a wind charge; hold: pearl catches
   { key: 'x', kind: 'axe', name: 'Axe', cd: 1.2, dmg: 26 },
   { key: 'c', kind: 'egap', name: 'EGap', cd: 25, dmg: 0 },   // an enchanted golden apple
   { key: 'v', kind: 'spearmace', name: 'Spearmace', cd: 15, dmg: 80 },
@@ -342,9 +343,23 @@ const EQ_MOVES = [
   { key: 'v', kind: 'eqtwins', name: 'Reflections', cd: 45, dmg: 0 },
   { key: 'f', kind: 'flight', name: 'Weightless', toggle: true, cd: 0.6 },
 ];
+// _________'s aura (the Commander) fights like him: the mace on the left mouse button (5 damage, more the further you
+// fall, and Wind Burst bounces you back up), the shield on the right. Z pearl catches as long as you hold it (up to 3).
+// X is a firework rocket while you glide, a wind charge otherwise. F swaps the elytra and the chestplate. C flies at
+// someone and jousts them with the spear (80). V is the elytra mace combo: 16 hits, 250 damage at the very least.
+const CMD_MOVES = [
+  { key: 'm1', kind: 'cmace', name: 'Mace', cd: 0.6, dmg: 5 },
+  { key: 'm2', kind: 'shield', name: 'Shield', cd: 0, dmg: 0 },
+  { key: 'z', kind: 'pearlup', name: 'Pearl Catch', cd: 0.6, dmg: 0, hold: true },
+  { key: 'x', kind: 'rocket', name: 'Rocket', cd: 1, dmg: 0 },
+  { key: 'c', kind: 'ejoust', name: 'Elytra Spear', cd: 5, dmg: 80 },
+  { key: 'v', kind: 'emace', name: 'Elytra Mace', cd: 25, dmg: 250 },
+  { key: 'f', kind: 'elytra', name: 'Elytra', cd: 0.3, dmg: 0 },
+];
 export function movesFor(key) {
   const { aura, mut } = auraKey(key);
   if (aura.id === 'xboss') return X_MOVES.map(m => ({ ...m, color: mut ? mut.color : aura.c, tier: tierIndex(aura.rarity) }));
+  if (aura.id === 'commander') return CMD_MOVES.map(m => ({ ...m, color: mut ? mut.color : aura.c, tier: tierIndex(aura.rarity) }));
   const t = tierIndex(aura.rarity);
   if (aura.id === 'equinox') {
     const power = (0.7 + t * 0.12) * (mut ? 1.1 : 1);
@@ -689,6 +704,7 @@ export const ACHIEVEMENTS = [
   AC('potions100', 'Alchemist', 'Use 100 potions.', s => s.potions >= 100, { potions: { chest2: 1 } }, 'Alchemist'),
   AC('daily10', 'Busy Bee', 'Claim 10 daily quests.', s => s.dailies >= 10, { potions: { chest2: 1 } }),
   AC('xboss1', 'Pop Goes the Totem', 'Help defeat ____X____.', s => s.xboss >= 1, { void: 2, potions: { chest3: 1 } }, 'Totem Popper'),
+  AC('cmd1', 'Outranked', 'Defeat _________ alone, with one life.', s => s.cmd >= 1, { void: 4, potions: { chest3: 2 } }, 'Outranked'),
   AC('xaura', 'The Real ____X____', 'Earn the ____X____ aura.', s => s.found.xboss, { void: 5 }, '____X____'),
   AC('pass30', 'Seasoned', 'Reach level 30 on the Season Pass.', s => s.passLevel >= 30, { void: 2 }, 'Seasoned'),
 ];
@@ -742,6 +758,7 @@ export const RAID = { id: 'crawler', name: 'The Crawler', hpPer: 2500, hpMin: 60
 
 // ---------------- aura lore, shown in the Collection ----------------
 const LORE = {
+  commander: 'He gives the orders. He comes down out of the sky with a mace, and leaves on wings.',
   legacyequinox: 'The 『EQUINOX』 from before it changed. Only those who had it carry it now.',
   abyssalcrown: 'A crown that was never meant to be worn, from a throne under everything.', celestialthrone: 'Someone has to sit above the sky. Today it is you.', eternity: 'It started before the first roll and it will still be here after the last.', xboss: 'Most damage, no deaths. The Totem did not save him from you.',
   common: 'Where every story starts.', uncommon: 'A little greener than the rest.', good: 'Good enough.', rare: 'Rare, they say. You will see a lot of it.',

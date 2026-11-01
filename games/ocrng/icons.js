@@ -150,7 +150,7 @@ const TITLE_INFO = {
   'Equilibrium Incarnate': ['#ffffff', 'yinyang'], 'Deleted': ['#9e9e9e', 'x'], 'Hallowed': ['#ff9100', 'pumpkin'], 'Collector': ['#81c784', 'book'], 'Curator': ['#4db6ac', 'book'], 'Archivist': ['#9575cd', 'book'],
   'Lost': ['#e0e0e0', 'void'], 'No Life': ['#90a4ae', 'clock'], 'Touch Grass': ['#66bb6a', 'leaf'], 'Angler': ['#4fc3f7', 'fish'], 'Curious': ['#ce93d8', 'search'], 'Explorer': ['#ffcc80', 'compass'],
   'Helping Hand': ['#f48fb1', 'heart'], 'Gladiator': ['#ef5350', 'swords'], 'Raider': ['#f0c87a', 'swords'], 'Tinkerer': ['#bcaaa4', 'hammer'], 'Alchemist': ['#7c4dff', 'flask'], 'Seasoned': ['#ffd54f', 'ticket'],
-  'Totem Popper': ['#e8d84a', 'totem'], '____X____': ['#b388ff', 'x'],
+  'Totem Popper': ['#e8d84a', 'totem'], '____X____': ['#b388ff', 'x'], 'Outranked': ['#e0e0e0', 'swords'],
 };
 export function titleInfo(t) { const [color, icon] = TITLE_INFO[t] || ['#ffd54f', 'star']; return { color, icon }; }
 export function titleArt(t, cls = 'oc-ttl') {

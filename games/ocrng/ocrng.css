@@ -897,3 +897,16 @@ body.ocrng-open { overflow: hidden; }
 .oc-ab.firing .cd { background: rgba(255, 255, 255, .28); }
 .oc-ab.chg kbd, .oc-ab.chg span, .oc-ab.firing kbd, .oc-ab.firing span { opacity: .45; }
 #ocrng.oc-touch .oc-ab.chg kbd, #ocrng.oc-touch .oc-ab.firing kbd { opacity: 0; }
+
+/* ---------------- _________, the Commander ---------------- */
+.oc-bossbar.cmd .oc-boss-hp { background: #262626; }
+.oc-bossbar.cmd .oc-boss-hp i { background: linear-gradient(#ffffff, #d6d6d6 45%, #8c8c8c); }
+.oc-cmd-leave { position: absolute; top: 56px; left: 50%; transform: translateX(-50%); min-height: 26px; padding: 3px 12px !important; border: 1.5px solid var(--bad) !important; border-radius: 2px;
+  background: rgba(0, 0, 0, .55) !important; color: #fff !important; font-weight: 700 !important; font-size: 12px; text-shadow: var(--shadow); white-space: nowrap; }
+.oc-cmd-leave:hover, .oc-cmd-leave.armed { background: rgba(200, 40, 40, .45) !important; }
+.oc-cmdgate { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 6px 4px 4px; text-align: center; }
+.oc-cmdgate .oc-mcname.big { font-size: clamp(30px, 5vw, 52px); color: #e0e0e0; }
+.oc-cmd-lore { margin: 0; max-width: 460px; color: #ddd; font-style: italic; }
+.oc-cmd-rules { margin: 0; padding: 10px 14px 10px 30px; max-width: 480px; text-align: left; border: 1.5px solid var(--line-dim); background: rgba(0, 0, 0, .35); display: flex; flex-direction: column; gap: 5px; font-size: 13.5px; }
+.oc-cmd-won { margin: 0; color: var(--gold); font-weight: 700; }
+.oc-cmd-btns { display: flex; gap: 10px; }

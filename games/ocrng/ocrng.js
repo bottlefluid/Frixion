@@ -15,7 +15,8 @@ import {
 } from './data.js';
 import { createCrawler } from './raid.js';
 import { createXFight } from './xfight.js';
-import { makeItem, makeShield, FX as MCFX } from './xboss.js';
+import { createCmdFight, ARENA as CMD_ARENA, rocketSparks } from './cmdfight.js';
+import { makeItem, makeShield, makeElytra, makeChestplate, FX as MCFX } from './xboss.js';
 import { buildAvatar, AuraFX, shirtColorFor } from './avatar.js';
 import { createWorld, potionModel } from './world.js';
 import { createNet } from './net.js';
@@ -26,7 +27,7 @@ import { createEquinoxCinematic, EQUINOX_MERGE, EQUINOX_LENGTH } from './cinemat
 import { glowTex } from './avatar.js';
 import { IC, potionArt, gearArt, handGearArt, fishArt, coinArt, starArt, titleArt, titleInfo } from './icons.js';
 
-const VERSION = '2.6';
+const VERSION = '2.7';
 const API = () => window.FrixionGameAPI;
 const WALK = 16, JUMP = 24, GRAVITY = 72, STEP = 1.25, R = 0.6, H = 5;
 const ROLL_ANIM_MS = 2600, ROLL_COOLDOWN_MS = 600;
@@ -90,6 +91,7 @@ export function close() {
   const g = G;
   g.closed = true;
   try { saveNow(); } catch (e) {}
+  try { if (g.cmd) g.cmd.finish('left'); } catch (e) {}
   if (g.sessionOff) g.sessionOff();
   if (g.net) g.net.leave();
   if (g.chat) g.chat.destroy();
@@ -166,6 +168,7 @@ function buildShell() {
     </div>
     <div class="oc-raidbar hidden"><b>THE CRAWLER</b><div class="oc-raid-hp"><i></i><span></span></div><small></small></div>
     <div class="oc-bossbar hidden"><b class="oc-mcname">____X____</b><div class="oc-boss-hp"><i></i><u></u></div><small></small></div>
+    <button type="button" class="oc-cmd-leave hidden">Leave the fight</button>
     <div class="oc-opfun hidden">OPFUN</div>
     <div class="oc-eqtags"></div>
     <div class="oc-hearts hidden"></div>
@@ -353,8 +356,11 @@ function equip(key, silent) {
   drawMyTag();
   G.moves = movesFor(key);
   if (!G.moves.some(m => m.toggle)) p.flyToggle = false;
-  const xa = auraKey(key).aura.id === 'xboss';
-  xGear(p.avatar, xa); if (xa) xHold(p.avatar, 'sword'); else { p.blocking = false; p.eating = null; }
+  const aid = auraKey(key).aura.id, xa = aid === 'xboss' || aid === 'commander';
+  xGear(p.avatar, xa); if (xa) xHold(p.avatar, aid === 'commander' ? 'mace' : 'sword'); else { p.blocking = false; p.eating = null; }
+  // the _________ aura wears his chestplate, or his elytra (F swaps them)
+  if (aid !== 'commander') { p.glide = null; p.joust = null; p.emace = null; if (p.ely) { p.ely = false; if (G.net) G.net.update({ ely: null }); } }
+  cmdGear(p.avatar, aid === 'commander', !!p.ely);
   renderAbilities();
   if (G.net) G.net.update({ aura: key });
   if (!silent) { toast(`Equipped ${auraKey(key).name}`); markDirty(); }
@@ -384,8 +390,8 @@ function setupInput() {
     if (key === 'shift' && !G.player.fly && !G.touch) setShiftLock(!G.shiftLock);
     if ([' ', 'w', 'a', 's', 'd', 'e', 'r', 'f', 'q', 'z', 'x', 'c', 'v', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(key)) { e.preventDefault(); e.stopImmediatePropagation(); }
   }, true);
-  on(window, 'keyup', e => { if (!G) return; const kk = e.key.toLowerCase(); k[kk] = false; if (kk === 'z' && G.holdPtr == null) eqBeamRelease(); }, true);
-  on(window, 'blur', () => { for (const x in k) k[x] = false; if (G && G.player && G.player.blocking) setBlock(false); eqBeamRelease(); });
+  on(window, 'keyup', e => { if (!G) return; const kk = e.key.toLowerCase(); k[kk] = false; if (kk === 'z' && G.holdPtr == null) { eqBeamRelease(); zRelease(); } }, true);
+  on(window, 'blur', () => { for (const x in k) k[x] = false; if (G && G.player && G.player.blocking) setBlock(false); eqBeamRelease(); zRelease(); });
   on(window, 'mousemove', e => { if (G) G.mouse = { x: e.clientX, y: e.clientY }; });
   // The camera turns as fast as the mouse moves: hold the right button (the cursor hides while you do), or drag with
   // the left one. Shift Lock keeps it turning without holding anything.
@@ -395,7 +401,7 @@ function setupInput() {
     // ____X____'s aura: the right button also raises the shield, like Minecraft (the camera still turns while you hold it)
     if (e.button === 2) { dragging = true; if (!G.shiftLock && cvs.requestPointerLock) cvs.requestPointerLock(); if (xMoveOf('shield') && !G.panel) setBlock(true); }
     if (e.button === 0) {
-      if (xMoveOf('sword') && !G.panel) { useMove('m1'); if (firstPerson() && cvs.requestPointerLock && document.pointerLockElement !== cvs) cvs.requestPointerLock(); return; }
+      if ((G.moves || []).some(m => m.key === 'm1') && !G.panel) { useMove('m1'); if (firstPerson() && cvs.requestPointerLock && document.pointerLockElement !== cvs) cvs.requestPointerLock(); return; }
       dragging = true; if (firstPerson() && cvs.requestPointerLock && document.pointerLockElement !== cvs) cvs.requestPointerLock();
     }
   });
@@ -454,6 +460,7 @@ function setupInput() {
   G.lastInput = now();
   on($q('.oc-menu-btn'), 'click', () => $q('.oc-more').classList.toggle('hidden'));
   on($q('.oc-exit'), 'click', () => close());
+  on($q('.oc-cmd-leave'), 'click', () => cmdLeaveAsk());
   on($q('.oc-title-exit'), 'click', () => close());
   on($q('.oc-play'), 'click', () => play());
   on($q('.oc-roll'), 'click', () => rollOnce());
@@ -465,7 +472,7 @@ function setupInput() {
   const abEl = $q('.oc-abilities'), moveOfBtn = b => b && shownMoves().find(m => m.key === b.dataset.move);
   // the shield button blocks for as long as it is held, by that finger (letting go of the joystick doesn't drop it)
   on(abEl, 'pointerdown', e => { const m = moveOfBtn(e.target.closest('[data-move]')); if (m && m.kind === 'shield') { e.preventDefault(); G.shieldPtr = e.pointerId; setBlock(true); } if (m && m.hold) { e.preventDefault(); G.holdPtr = e.pointerId; useMove(m.key); } });
-  const shieldOff = e => { if (G && G.shieldPtr === e.pointerId) { G.shieldPtr = null; if (G.player && G.player.blocking) setBlock(false); } if (G && G.holdPtr === e.pointerId) { G.holdPtr = null; eqBeamRelease(); } };
+  const shieldOff = e => { if (G && G.shieldPtr === e.pointerId) { G.shieldPtr = null; if (G.player && G.player.blocking) setBlock(false); } if (G && G.holdPtr === e.pointerId) { G.holdPtr = null; eqBeamRelease(); zRelease(); } };
   on(window, 'pointerup', shieldOff); on(window, 'pointercancel', shieldOff);
   on(abEl, 'click', e => { const b = e.target.closest('[data-move]'), m = moveOfBtn(b); if (b && !(m && (m.kind === 'shield' || m.hold))) useMove(b.dataset.move); });
   // potions: hover (or tap) one for what it does, and the + button shows them all
@@ -522,7 +529,7 @@ function play() {
     joined: (uid, d) => { addOther(uid, d); G.chat.system(`${d.name || uid} joined the game.`, '#bdbdbd'); },
     changed: (uid, d) => updateOther(uid, d),
     left: uid => { const o = G.others.get(uid); if (o) G.chat.system(`${(o.data && o.data.name) || uid} left the game.`, '#bdbdbd'); removeOther(uid); },
-    pos: (uid, p) => { const o = G.others.get(uid); if (o) { o.target.set(p.x, p.y, p.z); o.targetYaw = p.r; o.anim = p.a; o.hp = p.hp; o.bm = p.bm || null; o.bt = p.bt || null; if (!o.placed) { o.pos.copy(o.target); o.placed = true; } o.seen = now(); } },
+    pos: (uid, p) => { const o = G.others.get(uid); if (o) { o.target.set(p.x, p.y, p.z); o.targetYaw = p.r; o.anim = p.a; o.hp = p.hp; o.bm = p.bm || null; o.bt = p.bt || null; o.gl = p.gl || 0; if (!o.placed) { o.pos.copy(o.target); o.placed = true; } o.seen = now(); } },
     posGone: uid => { const o = G.others.get(uid); if (o) o.placed = false; },
     hit: h => takeHit(h),
     fx: f => { if (String(f.kind).startsWith('mc')) { mcFx(f, false); return; } if (/^eq(end|spin|clash|bolt|summon)$/.test(f.kind)) { eqFx(f); return; } if (f.kind === 'equinox') { remoteEquinox(f); return; } if (f.kind === 'death') { G.chat && G.chat.system(String(f.text || '').slice(0, 120), '#ffffff'); return; } const fxo = castFx(G.scene, f); if (fxo) G.fxObjects.push(fxo); },
@@ -551,6 +558,17 @@ function play() {
     // where team null leaves you alone: Limbo, the tiny island out at sea, and anywhere very far away
     safe: q => G.world.inLimbo(q) || Math.hypot(q.x - G.world.eggs.islet.pos.x, q.z - G.world.eggs.islet.pos.z) < 14 || Math.hypot(q.x - G.world.arena.x, q.z - G.world.arena.z) > 400,
   });
+  // _________, the Commander: a fight on your own (see cmdfight.js) that only uses the database if an admin joins it
+  G.cmd = createCmdFight({
+    scene: G.scene, uid: G.me.uid, net: api.rtdb ? { ref: path => api.rtdb.ref(path) } : null,
+    player: () => G.player, isDead: () => !!G.respawning, others: () => [...G.others.values()].filter(o => o.placed && !o.away).map(o => ({ uid: o.uid, pos: o.pos, act: o.act })),
+    hurtMe, addFx: f => G.fxObjects.push(f), sound, shake: k => { G.shake = Math.max(G.shake || 0, k); },
+    chat: (text, color) => G.chat && G.chat.system(text, color), banner: (big, small) => bossBanner(big, small),
+    loadNames: () => fetch(new URL('./nullnames.txt', import.meta.url)).then(r => r.text()),
+    onMobKill: m => { toast(`You defeated ${m.name}. ` + giveReward({ coins: m.gen ? 6000 : 1500 }), 'gold'); },
+    onEnd: r => cmdEnded(r),
+  });
+  { const fx = G.net.fx; G.net.fx = f => { if (!cmdSolo()) fx(f); }; }   // alone with him, nothing you do goes out
   G.net.join({ name: G.me.name, aura: G.save.equipped, shirt: shirtColorFor(G.me.name), pvp: false, rolls: G.save.rolls, ...(G.save.title ? { title: G.save.title } : {}), ...(G.save.flags.totemSpent ? { tot: 1 } : {}) });
   G.music = G.audio ? createMusic(G.audio) : null;
   loadLunge();
@@ -606,7 +624,7 @@ function loop() {
     if (time !== env.time) G.chat && G.chat.system(time === 'night' ? '[Server]: Night has fallen.' : '[Server]: The sun has risen.', time === 'night' ? '#9fb4ff' : '#ffe082');
   }
   env.time = time; env.weather = weather; env.jester = jester; env.progress = dayProgress(n);
-  if (G.playing && !G.portraitBlock) { movePlayer(dt); eqTick(dt); updateOthers(dt, t); checkPlaces(); checkEggs(); updatePickups(dt, t); }
+  if (G.playing && !G.portraitBlock) { movePlayer(dt); eqTick(dt); zTick(); updateOthers(dt, t); checkPlaces(); checkEggs(); updatePickups(dt, t); }
   updateCamera(dt, t);
   const p = G.player;
   p.avatar.root.position.copy(p.pos);
@@ -615,16 +633,17 @@ function loop() {
   const tk = p.tpAt ? (n - p.tpAt) / 420 : 1;
   if (tk < 1) { const e = 1 - tk; p.avatar.root.scale.set(p.scale * (1 - 0.75 * e), p.scale * (1 + 1.4 * e), p.scale * (1 - 0.75 * e)); }
   p.fx && p.fx.update(dt, t);
-  G.world.update(dt, t, { ...env, weather: G.world.inLimbo(p.pos) ? 'limbo' : env.weather, camPos: G.camera.position, player: p.pos });
+  G.world.update(dt, t, { ...env, weather: G.cmdColliders ? 'hell' : G.world.inLimbo(p.pos) ? 'limbo' : env.weather, camPos: G.camera.position, player: p.pos });
   G.fxObjects = G.fxObjects.filter(f => f.update(dt));
   if (G.cine) G.cine.update(Math.min(0.25, raw));   // real time, so slow devices see it at the same pace as the music
   if (G.fishing) fishingTick(dt);
   if (G.crawler) updateRaid(dt, t);
   if (G.xfight) G.xfight.update(dt);
+  if (G.cmd) G.cmd.update(dt);
   if (G.playing) {
     if (G.save.settings.auto && canAuto() && !G.rolling && !G.cutting && n >= G.nextRollAt) rollOnce();
-    if (G.net) G.net.sendPos({ x: p.pos.x, y: p.pos.y, z: p.pos.z, r: p.yaw, a: p.moving ? 1 : 0, hp: p.pvp ? p.hp : -1, ex: eqNetState() });
-    if ((G.hudTick = (G.hudTick || 0) + dt) > 0.25) { G.hudTick = 0; updateHud(); }
+    if (G.net && !cmdSolo()) G.net.sendPos({ x: p.pos.x, y: p.pos.y, z: p.pos.z, r: p.yaw, a: p.moving ? 1 : 0, hp: p.pvp ? p.hp : -1, ex: netExtras() });
+    if ((G.hudTick = (G.hudTick || 0) + dt) > 0.25) { G.hudTick = 0; updateHud(); if (G.cmdColliders) renderBossBar(); }
     updateAbilityCds();
     const b = buffs();
     $q('.oc-roll-cd').style.transform = `scaleX(${G.rolling ? 1 : Math.max(0, Math.min(1, (G.nextRollAt - n) / (ROLL_COOLDOWN_MS / b.speed)))})`;
@@ -674,16 +693,22 @@ function slowTick() {
   if ((G.achTick = (G.achTick || 0) + 1) >= 4) { G.achTick = 0; checkAchievements(); }
   maybeStartRaid();
   if (G.xfight) G.xfight.tryScheduled();
+  // watching someone else's fight with _________: it's over when they leave it (or the game)
+  if (G.cmd && G.cmd.mode === 'guest' && G.cmdColliders) { const h = G.net && G.net.roster[G.cmd.id]; if (!h || h.cmd !== G.cmd.id) cmdLeave('The fight is over.'); }
 }
 
 function movePlayer(dt) {
   const p = G.player, k = G.input.keys, j = G.input.joy, n = now();
+  const jumpPress = !!k[' '] && !p.jumpWas; p.jumpWas = !!k[' '];
   if (p.xdive) {
     const prevY = p.pos.y; diveTick(dt); if (!p.noclip) collide(p, prevY);
-    if (p.xdive && (p.xdive.land || (p.xdive.stage >= 100 && p.onGround))) spearmaceHit(p.xdive);
+    if (p.xdive && (p.xdive.land || (p.xdive.stage >= 101 && p.onGround))) spearmaceHit(p.xdive);
     p.avatar.animate(dt, 0, true, null, null, { kind: p.xdive && p.xdive.stage === 100 ? 'lunge' : 'raise' });
+    p.avatar.body.position.z = 0; keepInArena(p);
     return;
   }
+  // the _________ aura in the air: the elytra spear, the elytra mace, or gliding
+  if (p.joust || p.emace || p.glide) { flyTick(dt, jumpPress); return; }
   eatTick();
   let fx = (k.d || k.arrowright ? 1 : 0) - (k.a || k.arrowleft ? 1 : 0) + j.x;
   let fz = (k.s || k.arrowdown ? 1 : 0) - (k.w || k.arrowup ? 1 : 0) + j.y;
@@ -700,7 +725,9 @@ function movePlayer(dt) {
   p.moving = m > 0.05;
   if (p.moving && p.emote) { p.emote = null; p.emoteUntil = 0; if (G.net) G.net.update({ emote: null }); }
   if (p.knock) { p.vel.x += p.knock.x; p.vel.z += p.knock.z; p.knock.x *= Math.pow(0.02, dt); p.knock.z *= Math.pow(0.02, dt); if (Math.hypot(p.knock.x, p.knock.z) < 0.5) p.knock = null; }
-  if (p.dash) { p.vel.x += p.dash.x; p.vel.z += p.dash.z; p.dash.t -= dt; if (p.dash.t <= 0) p.dash = null; }
+  if (p.dash) { p.vel.x += p.dash.x; p.vel.z += p.dash.z; p.dash.t -= dt; if (p.dash.t <= 0) { if (p.dash.air && !p.onGround) p.carry = { x: p.dash.x * 0.6, z: p.dash.z * 0.6 }; p.dash = null; } }
+  // a lunge from the air keeps going until you land, like Minecraft: the speed carries
+  if (p.carry) { p.vel.x += p.carry.x; p.vel.z += p.carry.z; const kk = Math.pow(0.45, dt); p.carry.x *= kk; p.carry.z *= kk; if (p.onGround || Math.hypot(p.carry.x, p.carry.z) < 1) p.carry = null; }
   const prevY = p.pos.y;
   p.pos.x += p.vel.x * dt; p.pos.z += p.vel.z * dt;
   if (flying) {
@@ -708,10 +735,13 @@ function movePlayer(dt) {
     p.pos.y += p.vel.y * dt;
   } else {
     if (k[' '] && p.onGround) { p.vel.y = JUMP; p.onGround = false; sound('jump'); }
+    else if (jumpPress && !p.onGround && p.ely && cmdAura()) startGlide();   // jump again in the air: the elytra opens
     p.vel.y -= GRAVITY * dt;
     p.pos.y += p.vel.y * dt;
   }
   if (!p.noclip) collide(p, prevY);
+  keepInArena(p);
+  p.apex = p.onGround ? p.pos.y : Math.max(p.apex ?? p.pos.y, p.pos.y);   // where this fall started, for the mace
   const pit = G.world.pit;
   if (p.pos.x > pit.min.x && p.pos.x < pit.max.x && p.pos.z > pit.min.z && p.pos.z < pit.max.z && p.pos.y < pit.max.y) { p.pos.copy(pit.back); p.vel.set(0, 0, 0); toast('You fell into the dark. Back to the corridor.'); }
   // into the sea: back to the last dry place you stood on
@@ -720,6 +750,7 @@ function movePlayer(dt) {
   if (p.pos.y < -60) { p.pos.copy(G.world.spawn); p.vel.set(0, 0, 0); toast('You fell out of the world. Back to spawn.'); }
   xShieldUp(p.avatar, !!p.blocking);
   p.avatar.animate(dt, Math.hypot(p.vel.x, p.vel.z), !p.onGround && !flying, p.emote, floats(G.save.equipped) ? 'float' : null, xAct(p));
+  p.avatar.body.position.z = 0;
 }
 // Where you would land at (x, z) coming down from height y: the island (or the cave's chasm), the sea, and anything
 // you can stand on. The same rules as collide, for the wind charge and team null.
@@ -806,8 +837,10 @@ function rayBox(o, d, min, max, maxT) {
 }
 
 function updateOthers(dt, t) {
+  const lobby = (G.cmdColliders && G.cmd && G.cmd.id) || '';
   for (const o of G.others.values()) {
-    const visible = o.placed && G.net && G.net.streaming;
+    o.away = ((o.data && o.data.cmd) || '') !== lobby;   // in a fight with _________ that you're not in (or you're in one): not here
+    const visible = o.placed && G.net && G.net.streaming && !o.away;
     o.avatar.root.visible = visible;
     if (!visible) continue;
     const before = o.pos.clone();
@@ -815,10 +848,13 @@ function updateOthers(dt, t) {
     let d = o.targetYaw - o.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); o.yaw += d * Math.min(1, dt * 14);
     o.avatar.root.position.copy(o.pos); o.avatar.root.rotation.y = o.yaw;
     const sp = before.distanceTo(o.pos) / Math.max(dt, 0.001);
-    const xa = !!(o.key && auraKey(o.key).aura.id === 'xboss');
-    if (xa !== !!o.avatar.xgear) { xGear(o.avatar, xa); if (xa) xHold(o.avatar, 'sword'); }
+    const aid = o.key ? auraKey(o.key).aura.id : '', xa = aid === 'xboss' || aid === 'commander', ca = aid === 'commander';
+    if (xa !== !!o.avatar.xgear) { xGear(o.avatar, xa); if (xa) xHold(o.avatar, ca ? 'mace' : 'sword'); }
     o.blocking = xa && !!(o.data && o.data.blk); if (xa) xShieldUp(o.avatar, o.blocking);
-    o.avatar.animate(dt, o.anim ? Math.max(sp, 8) : 0, o.target.y - o.pos.y > 0.5, o.data && o.data.emote, floats(o.key) ? 'float' : null, xa ? xAct(o) : null);
+    const gl = ca && o.gl ? o.gl - 1 : null;   // gliding, and how far they lean
+    cmdGear(o.avatar, ca, ca && !!(o.data && o.data.ely), gl !== null ? (gl > 2.3 ? 0.25 : 1) : 0);
+    if (gl !== null) { o.avatar.animate(dt, 0, false, null, null, xAct(o)); glidePose(o.avatar, gl); }
+    else { o.avatar.animate(dt, o.anim ? Math.max(sp, 8) : 0, o.target.y - o.pos.y > 0.5, o.data && o.data.emote, floats(o.key) ? 'float' : null, xa ? xAct(o) : null); o.avatar.body.position.z = 0; }
     if (o.fx) o.fx.update(dt, t);
     eqRemote(o, dt);
     if (o.data && o.data.pvp && o.hp !== o.lastHp) { o.lastHp = o.hp; o.avatar.tag.userData.draw(o.data.name || o.uid, o.key, o.hp < 0 ? 100 : o.hp, { afk: o.data.afk }); }
@@ -1168,7 +1204,7 @@ function achieveStats() {
     rolls: s.rolls, bestTier: s.bestTier || 0, found: s.found, foundCount: Object.keys(s.found).filter(id => AURA[id]).length, glitchMut: !!s.flags.glitchMut,
     biomes: s.biomes, eggs: s.eggs, playSecs: st.playSecs, fish: st.fish, caught: s.caught, secrets: Object.keys(s.eggs).filter(e => EGGS.includes(e)).length, secretsTotal: EGGS.length,
     sideDone: side.filter(v => v === 'done' || (v && v.state === 'done')).length, sideTotal: Object.keys(SIDE_QUEST).length, kos: st.kos, raids: st.raids || 0, crafted: st.crafted || 0,
-    potions: st.potions, dailies: st.dailies || 0, passLevel: passLevel().level, xboss: st.xboss || 0,
+    potions: st.potions, dailies: st.dailies || 0, passLevel: passLevel().level, xboss: st.xboss || 0, cmd: st.cmd || 0,
   };
 }
 function checkAchievements() {
@@ -1312,6 +1348,7 @@ function hurtMe(dmg, o = {}) {
     const text = `${G.me.name} ${o.how || 'died'}`;
     if (G.chat) G.chat.system(text, '#ffffff');
     if (G.net) G.net.fx({ kind: 'death', text });
+    if (G.cmd && G.cmd.live()) { cmdDied(); return; }   // one life against _________
     const xlive = !!(G.xfight && G.xfight.live());
     if (G.xfight) G.xfight.onMyDeath();
     toast(o.toast || (xlive ? 'You died! Your damage to ____X____ is back to 0.' : 'You died!'), 'warn');
@@ -1337,6 +1374,112 @@ function xReward(r) {
   } else if (r.rank === 1) toast(r.died ? 'You were #1, but you died, so no ____X____ aura this time.' : 'You were #1, but the ____X____ aura needs at least 250 damage.', 'warn');
   addXp(500); sound('secret'); checkAchievements(); markDirty();
 }
+// ---------------- _________, the Commander (see cmdfight.js) ----------------
+// Through the Commander's Gate (east of the Pit) you fight him alone, in his arena far out at sea, with one life: die
+// and you're back at the gate. Beat him and the _________ aura is yours. While you're in there nobody else sees you,
+// and nothing you do goes to the database, unless an admin joins your fight from Admin, Events.
+const cmdSolo = () => !!(G && G.cmd && G.cmd.live() && G.cmd.mode === 'host' && !G.cmd.hasGuests);
+function renderCmdGate(body) {
+  const won = G.save.stats.cmd || 0;
+  body.innerHTML = `<div class="oc-cmdgate">
+    <b class="oc-mcname big">_________</b>
+    <p class="oc-cmd-lore">${esc(loreOf('commander'))}</p>
+    <ul class="oc-cmd-rules">
+      <li>You fight him alone, in his own arena.</li>
+      <li>One life. If you die, you're back here and the fight is over.</li>
+      <li>He has 5,000 health, a shield, a spear, a mace and an elytra. A red ring shows where his mace is coming down: get out of it.</li>
+      <li>Team null comes through two portals in waves: 50 soldiers and 2 generals.</li>
+      <li>Beat him for the _________ aura.</li>
+    </ul>
+    ${won ? `<p class="oc-cmd-won">You've beaten him ${won === 1 ? 'once' : fmt(won) + ' times'}.</p>` : ''}
+    <div class="oc-cmd-btns"><button type="button" class="oc-btn bad" data-cmdgo>Fight him</button><button type="button" class="oc-btn" data-cmdno>Not yet</button></div>
+  </div>`;
+  body.querySelector('[data-cmdgo]').onclick = () => startCmd();
+  body.querySelector('[data-cmdno]').onclick = () => closePanel();
+}
+function startCmd() {
+  if (!G.cmd || G.cmdColliders || G.respawning) return;
+  closePanel();
+  const gate = G.world.places.cmdgate;
+  G.cmdBack = gate ? new THREE.Vector3(gate.pos.x - 8, 0.2, gate.pos.z) : G.world.spawn.clone();
+  enterArena(G.cmd.start(G.me.uid, 'host'), 'The Commander\'s arena. One life.');
+  if (G.chat) G.chat.system('[Server]: You stepped through the Commander\'s Gate. One life. Good luck.', '#e0e0e0');
+}
+function enterArena(arena, msg) {
+  const p = G.player;
+  G.cmdColliders = arena.colliders; G.world.colliders.push(...arena.colliders);
+  p.raidHp = 100; p.knock = null; p.glide = null; p.joust = null; p.emace = null; p.xdive = null; p.carry = null;
+  teleportTo(new THREE.Vector3(CMD_ARENA.x, 0.2, CMD_ARENA.z + 30), msg);
+  p.yaw = Math.PI; G.cam.yaw = 0;   // facing where he comes down
+  if (G.net) G.net.update({ cmd: G.cmd.id });
+  $q('.oc-cmd-leave').classList.remove('hidden');
+  renderBossBar(); pickMusic();
+}
+// back out to the gate (or, for an admin, wherever they joined from)
+function leaveArena() {
+  if (G.cmdColliders) { const s = new Set(G.cmdColliders); for (let i = G.world.colliders.length - 1; i >= 0; i--) if (s.has(G.world.colliders[i])) G.world.colliders.splice(i, 1); G.cmdColliders = null; }
+  const p = G.player, b = $q('.oc-cmd-leave');
+  p.glide = null; p.joust = null; p.emace = null; p.xdive = null; p.carry = null; p.knock = null; p.vel.set(0, 0, 0); p.raidHp = 100;
+  if (cmdAura()) cmdGear(p.avatar, true, !!p.ely);
+  p.pos.copy(G.cmdBack || G.world.spawn); p.tpAt = now();
+  if (G.net) G.net.update({ cmd: null });
+  b.classList.add('hidden'); b.textContent = 'Leave the fight'; b.classList.remove('armed');
+  renderBossBar(); pickMusic();
+}
+function cmdLeave(msg) {
+  if (!G.cmd || !G.cmdColliders) return;
+  G.cmd.finish('left'); leaveArena();
+  if (msg) toast(msg);
+}
+// The Leave button. Leaving gives up the fight, so it asks once more first.
+function cmdLeaveAsk() {
+  const b = $q('.oc-cmd-leave');
+  if (!G.cmd || !G.cmdColliders) return;
+  if (G.cmd.mode === 'guest' || !G.cmd.live()) { cmdLeave(G.cmd.mode === 'guest' ? 'You left the fight.' : ''); return; }
+  if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = 'Leave? It counts as a loss. Click again.'; setTimeout(() => { if (G && b.classList.contains('armed')) { b.classList.remove('armed'); b.textContent = 'Leave the fight'; } }, 4000); return; }
+  cmdLeave('You left the fight. _________ will be waiting.');
+}
+// How it ended (cmdfight.js says): you won, or (watching someone's fight) they did, or it just ended.
+function cmdEnded(r) {
+  if (r === 'win') { cmdReward(); setTimeout(() => { if (G && G.cmdColliders) { G.cmd.finish('win'); leaveArena(); toast('Back at the Commander\'s Gate.'); } }, 7000); return; }
+  toast(r === 'guest-win' ? '_________ is defeated!' : 'The fight is over.', r === 'guest-win' ? 'gold' : undefined);
+  setTimeout(() => { if (G && G.cmdColliders) { G.cmd.finish('left'); leaveArena(); } }, 4000);
+}
+// one life: dying ends the fight, and you're back at the gate (an admin watching just leaves it)
+function cmdDied() {
+  const host = G.cmd.mode === 'host';
+  G.cmd.finish(host ? 'lost' : 'left');
+  leaveArena();
+  toast(host ? 'You died. _________ wins this time. You\'re back at the Commander\'s Gate.' : 'You died, so you left the fight.', 'warn');
+  diedForReal();
+}
+function cmdReward() {
+  const s = G.save;
+  s.stats.cmd = (s.stats.cmd || 0) + 1;
+  s.auras.commander = (s.auras.commander || 0) + 1; s.found.commander = true;
+  const got = giveReward({ coins: 60000, void: 3, potions: { heavenly: 2, transcendent: 1, chest3: 2 } });
+  toast(`_________ is defeated! ${got}`, 'gold');
+  const res = auraKey('commander');
+  if (res.rarity > auraKey(s.best).rarity) s.best = 'commander';
+  if (G.net) G.net.announce({ name: G.me.name, key: 'commander', rarity: res.rarity });
+  setTimeout(() => { if (G) cutscene(res).then(() => { if (G && s.settings.autoEquip && res.rarity > auraKey(s.equipped).rarity) equip('commander'); }); }, 1500);
+  addXp(800); sound('secret'); checkAchievements(); markDirty();
+}
+// Admin, Events: the fights going on now, and joining one (it starts using the database from here)
+function cmdFightTiles(tile) {
+  const list = Object.entries((G.net && G.net.roster) || {}).filter(([u, d]) => d && d.cmd === u && u !== G.me.uid);
+  return list.length ? list.map(([u, d]) => tile('cj:' + u, esc(d.name || u), 'Join their fight', !!(G.cmd && G.cmd.id === u), '#e0e0e0')).join('') : '<p class="oc-empty">Nobody is fighting him right now.</p>';
+}
+async function joinCmd(host) {
+  if (!G.me.owner || !G.cmd || !G.net) return;
+  if (G.cmdColliders) { toast('You\'re already in a fight.', 'warn'); return; }
+  const r = G.net.roster[host];
+  if (!r || r.cmd !== host) { toast('That fight is over.', 'warn'); return; }
+  closePanel();
+  G.cmdBack = G.player.pos.clone();
+  try { await API().rtdb.ref(`ocrng/cmd/${host}/join/${G.me.uid}`).set({ name: G.me.name, t: Date.now() }); } catch (e) { toast('Could not join that fight.', 'warn'); return; }
+  enterArena(G.cmd.start(host, 'guest'), `${r.name || host}'s fight with _________.`);
+}
 function bossBanner(big, small) {
   const el = $q('.oc-announce');
   el.innerHTML = `<b class="oc-mcname big">${esc(big)}</b><span>${esc(small)}</span>`;
@@ -1345,14 +1488,20 @@ function bossBanner(big, small) {
 // The boss bar at the top, like Minecraft's, and your hearts while you are near a raid.
 function renderBossBar() {
   if (!G || !G.player) return;
-  const info = G.xfight && G.xfight.info(), near = !!(info && G.xfight.near(G.player.pos)), bar = $q('.oc-bossbar');
-  bar.classList.toggle('hidden', !near);
-  if (near) {
+  const ci = G.cmdColliders && G.cmd ? G.cmd.info() : null, bar = $q('.oc-bossbar');
+  const info = ci ? null : G.xfight && G.xfight.info(), near = !!(info && G.xfight.near(G.player.pos));
+  bar.classList.toggle('hidden', !near && !ci);
+  bar.querySelector('.oc-mcname').textContent = ci ? '_________' : '____X____'; bar.classList.toggle('cmd', !!ci);
+  if (ci) {   // _________: his health, team null's waves and your damage
+    bar.classList.remove('p2');
+    bar.querySelector('i').style.width = (ci.dead ? 0 : Math.max(0, Math.min(1, ci.hp / ci.max)) * 100).toFixed(1) + '%';
+    bar.querySelector('small').textContent = ci.dead ? 'Defeated' : `${fmt(Math.max(0, Math.ceil(ci.hp)))} / ${fmt(ci.max)}   Team null: wave ${Math.max(1, Math.min(ci.wave, ci.waves))} of ${ci.waves}, ${ci.mobs} here   Your damage: ${fmt(Math.round(ci.myDmg))}`;
+  } else if (near) {
     bar.classList.toggle('p2', info.phase === 2);
     bar.querySelector('i').style.width = (info.dead ? 0 : Math.max(0, Math.min(1, info.hp / info.max)) * 100).toFixed(1) + '%';
     bar.querySelector('small').textContent = info.dead ? 'Defeated' : `${Math.max(0, Math.ceil(info.hp))} / ${info.max}${info.phase === 2 ? '   Phase 2' : ''}${info.mobsTotal ? `   Team null: ${info.mobs} left` : ''}   Your damage: ${fmt(info.myDmg)}${info.rank ? ` (#${info.rank})` : ''}   ${fmtTime(Math.max(0, info.left))}`;
   }
-  const p = G.player, raid = near || (G.crawler && !G.crawler.dying && p.pos.distanceTo(G.world.arena) < 70);
+  const p = G.player, raid = near || !!ci || (G.crawler && !G.crawler.dying && p.pos.distanceTo(G.world.arena) < 70);
   const show = raid || p.pvp || p.absorb > 0 || (p.regenUntil || 0) > now() || !!p.eating;
   const hearts = $q('.oc-hearts');
   hearts.classList.toggle('hidden', !show);
@@ -1763,7 +1912,7 @@ function pickMusic() {
   let id, v;
   if (G.cutting && G.cutKey) { id = 'aura:' + G.cutKey; v = Math.max(vol('mine'), 0.6); }
   else if (G.jukebox && G.player.pos.distanceTo(G.world.rooms.jukebox) < 30) { id = G.jukebox; v = Math.max(vol('music'), 0.5); }
-  else if (G.xfight && G.xfight.near(G.player.pos)) { id = 'biome:xboss'; v = Math.max(vol('music'), 0.5); }
+  else if (G.cmdColliders || (G.xfight && G.xfight.near(G.player.pos))) { id = 'biome:xboss'; v = Math.max(vol('music'), 0.5); }
   else if (G.crawler && !G.crawler.dying && G.player.pos.distanceTo(G.world.arena) < 70) { id = 'biome:raid'; v = Math.max(vol('music'), 0.45); }
   else if (G.world.inLimbo(G.player.pos)) { id = 'biome:limbo'; v = Math.max(vol('music'), 0.4); }
   else {
@@ -1822,9 +1971,11 @@ function useMove(key) {
   if (!m) return;
   const n = now();
   if (!opfun() && (G.moveCd[key] || 0) > n) return;
+  if (CMDKINDS.has(m.kind)) { cmdMove(m, n); return; }
   if (XKINDS.has(m.kind)) { xMove(m, n); return; }
   if (EQKINDS.has(m.kind)) { eqMove(m, n); return; }
   G.moveCd[key] = opfun() ? 0 : n + m.cd * 1000;
+  G.player.act = { kind: 'cast', t0: n, dur: 260 };   // team null puts its shields up when you go for them
   const p = G.player, aim = (m.kind === 'beam' || m.kind === 'vortex') && /^(legacyequinox|equinox)$/.test(auraKey(G.save.equipped).aura.id) ? aimPoint() : null;
   const yaw = aim ? Math.atan2(aim.x - p.pos.x, aim.z - p.pos.z) : p.yaw, d = { x: Math.sin(yaw), z: Math.cos(yaw) };
   if (aim) { p.yaw = yaw; p.avatar.root.rotation.y = yaw; }   // the old 『EQUINOX』 aims at the mouse
@@ -1842,7 +1993,7 @@ function useMove(key) {
     if (p.pvp && m.dmg) for (const h of hitTest(f, pvpTargets())) { sendHit(h.uid, { dmg: m.dmg, kx: h.kx, kz: h.kz, by: G.me.name, aura: auraKey(G.save.equipped).name, move: m.name }); twinsNote('p:' + String(h.uid).split('#')[0]); }
   }
   if (raidHitFrom(m.kind === 'punch' ? { kind: 'punch' } : f, m.dmg)) twinsNote('raid');
-  if (G.xfight) { const ids = G.xfight.hitFrom(m.kind === 'punch' ? { kind: 'punch' } : f, m.dmg, hitTest); if (ids.length) twinsNote(ids[0]); }
+  { const ids = bossHit(m.kind === 'punch' ? { kind: 'punch' } : f, m.dmg); if (ids.length) twinsNote(ids[0]); }
   if (G.twins) twinsMirror(m, f);
   G.save.stats.moves++; progress('moves');
   sound('attack', m.tier);
@@ -1886,11 +2037,11 @@ function takeHit(h) {
 
 // ---------------- ____X____'s aura: fight like him ----------------
 // M1 swings his sword. M2 (the right mouse button) raises his shield for as long as it is held: it stops hits from the
-// front, and an axe knocks it down for 5 seconds, like Minecraft. Z throws a wind charge at your feet that launches you
-// up. X swings his axe. C eats an enchanted golden apple: Regeneration until you are
-// full, and 8 golden hearts on top that take damage first and never heal back (Absorption). V asks who to lock on to,
-// then wind charge, pearl, wind charge, pearl: very high, and down on them with the spear and the mace. F is a spear
-// lunge. His sword is in your right hand and his shield on your left arm, for you and for everyone who sees you.
+// front, and an axe knocks it down for 5 seconds, like Minecraft. Z: a tap throws a wind charge at your feet that
+// launches you up; held, it pearl-catches (up to 3). X swings his axe. C eats an enchanted golden apple: Regeneration
+// until you are full, and 8 golden hearts on top that take damage first and never heal back (Absorption). V asks who
+// to lock on to, then wind charge, pearl, wind charge, pearl: very high, across to them in spear lunges, and down on
+// them with the mace. F is a spear lunge, which goes further from the air. His sword is in your right hand and his shield on your left arm, for you and for everyone who sees you.
 const XKINDS = new Set(['sword', 'axe', 'shield', 'wind', 'egap', 'spearmace', 'lunge']);
 const xMoveOf = kind => (G.moves || []).find(m => m.kind === kind);
 function xMove(m, n) {
@@ -1907,7 +2058,7 @@ function xMove(m, n) {
   if (m.kind === 'sword' || m.kind === 'axe') xMelee(m);
   else if (m.kind === 'egap') { p.eating = { until: n + 1600 }; xHold(p.avatar, 'apple'); }
   else if (m.kind === 'lunge') xLunge();
-  else if (m.kind === 'wind') xWind();
+  else if (m.kind === 'wind') zStart(m);
   G.save.stats.moves++; progress('moves'); updateAbilityCds();
 }
 // the sword (or axe) in the right hand, and the shield, which hangs at the side and comes round in front to block
@@ -1979,12 +2130,12 @@ function xMelee(m) {
   const f = { kind: 'mcsweep', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +yaw.toFixed(3), axe: axe ? 1 : 0 };
   mcFx(f, true); if (G.net) G.net.fx(f);
   if (G.net && p.pvp) for (const o of G.others.values()) {
-    if (!o.placed || !o.data || !o.data.pvp) continue;
+    if (!o.placed || o.away || !o.data || !o.data.pvp) continue;
     const dx = o.pos.x - p.pos.x, dz = o.pos.z - p.pos.z, dist = Math.hypot(dx, dz);
     if (dist > reach || Math.abs(o.pos.y - p.pos.y) > 4 || (dx * d.x + dz * d.z) / (dist || 1) < 0.2) continue;
     G.net.hit(o.uid, { dmg: m.dmg, kx: d.x * 16, kz: d.z * 16, fx: f.x, fz: f.z, by: G.me.name, aura: '____X____', move: m.name, axe: axe ? 1 : 0 });
   }
-  if (G.xfight) G.xfight.hitFrom({ kind: 'melee', r: reach, x: p.pos.x, z: p.pos.z, yaw, axe: axe ? 1 : 0 }, m.dmg, hitTest);
+  bossHit({ kind: 'melee', r: reach, x: p.pos.x, z: p.pos.z, yaw, axe: axe ? 1 : 0 }, m.dmg);
   raidHitFrom({ kind: 'punch' }, m.dmg);
 }
 
@@ -2006,18 +2157,18 @@ function eatTick() {
 // ---- the spear-mace: pick who, then up and down on them ----
 function lockTargets() {
   const p = G.player, out = [];
-  if (G.xfight) for (const t of G.xfight.targets()) out.push({ ...t, kind: 'boss' });
+  for (const t of bossTargets()) out.push({ ...t, kind: 'boss' });
   const r = G.raid, a = G.world.arena;   // The Crawler, while it's up
   if (G.crawler && !G.crawler.dying && r && !r.dead && !r.gone && r.until > now()) out.push({ id: 'crawler', name: 'The Crawler', pos: new THREE.Vector3(a.x, 0, a.z), kind: 'raid' });
-  if (p.pvp) for (const o of G.others.values()) if (o.placed && o.data && o.data.pvp) out.push({ id: 'p:' + o.uid, uid: o.uid, name: o.data.name || o.uid, pos: o.pos, kind: 'player' });
+  if (p.pvp) for (const o of G.others.values()) if (o.placed && !o.away && o.data && o.data.pvp) out.push({ id: 'p:' + o.uid, uid: o.uid, name: o.data.name || o.uid, pos: o.pos, kind: 'player' });
   for (const t of out) t.d = t.pos.distanceTo(p.pos);
   return out.filter(t => t.d < 220).sort((a, b) => a.d - b.d);
 }
 function openLockOn(m) {
   const list = lockTargets();
-  if (!list.length) { toast('Nobody to lock on to. Turn PvP on in Settings, or find ____X____ or The Crawler.', 'warn'); return; }
+  if (!list.length) { toast('Nobody to lock on to. Turn PvP on in Settings, or find ____X____, _________ or The Crawler.', 'warn'); return; }
   const el = $q('.oc-lockon');
-  el.innerHTML = `<div class="oc-lockon-card"><b>Spearmace: who?</b><button type="button" data-lock="nearest"><kbd>1</kbd><span>Nearest</span><small>${esc(list[0].name)}, ${Math.round(list[0].d)} studs</small></button>${list.slice(0, 8).map((t, i) => `<button type="button" data-lock="${esc(t.id)}"><kbd>${i + 2}</kbd><span>${esc(t.name)}</span><small>${Math.round(t.d)} studs</small></button>`).join('')}<button type="button" class="cancel" data-lock="">Cancel <small>(Esc)</small></button></div>`;
+  el.innerHTML = `<div class="oc-lockon-card"><b>${esc(m.name)}: who?</b><button type="button" data-lock="nearest"><kbd>1</kbd><span>Nearest</span><small>${esc(list[0].name)}, ${Math.round(list[0].d)} studs</small></button>${list.slice(0, 8).map((t, i) => `<button type="button" data-lock="${esc(t.id)}"><kbd>${i + 2}</kbd><span>${esc(t.name)}</span><small>${Math.round(t.d)} studs</small></button>`).join('')}<button type="button" class="cancel" data-lock="">Cancel <small>(Esc)</small></button></div>`;
   el.classList.remove('hidden');
   G.lockOn = { m, list };
   el.querySelectorAll('[data-lock]').forEach(b => b.onclick = () => pickLock(b.dataset.lock));
@@ -2031,12 +2182,14 @@ function pickLock(id) {
   G.moveCd[L.m.key] = opfun() ? 0 : now() + L.m.cd * 1000; updateAbilityCds();
   const p = G.player;
   setBlock(false); p.eating = null;
+  if (L.m.kind === 'ejoust') { startJoust(L.m, t); return; }
+  if (L.m.kind === 'emace') { startEmace(L.m, t); return; }
   // more pearl catches (higher up) the further away they are: 2 close by, up to 6 from across the map
   const far = Math.hypot(t.pos.x - p.pos.x, t.pos.z - p.pos.z), catches = Math.max(2, Math.min(6, 2 + Math.floor((far - 30) / 25)));
   p.xdive = { m: L.m, t, t0: now(), stage: 0, peak: p.pos.y, start: p.pos.y, catches, diveAt: catches * 0.5 + 0.05 };
   G.save.stats.moves++; progress('moves');
 }
-const lockPos = t => { if (t.kind === 'player') { const o = G.others.get(t.uid); return o && o.placed ? o.pos : null; } if (t.kind === 'raid') return G.crawler && !G.crawler.dying ? t.land : null; const cur = G.xfight && G.xfight.targets().find(x => x.id === t.id); return cur ? cur.pos : null; };
+const lockPos = t => { if (t.kind === 'player') { const o = G.others.get(t.uid); return o && o.placed ? o.pos : null; } if (t.kind === 'raid') return G.crawler && !G.crawler.dying ? t.land : null; const cur = bossTargets().find(x => x.id === t.id); return cur ? cur.pos : null; };
 // every frame of the spear-mace (instead of walking): a wind charge and a pearl catch, again and again (more of them
 // the further away they are), then down on them, homing all the way
 function diveTick(dt) {
@@ -2052,17 +2205,29 @@ function diveTick(dt) {
   }
   D.peak = Math.max(D.peak, p.pos.y);
   if (t < D.diveAt) { p.vel.x = 0; p.vel.z = 0; p.vel.y -= GRAVITY * dt; p.pos.y += p.vel.y * dt; return; }
-  // down on them: the spear first, the mace at the end, faster from higher up
+  // then across to them in spear lunges, as many as it takes (each as far as an F lunge from the air), staying up
+  // high, and down on them with the mace from above, faster from higher up
   const tp = lockPos(D.t) || D.last || p.pos;
   D.last = new THREE.Vector3(tp.x, tp.y, tp.z);
-  if (step(100)) { xHold(p.avatar, 'spear'); playLunge(1); }
+  const hx = tp.x - p.pos.x, hz = tp.z - p.pos.z, hd = Math.hypot(hx, hz) || 1;
+  if (D.stage <= 100 && hd > 8 && (D.lunges || 0) < 40 && t < D.diveAt + 14) {
+    step(100);
+    if (D.lungeAt === undefined || t - D.lungeAt >= 0.3) {
+      D.lungeAt = t; D.lunges = (D.lunges || 0) + 1; xHold(p.avatar, 'spear'); p.yaw = Math.atan2(hx, hz);
+      send({ kind: 'mclunge', ...at(), yaw: +p.yaw.toFixed(3) });
+    }
+    const sp = t - D.lungeAt < 0.24 ? 96 : 10;
+    p.vel.set(hx / hd * sp, 0, hz / hd * sp);
+    p.pos.addScaledVector(p.vel, dt);
+    return;
+  }
+  if (step(101)) { xHold(p.avatar, 'mace'); playLunge(1); }
   const dx = tp.x - p.pos.x, dy = tp.y + 1 - p.pos.y, dz = tp.z - p.pos.z, len = Math.hypot(dx, dy, dz) || 1;
-  if (len < 10 && step(101)) xHold(p.avatar, 'mace');
   const sp = 78 + Math.min(60, (D.peak - D.start) * 0.3);
   p.vel.set(dx / len * sp, dy / len * sp, dz / len * sp);
   p.yaw = Math.atan2(dx, dz);
   p.pos.addScaledVector(p.vel, dt);
-  if ((Math.hypot(dx, dz) < 2.5 && Math.abs(dy) < 4) || t > D.diveAt + 5) D.land = true;
+  if ((Math.hypot(dx, dz) < 2.5 && Math.abs(dy) < 4) || t > D.diveAt + 20) D.land = true;
 }
 // Like the mace, it hits harder the further you fall: 1.5 damage a stud, and never less than 80.
 function spearmaceHit(D) {
@@ -2072,12 +2237,12 @@ function spearmaceHit(D) {
   const f = { kind: 'mcsmash', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), power: Math.min(2.4, 0.8 + fall / 40) };
   mcFx(f, true); if (G.net) G.net.fx(f);
   if (G.net && p.pvp) for (const o of G.others.values()) {
-    if (!o.placed || !o.data || !o.data.pvp) continue;
+    if (!o.placed || o.away || !o.data || !o.data.pvp) continue;
     const dx = o.pos.x - p.pos.x, dz = o.pos.z - p.pos.z, dist = Math.hypot(dx, dz);
     if (dist > R || Math.abs(o.pos.y - p.pos.y) > 6) continue;
     G.net.hit(o.uid, { dmg, kx: dx / (dist || 1) * 20, kz: dz / (dist || 1) * 20, fx: f.x, fz: f.z, by: G.me.name, aura: '____X____', move: 'Spearmace', smash: 1 });
   }
-  if (G.xfight) G.xfight.hitFrom({ kind: 'smash', x: p.pos.x, z: p.pos.z, r: R }, dmg, hitTest);
+  bossHit({ kind: 'smash', x: p.pos.x, z: p.pos.z, r: R }, dmg);
   raidHitFrom({ kind: 'burst', x: p.pos.x, z: p.pos.z, yaw: 0, r: R }, dmg);
   xHold(p.avatar, 'sword');
   toast(`Spearmace: ${Math.round(fall)} studs down, ${dmg} damage.`, dmg > 80 ? 'gold' : undefined);
@@ -2091,11 +2256,11 @@ function xWind() {
   p.act = { kind: 'throw', t0: now(), dur: 300 };
   const f = { kind: 'mcwind', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), y2: +(Number.isFinite(g) ? Math.max(g, p.pos.y - 40) : p.pos.y - 40).toFixed(2) };
   mcFx(f, true); if (G.net) G.net.fx(f);
-  setTimeout(() => { if (G && G.player === p && !p.xdive && !p.eating) xHold(p.avatar, 'sword'); }, 450);
+  setTimeout(() => { if (G && G.player === p && !p.xdive && !p.eating) xHold(p.avatar, cmdAura() ? 'mace' : 'sword'); }, 450);
   if (!(below < 9)) return;
   p.vel.y = 48; p.onGround = false;
   if (G.net && p.pvp) for (const o of G.others.values()) {
-    if (!o.placed || !o.data || !o.data.pvp) continue;
+    if (!o.placed || o.away || !o.data || !o.data.pvp) continue;
     const dx = o.pos.x - p.pos.x, dz = o.pos.z - p.pos.z, dist = Math.hypot(dx, dz);
     if (dist > 4.5 || Math.abs(o.pos.y - g) > 4) continue;
     G.net.hit(o.uid, { dmg: 0, kx: dx / (dist || 1) * 10, kz: dz / (dist || 1) * 10, vy: 30, fx: f.x, fz: f.z, by: G.me.name, aura: '____X____', move: 'Wind Charge', smash: 1 });
@@ -2135,13 +2300,299 @@ function diedForReal() {
 
 // ---- the spear lunge: no damage, once a second ----
 function xLunge() {
-  const p = G.player, d = { x: Math.sin(p.yaw), z: Math.cos(p.yaw) };
-  p.dash = { x: d.x * 64, z: d.z * 64, t: 0.24 };
+  const p = G.player, d = { x: Math.sin(p.yaw), z: Math.cos(p.yaw) }, air = !p.onGround, sp = air ? 96 : 64;   // further from the air
+  p.dash = { x: d.x * sp, z: d.z * sp, t: 0.24, air };
   p.act = { kind: 'lunge', t0: now(), dur: 380 };
   xHold(p.avatar, 'spear');
   const f = { kind: 'mclunge', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +p.yaw.toFixed(3) };
   mcFx(f, true); if (G.net) G.net.fx(f);
 }
+
+// ---- hitting the bosses: ____X____'s fight and _________'s (each only takes hits near it) ----
+const bossFights = () => [G.xfight, G.cmd && G.cmd.live() ? G.cmd : null].filter(Boolean);
+const bossHit = (f, dmg) => bossFights().flatMap(B => B.hitFrom(f, dmg, hitTest));
+const bossTargets = () => bossFights().flatMap(B => B.targets());
+const bossDamage = (id, d) => { if (String(id).startsWith('cmd')) { if (G.cmd) G.cmd.damage(id, d); } else if (G.xfight) G.xfight.damage(id, d); };
+// in his arena there's no way out but the Leave button (or winning, or dying)
+function keepInArena(p) {
+  if (!G.cmdColliders) return;
+  const h = CMD_ARENA.half - 1.5;
+  p.pos.x = Math.max(CMD_ARENA.x - h, Math.min(CMD_ARENA.x + h, p.pos.x)); p.pos.z = Math.max(CMD_ARENA.z - h, Math.min(CMD_ARENA.z + h, p.pos.z));
+  if (p.pos.y > 130) { p.pos.y = 130; p.vel.y = Math.min(p.vel.y, 0); }
+}
+
+// ---- Z held: pearl catches, up to 3 (a wind charge up, then an ender pearl that takes you higher still) ----
+// The ____X____ aura: a tap of Z is just a wind charge; held a moment, it pearl-catches instead. The _________ aura
+// pearl-catches straight away. Letting go stops after the catch in progress. 4 seconds to cool down after catching.
+const ZCATCH = { tap: 250, gap: 500, most: 3, cd: 4000 };
+function zStart(m) {
+  if (G.zHold) return;
+  G.zHold = { m, t0: now(), at: 0, catches: 0, stage: 0, released: false, cmd: m.kind === 'pearlup' };
+  if (G.zHold.cmd) zCatch(G.zHold);
+}
+const zCatch = Z => { Z.catches++; Z.at = now(); Z.stage = 0; };
+const zRelease = () => {
+  const Z = G && G.zHold;
+  if (!Z) return;
+  Z.released = true;
+  if (!Z.cmd && !Z.catches) { G.zHold = null; xWind(); }   // a tap: just a wind charge
+};
+function zTick() {
+  const Z = G.zHold, p = G.player, n = now();
+  if (!Z) return;
+  if (!Z.catches) { if (n - Z.t0 < ZCATCH.tap) return; zCatch(Z); }   // still deciding between a tap and a hold
+  const t = (n - Z.at) / 1000, at = () => ({ x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2) }), send = f => { mcFx(f, true); if (G.net) G.net.fx(f); };
+  if (Z.stage < 1) { Z.stage = 1; xHold(p.avatar, 'wind'); send({ kind: 'mcgust', ...at() }); p.vel.y = Z.catches > 1 ? 40 : 46; p.onGround = false; }
+  if (t >= 0.22 && Z.stage < 2) { Z.stage = 2; xHold(p.avatar, 'pearl'); send({ kind: 'mcthrow', ...at() }); }
+  if (t >= 0.42 && Z.stage < 3) { Z.stage = 3; const from = at(); p.pos.y += 14; send({ kind: 'mcpearl', ...from, y2: +p.pos.y.toFixed(2) }); p.vel.y = Math.max(p.vel.y, 8); }
+  if (t < ZCATCH.gap / 1000) return;
+  if (!Z.released && (G.input.keys.z || G.holdPtr != null) && Z.catches < ZCATCH.most) { zCatch(Z); return; }
+  G.zHold = null;
+  G.moveCd[Z.m.key] = opfun() ? 0 : n + ZCATCH.cd;
+  xHold(p.avatar, Z.cmd ? 'mace' : 'sword'); updateAbilityCds();
+}
+
+// ---------------- the _________ aura: fight like the Commander ----------------
+// M1: his mace. 5 damage on the ground, and 4.5 more for every stud you've fallen (three times the 1.5 of ____X____'s
+//   Spearmace) once you've fallen more than a block and a half, like Minecraft. A hit from a fall throws you back up
+//   about three players high (Wind Burst) for another. A big reach, so it's easy to land.
+// M2: his shield, like ____X____'s. Z (hold): pearl catches, up to 3. X: a firework rocket while you glide (3 seconds
+//   of boost), otherwise a wind charge. C: Elytra Spear: pick who, then straight at them with the spear lowered (80).
+//   V: Elytra Mace: pick who, rocket up over them and dive on them with the mace, 16 times over (250 at the very
+//   least, all told). F: swaps your chestplate for your elytra and back.
+// With the elytra on, jump, then jump again in the air to glide, Minecraft's way: you fly where you look and keep
+// going forward, faster the steeper you dive, and looking up trades speed for height. Jump again, or land, to stop.
+const CMDKINDS = new Set(['cmace', 'pearlup', 'rocket', 'ejoust', 'emace', 'elytra']);
+const BLOCK = 2.4;   // studs in a Minecraft block, for the mace's falls and the elytra's speeds
+const cmdAura = () => !!(G && G.save && auraKey(G.save.equipped).aura.id === 'commander');
+const smashes = fall => fall / BLOCK > 1.5;   // a fall big enough for the mace to count it
+const maceDamage = (fall, base = 5) => Math.round(base + (smashes(fall) ? 4.5 * fall : 0));
+function cmdMove(m, n) {
+  const p = G.player;
+  if (p.xdive || p.joust || p.emace) return;
+  if (m.kind === 'ejoust' || m.kind === 'emace') { openLockOn(m); return; }
+  if (m.kind === 'pearlup') { zStart(m); return; }
+  if (p.blocking && m.kind === 'cmace') { if (n - (p.blockHint || 0) > 4000) { p.blockHint = n; toast('Let go of the shield (right mouse button) to swing.'); } return; }
+  G.moveCd[m.key] = opfun() ? 0 : n + m.cd * 1000;
+  if (m.kind === 'cmace') cmdMace(m);
+  else if (m.kind === 'rocket') cmdRocket();
+  else if (m.kind === 'elytra') cmdToggleElytra();
+  G.save.stats.moves++; progress('moves'); updateAbilityCds();
+}
+function cmdMace(m) {
+  const p = G.player, n = now(), yaw = p.yaw, d = { x: Math.sin(yaw), z: Math.cos(yaw) };
+  const fall = p.onGround ? 0 : Math.max(0, (p.apex ?? p.pos.y) - p.pos.y), smash = smashes(fall), dmg = maceDamage(fall, m.dmg || 5), R = smash ? 6.5 : 7.5;
+  if (p.glide) endGlide();
+  p.act = { kind: 'swing', t0: n, dur: 360 };
+  xHold(p.avatar, 'mace');
+  const f = { kind: smash ? 'mcsmash' : 'mcsweep', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +yaw.toFixed(3), w: 'mace', power: +Math.min(2.2, 0.7 + fall / 30).toFixed(2) };
+  mcFx(f, true); if (G.net) G.net.fx(f);
+  // who it hits: the nearest one in front of you, or (from a fall) everyone close by
+  let hit = 0;
+  if (G.net && p.pvp) {
+    const near = [...G.others.values()].filter(o => o.placed && !o.away && o.data && o.data.pvp).map(o => ({ o, dx: o.pos.x - p.pos.x, dz: o.pos.z - p.pos.z })).map(c => ({ ...c, dist: Math.hypot(c.dx, c.dz) }))
+      .filter(c => c.dist <= R && Math.abs(c.o.pos.y - p.pos.y) < 6 && (smash || (c.dx * d.x + c.dz * d.z) / (c.dist || 1) > -0.3)).sort((a, b) => a.dist - b.dist);
+    for (const c of smash ? near : near.slice(0, 1)) {
+      hit++; twinsNote('p:' + c.o.uid);
+      G.net.hit(c.o.uid, { dmg, kx: c.dx / (c.dist || 1) * (smash ? 20 : 14), kz: c.dz / (c.dist || 1) * (smash ? 20 : 14), fx: f.x, fz: f.z, by: G.me.name, aura: '_________', move: 'Mace', smash: smash ? 1 : 0 });
+    }
+  }
+  const ids = bossHit(smash ? { kind: 'smash', x: p.pos.x, z: p.pos.z, r: R } : { kind: 'melee', r: R, x: p.pos.x, z: p.pos.z, yaw }, dmg);
+  if (ids.length) { hit += ids.length; twinsNote(ids[0]); }
+  if (raidHitFrom(smash ? { kind: 'burst', x: p.pos.x, z: p.pos.z, yaw: 0, r: R } : { kind: 'punch' }, dmg)) hit++;
+  // Wind Burst: a smash that lands throws you back up for another
+  if (smash && hit) { p.vel.y = 48; p.onGround = false; p.apex = p.pos.y; const g = { kind: 'mcgust', x: f.x, y: f.y, z: f.z }; mcFx(g, true); if (G.net) G.net.fx(g); }
+}
+// X: a rocket while gliding (3 seconds of boost), a wind charge otherwise
+function cmdRocket() {
+  const p = G.player;
+  if (!p.glide) { xWind(); return; }
+  p.glide.boostUntil = now() + 3000;
+  const f = { kind: 'mcrocket', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2) };
+  mcFx(f, true); if (G.net) G.net.fx(f);
+}
+// F: the chestplate or the elytra (they're worn in the same place, like Minecraft)
+function cmdToggleElytra() {
+  const p = G.player;
+  p.ely = !p.ely;
+  if (!p.ely && p.glide) endGlide();
+  cmdGear(p.avatar, true, p.ely);
+  sound('shieldup');
+  if (G.net) G.net.update({ ely: p.ely ? 1 : null });
+  if (p.ely && !G.save.flags.elyHint) { G.save.flags.elyHint = true; markDirty(); toast('Elytra on. Jump, then jump again in the air to glide, and look where you want to go. X fires a rocket while you glide.', 'gold'); }
+}
+// The Commander's armour on a player: his chestplate, or his elytra instead. spread: how far the wings are open.
+function cmdGear(av, on, ely, spread = 0) {
+  let g = av.cmdgear;
+  if (!on) { if (g) { [g.chest.torso, g.chest.armR, g.chest.armL, g.ely.group].forEach(o => o.parent && o.parent.remove(o)); g.chest.dispose(); g.ely.dispose(); av.cmdgear = null; } return; }
+  if (!g) {
+    const chest = makeChestplate('white'), e = makeElytra(0.25, 0.18);
+    chest.torso.position.y = 3; av.body.add(chest.torso);
+    chest.armR.position.y = -1; av.rightArm.add(chest.armR);
+    chest.armL.position.y = -1; av.leftArm.add(chest.armL);
+    e.group.position.set(0, 4, -0.5); av.body.add(e.group);
+    g = av.cmdgear = { chest, ely: e };
+  }
+  g.ely.group.visible = !!ely; g.ely.spread(spread);
+  g.chest.torso.visible = g.chest.armR.visible = g.chest.armL.visible = !ely;
+}
+// Flying, Minecraft's way: lying along the flight, turned about the middle of the body, arms back, head up.
+// pitch: 0 upright, PI/2 flat, PI head first straight down.
+function glidePose(av, pitch) {
+  const b = av.body, c = 2.6;
+  b.rotation.x = pitch; b.position.set(0, c - c * Math.cos(pitch), -c * Math.sin(pitch));
+  av.head.rotation.x = -Math.min(1.1, pitch * 0.7);
+}
+// for the network: how you lean while flying (0 when you aren't)
+function netExtras() {
+  const ex = { ...(eqNetState() || {}) }, p = G.player;
+  if ((p.glide || p.joust || p.emace) && p.glidePitch) ex.gl = +(1 + p.glidePitch).toFixed(2);
+  return Object.keys(ex).length ? ex : undefined;
+}
+function startGlide() {
+  const p = G.player;
+  p.glide = { boostUntil: 0 }; p.carry = null; p.dash = null;
+  sound('windthrow');
+}
+function endGlide() {
+  const p = G.player;
+  p.glide = null; p.glidePitch = null;
+  cmdGear(p.avatar, cmdAura(), !!p.ely);
+}
+// every frame in the air with the elytra (instead of walking)
+function flyTick(dt, jumpPress) {
+  const p = G.player, prevY = p.pos.y;
+  if (p.joust) joustTick(dt);
+  else if (p.emace) emaceTick(dt);
+  else if (jumpPress || !p.ely || !cmdAura() || G.cine) { endGlide(); return; }
+  else glideTick(dt);
+  if (!p.noclip) collide(p, prevY);
+  keepInArena(p);
+  if (p.emace && p.emace.phase === 'dive' && p.onGround) emaceHit(p.emace);
+  if (p.glide && p.onGround) { endGlide(); return; }
+  // into the sea, or out of the world: the usual rules take over
+  if ((p.pos.y < -4 && Math.abs(p.pos.z) < 140 && Math.abs(p.pos.x) < 300) || p.pos.y < -60) { p.glide = null; p.joust = null; p.emace = null; cmdGear(p.avatar, cmdAura(), !!p.ely); return; }
+  if (!p.glide && !p.joust && !p.emace) return;
+  const hs = Math.hypot(p.vel.x, p.vel.z), vl = p.vel.length() || 1;
+  p.glidePitch = Math.max(0.1, Math.min(Math.PI - 0.1, Math.PI / 2 - Math.atan2(p.vel.y, hs || 0.001)));
+  if (hs > 1) p.yaw = Math.atan2(p.vel.x, p.vel.z);
+  p.moving = true;
+  const chest = !!(p.emace && p.emace.chest);
+  cmdGear(p.avatar, true, !chest, p.vel.y < 0 ? 1 - Math.pow(Math.min(1, -p.vel.y / vl), 1.5) : 1);
+  p.avatar.animate(dt, 0, false, null, null, p.joust ? { kind: 'lunge' } : p.emace ? { kind: 'raise' } : null);
+  if (chest && p.emace.phase !== 'dive') { p.avatar.body.position.z = 0; return; }   // the chestplate's on: just falling
+  glidePose(p.avatar, p.glidePitch);
+}
+// Minecraft's elytra, tick for tick (its numbers are in blocks a tick, 20 ticks a second)
+function glideTick(dt) {
+  const p = G.player, Gl = p.glide, T = dt * 20, B = BLOCK * 20, c = G.cam, kk = G.input.keys;
+  // A and D (or the joystick) turn you too, for phones and anyone not turning the camera
+  const turn = ((kk.a || kk.arrowleft ? 1 : 0) - (kk.d || kk.arrowright ? 1 : 0)) - G.input.joy.x;
+  if (turn) c.yaw += turn * 1.7 * dt;
+  const cp = c.pitch, cy = c.yaw, lx = -Math.sin(cy) * Math.cos(cp), ly = -Math.sin(cp), lz = -Math.cos(cy) * Math.cos(cp);
+  let vx = p.vel.x / B, vy = p.vel.y / B, vz = p.vel.z / B;
+  const hl = Math.hypot(lx, lz), hs = Math.hypot(vx, vz), f = Math.cos(cp) ** 2;
+  vy += (-0.08 + f * 0.06) * T;
+  if (vy < 0 && hl > 0) { const d = vy * -0.1 * f * T; vx += lx * d / hl; vy += d; vz += lz * d / hl; }
+  if (cp < 0 && hl > 0) { const d = hs * -Math.sin(cp) * 0.04 * T; vx -= lx * d / hl; vy += d * 3.2; vz -= lz * d / hl; }
+  if (hl > 0) { const k = 1 - Math.pow(0.9, T); vx += (lx / hl * hs - vx) * k; vz += (lz / hl * hs - vz) * k; }
+  if (now() < Gl.boostUntil) { const k = 1 - Math.pow(0.5, T); vx += lx * 0.1 * T + (lx * 1.5 - vx) * k; vy += ly * 0.1 * T + (ly * 1.5 - vy) * k; vz += lz * 0.1 * T + (lz * 1.5 - vz) * k; }
+  vx *= Math.pow(0.99, T); vy *= Math.pow(0.98, T); vz *= Math.pow(0.99, T);
+  p.vel.set(vx * B, vy * B, vz * B);
+  if (p.vel.length() > 150) p.vel.setLength(150);
+  p.pos.addScaledVector(p.vel, dt);
+  // like Minecraft, a fall only counts while you dive steeply: that's what makes an elytra mace work
+  p.apex = p.vel.y > -24 ? p.pos.y + BLOCK : Math.max(p.apex ?? p.pos.y, p.pos.y);
+}
+
+// ---- C: the Elytra Spear: a rocket up, then straight at them with the spear lowered ----
+function startJoust(m, t) {
+  const p = G.player;
+  if (!p.ely) { p.ely = true; if (G.net) G.net.update({ ely: 1 }); }
+  p.glide = null;
+  p.joust = { m, t, t0: now(), last: null };
+  xHold(p.avatar, 'spear');
+  const f = { kind: 'mcrocket', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2) };
+  mcFx(f, true); if (G.net) G.net.fx(f);
+  G.save.stats.moves++; progress('moves');
+}
+function joustTick(dt) {
+  const p = G.player, J = p.joust, t = (now() - J.t0) / 1000;
+  if (t < 0.35) { p.vel.set(0, 30, 0); p.pos.addScaledVector(p.vel, dt); return; }   // up off the ground first
+  const tp = lockPos(J.t);
+  if (tp) J.last = new THREE.Vector3(tp.x, tp.y || 0, tp.z);
+  if (!J.last || t > 4) { endJoust(); return; }
+  const dx = J.last.x - p.pos.x, dy = J.last.y + 2 - p.pos.y, dz = J.last.z - p.pos.z, len = Math.hypot(dx, dy, dz) || 1;
+  if (len < 3.6) { joustHit(J); return; }
+  p.vel.set(dx / len * 95, dy / len * 95, dz / len * 95);
+  p.pos.addScaledVector(p.vel, Math.min(dt, len / 95));
+}
+function joustHit(J) {
+  const p = G.player, t = J.t, dmg = J.m.dmg || 80;
+  const f = { kind: 'mcjoust', x: +p.pos.x.toFixed(2), y: +(p.pos.y + 2).toFixed(2), z: +p.pos.z.toFixed(2) };
+  mcFx(f, true); if (G.net) G.net.fx(f);
+  if (t.kind === 'player') { if (G.net && p.pvp) { G.net.hit(t.uid, { dmg, kx: p.vel.x * 0.25, kz: p.vel.z * 0.25, fx: +p.pos.x.toFixed(2), fz: +p.pos.z.toFixed(2), by: G.me.name, aura: '_________', move: 'Elytra Spear' }); twinsNote('p:' + t.uid); } }
+  else if (t.kind === 'boss') { bossDamage(t.id, dmg); twinsNote(t.id); }
+  else if (t.kind === 'raid') raidHitFrom({ kind: 'punch' }, dmg);
+  endJoust();
+  p.vel.set(p.vel.x * 0.2, 24, p.vel.z * 0.2);   // and off them, still gliding
+}
+function endJoust() { const p = G.player; p.joust = null; p.glide = { boostUntil: 0 }; xHold(p.avatar, 'mace'); }
+
+// ---- V: the Elytra Mace: up over them on a rocket, then dive after dive with the mace, bouncing off each hit ----
+// The way PvP players do it: elytra on to dive fast, chestplate on at the top and right before the hit (so the fall
+// counts), and the mace's Wind Burst throws you back up for the next. 16 hits, 250 damage at the very least.
+const EMACE = { hits: 16, least: 250 };
+function startEmace(m, t) {
+  const p = G.player;
+  if (!p.ely) { p.ely = true; if (G.net) G.net.update({ ely: 1 }); }
+  p.glide = null;
+  p.emace = { m, t, t0: now(), hits: 0, total: 0, phase: 'up', pt: 0, peak: p.pos.y, chest: false, last: null };
+  xHold(p.avatar, 'mace');
+  const f = { kind: 'mcrocket', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2) };
+  mcFx(f, true); if (G.net) G.net.fx(f);
+  G.save.stats.moves++; progress('moves');
+}
+function emaceTick(dt) {
+  const p = G.player, E = p.emace, tp = lockPos(E.t);
+  if (tp && E.last && tp.distanceTo(E.last) > 40) { endEmace(); return; }   // they got away (or died and went back to spawn)
+  if (tp) E.last = new THREE.Vector3(tp.x, tp.y || 0, tp.z);
+  if (!E.last || now() - E.t0 > 22000) { endEmace(); return; }
+  E.pt += dt;
+  const hx = E.last.x - p.pos.x, hz = E.last.z - p.pos.z, hd = Math.hypot(hx, hz) || 1;
+  if (E.phase === 'up') {   // the rocket: up and over them
+    E.chest = false; const k = Math.min(1, hd / 30);
+    p.vel.set(hx / hd * 45 * k, 75, hz / hd * 45 * k);
+    if (E.pt > 0.65) { E.phase = 'peak'; E.pt = 0; }
+  } else if (E.phase === 'bounce') {   // thrown up off the last hit, the chestplate on
+    E.chest = true; p.vel.x = hx * 2; p.vel.z = hz * 2; p.vel.y -= GRAVITY * 1.6 * dt;
+    if (p.vel.y <= 0) { E.phase = 'peak'; E.pt = 0; }
+  } else if (E.phase === 'peak') {   // the chestplate on at the top, looking down at them
+    E.chest = true; p.vel.multiplyScalar(0.8); p.vel.y = Math.min(p.vel.y, 0);
+    if (E.pt > 0.12) { E.phase = 'dive'; E.pt = 0; E.peak = p.pos.y; }
+  } else {   // the elytra again, and down on them fast; the chestplate goes back on right before the hit
+    const aim = new THREE.Vector3(E.last.x, E.last.y + 1, E.last.z).sub(p.pos), dl = aim.length() || 1;
+    E.chest = dl < 5;
+    p.vel.copy(aim.multiplyScalar(130 / dl));
+    if (dl < 2.6 || E.pt > 2.5) { emaceHit(E); return; }
+  }
+  p.pos.addScaledVector(p.vel, dt);
+}
+function emaceHit(E) {
+  const p = G.player, fall = Math.max(0, E.peak - p.pos.y), t = E.t;
+  let dmg = maceDamage(fall, 5);
+  if (E.hits === EMACE.hits - 1) dmg = Math.max(dmg, EMACE.least - E.total);   // the last one makes sure of the 250
+  E.hits++; E.total += dmg;
+  const f = { kind: 'mcsmash', x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), power: +Math.min(2.2, 0.8 + fall / 30).toFixed(2) };
+  mcFx(f, true); if (G.net) G.net.fx(f);
+  if (t.kind === 'player') { if (G.net && p.pvp) { G.net.hit(t.uid, { dmg, vy: 20, fx: f.x, fz: f.z, by: G.me.name, aura: '_________', move: 'Elytra Mace', smash: 1 }); twinsNote('p:' + t.uid); } }
+  else if (t.kind === 'boss') { bossDamage(t.id, dmg); twinsNote(t.id); }
+  else if (t.kind === 'raid') raidHitFrom({ kind: 'punch' }, dmg);
+  if (E.hits >= EMACE.hits) { toast(`Elytra Mace: ${EMACE.hits} hits, ${fmt(E.total)} damage.`, 'gold'); endEmace(); p.vel.set(0, 30, 0); return; }
+  const g = { kind: 'mcgust', x: f.x, y: f.y, z: f.z }; mcFx(g, true); if (G.net) G.net.fx(g);
+  p.vel.set(0, 55, 0); E.phase = 'bounce'; E.pt = 0; E.chest = true;   // Wind Burst: up for the next one
+}
+function endEmace() { const p = G.player; p.emace = null; p.glide = null; p.glidePitch = null; cmdGear(p.avatar, cmdAura(), !!p.ely); xHold(p.avatar, 'mace'); }
 
 // ---------------- 『EQUINOX』, reworked: the white sun and the black sun fight for you ----------------
 // Z (hold it): Liminal Beam. The suns come round in front of you and charge for 3 seconds, then fire wherever your
@@ -2168,9 +2619,9 @@ function eqMove(m, n) {
 const _aimRay = new THREE.Raycaster(), _aimNdc = new THREE.Vector2();
 function aimTargets() {
   const out = [], p = G.player, r = G.raid;
-  if (G.xfight) for (const t of G.xfight.targets()) out.push({ id: t.id, pos: new THREE.Vector3(t.pos.x, (t.pos.y || 0) + 3, t.pos.z), r: t.id === 'x' ? 4.5 : 3 });
+  for (const t of bossTargets()) out.push({ id: t.id, pos: new THREE.Vector3(t.pos.x, (t.pos.y || 0) + 3, t.pos.z), r: t.id === 'x' || t.id === 'cmd' ? 4.5 : 3 });
   if (G.crawler && !G.crawler.dying && r && !r.dead && !r.gone) out.push({ id: 'raid', pos: G.crawler.headPos ? G.crawler.headPos.clone() : new THREE.Vector3(G.world.arena.x, 8, G.world.arena.z), r: 7 });
-  if (p.pvp) for (const o of G.others.values()) if (o.placed && o.data && o.data.pvp) out.push({ id: 'p:' + o.uid, pos: new THREE.Vector3(o.pos.x, o.pos.y + 2.5, o.pos.z), r: 3 });
+  if (p.pvp) for (const o of G.others.values()) if (o.placed && !o.away && o.data && o.data.pvp) out.push({ id: 'p:' + o.uid, pos: new THREE.Vector3(o.pos.x, o.pos.y + 2.5, o.pos.z), r: 3 });
   return out;
 }
 function aimPoint(maxDist = 90) {
@@ -2196,7 +2647,7 @@ function aimPoint(maxDist = 90) {
 function pvpTargets() {
   const out = [];
   for (const o of G.others.values()) {
-    if (!o.placed || !o.data || !o.data.pvp) continue;
+    if (!o.placed || o.away || !o.data || !o.data.pvp) continue;
     out.push(o);
     if (o.eqT) o.eqT.forEach((t, i) => { if (t) out.push({ uid: o.uid + '#' + i, pos: t.pos }); });
   }
@@ -2210,7 +2661,7 @@ function hitEverything(f, dmg, o = {}) {
     sendHit(h.uid, { dmg, kx: h.kx, kz: h.kz, fx: +f.x.toFixed(2), fz: +f.z.toFixed(2), by: o.by || G.me.name, aura: '『EQUINOX』', move: o.move || 'Equinox', ...(o.eq ? { eq: 1 } : {}) });
     if (!String(h.uid).includes('#')) ids.push('p:' + h.uid);
   }
-  if (G.xfight) ids.push(...G.xfight.hitFrom(f, dmg, hitTest));
+  ids.push(...bossHit(f, dmg));
   if (raidHitFrom(f, dmg)) ids.push('raid');
   return ids;
 }
@@ -2218,7 +2669,7 @@ function hitEverything(f, dmg, o = {}) {
 function eqReflect(src, dmg) {
   const d = Math.max(1, Math.round(dmg * EQ.reflect));
   if (src === 'raid') { if (G.crawler && G.raid && !G.raid.dead) { G.raidDmg = (G.raidDmg || 0) + d; G.crawler.flash(); G.net.raidHit(d).catch(() => {}); } }
-  else if (G.xfight) G.xfight.damage(src, d);
+  else bossDamage(src, d);
 }
 function setEffect(id, ms) {
   const cur = G.effects.find(e => e.id === id && !e.out);
@@ -2495,7 +2946,7 @@ function twinTarget() {
   const id = t.id, r = G.raid;
   if (id === 'raid') return G.crawler && !G.crawler.dying && r && !r.dead && !r.gone ? { id, pos: new THREE.Vector3(G.world.arena.x, 0, G.world.arena.z) } : null;
   if (id.startsWith('p:')) { const o = G.others.get(id.slice(2)); return o && o.placed && o.data && o.data.pvp && G.player.pvp ? { id, pos: o.pos, uid: o.uid } : null; }
-  const x = G.xfight && G.xfight.targets().find(q => q.id === id);
+  const x = bossTargets().find(q => q.id === id);
   return x ? { id, pos: x.pos } : null;
 }
 function twinsTick(dt) {
@@ -2537,7 +2988,7 @@ function twinBolt(b, tg) {
     if (!G) return;
     if (tg.id === 'raid') { if (G.crawler && G.raid && !G.raid.dead) { G.raidDmg = (G.raidDmg || 0) + EQ.bolt; G.crawler.flash(); G.net.raidHit(EQ.bolt).catch(() => {}); } }
     else if (tg.id.startsWith('p:')) { if (G.net && G.player.pvp) G.net.hit(tg.uid, { dmg: EQ.bolt, fx: +from.x.toFixed(2), fz: +from.z.toFixed(2), by: `${G.me.name}'s Reflection`, aura: '『EQUINOX』', move: 'Reflection' }); }
-    else if (G.xfight) G.xfight.damage(tg.id, EQ.bolt);
+    else bossDamage(tg.id, EQ.bolt);
   }, 250);
 }
 // your moves, copied by the reflections a third as hard (the beam is in eqBeamHit)
@@ -2628,7 +3079,7 @@ function mcFx(f, mine) {
   const sc = G.scene, add = o => o && G.fxObjects.push(o), o = !mine && f.uid ? G.others.get(f.uid) : null;
   const near = Math.max(0, 1 - Math.hypot(f.x - G.player.pos.x, f.z - G.player.pos.z) / 90);
   switch (f.kind) {
-    case 'mcsweep': add(MCFX.sweep(sc, f.x, f.y - 1.4, f.z, f.yaw)); if (near > 0) sound(f.axe ? 'axe' : 'sword'); if (o) { o.act = { kind: f.axe ? 'axe' : 'swing', t0: now(), dur: f.axe ? 550 : 360 }; xHold(o.avatar, f.axe ? 'axe' : 'sword'); } break;
+    case 'mcsweep': add(MCFX.sweep(sc, f.x, f.y - 1.4, f.z, f.yaw)); if (near > 0) sound(f.axe ? 'axe' : 'sword'); if (o) { o.act = { kind: f.axe ? 'axe' : 'swing', t0: now(), dur: f.axe ? 550 : 360 }; xHold(o.avatar, f.w || (f.axe ? 'axe' : 'sword')); } break;
     case 'mcgust': add(MCFX.gust(sc, f.x, f.y, f.z)); if (near > 0) sound('gust'); if (o) xHold(o.avatar, 'wind'); break;
     case 'mcthrow': add(MCFX.throw(sc, 'pearl', new THREE.Vector3(f.x, f.y + 4, f.z), new THREE.Vector3(f.x, f.y + 18, f.z), 0.25, 0)); if (near > 0) sound('throw'); if (o) xHold(o.avatar, 'pearl'); break;
     case 'mcpearl': add(MCFX.portal(sc, f.x, f.y, f.z)); add(MCFX.portal(sc, f.x, f.y2, f.z)); if (near > 0) sound('pearl'); break;
@@ -2642,6 +3093,8 @@ function mcFx(f, mine) {
       if (o) { o.act = { kind: 'throw', t0: now(), dur: 300 }; xHold(o.avatar, 'wind'); }
       break;
     }
+    case 'mcrocket': add(rocketSparks(sc, f.x, f.y, f.z)); if (near > 0) sound('windthrow'); break;
+    case 'mcjoust': add(MCFX.crit(sc, f.x, f.y, f.z)); if (near > 0) sound('axe'); if (o) xHold(o.avatar, 'spear'); break;
     case 'mctotem': add(MCFX.totem(sc, f.x, f.y, f.z)); if (near > 0) { sound('totem'); if (mine) G.shake = Math.max(G.shake || 0, 0.5); } break;
   }
 }
@@ -2665,7 +3118,7 @@ function playLunge(v = 1) {
 // ---------------- panels ----------------
 const TITLES = { storage: 'Aura Storage', collection: 'Collection', inventory: 'Inventory', quests: 'Quests', stats: 'Stats', settings: 'Settings', admin: 'Admin',
   mari: 'Mari', jester: 'The Jester', finn: 'Old Finn', marlin: 'Marlin\'s Fish Market', nova: 'Nova\'s Daily Shop', stella: 'Stella', ghost: 'The Ghost', devpc: 'Terminal',
-  jake: 'Jake\'s Workshop', jack: 'Jack the Pumpkin', hex: 'Hex' + "'" + 's Halloween Auras', achievements: 'Achievements', pass: 'Season Pass', jukebox: 'Jukebox' };
+  cmdgate: 'The Commander\'s Gate', jake: 'Jake\'s Workshop', jack: 'Jack the Pumpkin', hex: 'Hex' + "'" + 's Halloween Auras', achievements: 'Achievements', pass: 'Season Pass', jukebox: 'Jukebox' };
 function openPanel(id) {
   if (G.fishing) stopFishing();
   if (document.pointerLockElement) document.exitPointerLock();
@@ -2677,7 +3130,7 @@ function openPanel(id) {
   body.scrollTop = 0;
   ({ storage: renderStorage, collection: renderCollection, inventory: renderInventory, quests: renderQuests, stats: renderStats, settings: renderSettings, admin: renderAdmin,
     mari: () => renderShop('mari'), jester: () => renderShop('jester'), finn: () => renderShop('finn'), marlin: renderMarlin, nova: renderDaily, stella: renderStella, ghost: renderGhost, devpc: renderTerminal,
-    jake: renderJake, jack: renderJack, hex: renderHex, achievements: renderAchievements, pass: renderPass, jukebox: renderJukebox })[id](body);
+    cmdgate: renderCmdGate, jake: renderJake, jack: renderJack, hex: renderHex, achievements: renderAchievements, pass: renderPass, jukebox: renderJukebox })[id](body);
   if (id === 'achievements' || id === 'pass') dotFor(id, false);
 }
 function closePanel() {
@@ -2690,7 +3143,7 @@ const priceText = pr => pr.coins ? `$ ${fmt(pr.coins)}` : pr.f ? `F ${fmt(pr.f)}
 const priceClass = pr => pr.coins ? 'coin' : pr.f ? 'f' : 'void';
 const moneyRow = () => `<div class="oc-money-row"><span class="oc-pill coin">$ ${fmt(G.save.coins)}</span><span class="oc-pill f">F ${fmt(G.save.f)}</span><span class="oc-pill void">V ${fmt(G.save.void)}</span></div>`;
 const tabsHtml = (tabs, cur) => `<div class="oc-tabs">${tabs.map(([id, label]) => `<button type="button" data-tab="${id}" class="${cur === id ? 'on' : ''}">${label}</button>`).join('')}</div>`;
-const onlyText = a => { const o = a.only; if (!o) return a.native ? `${WEATHERS[a.native].name}: ${WEATHERS[a.native].bt}x as likely` : ''; if (o.legacy) return 'Only for players who had 『EQUINOX』 before it changed'; if (o.boss) return 'Only from beating ____X____: most damage, no deaths, 250 damage or more'; if (o.time) return o.time === 'day' ? 'Only during the day' : 'Only at night'; if (o.weather === 'halloween') return 'Only during the Halloween event (or from Hex)'; const w = WEATHERS[o.weather]; return w ? `Only in ${w.name}` : ''; };
+const onlyText = a => { const o = a.only; if (!o) return a.native ? `${WEATHERS[a.native].name}: ${WEATHERS[a.native].bt}x as likely` : ''; if (o.legacy) return 'Only for players who had 『EQUINOX』 before it changed'; if (o.boss && a.id === 'commander') return 'Only from beating _________ (the Commander) alone, with one life'; if (o.boss) return 'Only from beating ____X____: most damage, no deaths, 250 damage or more'; if (o.time) return o.time === 'day' ? 'Only during the day' : 'Only at night'; if (o.weather === 'halloween') return 'Only during the Halloween event (or from Hex)'; const w = WEATHERS[o.weather]; return w ? `Only in ${w.name}` : ''; };
 
 // The Sol's-style storage screen: information on the left, a grid of tiles on the right.
 function storageLayout(body, { tabs, tab, tiles, info, onTab, after, search = true }) {
@@ -3262,6 +3715,7 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
   if (tab === 'biomes') html = `<h3>[ Biomes ] <small>5 minutes, for everyone</small></h3><div class="oc-adm-grid">${Object.values(WEATHERS).filter(w => w.id !== 'clear' && !w.hidden).map(w => tile('w:' + w.id, `[ ${w.name.toUpperCase()} ]`, w.event ? 'Halloween' : '', ws.weather && ws.weather.type === w.id && ws.weather.until > n, w.color)).join('')}${tile('w:stop', 'NORMAL', 'End the biome', false, '#9e9e9e', 'stop')}</div>`;
   if (tab === 'events') html = `
     <h3>[ Raids ] <small>in the Pit, east of the plaza</small></h3><div class="oc-adm-grid">${tile('x:boss', '____X____', 'Summon him', G.xfight && G.xfight.live(), '#b388ff')}${tile('x:bossoff', 'SEND X AWAY', 'Ends his fight', false, '#9e9e9e', 'stop')}${tile('r:start', 'THE CRAWLER', 'Summon the worm', G.crawler && !G.crawler.dying, '#f0c87a')}${tile('r:stop', 'SEND IT AWAY', 'Ends the worm', false, '#9e9e9e', 'stop')}</div>
+    <h3>[ _________ ] <small>fights going on now: join one to watch and help</small></h3><div class="oc-adm-grid">${cmdFightTiles(tile)}</div>
     <h3>[ Server Luck ] <small>10 minutes, for everyone</small></h3><div class="oc-adm-grid">${[2, 3, 10].map(m => tile('l:' + m, `LUCK x${m}`, 'Everyone rolls luckier', ws.luck && ws.luck.mult === m && ws.luck.until > n, '#ffd54f')).join('')}${tile('l:stop', 'NORMAL', 'End server luck', false, '#9e9e9e', 'stop')}</div>
     <h3>[ Time ] <small>10 minutes</small></h3><div class="oc-adm-grid">${tile('t:day', 'DAYTIME', 'Force day', ws.time && ws.time.mode === 'day' && ws.time.until > n, '#ffe082')}${tile('t:night', 'NIGHTTIME', 'Force night', ws.time && ws.time.mode === 'night' && ws.time.until > n, '#9fb4ff')}${tile('t:stop', 'NORMAL', 'Day and night as usual', false, '#9e9e9e', 'stop')}</div>
     <h3>[ The Jester ] <small>15 minutes</small></h3><div class="oc-adm-grid">${tile('j:on', 'SUMMON', 'The Jester arrives', ws.jesterUntil > n, '#d6a8ff')}${tile('j:off', 'SEND AWAY', 'The Jester leaves', false, '#9e9e9e', 'stop')}</div>
@@ -3278,7 +3732,7 @@ function renderAdmin(body, tab = G.adminTab || 'biomes') {
   if (tab === 'me') html = `<h3>[ OpFun ] <small>the Owner's fun mode</small></h3><div class="oc-adm-grid">${tile('m:opfun', 'OPFUN', 'No cooldowns on anything', G.save.settings.opfun, '#ff4fd8')}</div>
     <h3>[ Equip Any Aura ] <small>with any mutation</small></h3><div class="oc-adm-give">${auraPicker({ key: G.save.equipped, amount: false })}<button type="button" class="oc-adm-btn ok" data-eqgo>Equip</button></div>
     <h3>[ Movement ] <small>just you</small></h3><div class="oc-adm-grid">${tile('m:fly', 'FLY', 'Space up, Q down', G.player.fly, '#80d8ff')}${tile('m:noclip', 'NOCLIP', 'Walk through walls', G.player.noclip, '#80d8ff')}</div>
-    <h3>[ Teleport ]</h3><div class="oc-adm-grid">${tile('m:spawn', 'SPAWN', 'The plaza', false, '#ffffff')}${tile('m:pit', 'THE PIT', 'Where raids happen', false, '#b388ff')}${tile('m:summit', 'MOUNTAIN TOP', 'The bell', false, '#ffffff')}${tile('m:stella', 'STELLA', 'Her cave', false, '#ffffff')}</div>`;
+    <h3>[ Teleport ]</h3><div class="oc-adm-grid">${tile('m:spawn', 'SPAWN', 'The plaza', false, '#ffffff')}${tile('m:pit', 'THE PIT', 'Where raids happen', false, '#b388ff')}${tile('m:summit', 'MOUNTAIN TOP', 'The bell', false, '#ffffff')}${tile('m:stella', 'STELLA', 'Her cave', false, '#ffffff')}${tile('m:cmdgate', 'COMMANDER\'S GATE', 'East of the Pit', false, '#e0e0e0')}</div>`;
   body.innerHTML = tabsHtml([['biomes', 'Biomes'], ['events', 'Events'], ['players', 'Players'], ['codes', 'Codes'], ['me', 'Me']], tab) + `<div class="oc-admin">${html}</div>`;
   body.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => renderAdmin(body, b.dataset.tab));
   body.querySelectorAll('.oc-apick').forEach(wirePicker);
@@ -3652,9 +4106,11 @@ function adminAction(a) {
     if (v === 'stella') { G.player.pos.copy(G.world.stellaCamp); G.player.vel.set(0, 0, 0); }
     if (v === 'opfun') { const st = G.save.settings; st.opfun = !st.opfun; if (st.opfun) G.moveCd = {}; toast(st.opfun ? 'OpFun on: no cooldowns on anything.' : 'OpFun off.', st.opfun ? 'gold' : undefined); markDirty(); renderAbilities(); updateHud(); }
     if (v === 'pit') { const a = G.world.arena; G.player.pos.set(a.x - 24, 1, a.z); G.player.vel.set(0, 0, 0); }
+    if (v === 'cmdgate') { const g = G.world.places.cmdgate.pos; G.player.pos.set(g.x - 8, 0.2, g.z); G.player.vel.set(0, 0, 0); }
     return;
   }
   if (!net) return;
+  if (k === 'cj') { joinCmd(v); return; }
   if (k === 'w') { net.setWorld({ weather: v === 'stop' ? null : { type: v, until: n + 5 * 60000, by: G.me.name } }); toast(v === 'stop' ? 'Biome stopped.' : `${WEATHERS[v].name} started for everyone.`); }
   if (k === 't') { net.setWorld({ time: v === 'stop' ? null : { mode: v, until: n + 10 * 60000, by: G.me.name } }); toast(v === 'stop' ? 'Time is back to normal.' : `It is ${v} for everyone now.`); }
   if (k === 'j') { net.setWorld({ jesterUntil: v === 'on' ? n + 15 * 60000 : 0 }); toast(v === 'on' ? 'The Jester has been summoned.' : 'The Jester has gone.'); }

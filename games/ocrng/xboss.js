@@ -112,6 +112,7 @@ function itemPixels(draw) {
 const L = (g, c, w, pts) => { g.strokeStyle = c; g.lineWidth = w; g.lineCap = 'square'; g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); };
 const R = (g, c, x, y, w, h) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
 const ITEMS = {
+  rocket: g => { L(g, '#7a5a3a', 1.2, [[1.5, 14.5], [5, 11]]); g.fillStyle = '#c62828'; g.beginPath(); g.moveTo(4, 10.5); g.lineTo(10.5, 4); g.lineTo(12.5, 6); g.lineTo(6, 12.5); g.closePath(); g.fill(); L(g, '#f5f5f5', 1.1, [[6.2, 8.6], [8.1, 10.5]]); L(g, '#f5f5f5', 1.1, [[8.4, 6.4], [10.3, 8.3]]); g.fillStyle = '#9e9e9e'; g.beginPath(); g.moveTo(10.5, 4); g.lineTo(14.5, 1.5); g.lineTo(12.5, 6); g.closePath(); g.fill(); R(g, '#ffd54f', 0.5, 14.5, 1.5, 1.5); },
   sword: g => { L(g, '#1f1c1e', 3, [[4.5, 11.5], [14, 2]]); L(g, '#4a4446', 1.4, [[5, 11], [13.5, 2.5]]); L(g, '#7a7174', 0.9, [[6.5, 9], [13, 2.4]]); L(g, '#2b2729', 2, [[2, 9], [7, 14]]); L(g, '#5b3d27', 2, [[1.5, 14.5], [4.5, 11.5]]); R(g, '#2b2729', 0, 14, 2, 2); },
   axe: g => { L(g, '#6b4a2f', 1.8, [[2, 14.5], [11.5, 4]]); g.fillStyle = '#3d383a'; g.beginPath(); g.moveTo(8, 2); g.lineTo(13, 0.5); g.lineTo(15.5, 4); g.lineTo(14.5, 9); g.lineTo(11.5, 7); g.lineTo(9, 5); g.closePath(); g.fill(); L(g, '#756c6f', 1, [[13, 1.5], [15, 4.5], [14.2, 8.2]]); R(g, '#24201f', 10, 3, 2, 2); },
   mace: g => { L(g, '#a9dcea', 2.2, [[2, 14.5], [9, 7.5]]); L(g, '#5fa6bf', 0.9, [[2.5, 13], [8, 7.5]]); R(g, '#4a4a52', 8, 1, 7, 7); R(g, '#6e6e78', 8, 1, 7, 1); R(g, '#33333a', 8, 7, 7, 1); [[7, 0], [14, 0], [7, 7], [14, 7], [10, 0], [15, 3], [11, 7], [7, 4]].forEach(([x, y]) => R(g, '#8a8a95', x, y, 1, 1)); },
@@ -164,7 +165,7 @@ export function makeItem(id, size = 2.4, enchanted = true) {
 // like the ones in the pictures), planks and an iron rim on the back, and a handle. `scale` 1 is Minecraft size next
 // to X; a player's is smaller.
 let shieldTex = null;
-export function makeShield(scale = 1) {
+function shieldTextures() {
   if (!shieldTex) shieldTex = {
     front: pixTex(12, 22, set => {
       for (let y = 0; y < 22; y++) for (let x = 0; x < 12; x++) set(x, y, ['#3a2378', '#35206e', '#3f2682', '#382172'][(x * 3 + y * 5 + ((x * y) % 3)) % 4]);
@@ -176,6 +177,10 @@ export function makeShield(scale = 1) {
       for (let y = 0; y < 22; y++) for (let x = 0; x < 12; x++) if (x === 0 || y === 0 || x === 11 || y === 21) set(x, y, (x + y) % 2 ? '#9a9a9a' : '#858585');
     }),
   };
+  return shieldTex;
+}
+export function makeShield(scale = 1) {
+  shieldTextures();
   const P = PX * scale, rim = new THREE.MeshLambertMaterial({ color: '#8c8c8c' }), g = new THREE.Group();
   const board = new THREE.Mesh(new THREE.BoxGeometry(12 * P, 22 * P, 1.2 * P), [rim, rim, rim, rim, new THREE.MeshLambertMaterial({ map: shieldTex.front }), new THREE.MeshLambertMaterial({ map: shieldTex.back })]);
   board.castShadow = true; g.add(board);
@@ -203,7 +208,7 @@ export function mcTag(text, color = '#ffffff') {
 // opts: { chest: 'white' | 'red' | 'black', name, nameColor, scale }. pose() is called every frame with what they are doing.
 export function createMcPerson(scene, opts = {}) {
   const root = new THREE.Group(); scene.add(root);
-  const skin = skinSet(opts.chest || 'black'), all = [];
+  const skin = skinSet(opts.chest || 'black'), all = [], chestOuter = [];
   const box = (w, h, d, mats) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w * PX, h * PX, d * PX), mats); b.castShadow = true; all.push(b); return b; };
   // a part: the black body, and the armour just outside it the way a skin's outer layer sits (half a pixel out on the
   // head, a quarter everywhere else, like Minecraft)
@@ -214,6 +219,7 @@ export function createMcPerson(scene, opts = {}) {
     const gl = new THREE.Mesh(outer.geometry, skin.mask[k].map(m => new THREE.MeshBasicMaterial({ map: glintTex(), alphaMap: m, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false })));
     gl.scale.setScalar(1.003); outer.add(gl);
     outer.position.y = y * PX; parent.add(outer);
+    if (k === 'body' || k === 'armR' || k === 'armL') chestOuter.push(outer);
     return inner;
   };
   const body = new THREE.Group(); root.add(body);
@@ -230,6 +236,12 @@ export function createMcPerson(scene, opts = {}) {
   const frontAnchor = new THREE.Group(); frontAnchor.position.set(2 * PX, 16 * PX, 7 * PX); frontAnchor.rotation.y = 0.18; body.add(frontAnchor);
   const shieldSide = () => { if (shield.parent !== sideAnchor) sideAnchor.add(shield); }, shieldFront = () => { if (shield.parent !== frontAnchor) frontAnchor.add(shield); };
   shieldSide();
+  let ely = null;
+  const setElytra = (on, spread = 0) => {
+    if (on && !ely) { ely = makeElytra(PX); ely.group.position.set(0, 24 * PX, -2 * PX); body.add(ely.group); }
+    if (ely) { ely.group.visible = !!on; ely.spread(spread); }
+    chestOuter.forEach(o => { o.visible = !on; });
+  };
   const tag = mcTag(opts.name || '', opts.nameColor); tag.position.y = 36 * PX; root.add(tag);
   root.scale.setScalar(opts.scale || 1);
   // what is in the right hand
@@ -251,7 +263,7 @@ export function createMcPerson(scene, opts = {}) {
   const tint = on => all.forEach(m => [].concat(m.material).forEach(x => { if (x.userData.base === undefined) x.userData.base = x.color.getHex(); x.color.setHex(on ? 0xff6a6a : x.userData.base); }));
   return {
     root, head, neck, handR, handL, shield, tag,
-    hold,
+    hold, setElytra,
     hurt() { hurtUntil = clock + 0.35; tint(true); },
     die() { if (deadT < 0) { deadT = 0; tint(true); } },
     // p: { speed, act, k (0..1 through the action), lookUp }
@@ -263,7 +275,7 @@ export function createMcPerson(scene, opts = {}) {
       const s = Math.min(1, (p.speed || 0) / 10) * Math.sin(walk);
       legR.rotation.x = s * 0.8; legL.rotation.x = -s * 0.8;
       armR.rotation.set(-s * 0.6, 0, 0); armL.rotation.set(s * 0.6, 0, 0);
-      body.rotation.x = 0; neck.rotation.x = p.lookUp ? -0.9 : 0; root.rotation.z = 0;
+      body.rotation.x = 0; body.position.set(0, 0, 0); neck.rotation.x = p.lookUp ? -0.9 : 0; root.rotation.z = 0;
       shield.visible = true;
       const k = p.k || 0, a = p.act;
       if (a === 'block') shieldFront(); else shieldSide();
@@ -276,6 +288,11 @@ export function createMcPerson(scene, opts = {}) {
       else if (a === 'lunge') { armR.rotation.x = -1.5; body.rotation.x = 0.35; legR.rotation.x = -0.9; legL.rotation.x = 0.7; }
       else if (a === 'totem') { armR.rotation.x = -2.8; armR.rotation.z = 0.2; }
       else if (a === 'air') { armR.rotation.x = -2.2; armL.rotation.x = -2.2; legR.rotation.x = 0.3; legL.rotation.x = -0.3; }
+      else if (a === 'glide') { body.rotation.x = p.pitch ?? 1.25; armR.rotation.set(0.12, 0, 0.12); armL.rotation.set(0.12, 0, -0.12); legR.rotation.x = 0; legL.rotation.x = 0; neck.rotation.x = -Math.min(1.1, body.rotation.x * 0.75); }
+      else if (a === 'joust') { body.rotation.x = p.pitch ?? 1.2; armR.rotation.set(-1.35, 0, 0.1); armL.rotation.set(0.3, 0, -0.35); legR.rotation.x = 0; legL.rotation.x = 0; neck.rotation.x = -Math.min(1.1, body.rotation.x * 0.7); }
+      else if (a === 'dive') { body.rotation.x = p.pitch ?? 2.6; armR.rotation.x = -2.9; armL.rotation.x = -0.4; legR.rotation.x = 0; legL.rotation.x = 0; neck.rotation.x = 0.3; }
+      // flying: turned about the middle of the body, not the feet
+      if (a === 'glide' || a === 'joust' || a === 'dive') { const c = 16 * PX; body.position.set(0, c - c * Math.cos(body.rotation.x), -c * Math.sin(body.rotation.x)); }
       return true;
     },
     dispose() { const shared = new Set(itemGeo.values()); scene.remove(root); root.traverse(o => { if (o.geometry && !shared.has(o.geometry)) o.geometry.dispose(); }); },
@@ -412,5 +429,125 @@ EXTRA_LAYERS.weapons = () => {
   return { obj: g, update: (dt, t) => {
     items.forEach(({ it, i }) => { const a = t * 0.9 + i * Math.PI / 2; it.position.set(Math.cos(a) * 2.7, 3 + Math.sin(t * 2 + i) * 0.35, Math.sin(a) * 2.7); it.rotation.set(0, -a, 0.5); });
     totem.rotation.y = t * 1.6; totem.position.y = 6.9 + Math.sin(t * 2.2) * 0.15;
+  } };
+};
+
+// ---------------- the elytra ----------------
+// Built the way Minecraft builds it: two wings, each a 10 x 20 x 2 board hung from the outer edge of a shoulder and
+// reaching across the back, so folded they overlap and flare out at the bottom, and spread they swing out sideways
+// into a glider's wings (the wearer leans into the flight to go with them: see the glide poses). The membrane is our
+// own drawing: grey-violet, with dark ribs fanning down from the shoulder, a dark leading edge and a ragged trailing
+// edge.
+let elyTex = null;
+function elytraTex() {
+  if (elyTex) return elyTex;
+  const draw = mirror => {
+    const tx = pixTex(10, 20, set => {
+      // x = 0 is the outer edge, under the shoulder
+      for (let y = 0; y < 20; y++) for (let x = 0; x < 10; x++) set(x, y, ['#aaa7bf', '#a09db6', '#9592ac', '#8a87a2', '#7f7c98'][Math.min(4, Math.floor(y / 4))]);
+      for (let i = 0; i < 4; i++) for (let y = 2; y < 20; y++) { const x = Math.round(2 + i * 2 + (y - 2) * (0.1 + i * 0.07)); if (x < 10) set(x, y, '#625f7d'); }
+      for (let y = 0; y < 18; y++) { set(0, y, '#3b3950'); if (y < 15) set(1, y, '#4c4a65'); }
+      for (let x = 0; x < 10; x++) set(x, 0, '#4c4a65');
+      [0, 0, 1, 0, 2, 1, 3, 2, 4, 3].forEach((cut, x) => { for (let k = 0; k < cut; k++) set(x, 19 - k, null); });   // the ragged trailing edge
+    });
+    if (mirror) { tx.repeat.x = -1; tx.offset.x = 1; }
+    return tx;
+  };
+  return (elyTex = { out: draw(false), mirror: draw(true) });
+}
+// u: world units per pixel across the back, uy per pixel down (a Roblox-style player is shorter for its width).
+// spread(k): 0 folded, 1 spread out to glide (in between tucks them back for a dive, like Minecraft).
+export function makeElytra(u = PX, uy = u) {
+  const T = elytraTex(), group = new THREE.Group();
+  const edge = new THREE.MeshLambertMaterial({ color: '#3b3950' }), inner = new THREE.MeshLambertMaterial({ color: '#8f8ca7' });
+  const face = tx => new THREE.MeshLambertMaterial({ map: tx, alphaTest: 0.5 });
+  // faces: outer side, inner side, top, bottom (left out: the trailing edge is ragged), towards the wearer, outwards
+  const mats = [edge, inner, edge, new THREE.MeshBasicMaterial({ visible: false }), face(T.mirror), face(T.out)];
+  const geo = new THREE.BoxGeometry(10 * u, 20 * uy, 2 * u);
+  geo.translate(-5 * u, -10 * uy, -u);   // hangs from its top outer corner, behind the back
+  const wing = side => {   // 1: the wing on the +x shoulder; -1: the other, mirrored (and a hair further back, so they never flicker)
+    const pivot = new THREE.Group(); pivot.position.set(side * 5 * u, 0, side < 0 ? -0.06 * u : 0); pivot.rotation.order = 'ZYX'; group.add(pivot);
+    const m = new THREE.Mesh(geo, mats); m.scale.x = side; m.castShadow = true; pivot.add(m);
+    return pivot;
+  };
+  const wl = wing(1), wr = wing(-1);
+  // Minecraft's angles: folded, tilted 15 degrees back and flared 15 out; spread, 20 back and straight out sideways
+  const spread = k => {
+    const x = 0.2618 + k * (0.3491 - 0.2618), z = 0.2618 + k * (Math.PI / 2 - 0.2618);
+    wl.rotation.set(x, 0, z); wr.rotation.set(x, 0, -z);
+  };
+  spread(0);
+  return { group, spread, dispose() { geo.dispose(); mats.forEach(m => m.dispose()); } };
+}
+// The Commander's chestplate on a Roblox-style player (a 2 x 2 x 1 body and 1 x 2 x 1 arms): the armour layer of his
+// skin, the same netherite and trims, fitted to the shorter body. torso goes over the body, armR and armL over the arms.
+export function makeChestplate(chest = 'white') {
+  const s = skinSet(chest), mats = [];
+  const piece = (w, h, d, k) => { const ms = s.outer[k].map(tx => new THREE.MeshLambertMaterial({ map: tx, alphaTest: 0.5 })); mats.push(...ms); const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), ms); m.castShadow = true; return m; };
+  const out = { torso: piece(2.16, 2.16, 1.16, 'body'), armR: piece(1.16, 2.16, 1.16, 'armR'), armL: piece(1.16, 2.16, 1.16, 'armL') };
+  out.dispose = () => { [out.torso, out.armR, out.armL].forEach(m => m.geometry.dispose()); mats.forEach(m => m.dispose()); };
+  return out;
+}
+
+// ---------------- a crowd: many Minecraft-style people drawn together ----------------
+// The Commander brings fifty soldiers, so they're drawn as instances: every body part of every soldier in a few dozen
+// draw calls in all, instead of about a hundred each. set(list) every frame, one entry each:
+// { x, y, z, yaw, speed, walk, act, k, block, hurt, dead (seconds into falling over), scale }.
+const CROWD_SIZE = { head: [8, 8, 8, 0.5, [0, 24, 0], [0, 4, 0]], body: [8, 12, 4, 0.25, null, [0, 18, 0]], armR: [4, 12, 4, 0.25, [-6, 24, 0], [0, -6, 0]], armL: [4, 12, 4, 0.25, [6, 24, 0], [0, -6, 0]], legR: [4, 12, 4, 0.25, [-2, 12, 0], [0, -6, 0]], legL: [4, 12, 4, 0.25, [2, 12, 0], [0, -6, 0]] };
+export function createCrowd(scene, max, chest = 'black') {
+  const skin = skinSet(chest), group = new THREE.Group(); scene.add(group);
+  const meshes = {}, all = [];
+  const inst = (geo, mats) => { const m = new THREE.InstancedMesh(geo, mats, max); m.count = 0; m.castShadow = true; m.frustumCulled = false; group.add(m); all.push(m); return m; };
+  for (const [k, [w, h, d, g]] of Object.entries(CROWD_SIZE)) {
+    meshes[k] = [
+      inst(new THREE.BoxGeometry(w * PX, h * PX, d * PX), skin.inner[k].map(t => new THREE.MeshLambertMaterial({ map: t }))),
+      inst(new THREE.BoxGeometry((w + g * 2) * PX, (h + g * 2) * PX, (d + g * 2) * PX), skin.outer[k].map(t => new THREE.MeshLambertMaterial({ map: t, alphaTest: 0.5 }))),
+    ];
+  }
+  const sword = inst(extrude('sword'), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  const st = shieldTextures(), rim = new THREE.MeshLambertMaterial({ color: '#8c8c8c' });
+  const shield = inst(new THREE.BoxGeometry(12 * PX, 22 * PX, 1.2 * PX), [rim, rim, rim, rim, new THREE.MeshLambertMaterial({ map: st.front }), new THREE.MeshLambertMaterial({ map: st.back })]);
+  const root = new THREE.Matrix4(), B = new THREE.Matrix4(), M = new THREE.Matrix4(), T = new THREE.Matrix4(), Rm = new THREE.Matrix4(), E = new THREE.Euler(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S = new THREE.Vector3(), red = new THREE.Color('#ff6a6a'), white = new THREE.Color('#ffffff');
+  const tr = (x, y, z) => T.makeTranslation(x * PX, y * PX, z * PX);
+  const rot = (x, y, z) => Rm.makeRotationFromEuler(E.set(x, y, z));
+  // a part: B (the body) x pivot x rotation x offset
+  const part = (base, pivot, r, off) => { M.copy(base); if (pivot) M.multiply(tr(...pivot)); if (r) M.multiply(rot(r[0], r[1], r[2])); return M.multiply(tr(...off)); };
+  return {
+    group,
+    set(list) {
+      const n = Math.min(max, list.length);
+      for (let i = 0; i < n; i++) {
+        const p = list[i], sc = p.scale || 0.96, dead = p.dead >= 0 ? p.dead : -1;
+        Q.setFromEuler(E.set(0, p.yaw || 0, dead >= 0 ? -Math.min(1, dead / 0.5) * Math.PI / 2 : 0));
+        root.compose(P.set(p.x, p.y, p.z), Q, S.set(sc, sc, sc));
+        // the same pose as createMcPerson: walking swings, the sword swing, the shield up
+        const s = Math.min(1, (p.speed || 0) / 10) * Math.sin(p.walk || 0), k = p.k || 0, a = p.act;
+        let armR = [-s * 0.6, 0, 0], armL = [s * 0.6, 0, 0], bodyY = 0;
+        if (a === 'swing') { const e = k < 0.45 ? k / 0.45 : 1 - (k - 0.45) / 0.55 * 0.3; armR = [-2.4 + e * 2.6, -0.3, 0]; bodyY = (0.5 - k) * 0.5; }
+        else if (p.block) { armL = [-1.2, 0.5, 0]; armR = [-0.4, 0, 0]; }
+        B.copy(root).multiply(rot(0, bodyY, 0));
+        const legR = [s * 0.8, 0, 0], legL = [-s * 0.8, 0, 0], R0 = { head: [p.lookUp ? -0.9 : 0, 0, 0], body: null, armR, armL, legR, legL };
+        for (const [kk, [, , , , pivot, off]] of Object.entries(CROWD_SIZE)) { part(B, pivot, R0[kk], off); meshes[kk][0].setMatrixAt(i, M); meshes[kk][1].setMatrixAt(i, M); }
+        // the sword in the right hand
+        part(B, [-6, 24, 0], armR, [0, -10.5, 1]); M.multiply(T.makeTranslation(0, 0.35, 0.35)).multiply(rot(0, Math.PI / 2, -Math.PI / 4)).multiply(Rm.makeScale(2.6, 2.6, 2.6)); sword.setMatrixAt(i, M);
+        // the shield: at the left side, or round in front while blocking
+        if (p.block) { M.copy(B).multiply(tr(2, 16, 7)).multiply(rot(0, 0.18, 0)); }
+        else { part(B, [6, 24, 0], armL, [4.2, -11, 1.5]); M.multiply(rot(0, Math.PI / 2 - 0.3, 0)); }
+        shield.setMatrixAt(i, M);
+        const c = p.hurt ? red : white;
+        for (const m of all) m.setColorAt(i, c);
+      }
+      for (const m of all) { m.count = n; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+    },
+    dispose() { scene.remove(group); all.forEach(m => { m.geometry !== itemGeo.get('sword') && m.geometry.dispose(); [].concat(m.material).forEach(x => x.dispose()); m.dispose(); }); },
+  };
+}
+
+// The ____X____ aura's cousin, _________ (the Commander): his mace, spear and a firework rocket circle you, with a red
+// glow at your feet.
+EXTRA_LAYERS.commander = () => {
+  const g = new THREE.Group(), items = ['mace', 'spear', 'rocket'].map((id, i) => { const it = makeItem(id, id === 'spear' ? 1 : 1.5, id !== 'rocket'); if (id === 'spear') it.scale.setScalar(0.45); g.add(it); return { it, i }; });
+  return { obj: g, update: (dt, t) => {
+    items.forEach(({ it, i }) => { const a = t * 1.1 + i * Math.PI * 2 / 3; it.position.set(Math.cos(a) * 2.8, 3.2 + Math.sin(t * 2.4 + i) * 0.35, Math.sin(a) * 2.8); it.rotation.set(0, -a, 0.5); });
   } };
 };
