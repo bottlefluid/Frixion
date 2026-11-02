@@ -458,7 +458,7 @@ const UPDATES = [
   { v: '4.47', date: '2026-11-02', title: 'Edits and deletes cross over to Discord',
     notes: [
       'In a channel linked with Discord, editing your message here edits it in Discord too, and deleting it (or its text, or one of its files) deletes it there as well.',
-      'Edits and deletes made in Discord show up here within about 10 seconds: an edited message gets its new text and the (edited) tag, and a deleted one disappears. That goes for your own messages too, if a Discord moderator deletes them there.',
+      'Edits and deletes made in Discord show up here within about 10 seconds, and deletes within a couple of seconds while the channel is open: an edited message gets its new text and the (edited) tag, and a deleted one disappears, even one deleted right after it was sent. That goes for your own messages too, if a Discord moderator deletes them there.',
       'Deleting a Discord user\'s message here only removes it from Frixion, and /purge stays on Frixion too.',
       'Messages from Discord now come over within about 10 seconds even when nobody has the channel open.',
     ] },
@@ -4275,8 +4275,10 @@ function noteChannelMessage(sid, cid, payload, ref, tid, channelName) {
 //    bridgeSync asks the function to make its Discord copy match (it only ever changes the bot's own webhook posts).
 //    Edits and deletes made in Discord come over with the tick, which compares the newest 50 Discord messages with
 //    the last pass's (kept as seen on the discordLinks entry): an edited one gets its new text and edited: true, and a
-//    deleted one is deleted here, including a Frixion message whose copy a Discord moderator deleted. Deleting a
-//    Discord user's message here doesn't delete it in Discord (nothing here can), and neither does /purge.
+//    deleted one is deleted here, including a Frixion message whose copy a Discord moderator deleted. While a linked
+//    channel is open, bridgeGone also deletes anything whose Discord side is gone from the newest 50 the pull lists
+//    (recent), which catches messages deleted before any tick saw them. Deleting a Discord user's message here
+//    doesn't delete it in Discord (nothing here can), and neither does /purge.
 // ============================================================
 const BRIDGE_API = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'http://127.0.0.1:8788/api/discord' : 'https://equilibrium-incarnate.pages.dev/api/discord';
 const bridgeLinked = ch => !!(ch && ch.discord && ch.discord.channel && ch.discord.sig);
@@ -4327,7 +4329,7 @@ function bridgeWatch() {
   const key = bridgeLinked(ch) ? `${currentServerId}/${ch.id}/${ch.discord.channel}` : '';
   if ((bridgePoll ? bridgePoll.key : '') === key) return;
   if (bridgePoll) clearTimeout(bridgePoll.timer);
-  bridgePoll = key ? { key, sid: currentServerId, cid: ch.id, after: '', timer: 0 } : null;
+  bridgePoll = key ? { key, sid: currentServerId, cid: ch.id, after: '', timer: 0, gone: new Set() } : null;
   if (bridgePoll) bridgeTick();
 }
 async function bridgeTick() {
@@ -4342,6 +4344,7 @@ async function bridgeTick() {
     const r = await bridgeCall(`pull?sid=${encodeURIComponent(P.sid)}&cid=${encodeURIComponent(P.cid)}&after=${maxSnowflake(P.after, ch.discord.last, ch.discord.since)}`);
     if (bridgePoll !== P) return;
     if (await bridgeImport(P, ch, r.messages || [], r.last)) bridgeHot();
+    if (r.recent) bridgeGone(P, ch, r.recent);
     P.after = maxSnowflake(P.after, r.last);
     // the next one a set time after this one started, so slow answers don't stretch the gap
     again(Math.max(r.pace || 0, (Date.now() < (P.hot || 0) ? BRIDGE_FAST : BRIDGE_SLOW) - (Date.now() - t0)));
@@ -4376,6 +4379,21 @@ async function bridgeImport(P, ch, list, last) {
   if (added) { up.lastMessageAt = FieldValue.serverTimestamp(); up.lastMessage = { uid: added.payload.uid, text: previewForMessage(added.payload).slice(0, 200), everyone: false, mid: added.ref.id }; }
   if (Object.keys(up).length) chRef.update(up).catch(() => {});
   return list.length > 0;
+}
+// What was deleted in Discord goes here too, as soon as an open channel notices: a message whose Discord side (its
+// copy there, or the Discord message it came from) isn't among the newest 50 any more, though it's within them and
+// older than that look at Discord. The tick does the same with nobody watching, but only for messages it has seen,
+// and a message deleted seconds after it was sent can come and go between its passes.
+function bridgeGone(P, ch, recent) {
+  if (currentThreadId || currentServerId !== P.sid || currentChannelId !== P.cid || !Array.isArray(recent.ids) || !recent.ids.length || !Number.isFinite(recent.at)) return;
+  const there = new Set(recent.ids), from = BigInt(isSnowflake(recent.from) ? recent.from : '0'), since = BigInt(maxSnowflake(ch.discord.since));
+  const coll = db.collection('servers').doc(P.sid).collection('channels').doc(P.cid).collection('messages');
+  for (const m of lastRawMessages) {
+    if (!isSnowflake(m.dc) || there.has(m.dc) || P.gone.has(m.id)) continue;
+    if (BigInt(m.dc) < from || BigInt(m.dc) <= since || snowflakeMs(m.dc) > recent.at - 2000) continue;
+    P.gone.add(m.id);
+    coll.doc(m.id).delete().catch(() => P.gone.delete(m.id));
+  }
 }
 // ---- with nobody watching (see the notes above) ----
 const bridgeListed = new Set();

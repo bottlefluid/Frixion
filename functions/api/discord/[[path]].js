@@ -8,7 +8,7 @@
 //                             Frixion calls this to make the Discord copy match: the new text, or gone.
 //   GET  /api/discord/pull    whoever has a linked channel open asks every few seconds for what was said in the
 //                             Discord channel since, and adds it to the channel with each Discord user's name and
-//                             picture.
+//                             picture (and deletes what was deleted there).
 //   POST /api/discord/verify  links a channel, once someone who runs the Discord server has posted the code Frixion
 //                             showed in the Discord channel.
 //   GET  /api/discord/info    whether the bridge is set up here, and the bot's invite link.
@@ -347,12 +347,13 @@ function fromDiscord(m) {
 }
 // A linked Discord channel's newest 50 messages (or the 50 after a message), oldest first, and how to tell them apart:
 // ours are Frixion's messages, posted through the bot's webhook; keep is people talking in Discord (not the bot, its
-// webhook or the link codes).
+// webhook or the link codes). at is when they were asked for.
 async function discordList(env, link, after) {
+  const at = Date.now();
   const [list, hook, me] = await Promise.all([dc(env, 'GET', `/channels/${link.channel}/messages?${after ? `after=${after}&` : ''}limit=50`, null, link.channel), hookFor(env, link.channel, false).catch(() => null), botUser(env)]);
   const ours = m => !!(m.webhook_id && ((hook && m.webhook_id === hook.id) || m.application_id === me.id));
   const keep = m => (m.type === 0 || m.type === 19) && m.author && m.author.id !== me.id && !ours(m) && !/frixion-link-[a-z0-9]{6}/i.test(m.content || '');
-  return { list: (list || []).slice().sort((x, y) => (BigInt(x.id) < BigInt(y.id) ? -1 : 1)), ours, keep };
+  return { at, list: (list || []).slice().sort((x, y) => (BigInt(x.id) < BigInt(y.id) ? -1 : 1)), ours, keep };
 }
 // What's been said in a linked Discord channel since a message, ready to come over. last is the newest message looked
 // at, said by anyone.
@@ -360,9 +361,11 @@ async function discordSince(env, link, after) {
   const { list, keep } = await discordList(env, link, after);
   return { last: list.length ? list[list.length - 1].id : after, messages: list.filter(keep).map(fromDiscord) };
 }
-// Screens asking the same thing within a moment of each other share one answer (never an old one: that would hold
-// messages back). pace, when Discord's allowance for the channel is nearly used up, is how long to wait (in ms).
-const pulls = new Map();
+// Screens asking about the same channel within a moment of each other share one look at its newest 50 messages (never
+// an old one: that would hold messages back). pace, when Discord's allowance for the channel is nearly used up, is how
+// long to wait (in ms). recent is every message among those 50 (from: the oldest of them, or 0 when they're the whole
+// channel; at: when they were read), so an open channel can delete what was deleted in Discord.
+const looks = new Map();
 async function pull(env, url) {
   const sid = url.searchParams.get('sid'), cid = url.searchParams.get('cid');
   if (!ID.test(sid || '') || !ID.test(cid || '')) fail(400, 'Something is missing.');
@@ -370,18 +373,23 @@ async function pull(env, url) {
   if (!link) fail(404, 'This channel isn\'t linked to Discord.');
   let after = url.searchParams.get('after') || '';
   if (!SNOWFLAKE.test(after) || BigInt(after) < BigInt(link.since)) after = link.since;
-  const key = link.channel + ':' + after, hit = pulls.get(key), n = Date.now();
-  if (hit && n - hit.at < 700) return hit.p;
-  const b = buckets.get(link.channel);
+  const n = Date.now(), b = buckets.get(link.channel);
   if (b && b.left <= 0 && b.until > n) return { last: after, messages: [], pace: b.until - n };
-  const p = (async () => {
-    const out = await discordSince(env, link, after), nb = buckets.get(link.channel);
-    return { ...out, pace: nb && nb.left <= 1 && nb.until > Date.now() ? Math.ceil(nb.until - Date.now()) : 0 };
-  })();
-  pulls.set(key, { at: n, p });
-  p.catch(() => pulls.delete(key));
-  for (const [k, v] of pulls) if (n - v.at > 10000) pulls.delete(k);
-  return p;
+  let look = looks.get(link.channel);
+  if (!look || n - look.at >= 700) {
+    look = { at: n, p: discordList(env, link) };
+    looks.set(link.channel, look);
+    look.p.catch(() => looks.delete(link.channel));
+    for (const [k, v] of looks) if (n - v.at > 10000) looks.delete(k);
+  }
+  const w = await look.p;
+  // what's new is among them, unless the screen is more than 50 behind: then it gets the 50 after where it got to
+  const behind = w.list.length >= 50 && BigInt(w.list[0].id) > BigInt(after);
+  const out = behind ? await discordSince(env, link, after)
+    : { last: newestOf(after, ...w.list.map(m => m.id)), messages: w.list.filter(m => BigInt(m.id) > BigInt(after) && w.keep(m)).map(fromDiscord) };
+  if (w.list.length) out.recent = { at: w.at, from: w.list.length < 50 ? '0' : w.list[0].id, ids: w.list.map(m => m.id) };
+  const nb = buckets.get(link.channel);
+  return { ...out, pace: nb && nb.left <= 1 && nb.until > Date.now() ? Math.ceil(nb.until - Date.now()) : 0 };
 }
 
 // ---------------- Discord to Frixion, with nobody watching ----------------
@@ -444,6 +452,9 @@ async function importChannel(env, l) {
 // edit time changed gets its new text here, and one that's gone from among them is deleted here too, whoever wrote
 // it (a Frixion message whose copy a Discord moderator deleted goes as well). An empty answer says nothing.
 // seen is "<Discord channel>|<id>:<edit time> ...", with w instead of a time for Frixion's own posts.
+// Cloudflare can run this in several places at once, each remembering its own last pass, so before the saved seen is
+// replaced, it's read: anything another pass saw that isn't in Discord any more is deleted here first (unless it's
+// newer than this look at Discord), or the next pass would never know it had been there.
 async function recheck(env, l, link, c, w, added) {
   if (!w.list.length) return;
   const { sid, cid } = l, dir = `servers/${sid}/channels/${cid}/messages`, now = new Map();
@@ -454,19 +465,22 @@ async function recheck(env, l, link, c, w, added) {
   }
   // fewer than 50 is the whole channel; otherwise anything older than the oldest of them has only scrolled out
   const from = w.list.length < 50 ? 0n : BigInt(w.list[0].id), jobs = [];
-  for (const [id, was] of c.seen) {
-    if (now.has(id) || BigInt(id) < from) continue;
-    jobs.push(was === 'w' ? findByDc(env, sid, cid, id).then(o => o && fsDelete(env, `${dir}/${o.id}`)) : fsDelete(env, `${dir}/dc_${id}`));
-  }
+  const gone = (id, was) => (was === 'w' ? findByDc(env, sid, cid, id).then(o => o && fsDelete(env, `${dir}/${o.id}`)) : fsDelete(env, `${dir}/dc_${id}`));
+  for (const [id, was] of c.seen) if (!now.has(id) && BigInt(id) >= from) jobs.push(gone(id, was));
   for (const m of w.list) {
     const t = now.get(m.id);
     if (typeof t !== 'number' || !t || added.has(m.id) || c.seen.get(m.id) === t) continue;
     const d = fromDiscord(m);
     jobs.push(fsPatch(env, `${dir}/dc_${m.id}`, { text: String(d.text || (d.stickers.length ? `[sticker: ${d.stickers[0]}]` : '')).slice(0, 4000), edited: true }));
   }
+  const seen = link.channel + '|' + [...now].map(([id, t]) => id + ':' + t).join(' ');
+  if (seen !== c.seenSaved) {
+    const saved = await fsGet(env, `discordLinks/${sid}__${cid}`, ['seen']).catch(() => null);
+    for (const [id, was] of seenOf((saved && saved.data) || {}, link.channel).seen)
+      if (!now.has(id) && !c.seen.has(id) && BigInt(id) >= from && snowflakeMs(id) < w.at - 2000) jobs.push(gone(id, was));
+  }
   await Promise.all(jobs.map(j => j.catch(() => {})));
   c.seen = now;
-  const seen = link.channel + '|' + [...now].map(([id, t]) => id + ':' + t).join(' ');
   if (seen !== c.seenSaved && await fsPatch(env, `discordLinks/${sid}__${cid}`, { seen })) c.seenSaved = seen;
 }
 // what seen in a discordLinks entry says about its Discord channel (nothing, if it was about another one)
