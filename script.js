@@ -462,6 +462,7 @@ const UPDATES = [
       'Deleting a Discord user\'s message here only removes it from Frixion, and /purge stays on Frixion too.',
       'Messages from Discord now come over within about 10 seconds even when nobody has the channel open.',
       'On phones, Frixion\'s own keyboard is off by default now, so your phone\'s keyboard comes up. You can turn it back on in Settings, Keyboard.',
+      'frixionbeta.pages.dev is Frixion\'s main address now, and new invite links use it. Invite links with the old address still work.',
     ] },
   { v: '4.46', date: '2026-11-01', title: 'Overcontrol RNG 2.7: _________, the Commander',
     notes: [
@@ -3484,9 +3485,11 @@ $('confirm-create-server').onclick = async () => {
   } catch (e) { $('create-server-error').textContent = e.message; }
 };
 
-// Invite links look like https://equilibrium-incarnate.pages.dev/abc12 (new servers use a
-// 4 to 6 character code; older servers keep theirs). Older ?invite= links still work.
-const INVITE_BASE = 'https://equilibrium-incarnate.pages.dev/';
+// Invite links look like https://frixionbeta.pages.dev/abc12 (new servers use a
+// 4 to 6 character code; older servers keep theirs). Older ?invite= links still work, and so do links to
+// Frixion's other sites (equilibrium-incarnate was the main one before v4.47).
+const INVITE_BASE = 'https://frixionbeta.pages.dev/';
+const FRIXION_SITES = ['frixionbeta', 'equilibrium-incarnate', 'frixionalpha', 'skymc', 'airmc'].map(s => `https://${s}.pages.dev`);
 const INVITE_CODE_RE = /^[a-z0-9]{4,6}$/i;
 $('new-server-code').addEventListener('input', () => {
   const el = $('new-server-code');
@@ -3582,7 +3585,7 @@ document.addEventListener('click', (e) => {
   let url;
   try { url = new URL(a.href); } catch (_) { return; }
   const viaQuery = url.origin === location.origin && url.searchParams.get('invite');
-  const inviteHost = url.origin === INVITE_BASE.replace(/\/$/, '');
+  const inviteHost = FRIXION_SITES.includes(url.origin);
   const viaPath = (inviteHost || url.origin === location.origin) && INVITE_CODE_RE.test(url.pathname.replace(/^\/+|\/+$/g, ''));
   if (!viaQuery && !viaPath) return;
   e.preventDefault();
