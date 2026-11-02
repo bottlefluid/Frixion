@@ -461,6 +461,7 @@ const UPDATES = [
       'Edits and deletes made in Discord show up here within about 10 seconds, and deletes within a couple of seconds while the channel is open: an edited message gets its new text and the (edited) tag, and a deleted one disappears, even one deleted right after it was sent. That goes for your own messages too, if a Discord moderator deletes them there.',
       'Deleting a Discord user\'s message here only removes it from Frixion, and /purge stays on Frixion too.',
       'Messages from Discord now come over within about 10 seconds even when nobody has the channel open.',
+      'On phones, Frixion\'s own keyboard is off by default now, so your phone\'s keyboard comes up. You can turn it back on in Settings, Keyboard.',
     ] },
   { v: '4.46', date: '2026-11-01', title: 'Overcontrol RNG 2.7: _________, the Commander',
     notes: [
@@ -9938,9 +9939,10 @@ const CK_DICTIONARY = new Set([
 // listener in initAppForUser().
 function isAutocorrectEnabled() { return !!(myProfile && myProfile.autocorrect); }
 // Same account-synced pattern for the other two keyboard preferences.
-// Both default ON (undefined counts as true) since that's the existing
-// behavior for anyone who hasn't touched these settings yet.
-function useCustomKeyboard() { return !myProfile || myProfile.customKeyboard !== false; }
+// Frixion's own keyboard is OFF unless it was turned on (v4.47: phones use
+// their own keyboard by default); the quick buttons default ON (undefined
+// counts as true).
+function useCustomKeyboard() { return !!(myProfile && myProfile.customKeyboard === true); }
 function showQuickButtons() { return !myProfile || myProfile.keyboardQuickButtons !== false; }
 let ckLastAutocorrect = null; // { start, end, original } — lets one immediate backspace undo the last correction
 $('autocorrect-toggle').addEventListener('change', async (e) => {
