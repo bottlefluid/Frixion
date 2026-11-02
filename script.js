@@ -466,6 +466,7 @@ const UPDATES = [
       'Admins can join anyone\'s fight with _________ from Admin, Events. Nobody else sees you while you\'re in there, and a fight uses no data at all unless an admin joins it.',
       'The ____X____ aura: tap Z for a wind charge, or hold it to pearl-catch up to 3 times. The Spearmace crosses to its target in spear lunges, and the F lunge goes much further from a jump, because the speed carries.',
       '____X____ himself spear-maces you now, more often: up high, across to you in spear lunges, and down with the mace.',
+      'Unread dots follow you between devices: read something on your computer and it\'s read on your phone and in the app too.',
     ] },
   { v: '4.45', date: '2026-10-29', title: 'Link a channel with Discord',
     notes: [
@@ -3060,6 +3061,8 @@ $('logout-btn').onclick = async () => {
 };
 
 function cleanupAllListeners() {
+  flushReadSync();
+  if (unsub.readSync) unsub.readSync();
   if (unsub.servers) unsub.servers();
   if (unsub.channels) unsub.channels();
   if (unsub.categories) unsub.categories();
@@ -3377,6 +3380,7 @@ function initAppForUser() {
 
   subscribeDMList();
   subscribeMentions();
+  subscribeReadSync();
   subscribeCustomEmojis();
   subscribeCustomDecorations();
   subscribeCustomThemes();
@@ -4004,9 +4008,11 @@ function shortAgo(ms) {
   if (m < 10080) return Math.floor(m / 1440) + 'd';
   return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
-// Which conversations have something new since you last opened them, kept in this browser. The phone layout shows
-// those rows in white and the rest in grey, like Discord. Conversations never opened here count from when this
-// browser first started keeping track, so nothing old suddenly looks unread.
+// Which conversations have something new since you last opened them. The phone layout shows those rows in white and
+// the rest in grey, like Discord, and the same times drive the unread dots on servers and channels. They're kept in
+// this browser for speed and shared through users/{name}/meta/read, so what you read on one device is read on all of
+// them (see READ ON EVERY DEVICE below). Conversations never opened count from when tracking first started, so nothing
+// old suddenly looks unread.
 let lastRead = null, lastReadFor = null;
 const lastReadKey = () => 'frixion.lastRead.' + myUid;
 function loadLastRead() {
@@ -4017,16 +4023,55 @@ function loadLastRead() {
   return lastRead;
 }
 function saveLastRead() { try { localStorage.setItem(lastReadKey(), JSON.stringify(lastRead)); } catch (e) {} }
-// at: the newest message's time, so a computer clock that runs a little slow can't leave it looking unread
+// at: the newest message's time, so a computer clock that runs a little slow can't leave it looking unread. That
+// (the server's time) is also what your other devices are told, so a device whose clock is off can't make things look
+// read or unread on the others.
 function markConversationRead(id, at) {
   if (!myUid || !id) return;
   const read = loadLastRead(), t = Math.max(Date.now(), at || 0);
-  if ((read[id] || 0) >= t) return;
-  read[id] = t; saveLastRead();
+  if ((read[id] || 0) < t) { read[id] = t; saveLastRead(); }
+  queueReadSync(id, at || Date.now());
 }
+const conversationTime = id => { const c = (window.__myDMs || []).concat(window.__myGroupDMs || []).find(x => x.id === id); return c ? timeValue(c.updatedAt) : 0; };
+// ---- READ ON EVERY DEVICE ----
+// Each device writes what it has read to users/{name}/meta/read at most every 8 seconds (and straight away when you
+// leave the tab), and listens to that doc for what your other devices read: the newest time for each conversation
+// wins. readSynced is what the doc already says, so nothing is written twice.
+let readSynced = {}, readPending = null, readTimer = 0;
+const readDocRef = () => db.collection('users').doc(myUid).collection('meta').doc('read');
+function queueReadSync(id, t) {
+  if (OVERLAY_WINDOW || !myUid || !t || t <= (readSynced[id] || 0) || (readPending && t <= (readPending[id] || 0))) return;
+  (readPending = readPending || {})[id] = t;
+  if (!readTimer) readTimer = setTimeout(flushReadSync, 8000);
+}
+function flushReadSync() {
+  clearTimeout(readTimer); readTimer = 0;
+  const p = readPending; readPending = null;
+  if (!p || !myUid) return;
+  Object.assign(readSynced, p);
+  readDocRef().set(p, { merge: true }).catch(() => {});
+}
+function subscribeReadSync() {
+  if (OVERLAY_WINDOW) return;
+  if (unsub.readSync) unsub.readSync();
+  readSynced = {}; readPending = null; clearTimeout(readTimer); readTimer = 0;
+  unsub.readSync = readDocRef().onSnapshot(snap => {
+    const remote = (snap.exists && snap.data()) || {}, read = loadLastRead();
+    let changed = false;
+    for (const [k, v] of Object.entries(remote)) {
+      if (typeof v !== 'number') continue;
+      if (v > (readSynced[k] || 0)) readSynced[k] = v;
+      if (v > (read[k] || 0)) { read[k] = v; changed = true; }
+    }
+    if (!remote._since) queueReadSync('_since', read._since);   // the first device shares where it started counting
+    if (changed) { saveLastRead(); refreshUnread(); renderDMRows(); }
+  }, () => {});
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushReadSync(); });
+window.addEventListener('pagehide', flushReadSync);
 function isConversationUnread(conv) {
   if (!myUid || !conv) return false;
-  if (conv.id === currentDMId || conv.id === currentGroupDMId) { markConversationRead(conv.id); return false; }   // open right now
+  if (conv.id === currentDMId || conv.id === currentGroupDMId) { markConversationRead(conv.id, timeValue(conv.updatedAt)); return false; }   // open right now
   const read = loadLastRead();
   const from = conv.lastMessage && conv.lastMessage.username;
   return !!from && from !== (myProfile && myProfile.username) && timeValue(conv.updatedAt) > (read[conv.id] || read._since || 0);
@@ -4609,7 +4654,7 @@ async function selectDM(id, otherUid) {
   currentServerId = null; currentServerData = null; currentChannelId = null; currentGroupDMId = null; currentThreadId = null; currentThreadData = null;
   exitCommandMode();
   currentView = 'dm'; currentDMId = id; currentDMOtherUid = otherUid;
-  markConversationRead(id);
+  markConversationRead(id, conversationTime(id));
   refreshUnread();
   clearHomeNavActive();
   subscribeTyping();
@@ -4645,7 +4690,7 @@ async function selectGroupDM(id) {
   currentDMId = null; currentDMOtherUid = null;
   exitCommandMode();
   currentView = 'groupdm'; currentGroupDMId = id;
-  markConversationRead(id);
+  markConversationRead(id, conversationTime(id));
   refreshUnread();
   clearHomeNavActive();
   subscribeTyping();
