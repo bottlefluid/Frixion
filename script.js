@@ -467,6 +467,8 @@ const UPDATES = [
       'The ____X____ aura: tap Z for a wind charge, or hold it to pearl-catch up to 3 times. The Spearmace crosses to its target in spear lunges, and the F lunge goes much further from a jump, because the speed carries.',
       '____X____ himself spear-maces you now, more often: up high, across to you in spear lunges, and down with the mace.',
       'Unread dots follow you between devices: read something on your computer and it\'s read on your phone and in the app too.',
+      'On phones you can swipe in servers now: right to go back to the channels, left to go back to the chat, and left on a channel to open its member list.',
+      'A channel linked with Discord gets Discord\'s messages even when nobody has it open, with the unread dot, instead of only when someone opens the channel.',
     ] },
   { v: '4.45', date: '2026-10-29', title: 'Link a channel with Discord',
     notes: [
@@ -3751,22 +3753,25 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ---- swipe to open/close, DMs only (not servers) ----
-// Right = close the open DM (back to the list). Left = reopen whatever
-// DM/group/tab you last had open. Dragging follows your finger in real
-// time; the CSS transition only takes back over once you lift your
-// finger, same trick used for the tap-driven pane switches above.
-(function setupDMSwipe() {
+// ---- swipe between the list and the chat: DMs, group chats and server channels ----
+// Right = close the open chat (back to the list; in a thread, back to its channel, like the back button). Left from
+// the list = reopen whatever you last had open. Left on a channel or group chat = its member list, like Discord.
+// Dragging follows your finger in real time; the CSS transition only takes back over once you lift your finger, same
+// trick used for the tap-driven pane switches above.
+(function setupMobileSwipe() {
   const zone = $('page-body');
   let tracking = false, dragging = false, startX = 0, startY = 0, dx = 0;
 
   function eligible() {
-    return isMobile() && !currentServerId && currentView !== 'none';
+    return isMobile() && currentView !== 'none';
   }
+  const hasMemberList = () => !$('members-toggle').classList.contains('hidden');
+  const settle = () => requestAnimationFrame(() => { $('side-panel').style.transform = ''; $('main-col').style.transform = ''; });
 
   zone.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1 || !eligible()) { tracking = false; return; }
-    if (e.target.closest('.modal-overlay:not(.hidden)') || e.target.closest('textarea, input') || e.target.closest('#member-panel')) { tracking = false; return; }   // the member list has its own swipe
+    // the member list has its own swipe; pickers and code blocks scroll sideways
+    if (e.target.closest('.modal-overlay:not(.hidden)') || e.target.closest('textarea, input') || e.target.closest('#member-panel, #emoji-picker-panel, #sticker-picker-panel, #gif-picker-panel, pre')) { tracking = false; return; }
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     tracking = true;
@@ -3788,7 +3793,9 @@ document.addEventListener('keydown', (e) => {
     const list = $('side-panel'), chat = $('main-col');
     const width = window.innerWidth;
     const showingChat = $('app').classList.contains('mobile-show-chat');
-    if (showingChat) {
+    if (showingChat && dx < 0) {   // toward the member list: the chat gives a little, the list opens when you let go
+      chat.style.transform = hasMemberList() ? `translateX(${Math.max(dx * 0.35, -width * 0.18)}px)` : '';
+    } else if (showingChat) {
       const t = Math.max(0, Math.min(dx, width));
       chat.style.transform = `translateX(${t}px)`;
       list.style.transform = `translateX(${t - width}px)`;
@@ -3805,8 +3812,14 @@ document.addEventListener('keydown', (e) => {
     tracking = false; dragging = false;
     const width = window.innerWidth;
     const showingChat = $('app').classList.contains('mobile-show-chat');
-    const toChat = showingChat ? !(dx > width * 0.28) : (dx < -width * 0.28);
     $('app').classList.remove('mobile-dragging');
+    if (showingChat && dx < 0) {   // left on a chat: its member list
+      settle();
+      if (dx < -width * 0.2 && hasMemberList() && !$('app').classList.contains('member-list-open')) $('members-toggle').click();
+      return;
+    }
+    const toChat = showingChat ? !(dx > width * 0.28) : (dx < -width * 0.28);
+    if (showingChat && !toChat && currentThreadId && goToThreadParent()) { settle(); return; }   // in a thread: back to its channel
     requestAnimationFrame(() => {
       $('side-panel').style.transform = '';
       $('main-col').style.transform = '';
@@ -4247,7 +4260,10 @@ function noteChannelMessage(sid, cid, payload, ref, tid, channelName) {
 //    twice. Its uid is "discord:<their id>" and ext has their name and picture (discordProfile turns that into a
 //    profileCache entry; there's no users/ doc). Discord's file links expire, so whoever added it copies its files to
 //    Cloudinary.
-//  - Nothing comes over while nobody has the channel open; it all arrives the next time someone opens it.
+//  - With nobody watching: the function's POST tick brings every linked channel's new Discord messages over (and
+//    stamps the channel, so everyone gets the unread dot). A Cloudflare timer calls it every minute (its setup is in
+//    functions/api/discord), and every open Frixion in a server with a link calls it every couple of minutes too.
+//    Linked channels are listed in discordLinks/{server}__{channel} for it; Frixion keeps that list up to date.
 // ============================================================
 const BRIDGE_API = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'http://127.0.0.1:8788/api/discord' : 'https://equilibrium-incarnate.pages.dev/api/discord';
 const bridgeLinked = ch => !!(ch && ch.discord && ch.discord.channel && ch.discord.sig);
@@ -4333,6 +4349,21 @@ async function bridgeImport(P, ch, list, last) {
   if (Object.keys(up).length) chRef.update(up).catch(() => {});
   return list.length > 0;
 }
+// ---- with nobody watching (see the notes above) ----
+const bridgeListed = new Set();
+function bridgeList(sid, cid, channel) {
+  const key = `${sid}__${cid}`;
+  if (bridgeListed.has(key + '/' + channel)) return;
+  bridgeListed.add(key + '/' + channel);
+  db.collection('discordLinks').doc(key).set({ sid, cid, channel, at: Date.now() }, { merge: true }).catch(() => {});
+}
+setTimeout(function bridgeNudge() {
+  setTimeout(bridgeNudge, 120000 + Math.random() * 30000);
+  if (!myUid || OVERLAY_WINDOW || document.visibilityState !== 'visible') return;
+  let any = false;
+  for (const [sid, chs] of Object.entries(serverChannels)) for (const c of Object.values(chs || {})) if (bridgeLinked(c)) { any = true; bridgeList(sid, c.id, c.discord.channel); }
+  if (any) bridgeCall('tick', {}).catch(() => {});
+}, 15000);
 // Discord's file links stop working after a day, so files coming over are copied to Cloudinary like files sent here.
 async function bridgeRehost(ref, atts) {
   if (!atts || !atts.length) return;
@@ -4355,10 +4386,10 @@ async function renderChannelDiscordPane() {
   const d = ch.discord || {}, linkIcon = `<span class="cs-dc-icon">${icon('link')}</span>`;
   if (bridgeLinked(ch)) {
     box.innerHTML = `<div class="cs-dc-card">${linkIcon}<div class="cs-dc-card-text"><b>Linked with #${esc(d.name || 'channel')}</b><span>in ${esc(d.guild || 'a Discord server')}</span></div></div>
-      <p class="ss-hint">Messages sent in #${esc(ch.name)} are posted in that Discord channel with the sender's Frixion name and profile picture, and messages sent there show up here with a DISCORD tag. Discord's messages come over while someone has this channel open.</p>
+      <p class="ss-hint">Messages sent in #${esc(ch.name)} are posted in that Discord channel with the sender's Frixion name and profile picture, and messages sent there show up here with a DISCORD tag.</p>
       <div class="ss-footer-actions"><button type="button" class="ds-btn ds-btn-danger-outline" id="cs-dc-unlink">Unlink</button></div>`;
     $('cs-dc-unlink').onclick = () => confirmAction({ title: 'Unlink from Discord', body: `Stop linking #${ch.name} with #${d.name || 'channel'} on Discord? Messages already sent stay where they are.`, confirmLabel: 'Unlink',
-      onConfirm: async () => { try { await channelRef(ch.id).update({ discord: FieldValue.delete() }); toast('Unlinked from Discord.'); logAudit(currentServerId, `unlinked #${ch.name} from Discord`); } catch (e) { toast('Could not unlink it.', 'error'); } setTimeout(renderChannelDiscordPane, 300); } });
+      onConfirm: async () => { try { await channelRef(ch.id).update({ discord: FieldValue.delete() }); db.collection('discordLinks').doc(`${currentServerId}__${ch.id}`).delete().catch(() => {}); toast('Unlinked from Discord.'); logAudit(currentServerId, `unlinked #${ch.name} from Discord`); } catch (e) { toast('Could not unlink it.', 'error'); } setTimeout(renderChannelDiscordPane, 300); } });
     return;
   }
   box.innerHTML = '<p class="ss-hint">Checking the Discord bridge...</p>';
@@ -4387,6 +4418,7 @@ async function renderChannelDiscordPane() {
     try {
       const r = await bridgeCall('verify', { sid: currentServerId, cid: ch.id, channel: id, code: csDiscordCode });
       await channelRef(ch.id).update({ discord: { channel: r.channel, name: r.name, guild: r.guild, since: r.since, sig: r.sig, by: myUid, at: Date.now() } });
+      bridgeList(currentServerId, ch.id, r.channel);
       csDiscordCode = '';
       toast(`#${ch.name} is linked with #${r.name} on Discord.`);
       logAudit(currentServerId, `linked #${ch.name} with #${r.name} on Discord`);

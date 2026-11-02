@@ -10,6 +10,9 @@
 //   POST /api/discord/verify  links a channel, once someone who runs the Discord server has posted the code Frixion
 //                             showed in the Discord channel.
 //   GET  /api/discord/info    whether the bridge is set up here, and the bot's invite link.
+//   POST /api/discord/tick    brings every linked channel's new Discord messages over, so they're there (with unread
+//                             dots) even when nobody has the channel open. A timer calls it every minute (step 4), and
+//                             every open Frixion calls it now and then. One pass every 20 seconds at most.
 //
 // SETUP, once:
 //   1. https://discord.com/developers/applications > New Application. In Bot, turn on "Message Content Intent" and
@@ -17,6 +20,11 @@
 //   2. Cloudflare > Workers & Pages > this Pages project > Settings > Variables and Secrets: add a Secret called
 //      DISCORD_BOT_TOKEN with that token, then redeploy. Keep the token out of the code and out of chats.
 //   3. Invite the bot (Channel Settings > Discord in Frixion shows the link) and link a channel there.
+//   4. For Discord messages to come over 24/7 (not just while someone has Frixion open): Cloudflare > Workers & Pages
+//      > Create > Create Worker, called frixion-discord-timer, with this code, and in its Settings add a Cron Trigger
+//      for every minute (* * * * *):
+//        export default { async scheduled(event, env, ctx) {
+//          ctx.waitUntil(fetch('https://equilibrium-incarnate.pages.dev/api/discord/tick', { method: 'POST' })); } };
 //
 // Frixion's database is open to every visitor, so nothing stored in it is trusted on its own: a link only counts with
 // the signature verify made from the bot's token (which only this function knows), and a message is sent once (the
@@ -47,6 +55,7 @@ export async function onRequest({ request, env, params }) {
       const body = await request.json().catch(() => ({}));   // sent as text/plain, so other sites can call it without a preflight
       if (route === 'send') return json(await send(env, body, url.origin));
       if (route === 'verify') return json(await verify(env, body));
+      if (route === 'tick') return json(await tick(env));
     }
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
@@ -125,7 +134,7 @@ const docPath = p => p.split('/').map(encodeURIComponent).join('/');
 const dec = v => ('stringValue' in v ? v.stringValue : 'integerValue' in v ? Number(v.integerValue) : 'doubleValue' in v ? v.doubleValue : 'booleanValue' in v ? v.booleanValue
   : 'timestampValue' in v ? Date.parse(v.timestampValue) : 'mapValue' in v ? decFields(v.mapValue.fields) : 'arrayValue' in v ? (v.arrayValue.values || []).map(dec) : 'nullValue' in v ? null : undefined);
 const decFields = f => Object.fromEntries(Object.entries(f || {}).map(([k, v]) => [k, dec(v)]));
-const enc = v => (v === null ? { nullValue: null } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? (Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v })
+const enc = v => (v === null ? { nullValue: null } : v instanceof Date ? { timestampValue: v.toISOString() } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? (Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v })
   : typeof v === 'string' ? { stringValue: v } : Array.isArray(v) ? { arrayValue: { values: v.map(enc) } } : { mapValue: { fields: encFields(v) } });
 // (a field set to undefined is deleted: it's in the update mask but not in the fields)
 const encFields = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined).map(([k, v]) => [k, enc(v)]));
@@ -138,21 +147,33 @@ async function fsGet(env, path, mask) {
   const j = await r.json();
   return { data: decFields(j.fields), updateTime: j.updateTime };
 }
-// Only the fields given are changed, and only if the document is still there; with updateTime, only if it hasn't
-// changed since then either. (A commit, because that's where the precondition is kept: the emulator ignores one
-// passed to PATCH in the URL.)
-async function fsPatch(env, path, data, updateTime) {
-  const name = new URL(fsBase(env)).pathname.replace(/^\/v1\//, '') + '/' + path;
-  const write = { update: { name, fields: encFields(data) }, updateMask: { fieldPaths: Object.keys(data) }, currentDocument: updateTime ? { updateTime } : { exists: true } };
-  const r = await fetch(`${fsBase(env)}:commit?key=${encodeURIComponent(env.FIREBASE_KEY || FIREBASE_KEY)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ writes: [write] }) });
+// Only the fields given are changed, and only if the document is still there. when: an updateTime (only if it hasn't
+// changed since then either), or { exists: false } (only if it isn't there yet). Keys can be paths ('discord.last').
+// (A commit, because that's where the precondition is kept: the emulator ignores one passed to PATCH in the URL.)
+const fsName = (env, path) => new URL(fsBase(env)).pathname.replace(/^\/v1\//, '') + '/' + path;
+const fsCommit = (env, writes) => fetch(`${fsBase(env)}:commit?key=${encodeURIComponent(env.FIREBASE_KEY || FIREBASE_KEY)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ writes }) });
+async function fsPatch(env, path, data, when) {
+  const fields = {};
+  for (const [k, v] of Object.entries(data)) { const parts = k.split('.'); let o = fields; parts.slice(0, -1).forEach(s => { o = o[s] = o[s] || {}; }); o[parts[parts.length - 1]] = v; }
+  const r = await fsCommit(env, [{ update: { name: fsName(env, path), fields: encFields(fields) }, updateMask: { fieldPaths: Object.keys(data) }, currentDocument: typeof when === 'string' ? { updateTime: when } : when || { exists: true } }]);
   return r.ok;
+}
+// a new document, only if there isn't one there already (false if there is)
+async function fsCreate(env, path, data) {
+  const r = await fsCommit(env, [{ update: { name: fsName(env, path), fields: encFields(data) }, currentDocument: { exists: false } }]);
+  return r.ok;
+}
+async function fsList(env, coll) {
+  const r = await fetch(`${fsBase(env)}/${docPath(coll)}?pageSize=100&key=${encodeURIComponent(env.FIREBASE_KEY || FIREBASE_KEY)}`);
+  if (!r.ok) return [];
+  const j = await r.json().catch(() => ({}));
+  return (j.documents || []).map(d => decFields(d.fields));
 }
 // Claims a message for sending in one trip: adds 1 to its dcClaim and says what that came to. Only the request that
 // gets 1 sends it. (null if the message isn't there.)
 async function fsClaim(env, path) {
-  const name = new URL(fsBase(env)).pathname.replace(/^\/v1\//, '') + '/' + path;
-  const write = { update: { name, fields: {} }, updateMask: { fieldPaths: [] }, updateTransforms: [{ fieldPath: 'dcClaim', increment: { integerValue: '1' } }], currentDocument: { exists: true } };
-  const r = await fetch(`${fsBase(env)}:commit?key=${encodeURIComponent(env.FIREBASE_KEY || FIREBASE_KEY)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ writes: [write] }) });
+  const write = { update: { name: fsName(env, path), fields: {} }, updateMask: { fieldPaths: [] }, updateTransforms: [{ fieldPath: 'dcClaim', increment: { integerValue: '1' } }], currentDocument: { exists: true } };
+  const r = await fsCommit(env, [write]);
   if (!r.ok) return null;
   const j = await r.json().catch(() => null), v = j && j.writeResults && j.writeResults[0] && (j.writeResults[0].transformResults || [])[0];
   return v ? Number(v.integerValue ?? v.doubleValue) : null;
@@ -171,13 +192,13 @@ const same = (a, b) => { if (typeof a !== 'string' || a.length !== b.length) ret
 // doesn't read it every few seconds). No link is only remembered for 3: a channel that was just linked asks right
 // away, sometimes before the link has reached the database.
 const links = new Map();
-async function linkOf(env, sid, cid) {
+async function linkOf(env, sid, cid, fresh) {
   const k = sid + '/' + cid, hit = links.get(k);
-  if (hit && Date.now() - hit.at < (hit.link ? 30000 : 3000)) return hit.link;
+  if (!fresh && hit && Date.now() - hit.at < (hit.link ? 30000 : 3000)) return hit.link;
   const doc = await fsGet(env, `servers/${sid}/channels/${cid}`, ['discord']);
   const d = doc && doc.data.discord;
   const ok = !!(d && SNOWFLAKE.test(d.channel || '') && same(d.sig, await sign(env, sid, cid, d.channel)));
-  const link = ok ? { channel: d.channel, since: SNOWFLAKE.test(d.since || '') ? d.since : snowflakeOf(Date.now() - 60000) } : null;
+  const link = ok ? { channel: d.channel, since: SNOWFLAKE.test(d.since || '') ? d.since : snowflakeOf(Date.now() - 60000), last: SNOWFLAKE.test(d.last || '') ? d.last : '' } : null;
   links.set(k, { at: Date.now(), link });
   if (links.size > 500) links.delete(links.keys().next().value);
   return link;
@@ -285,6 +306,14 @@ function fromDiscord(m) {
 }
 // Screens asking the same thing within a moment of each other share one answer (never an old one: that would hold
 // messages back). pace, when Discord's allowance for the channel is nearly used up, is how long to wait (in ms).
+// What's been said in a linked Discord channel since a message: not the bot's own posts (Frixion's messages, already
+// there) or the link codes, just people talking. last is the newest message looked at, said by anyone.
+async function discordSince(env, link, after) {
+  const [list, hook, me] = await Promise.all([dc(env, 'GET', `/channels/${link.channel}/messages?after=${after}&limit=50`, null, link.channel), hookFor(env, link.channel, false).catch(() => null), botUser(env)]);
+  const sorted = (list || []).slice().sort((x, y) => (BigInt(x.id) < BigInt(y.id) ? -1 : 1));
+  const keep = m => (m.type === 0 || m.type === 19) && m.author && m.author.id !== me.id && !(m.webhook_id && ((hook && m.webhook_id === hook.id) || m.application_id === me.id)) && !/frixion-link-[a-z0-9]{6}/i.test(m.content || '');
+  return { last: sorted.length ? sorted[sorted.length - 1].id : after, messages: sorted.filter(keep).map(fromDiscord) };
+}
 const pulls = new Map();
 async function pull(env, url) {
   const sid = url.searchParams.get('sid'), cid = url.searchParams.get('cid');
@@ -298,15 +327,84 @@ async function pull(env, url) {
   const b = buckets.get(link.channel);
   if (b && b.left <= 0 && b.until > n) return { last: after, messages: [], pace: b.until - n };
   const p = (async () => {
-    const [list, hook, me] = await Promise.all([dc(env, 'GET', `/channels/${link.channel}/messages?after=${after}&limit=50`, null, link.channel), hookFor(env, link.channel, false).catch(() => null), botUser(env)]);
-    const sorted = (list || []).slice().sort((x, y) => (BigInt(x.id) < BigInt(y.id) ? -1 : 1));
-    // not the bot's own posts (Frixion's messages, already there) or the link codes; just people talking
-    const keep = m => (m.type === 0 || m.type === 19) && m.author && m.author.id !== me.id && !(m.webhook_id && ((hook && m.webhook_id === hook.id) || m.application_id === me.id)) && !/frixion-link-[a-z0-9]{6}/i.test(m.content || '');
-    const nb = buckets.get(link.channel);
-    return { last: sorted.length ? sorted[sorted.length - 1].id : after, messages: sorted.filter(keep).map(fromDiscord), pace: nb && nb.left <= 1 && nb.until > Date.now() ? Math.ceil(nb.until - Date.now()) : 0 };
+    const out = await discordSince(env, link, after), nb = buckets.get(link.channel);
+    return { ...out, pace: nb && nb.left <= 1 && nb.until > Date.now() ? Math.ceil(nb.until - Date.now()) : 0 };
   })();
   pulls.set(key, { at: n, p });
   p.catch(() => pulls.delete(key));
   for (const [k, v] of pulls) if (n - v.at > 10000) pulls.delete(k);
   return p;
+}
+
+// ---------------- Discord to Frixion, with nobody watching ----------------
+// Every linked channel (listed in discordLinks, which Frixion keeps up to date) gets what was said in Discord since
+// the last pass, added the way an open Frixion adds it (messages/dc_<Discord id>, only if it isn't there already),
+// and the channel's newest message stamped, so everyone gets the unread dot. Discord's file links stop working after
+// a day, so files are copied to Cloudinary first, like files sent in Frixion.
+const CLOUDINARY = { cloud: 'a97nqv9w', preset: 'frixion' };   // the site's own (public) unsigned upload preset
+let lastTick = 0;
+async function tick(env) {
+  const n = Date.now();
+  if (n - lastTick < 20000) return { ok: true, skipped: 'recent' };
+  lastTick = n;
+  const t0 = await fsGet(env, 'config/discordTick');
+  if (t0 && t0.data.at > n - 20000) return { ok: true, skipped: 'recent' };
+  if (!(await fsPatch(env, 'config/discordTick', { at: n }, t0 ? t0.updateTime : { exists: false }))) return { ok: true, skipped: 'taken' };
+  const list = await fsList(env, 'discordLinks');
+  let imported = 0;
+  for (const l of list.slice(0, 25)) {
+    if (!ID.test(l.sid || '') || !ID.test(l.cid || '')) continue;
+    try { imported += await importChannel(env, l.sid, l.cid); } catch (e) { if (e instanceof Fail && e.status === 429) break; }
+  }
+  return { ok: true, links: list.length, imported };
+}
+async function importChannel(env, sid, cid) {
+  const link = await linkOf(env, sid, cid, true);
+  if (!link) return 0;
+  const after = link.last && BigInt(link.last) > BigInt(link.since) ? link.last : link.since;
+  const { last, messages } = await discordSince(env, link, after);
+  let made = 0, newest = null;
+  for (const d of messages) {
+    const m = await importedMessage(env, sid, cid, d);
+    if (m && await fsCreate(env, `servers/${sid}/channels/${cid}/messages/dc_${d.id}`, m)) { made++; newest = m; }
+  }
+  // how far it got, and the channel's newest message, for everyone's unread dots
+  const up = {};
+  if (SNOWFLAKE.test(last || '') && BigInt(last) > BigInt(link.last || '0')) up['discord.last'] = last;
+  if (newest) { up.lastMessageAt = newest.createdAt; up.lastMessage = { uid: newest.uid, text: (newest.text || (newest.attachments ? 'Sent a file' : '')).slice(0, 200), everyone: false, mid: 'dc_' + newest.dc }; }
+  if (Object.keys(up).length) await fsPatch(env, `servers/${sid}/channels/${cid}`, up);
+  links.delete(sid + '/' + cid);
+  return made;
+}
+// a Discord message as a Frixion one (the same fields an open Frixion writes: see DISCORD BRIDGE in script.js)
+async function importedMessage(env, sid, cid, d) {
+  if (!d || !SNOWFLAKE.test(d.id || '') || !d.author) return null;
+  const ext = { src: 'discord', id: String(d.author.id), name: String(d.author.name || 'Discord user').slice(0, 80), tag: String(d.author.tag || '').slice(0, 40), avatar: /^https:\/\//.test(d.author.avatar || '') ? d.author.avatar : '', bot: !!d.author.bot };
+  const m = { uid: 'discord:' + ext.id, username: ext.name, ext, dc: d.id, createdAt: new Date(d.at || Date.now()), text: String(d.text || (d.stickers && d.stickers.length ? `[sticker: ${d.stickers[0]}]` : '')).slice(0, 4000) };
+  const files = (d.files || []).filter(f => f && /^https?:\/\//.test(f.url || '')).slice(0, 10);
+  if (files.length) m.attachments = await Promise.all(files.map(async f => { const a = { url: f.url, name: String(f.name || 'file').slice(0, 200), type: /^image\//.test(f.type || '') ? 'image' : 'file', size: +f.size || 0 }; return { ...a, url: await rehost(a) }; }));
+  if (d.reply) {
+    const o = d.reply.hook ? await findByDc(env, sid, cid, d.reply.id) : null;   // a reply to a message from Frixion
+    m.replyTo = { id: o ? o.id : 'dc_' + d.reply.id, uid: o ? o.uid : 'discord:' + d.reply.uid, username: o ? (o.username || '') : String(d.reply.name || ''), text: String(d.reply.text || '').slice(0, 200) };
+  }
+  return m.text || m.attachments ? m : null;
+}
+async function rehost(a) {
+  if (!/^https:\/\/(cdn|media)\.discordapp\.(com|net)\//.test(a.url) || (a.size || 0) > 10 * 1024 * 1024) return a.url;
+  try {
+    const fd = new FormData(); fd.append('file', a.url); fd.append('upload_preset', CLOUDINARY.preset);
+    const r = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY.cloud}/${a.type === 'image' ? 'image' : 'auto'}/upload`, { method: 'POST', body: fd });
+    const j = await r.json();
+    return (j && j.secure_url) || a.url;
+  } catch (e) { return a.url; }
+}
+// the Frixion message that went to Discord as this Discord message
+async function findByDc(env, sid, cid, id) {
+  const q = { structuredQuery: { from: [{ collectionId: 'messages' }], where: { fieldFilter: { field: { fieldPath: 'dc' }, op: 'EQUAL', value: { stringValue: id } } }, limit: 1 } };
+  const r = await fetch(`${fsBase(env)}/${docPath(`servers/${sid}/channels/${cid}`)}:runQuery?key=${encodeURIComponent(env.FIREBASE_KEY || FIREBASE_KEY)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(q) });
+  if (!r.ok) return null;
+  const hit = ((await r.json().catch(() => [])) || []).find(x => x.document);
+  if (!hit) return null;
+  const f = decFields(hit.document.fields);
+  return { id: hit.document.name.split('/').pop(), uid: f.uid, username: f.username };
 }
