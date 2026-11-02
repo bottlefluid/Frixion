@@ -11,8 +11,8 @@
 //                             showed in the Discord channel.
 //   GET  /api/discord/info    whether the bridge is set up here, and the bot's invite link.
 //   POST /api/discord/tick    brings every linked channel's new Discord messages over, so they're there (with unread
-//                             dots) even when nobody has the channel open. A timer calls it every minute (step 4), and
-//                             every open Frixion calls it now and then. One pass every 20 seconds at most.
+//                             dots) even when nobody has the channel open. A timer calls it every 10 seconds (step 4),
+//                             and every open Frixion calls it now and then. One pass every 8 seconds at most.
 //
 // SETUP, once:
 //   1. https://discord.com/developers/applications > New Application. In Bot, turn on "Message Content Intent" and
@@ -22,9 +22,10 @@
 //   3. Invite the bot (Channel Settings > Discord in Frixion shows the link) and link a channel there.
 //   4. For Discord messages to come over 24/7 (not just while someone has Frixion open): Cloudflare > Workers & Pages
 //      > Create > Create Worker, called frixion-discord-timer, with this code, and in its Settings add a Cron Trigger
-//      for every minute (* * * * *):
+//      for every minute (* * * * *). Cron can't go below a minute, so each run calls 6 times, 10 seconds apart:
 //        export default { async scheduled(event, env, ctx) {
-//          ctx.waitUntil(fetch('https://equilibrium-incarnate.pages.dev/api/discord/tick', { method: 'POST' })); } };
+//          const tick = () => fetch('https://equilibrium-incarnate.pages.dev/api/discord/tick', { method: 'POST' }).catch(() => {});
+//          ctx.waitUntil((async () => { for (let i = 0; i < 6; i++) { if (i) await new Promise(r => setTimeout(r, 10000)); await tick(); } })()); } };
 //
 // Frixion's database is open to every visitor, so nothing stored in it is trusted on its own: a link only counts with
 // the signature verify made from the bot's token (which only this function knows), and a message is sent once (the
@@ -192,9 +193,9 @@ const same = (a, b) => { if (typeof a !== 'string' || a.length !== b.length) ret
 // doesn't read it every few seconds). No link is only remembered for 3: a channel that was just linked asks right
 // away, sometimes before the link has reached the database.
 const links = new Map();
-async function linkOf(env, sid, cid, fresh) {
+async function linkOf(env, sid, cid, keep = 30000) {
   const k = sid + '/' + cid, hit = links.get(k);
-  if (!fresh && hit && Date.now() - hit.at < (hit.link ? 30000 : 3000)) return hit.link;
+  if (hit && Date.now() - hit.at < (hit.link ? keep : 3000)) return hit.link;
   const doc = await fsGet(env, `servers/${sid}/channels/${cid}`, ['discord']);
   const d = doc && doc.data.discord;
   const ok = !!(d && SNOWFLAKE.test(d.channel || '') && same(d.sig, await sign(env, sid, cid, d.channel)));
@@ -341,39 +342,44 @@ async function pull(env, url) {
 // the last pass, added the way an open Frixion adds it (messages/dc_<Discord id>, only if it isn't there already),
 // and the channel's newest message stamped, so everyone gets the unread dot. Discord's file links stop working after
 // a day, so files are copied to Cloudinary first, like files sent in Frixion.
+// The timer asks every 10 seconds, so a pass with nothing new costs the database nothing: the list of links (5
+// minutes), each link (5 minutes) and how far each channel has got are remembered here, and how far it got is only
+// saved when something comes over, or every 10 minutes otherwise. Two passes at once can't double anything up (a
+// message is only created if it isn't there), so there's nothing to coordinate.
 const CLOUDINARY = { cloud: 'a97nqv9w', preset: 'frixion' };   // the site's own (public) unsigned upload preset
-let lastTick = 0;
+let lastTick = 0, linkList = null;
+const cursors = new Map();   // 'server/channel' -> { last: newest looked at, saved: what the channel doc says }
+const newestOf = (...ids) => ids.filter(x => SNOWFLAKE.test(x || '')).reduce((a, b) => (BigInt(b) > BigInt(a) ? b : a), '0');
+const snowflakeMs = id => Number((BigInt(id) >> 22n) + 1420070400000n);
 async function tick(env) {
   const n = Date.now();
-  if (n - lastTick < 20000) return { ok: true, skipped: 'recent' };
+  if (n - lastTick < 8000) return { ok: true, skipped: 'recent' };
   lastTick = n;
-  const t0 = await fsGet(env, 'config/discordTick');
-  if (t0 && t0.data.at > n - 20000) return { ok: true, skipped: 'recent' };
-  if (!(await fsPatch(env, 'config/discordTick', { at: n }, t0 ? t0.updateTime : { exists: false }))) return { ok: true, skipped: 'taken' };
-  const list = await fsList(env, 'discordLinks');
+  if (!linkList || n - linkList.at > 300000) linkList = { at: n, list: await fsList(env, 'discordLinks') };
   let imported = 0;
-  for (const l of list.slice(0, 25)) {
+  for (const l of linkList.list.slice(0, 25)) {
     if (!ID.test(l.sid || '') || !ID.test(l.cid || '')) continue;
     try { imported += await importChannel(env, l.sid, l.cid); } catch (e) { if (e instanceof Fail && e.status === 429) break; }
   }
-  return { ok: true, links: list.length, imported };
+  return { ok: true, links: linkList.list.length, imported };
 }
 async function importChannel(env, sid, cid) {
-  const link = await linkOf(env, sid, cid, true);
-  if (!link) return 0;
-  const after = link.last && BigInt(link.last) > BigInt(link.since) ? link.last : link.since;
-  const { last, messages } = await discordSince(env, link, after);
+  const k = sid + '/' + cid, link = await linkOf(env, sid, cid, 300000);
+  if (!link) { cursors.delete(k); return 0; }
+  const c = cursors.get(k) || { last: '', saved: link.last || '' };
+  const { last, messages } = await discordSince(env, link, newestOf(link.since, link.last, c.last));
   let made = 0, newest = null;
   for (const d of messages) {
     const m = await importedMessage(env, sid, cid, d);
     if (m && await fsCreate(env, `servers/${sid}/channels/${cid}/messages/dc_${d.id}`, m)) { made++; newest = m; }
   }
-  // how far it got, and the channel's newest message, for everyone's unread dots
+  // how far it got (saved with anything new, or every 10 minutes), and the channel's newest message, for the dots
+  c.last = newestOf(c.last, last);
   const up = {};
-  if (SNOWFLAKE.test(last || '') && BigInt(last) > BigInt(link.last || '0')) up['discord.last'] = last;
+  if (BigInt(c.last) > BigInt(c.saved || '0') && (newest || !c.saved || snowflakeMs(c.last) - snowflakeMs(c.saved) > 600000)) { up['discord.last'] = c.last; c.saved = c.last; }
   if (newest) { up.lastMessageAt = newest.createdAt; up.lastMessage = { uid: newest.uid, text: (newest.text || (newest.attachments ? 'Sent a file' : '')).slice(0, 200), everyone: false, mid: 'dc_' + newest.dc }; }
   if (Object.keys(up).length) await fsPatch(env, `servers/${sid}/channels/${cid}`, up);
-  links.delete(sid + '/' + cid);
+  cursors.set(k, c);
   return made;
 }
 // a Discord message as a Frixion one (the same fields an open Frixion writes: see DISCORD BRIDGE in script.js)
