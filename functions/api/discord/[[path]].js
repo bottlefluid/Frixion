@@ -4,6 +4,8 @@
 //   POST /api/discord/send    the sender's Frixion calls this right after a message goes into a linked channel: it is
 //                             posted in the Discord channel through a webhook, with the sender's Frixion name and
 //                             profile picture.
+//   POST /api/discord/sync    after a message from Frixion is edited or deleted (or loses its text or a file), its
+//                             Frixion calls this to make the Discord copy match: the new text, or gone.
 //   GET  /api/discord/pull    whoever has a linked channel open asks every few seconds for what was said in the
 //                             Discord channel since, and adds it to the channel with each Discord user's name and
 //                             picture.
@@ -11,8 +13,9 @@
 //                             showed in the Discord channel.
 //   GET  /api/discord/info    whether the bridge is set up here, and the bot's invite link.
 //   POST /api/discord/tick    brings every linked channel's new Discord messages over, so they're there (with unread
-//                             dots) even when nobody has the channel open. A timer calls it every 10 seconds (step 4),
-//                             and every open Frixion calls it now and then. One pass every 8 seconds at most.
+//                             dots) even when nobody has the channel open, and edits and deletes made in Discord too.
+//                             A timer calls it every 10 seconds (step 4), and every open Frixion calls it now and
+//                             then. One pass every 8 seconds at most.
 //
 // SETUP, once:
 //   1. https://discord.com/developers/applications > New Application. In Bot, turn on "Message Content Intent" and
@@ -29,7 +32,8 @@
 //
 // Frixion's database is open to every visitor, so nothing stored in it is trusted on its own: a link only counts with
 // the signature verify made from the bot's token (which only this function knows), and a message is sent once (the
-// first request claims it with an update that fails if the message changed after it was read).
+// first request claims it with an update that fails if the message changed after it was read). sync only ever changes
+// the bot's own webhook posts, and only deletes one once no Frixion message points at it any more.
 // For tests, DISCORD_API, FIRESTORE_URL and FIREBASE_KEY can point at a fake Discord and the Firebase emulators.
 const DISCORD = 'https://discord.com/api/v10';
 const FIRESTORE = 'https://firestore.googleapis.com/v1/projects/liquidalt/databases/(default)/documents';
@@ -55,6 +59,7 @@ export async function onRequest({ request, env, params }) {
     if (request.method === 'POST') {
       const body = await request.json().catch(() => ({}));   // sent as text/plain, so other sites can call it without a preflight
       if (route === 'send') return json(await send(env, body, url.origin));
+      if (route === 'sync') return json(await sync(env, body));
       if (route === 'verify') return json(await verify(env, body));
       if (route === 'tick') return json(await tick(env));
     }
@@ -162,6 +167,10 @@ async function fsPatch(env, path, data, when) {
 // a new document, only if there isn't one there already (false if there is)
 async function fsCreate(env, path, data) {
   const r = await fsCommit(env, [{ update: { name: fsName(env, path), fields: encFields(data) }, currentDocument: { exists: false } }]);
+  return r.ok;
+}
+async function fsDelete(env, path) {
+  const r = await fsCommit(env, [{ delete: fsName(env, path) }]);
   return r.ok;
 }
 async function fsList(env, coll) {
@@ -281,6 +290,37 @@ async function send(env, { sid, cid, mid, uid }, origin) {
     throw e;
   }
 }
+// After a message from Frixion is edited, loses its text or a file, or is deleted, its Frixion asks for the Discord
+// copy to match (dc: the copy's id, for a message that's gone). Only posts the bot's webhook made can be changed this
+// way (Discord refuses the rest, so nobody's own Discord messages can be touched from here), and a copy is only
+// deleted once no Frixion message points at it any more.
+async function sync(env, { sid, cid, mid, dc: copy }) {
+  if (!ID.test(sid || '') || !ID.test(cid || '') || !ID.test(mid || '')) fail(400, 'Something is missing.');
+  const path = `servers/${sid}/channels/${cid}/messages/${mid}`;
+  const [link, doc] = await Promise.all([linkOf(env, sid, cid), fsGet(env, path)]);
+  if (!link) fail(404, 'This channel isn\'t linked to Discord.');
+  const m = doc && doc.data;
+  if (m && (!SNOWFLAKE.test(m.dc || '') || m.ext || String(m.uid || '').startsWith('discord:'))) return { ok: true, skipped: 'not from here' };
+  const id = m ? m.dc : copy;
+  if (!SNOWFLAKE.test(id || '')) fail(400, 'Something is missing.');
+  if (!m && await findByDc(env, sid, cid, id)) return { ok: true, skipped: 'still here' };
+  const content = m ? discordText(m) : '';
+  const r = await hookEdit(env, link.channel, id, content ? { content, allowed_mentions: { parse: [] } } : null);
+  // nothing left to show: the message stops pointing at the deleted copy, so the tick doesn't delete it here as well
+  if (m && !content && r.deleted) await fsPatch(env, path, { dc: undefined });
+  return r;
+}
+// Edits (body) or deletes (no body) a post the bot's webhook made in a Discord channel.
+async function hookEdit(env, channel, id, body) {
+  const h = await hookFor(env, channel, false);
+  if (!h) return { ok: true, skipped: 'gone' };
+  const r = await fetch(`${api(env)}/webhooks/${h.id}/${h.token}/messages/${id}`, { method: body ? 'PATCH' : 'DELETE', headers: { 'Content-Type': 'application/json', 'User-Agent': UA }, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 404 || r.status === 403) return { ok: true, skipped: 'gone' };   // deleted already, not the webhook's, or an earlier webhook's
+  const j = r.status === 204 ? null : await r.json().catch(() => null);
+  if (r.status === 429) fail(429, 'Discord is busy. Trying again in a moment.', { retry: (j && j.retry_after) || 2 });
+  if (!r.ok) fail(502, (j && j.message) || 'Discord refused the change.');
+  return { ok: true, [body ? 'edited' : 'deleted']: true };
+}
 
 // ---------------- Discord to Frixion ----------------
 // Discord's markup in plain text: mentions as @name, custom emoji as :name:, timestamps as dates
@@ -305,16 +345,23 @@ function fromDiscord(m) {
     reply: r && ra ? { id: r.id, uid: ra.id, name: ra.global_name || ra.username, text: oneLine(plainText(r)).slice(0, 200), hook: !!r.webhook_id } : null,
   };
 }
+// A linked Discord channel's newest 50 messages (or the 50 after a message), oldest first, and how to tell them apart:
+// ours are Frixion's messages, posted through the bot's webhook; keep is people talking in Discord (not the bot, its
+// webhook or the link codes).
+async function discordList(env, link, after) {
+  const [list, hook, me] = await Promise.all([dc(env, 'GET', `/channels/${link.channel}/messages?${after ? `after=${after}&` : ''}limit=50`, null, link.channel), hookFor(env, link.channel, false).catch(() => null), botUser(env)]);
+  const ours = m => !!(m.webhook_id && ((hook && m.webhook_id === hook.id) || m.application_id === me.id));
+  const keep = m => (m.type === 0 || m.type === 19) && m.author && m.author.id !== me.id && !ours(m) && !/frixion-link-[a-z0-9]{6}/i.test(m.content || '');
+  return { list: (list || []).slice().sort((x, y) => (BigInt(x.id) < BigInt(y.id) ? -1 : 1)), ours, keep };
+}
+// What's been said in a linked Discord channel since a message, ready to come over. last is the newest message looked
+// at, said by anyone.
+async function discordSince(env, link, after) {
+  const { list, keep } = await discordList(env, link, after);
+  return { last: list.length ? list[list.length - 1].id : after, messages: list.filter(keep).map(fromDiscord) };
+}
 // Screens asking the same thing within a moment of each other share one answer (never an old one: that would hold
 // messages back). pace, when Discord's allowance for the channel is nearly used up, is how long to wait (in ms).
-// What's been said in a linked Discord channel since a message: not the bot's own posts (Frixion's messages, already
-// there) or the link codes, just people talking. last is the newest message looked at, said by anyone.
-async function discordSince(env, link, after) {
-  const [list, hook, me] = await Promise.all([dc(env, 'GET', `/channels/${link.channel}/messages?after=${after}&limit=50`, null, link.channel), hookFor(env, link.channel, false).catch(() => null), botUser(env)]);
-  const sorted = (list || []).slice().sort((x, y) => (BigInt(x.id) < BigInt(y.id) ? -1 : 1));
-  const keep = m => (m.type === 0 || m.type === 19) && m.author && m.author.id !== me.id && !(m.webhook_id && ((hook && m.webhook_id === hook.id) || m.application_id === me.id)) && !/frixion-link-[a-z0-9]{6}/i.test(m.content || '');
-  return { last: sorted.length ? sorted[sorted.length - 1].id : after, messages: sorted.filter(keep).map(fromDiscord) };
-}
 const pulls = new Map();
 async function pull(env, url) {
   const sid = url.searchParams.get('sid'), cid = url.searchParams.get('cid');
@@ -342,13 +389,16 @@ async function pull(env, url) {
 // the last pass, added the way an open Frixion adds it (messages/dc_<Discord id>, only if it isn't there already),
 // and the channel's newest message stamped, so everyone gets the unread dot. Discord's file links stop working after
 // a day, so files are copied to Cloudinary first, like files sent in Frixion.
+// Each pass reads the channel's newest 50 Discord messages, which also shows what was edited or deleted in Discord
+// since the last pass (see recheck).
 // The timer asks every 10 seconds, so a pass with nothing new costs the database nothing: the list of links (5
 // minutes), each link (5 minutes) and how far each channel has got are remembered here, and how far it got is only
 // saved when something comes over, or every 10 minutes otherwise. Two passes at once can't double anything up (a
-// message is only created if it isn't there), so there's nothing to coordinate.
+// message is only created if it isn't there, and an edit or delete done twice comes out the same), so there's nothing
+// to coordinate.
 const CLOUDINARY = { cloud: 'a97nqv9w', preset: 'frixion' };   // the site's own (public) unsigned upload preset
 let lastTick = 0, linkList = null;
-const cursors = new Map();   // 'server/channel' -> { last: newest looked at, saved: what the channel doc says }
+const cursors = new Map();   // 'server/channel' -> { last: newest looked at, saved: what the channel doc says, seen and seenSaved: see recheck }
 const newestOf = (...ids) => ids.filter(x => SNOWFLAKE.test(x || '')).reduce((a, b) => (BigInt(b) > BigInt(a) ? b : a), '0');
 const snowflakeMs = id => Number((BigInt(id) >> 22n) + 1420070400000n);
 async function tick(env) {
@@ -359,19 +409,25 @@ async function tick(env) {
   let imported = 0;
   for (const l of linkList.list.slice(0, 25)) {
     if (!ID.test(l.sid || '') || !ID.test(l.cid || '')) continue;
-    try { imported += await importChannel(env, l.sid, l.cid); } catch (e) { if (e instanceof Fail && e.status === 429) break; }
+    try { imported += await importChannel(env, l); } catch (e) { if (e instanceof Fail && e.status === 429) break; }
   }
   return { ok: true, links: linkList.list.length, imported };
 }
-async function importChannel(env, sid, cid) {
-  const k = sid + '/' + cid, link = await linkOf(env, sid, cid, 300000);
+async function importChannel(env, l) {
+  const { sid, cid } = l, k = sid + '/' + cid, link = await linkOf(env, sid, cid, 300000);
   if (!link) { cursors.delete(k); return 0; }
-  const c = cursors.get(k) || { last: '', saved: link.last || '' };
-  const { last, messages } = await discordSince(env, link, newestOf(link.since, link.last, c.last));
+  const c = cursors.get(k) || { last: '', saved: link.last || '', ...seenOf(l, link.channel) };
+  const after = newestOf(link.since, link.last, c.last);
+  // what's new is among the newest 50, unless more than that came since the last pass: then the 50 after it go first
+  const w = await discordList(env, link);
+  const behind = w.list.length >= 50 && BigInt(w.list[0].id) > BigInt(after);
+  const { last, messages } = behind ? await discordSince(env, link, after)
+    : { last: newestOf(after, ...w.list.map(m => m.id)), messages: w.list.filter(m => BigInt(m.id) > BigInt(after) && w.keep(m)).map(fromDiscord) };
   let made = 0, newest = null;
+  const added = new Set();
   for (const d of messages) {
     const m = await importedMessage(env, sid, cid, d);
-    if (m && await fsCreate(env, `servers/${sid}/channels/${cid}/messages/dc_${d.id}`, m)) { made++; newest = m; }
+    if (m && await fsCreate(env, `servers/${sid}/channels/${cid}/messages/dc_${d.id}`, m)) { made++; newest = m; added.add(d.id); }
   }
   // how far it got (saved with anything new, or every 10 minutes), and the channel's newest message, for the dots
   c.last = newestOf(c.last, last);
@@ -379,8 +435,45 @@ async function importChannel(env, sid, cid) {
   if (BigInt(c.last) > BigInt(c.saved || '0') && (newest || !c.saved || snowflakeMs(c.last) - snowflakeMs(c.saved) > 600000)) { up['discord.last'] = c.last; c.saved = c.last; }
   if (newest) { up.lastMessageAt = newest.createdAt; up.lastMessage = { uid: newest.uid, text: (newest.text || (newest.attachments ? 'Sent a file' : '')).slice(0, 200), everyone: false, mid: 'dc_' + newest.dc }; }
   if (Object.keys(up).length) await fsPatch(env, `servers/${sid}/channels/${cid}`, up);
+  await recheck(env, l, link, c, w, added);
   cursors.set(k, c);
   return made;
+}
+// Edits and deletes made in Discord, found by comparing the newest messages with what they were on the last pass
+// (also kept as seen on the channel's discordLinks entry, so a restart of this function doesn't lose them): one whose
+// edit time changed gets its new text here, and one that's gone from among them is deleted here too, whoever wrote
+// it (a Frixion message whose copy a Discord moderator deleted goes as well). An empty answer says nothing.
+// seen is "<Discord channel>|<id>:<edit time> ...", with w instead of a time for Frixion's own posts.
+async function recheck(env, l, link, c, w, added) {
+  if (!w.list.length) return;
+  const { sid, cid } = l, dir = `servers/${sid}/channels/${cid}/messages`, now = new Map();
+  for (const m of w.list) {
+    if (BigInt(m.id) <= BigInt(link.since)) continue;
+    if (w.ours(m)) now.set(m.id, 'w');
+    else if (w.keep(m)) now.set(m.id, m.edited_timestamp ? Date.parse(m.edited_timestamp) || 1 : 0);
+  }
+  // fewer than 50 is the whole channel; otherwise anything older than the oldest of them has only scrolled out
+  const from = w.list.length < 50 ? 0n : BigInt(w.list[0].id), jobs = [];
+  for (const [id, was] of c.seen) {
+    if (now.has(id) || BigInt(id) < from) continue;
+    jobs.push(was === 'w' ? findByDc(env, sid, cid, id).then(o => o && fsDelete(env, `${dir}/${o.id}`)) : fsDelete(env, `${dir}/dc_${id}`));
+  }
+  for (const m of w.list) {
+    const t = now.get(m.id);
+    if (typeof t !== 'number' || !t || added.has(m.id) || c.seen.get(m.id) === t) continue;
+    const d = fromDiscord(m);
+    jobs.push(fsPatch(env, `${dir}/dc_${m.id}`, { text: String(d.text || (d.stickers.length ? `[sticker: ${d.stickers[0]}]` : '')).slice(0, 4000), edited: true }));
+  }
+  await Promise.all(jobs.map(j => j.catch(() => {})));
+  c.seen = now;
+  const seen = link.channel + '|' + [...now].map(([id, t]) => id + ':' + t).join(' ');
+  if (seen !== c.seenSaved && await fsPatch(env, `discordLinks/${sid}__${cid}`, { seen })) c.seenSaved = seen;
+}
+// what seen in a discordLinks entry says about its Discord channel (nothing, if it was about another one)
+function seenOf(l, channel) {
+  const [ch, list] = String(l.seen || '').split('|');
+  const seen = new Map(ch === channel && list ? list.split(' ').map(x => { const [id, t] = x.split(':'); return [id, t === 'w' ? 'w' : Number(t) || 0]; }) : []);
+  return { seen, seenSaved: l.seen || '' };
 }
 // a Discord message as a Frixion one (the same fields an open Frixion writes: see DISCORD BRIDGE in script.js)
 async function importedMessage(env, sid, cid, d) {

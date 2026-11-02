@@ -455,6 +455,13 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.47', date: '2026-11-02', title: 'Edits and deletes cross over to Discord',
+    notes: [
+      'In a channel linked with Discord, editing your message here edits it in Discord too, and deleting it (or its text, or one of its files) deletes it there as well.',
+      'Edits and deletes made in Discord show up here within about 10 seconds: an edited message gets its new text and the (edited) tag, and a deleted one disappears. That goes for your own messages too, if a Discord moderator deletes them there.',
+      'Deleting a Discord user\'s message here only removes it from Frixion, and /purge stays on Frixion too.',
+      'Messages from Discord now come over within about 10 seconds even when nobody has the channel open.',
+    ] },
   { v: '4.46', date: '2026-11-01', title: 'Overcontrol RNG 2.7: _________, the Commander',
     notes: [
       '_________, the Commander, is here. Walk through the Commander\'s Gate east of the Pit to fight him alone, in his own arena, with one life: die and you\'re back at the gate.',
@@ -4261,9 +4268,15 @@ function noteChannelMessage(sid, cid, payload, ref, tid, channelName) {
 //    profileCache entry; there's no users/ doc). Discord's file links expire, so whoever added it copies its files to
 //    Cloudinary.
 //  - With nobody watching: the function's POST tick brings every linked channel's new Discord messages over (and
-//    stamps the channel, so everyone gets the unread dot). A Cloudflare timer calls it every minute (its setup is in
-//    functions/api/discord), and every open Frixion in a server with a link calls it every couple of minutes too.
+//    stamps the channel, so everyone gets the unread dot). A Cloudflare timer calls it every 10 seconds (its setup is
+//    in functions/api/discord), and every open Frixion in a server with a link calls it every couple of minutes too.
 //    Linked channels are listed in discordLinks/{server}__{channel} for it; Frixion keeps that list up to date.
+//  - Edits and deletes (v4.47): after a message from here is edited, loses its text or a file, or is deleted,
+//    bridgeSync asks the function to make its Discord copy match (it only ever changes the bot's own webhook posts).
+//    Edits and deletes made in Discord come over with the tick, which compares the newest 50 Discord messages with
+//    the last pass's (kept as seen on the discordLinks entry): an edited one gets its new text and edited: true, and a
+//    deleted one is deleted here, including a Frixion message whose copy a Discord moderator deleted. Deleting a
+//    Discord user's message here doesn't delete it in Discord (nothing here can), and neither does /purge.
 // ============================================================
 const BRIDGE_API = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'http://127.0.0.1:8788/api/discord' : 'https://equilibrium-incarnate.pages.dev/api/discord';
 const bridgeLinked = ch => !!(ch && ch.discord && ch.discord.channel && ch.discord.sig);
@@ -4284,6 +4297,21 @@ function bridgeOut(sid, cid, ref, ch) {
   bridgeHot();
   const go = n => bridgeCall('send', { sid, cid, mid: ref.id, uid: myUid }).catch(e => {
     if ((e.status === 429 || e.status === 404 || e.status >= 500 || !e.status) && n < 2) setTimeout(() => go(n + 1), Math.min(15, e.retry || 3) * 1000);
+    else console.warn('Discord bridge:', e.message);
+  });
+  go(0);
+}
+// the linked channel open right now (not a thread), if any
+function bridgeHere() {
+  const ch = currentView === 'channel' && currentServerId && !currentThreadId ? currentChannelObj() : null;
+  return bridgeLinked(ch) ? { sid: currentServerId, cid: ch.id, ch } : null;
+}
+// a message from here that was edited, lost its text or a file, or was deleted: its Discord copy is changed to match
+// (dc is the copy's id, needed once the message is gone)
+function bridgeSync(here, mid, dc) {
+  if (!here || !mid) return;
+  const go = n => bridgeCall('sync', { sid: here.sid, cid: here.cid, mid, dc: isSnowflake(dc) ? dc : undefined }).catch(e => {
+    if ((e.status === 429 || e.status >= 500 || !e.status) && n < 2) setTimeout(() => go(n + 1), Math.min(15, e.retry || 3) * 1000);
     else console.warn('Discord bridge:', e.message);
   });
   go(0);
@@ -8176,6 +8204,7 @@ async function deleteMessage(id) {
   try {
     const ref = msgRef(id);
     if (!ref) return;
+    const here = bridgeHere();
     const snap = await ref.get();
     const data = snap.data();
     const hasAttachment = !!(data && ((data.attachments && data.attachments.length) || data.attachment));
@@ -8184,12 +8213,14 @@ async function deleteMessage(id) {
     } else {
       await ref.delete();
     }
+    if (data && data.dc && !data.ext) bridgeSync(here, id, data.dc);   // a Discord user's message stays in Discord
   } catch (e) { toast('Could not delete message.', 'error'); }
 }
 async function deleteMessageAttachment(id, idx) {
   try {
     const ref = msgRef(id);
     if (!ref) return;
+    const here = bridgeHere();
     const snap = await ref.get();
     const data = snap.data();
     if (!data) return;
@@ -8201,6 +8232,7 @@ async function deleteMessageAttachment(id, idx) {
     } else {
       await ref.update({ attachments: atts, attachment: FieldValue.delete() });
     }
+    if (data.dc && !data.ext) bridgeSync(here, id, data.dc);
   } catch (e) { toast('Could not delete image.', 'error'); }
 }
 
@@ -8227,8 +8259,10 @@ function buildEditBoxInto(rowWrap, m) {
       const newText = applyMessageFilter(ta.value.trim());
       if (!newText) { toast('Message can\'t be empty — delete it instead if you want it gone.'); return; }
       if (newText !== (m.text || '')) {
+        const here = bridgeHere();
         try { await msgRef(m.id).update({ text: newText, edited: true }); }
         catch (e) { toast('Could not save edit.', 'error'); return; }
+        bridgeSync(here, m.id);
       }
     }
     editingMessageId = null;
