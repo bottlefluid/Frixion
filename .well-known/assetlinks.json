@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.frixion.app",
+      "sha256_cert_fingerprints": ["4B:A6:94:20:ED:88:50:C5:FE:F9:3F:43:7E:FD:1C:44:57:64:B6:0B:20:C5:83:46:E6:53:1F:87:BC:85:53:4C"]
+    }
+  }
+]

@@ -2126,6 +2126,10 @@ const ACTIVITY_TYPES = { playing: 'Playing', listening: 'Listening to', watching
 // The Frixion desktop app (see frixion-desktop) puts window.frixionDesktop on the page. In a normal browser this is undefined and nothing below runs.
 const DESKTOP = (window.frixionDesktop && window.frixionDesktop.isDesktop) ? window.frixionDesktop : null;
 if (DESKTOP) document.documentElement.classList.add('is-electron');
+// The Frixion app for Android phones (android/ in the computer app's repo) shows this site full screen and adds
+// window.FrixionAndroid: version() and notification(json). See THE FRIXION APP FOR ANDROID below.
+const ANDROID_APP = (window.FrixionAndroid && typeof window.FrixionAndroid.notification === 'function') ? window.FrixionAndroid : null;
+if (ANDROID_APP) document.documentElement.classList.add('is-android-app');
 // The computer app also opens this page as a see-through window that only shows the overlay, so the overlay shortcut
 // works on top of other programs and games (?overlay=1, see FrxDesktop/main.js). That window shares the sign-in with the
 // main window, and leaves presence, activity, music and the games to the main window.
@@ -4485,14 +4489,16 @@ async function renderChannelDiscordPane() {
 const NOTIFY_KEY = 'frixion.notify', NOTIFY_GAME_KEY = 'frixion.notifyGame';
 const notifyOn = () => { try { return localStorage.getItem(NOTIFY_KEY) !== '0'; } catch (e) { return true; } };
 const notifyInGame = () => { try { return localStorage.getItem(NOTIFY_GAME_KEY) !== '0'; } catch (e) { return true; } };
-const appNotifies = () => !!(DESKTOP && typeof DESKTOP.notify === 'function');
+const desktopNotifies = () => !!(DESKTOP && typeof DESKTOP.notify === 'function');
+const appNotifies = () => desktopNotifies() || !!ANDROID_APP;
 const lookingAtFrixion = () => document.visibilityState === 'visible' && document.hasFocus();
 const notifiedKeys = new Set();       // a message mentioning you and @everyone notifies once
 function notifyMessage(n, force) {
   if (OVERLAY_WINDOW || !n || (!force && (!notifyOn() || lookingAtFrixion()))) return;
   if (n.key) { if (notifiedKeys.has(n.key)) return; notifiedKeys.add(n.key); }
   const body = String(n.body || '').slice(0, 180), title = String(n.title || 'Frixion').slice(0, 100);
-  if (appNotifies()) { DESKTOP.notify({ title, body, icon: n.icon || '', open: n.open || null, inGame: notifyInGame() }); return; }
+  if (ANDROID_APP) { try { ANDROID_APP.notification(JSON.stringify({ title, body, open: n.open || null })); } catch (e) {} return; }
+  if (desktopNotifies()) { DESKTOP.notify({ title, body, icon: n.icon || '', open: n.open || null, inGame: notifyInGame() }); return; }
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   try {
     const note = new Notification(title, { body, icon: n.icon || DEFAULT_AVATAR_URL, tag: n.key || undefined, silent: true });
@@ -4554,12 +4560,13 @@ function openChannelTarget(o) {
 }
 // Settings → Notifications
 function populateNotifySettings() {
-  const inApp = !!DESKTOP, canAsk = !inApp && !isMobile() && 'Notification' in window;
+  const inApp = !!DESKTOP || !!ANDROID_APP, canAsk = !inApp && !isMobile() && 'Notification' in window;
   $('notify-toggle').checked = notifyOn();
   $('notify-game-toggle').checked = notifyInGame();
-  $('notify-game-row').classList.toggle('hidden', !appNotifies());
+  $('notify-game-row').classList.toggle('hidden', !desktopNotifies());
   $('notify-app-note').classList.toggle('hidden', !inApp || appNotifies());
-  $('notify-where').textContent = inApp ? 'In the Frixion app they show as Windows notifications, or over your game while you play.'
+  $('notify-where').textContent = ANDROID_APP ? 'In the Frixion app for Android they show as phone notifications while Frixion is in the background.'
+    : inApp ? 'In the Frixion app they show as Windows notifications, or over your game while you play.'
     : isMobile() ? 'Phones don\'t show them yet. Notifications work in the Frixion app for computers and in a computer\'s browser.'
     : 'Your browser shows them while Frixion is open in a tab, even in the background.';
   $('notify-permission').classList.toggle('hidden', !canAsk || Notification.permission === 'granted');
@@ -4571,7 +4578,7 @@ function populateNotifySettings() {
   }
 }
 function askNotifyPermission() {
-  if (DESKTOP || !('Notification' in window) || Notification.permission !== 'default') return Promise.resolve();
+  if (DESKTOP || ANDROID_APP || !('Notification' in window) || Notification.permission !== 'default') return Promise.resolve();
   return Promise.resolve(Notification.requestPermission()).catch(() => {}).then(populateNotifySettings);
 }
 $('notify-toggle').onchange = e => { try { localStorage.setItem(NOTIFY_KEY, e.target.checked ? '1' : '0'); } catch (err) {} if (e.target.checked) askNotifyPermission(); };
@@ -4579,8 +4586,9 @@ $('notify-game-toggle').onchange = e => { try { localStorage.setItem(NOTIFY_GAME
 $('notify-allow-btn').onclick = () => askNotifyPermission();
 $('notify-test-btn').onclick = () => {
   const hint = $('notify-test-hint');
-  if (!DESKTOP && (!('Notification' in window) || Notification.permission !== 'granted')) { hint.textContent = isMobile() ? 'Phones don\'t show notifications yet.' : 'Allow notifications first.'; return; }
-  hint.textContent = DESKTOP ? 'Sending one in 5 seconds. Switch to a game or another window to see it.' : 'Sending one in 5 seconds. Switch to another tab or window to see it.';
+  if (!DESKTOP && !ANDROID_APP && (!('Notification' in window) || Notification.permission !== 'granted')) { hint.textContent = isMobile() ? 'Phones don\'t show notifications yet.' : 'Allow notifications first.'; return; }
+  hint.textContent = ANDROID_APP ? 'Sending one in 5 seconds. Go to your home screen to see it.'
+    : DESKTOP ? 'Sending one in 5 seconds. Switch to a game or another window to see it.' : 'Sending one in 5 seconds. Switch to another tab or window to see it.';
   setTimeout(() => {
     notifyMessage({ title: 'Frixion', body: 'This is what a notification looks like.', icon: (myProfile && myProfile.avatarUrl) || DEFAULT_AVATAR_URL, open: null }, true);
     hint.textContent = '';
@@ -4595,6 +4603,35 @@ if (DESKTOP && typeof DESKTOP.onNotifyOpen === 'function') DESKTOP.onNotifyOpen(
   }
   openNotifyTarget(o);
 });
+// ---------- THE FRIXION APP FOR ANDROID ----------
+// The app calls these. Back puts away what's on top (a window, a picker, the member list, a page, a chat) and says
+// whether it did anything (if not, the app goes to the background). A tapped notification opens its chat once Frixion
+// is ready. A Frixion link opened with the app (an invite) opens here without reloading.
+if (ANDROID_APP) {
+  window.frixionAndroidBack = () => {
+    const modal = [...document.querySelectorAll('.modal-overlay:not(.hidden):not(.sheet-closing):not(.closing)')].pop();   // (not one already sliding away)
+    if (modal && modal.id) { closeModal(modal.id); return true; }
+    const open = ['emoji-picker-panel', 'sticker-picker-panel', 'gif-picker-panel', 'composer-action-menu'].map(id => $(id)).filter(el => el && !el.classList.contains('hidden'));
+    if (open.length) { open.forEach(el => el.classList.add('hidden')); return true; }
+    if ($('app').classList.contains('member-list-open')) { closeMemberPanel(true); return true; }
+    if (mobileTab !== 'home') { setMobileTab('home'); return true; }
+    if ($('app').classList.contains('mobile-show-chat')) { if (!(currentThreadId && goToThreadParent())) setMobilePane('list'); return true; }
+    return false;
+  };
+  window.frixionAndroidOpen = o => {
+    if (!o || typeof o !== 'object') return;
+    let tries = 0;
+    const go = () => { if (myUid) openNotifyTarget(o); else if (++tries < 60) setTimeout(go, 500); };
+    go();
+  };
+  window.frixionAndroidLink = url => {
+    let u;
+    try { u = new URL(url); } catch (e) { return; }
+    const seg = u.pathname.replace(/^\/+|\/+$/g, ''), code = u.searchParams.get('invite') || (INVITE_CODE_RE.test(seg) ? seg : '');
+    if (code && myUid) openInvitePreview(parseInviteCode(code));
+    else if (u.href !== location.href) location.href = u.href;
+  };
+}
 function renderDMRows() {
   const wrap = $('dm-rows');
   wrap.innerHTML = '';
@@ -10659,22 +10696,33 @@ $('emoji-search').addEventListener('input', renderEmojiPickerGrids);
 document.addEventListener('click', emojiPickerOutsideClick);
 
 // ============================================================
-// THE FRIXION APP FOR COMPUTERS: a reminder to get it, and the Settings > Frixion App tab.
-// Downloads come from the GitHub Releases of the desktop app's repo (publish a release there and the newest one is picked up here).
+// THE FRIXION APP FOR COMPUTERS AND ANDROID PHONES: a reminder to get it, and the Settings > Frixion App tab.
+// Downloads come from the GitHub Releases of the app's repo (publish a release there and the newest one is picked up
+// here). A release's APK is the Android app, built from android/ in the same repo.
 // ============================================================
-const APP_REPO = 'bottlefluid/frx';                      // the desktop app's GitHub repo: owner/name
+const APP_REPO = 'bottlefluid/frx';                      // the app's GitHub repo: owner/name
 const APP_RELEASES_PAGE = `https://github.com/${APP_REPO}/releases/latest`;
 const appOS = (() => {
-  if (isMobileDevice()) return null;                    // phones and tablets cannot install it
   const ua = navigator.userAgent || '';
+  if (ANDROID_APP) return null;                         // already in the Android app
+  if (/Android/i.test(ua)) return 'android';
+  if (isMobileDevice()) return null;                    // iPhones and iPads can't install it
   if (/Windows/i.test(ua)) return 'win';
   if (/Mac OS X|Macintosh/i.test(ua)) return 'mac';
-  if (/Linux|X11/i.test(ua) && !/Android/i.test(ua)) return 'linux';
+  if (/Linux|X11/i.test(ua)) return 'linux';
   return null;
 })();
-const APP_OS_NAMES = { win: 'Windows', mac: 'Mac', linux: 'Linux' };
+const APP_OS_NAMES = { win: 'Windows', mac: 'Mac', linux: 'Linux', android: 'Android' };
+const APP_TIPS = {
+  win: 'If Windows says it protected your PC, click More info, then Run anyway.',
+  mac: 'The first time, right-click the app and choose Open.',
+  linux: 'Make the file runnable (right-click, Properties, Allow executing as program), then open it.',
+  android: 'Open the file once it has downloaded. If your phone asks, allow installing apps from your browser, then tap Install.',
+};
+const ANDROID_PERKS = '<li>Notifications show up as phone notifications</li><li>Frixion links and invites open in the app</li><li>Full screen, with its own icon</li>';
+const newerVersion = (a, b) => { const x = String(a || '').split('.').map(Number), y = String(b || '').split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
 let appReleaseP = null;
-// { version, win, mac: [{label,url}], linux } from the newest release, or null if it cannot be read (then the Releases page is linked).
+// { version, win, mac: [{label,url}], linux, android } from the newest release, or null if it cannot be read (then the Releases page is linked).
 function getAppRelease() {
   if (appReleaseP) return appReleaseP;
   appReleaseP = (async () => {
@@ -10693,6 +10741,7 @@ function getAppRelease() {
         win: (by('.exe')[0] || {}).browser_download_url || null,
         linux: (by('.appimage')[0] || {}).browser_download_url || null,
         mac: by('.dmg').map(a => ({ label: /arm64/i.test(a.name) ? 'Mac (Apple chip)' : 'Mac (Intel)', url: a.browser_download_url })),
+        android: (by('.apk')[0] || {}).browser_download_url || null,
       };
       try { sessionStorage.setItem('frixion_app_release', JSON.stringify({ at: Date.now(), data })); } catch (e) {}
       return data;
@@ -10707,21 +10756,23 @@ function appDownloadLinks(rel) {
   out.push(rel.win ? { label: 'Windows', url: rel.win } : pageLink('Windows'));
   if (rel.mac.length) out.push(...rel.mac); else out.push(pageLink('Mac'));
   out.push(rel.linux ? { label: 'Linux', url: rel.linux } : pageLink('Linux'));
+  if (rel.android) out.push({ label: 'Android', url: rel.android });   // once a release has an APK
   return out;
 }
-const labelOS = l => /^Mac/.test(l) ? 'mac' : /^Windows/.test(l) ? 'win' : 'linux';
-// Fills a box with a big button for this computer and smaller links for the others.
+const labelOS = l => /^Mac/.test(l) ? 'mac' : /^Windows/.test(l) ? 'win' : /^Android/.test(l) ? 'android' : 'linux';
+// Fills a box with a big button for this device and smaller links for the others.
 async function renderAppDownloads(box) {
   if (!box) return;
   box.innerHTML = `<a class="app-dl-main" href="${APP_RELEASES_PAGE}" target="_blank" rel="noopener">Download the app</a>`;
   const rel = await getAppRelease();
+  if (appOS === 'android' && !(rel && rel.android)) { box.innerHTML = '<div class="app-dl-tip">The Android app isn\'t out yet. Check back soon.</div>'; return; }
   const links = appDownloadLinks(rel);
   const mine = links.filter(l => labelOS(l.label) === appOS);
   const others = links.filter(l => labelOS(l.label) !== appOS);
   const dl = l => `<a href="${esc(l.url)}"${l.url === APP_RELEASES_PAGE ? ' target="_blank" rel="noopener"' : ''}>`;
   box.innerHTML = (mine.length ? mine : links.slice(0, 1)).map(l => `${dl(l).replace('<a ', '<a class="app-dl-main" ')}Download for ${esc(l.label)}${rel && rel.version ? ` <small>v${esc(rel.version)}</small>` : ''}</a>`).join('')
-    + `<div class="app-dl-others">Other computers: ${others.map(l => `${dl(l)}${esc(l.label)}</a>`).join(' · ')}</div>`
-    + `<div class="app-dl-tip">${appOS === 'mac' ? 'The first time, right-click the app and choose Open.' : appOS === 'linux' ? 'Make the file runnable (right-click, Properties, Allow executing as program), then open it.' : 'If Windows says it protected your PC, click More info, then Run anyway.'}</div>`;
+    + `<div class="app-dl-others">Other devices: ${others.map(l => `${dl(l)}${esc(l.label)}</a>`).join(' · ')}</div>`
+    + `<div class="app-dl-tip">${APP_TIPS[appOS] || APP_TIPS.win}</div>`;
 }
 const appPromptOff = () => { try { if (localStorage.getItem('frixion_app_prompt_off') === '1') return true; } catch (e) {} return !!(myProfile && myProfile.hideAppPrompt); };
 async function setAppPromptOff(off) {
@@ -10729,13 +10780,20 @@ async function setAppPromptOff(off) {
   if (myUid) { try { await db.collection('users').doc(myUid).update({ hideAppPrompt: off ? true : FieldValue.delete() }); } catch (e) {} }
 }
 let appPromptDone = false;
-// Called once per visit, after sign-in. Not in the app, not on a phone, and not if "do not remind me again" was chosen.
+// Called once per visit, after sign-in. Not in an app, not on an iPhone, not on an Android phone until a release has an
+// APK, and not if "do not remind me again" was chosen.
 function maybeShowAppPrompt() {
   if (appPromptDone) return;
   appPromptDone = true;
-  if (DESKTOP || !appOS || appPromptOff()) return;
-  setTimeout(() => {
+  if (DESKTOP || ANDROID_APP || !appOS || appPromptOff()) return;
+  setTimeout(async () => {
     if (!myUid || appPromptOff()) return;
+    if (appOS === 'android') {
+      const rel = await getAppRelease();
+      if (!rel || !rel.android) return;
+      document.querySelector('#app-prompt-modal .desc').textContent = 'Frixion works best as an app on your phone.';
+      document.querySelector('#app-prompt-modal .app-perks').innerHTML = ANDROID_PERKS;
+    }
     renderAppDownloads($('app-prompt-dl'));
     openModal('app-prompt-modal');
   }, 2500);
@@ -10751,8 +10809,19 @@ function populateAppPane() {
         <li>Shows your game and Spotify song to friends (Settings, then Activity Status)</li><li>Stays in the system tray when you close the window</li><li>Can start with your computer (right-click the tray icon)</li></ul></div>`;
     return;
   }
-  box.innerHTML = `<p class="desc">${appOS ? 'Get Frixion as an app on your computer.' : 'The Frixion app is for Windows, Mac and Linux computers. Open Frixion on a computer to download it.'}</p>
-    <ul class="app-perks"><li>Your friends see the game you are playing and your Spotify song</li><li>Stays in your tray so you do not miss messages</li><li>Can start with your computer</li><li>Updates itself</li></ul>
+  if (ANDROID_APP) {
+    let v = '';
+    try { v = String(ANDROID_APP.version() || ''); } catch (e) {}
+    box.innerHTML = `<p class="desc">You are using the Frixion app for Android${v ? ` (version ${esc(v)})` : ''}. Frixion itself always stays up to date; the app only needs a new version now and then, and this is where it shows up.</p><div id="app-pane-dl" class="app-dl"></div>`;
+    getAppRelease().then(rel => {
+      const dl = $('app-pane-dl');
+      if (dl && rel && rel.android && newerVersion(rel.version, v)) dl.innerHTML = `<a class="app-dl-main" href="${esc(rel.android)}">Get version ${esc(rel.version)}</a><div class="app-dl-tip">${APP_TIPS.android}</div>`;
+    });
+    return;
+  }
+  const android = appOS === 'android';
+  box.innerHTML = `<p class="desc">${android ? 'Get Frixion as an app on your phone.' : appOS ? 'Get Frixion as an app on your computer.' : 'The Frixion app is for Android phones and for Windows, Mac and Linux computers. Open Frixion on one of those to download it.'}</p>
+    <ul class="app-perks">${android ? ANDROID_PERKS : '<li>Your friends see the game you are playing and your Spotify song</li><li>Stays in your tray so you do not miss messages</li><li>Can start with your computer</li><li>Updates itself</li>'}</ul>
     <div id="app-pane-dl" class="app-dl"></div>
     ${appOS ? `<div class="setting-row"><div class="setting-row-text"><div class="setting-row-title">Remind me to get the app</div><div class="setting-row-desc">Shows a reminder when you open Frixion in a browser.</div></div>
       <label class="toggle-switch"><input type="checkbox" id="app-remind-toggle"${appPromptOff() ? '' : ' checked'}><span class="toggle-slider"></span></label></div>` : ''}`;
