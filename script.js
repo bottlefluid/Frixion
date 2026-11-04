@@ -455,6 +455,12 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.48', date: '2026-11-03', title: 'Frixion for Android',
+    notes: [
+      'Frixion is an app for Android phones now. Open Frixion on your phone, go to Settings, Frixion App, and tap Download for Android. When the file has downloaded, open it, and if your phone asks, allow installing apps from your browser.',
+      'The app is Frixion full screen with its own icon. Messages show up as phone notifications, the back button works like in other apps, and Frixion links and invites open straight in the app.',
+      'Frixion itself always stays up to date in the app. When a new version of the app comes out, Settings, Frixion App shows a button to get it.',
+    ] },
   { v: '4.47', date: '2026-11-02', title: 'Edits and deletes cross over to Discord',
     notes: [
       'In a channel linked with Discord, editing your message here edits it in Discord too, and deleting it (or its text, or one of its files) deletes it there as well.',
