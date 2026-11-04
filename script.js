@@ -3029,6 +3029,7 @@ function authErrorText(e) {
   if (c === 'auth/too-many-requests') return 'Too many tries. Wait a minute, then try again.';
   if (c === 'auth/network-request-failed') return 'Can\'t reach Frixion. Check your internet connection.';
   if (c === 'auth/popup-blocked') return 'Your browser blocked the Google window. Allow pop-ups for Frixion, then try again.';
+  if (c === 'auth/popup-closed-by-user') return 'The Google window closed before it finished. Try again.';
   if (c === 'auth/unauthorized-domain') return 'Google sign-in isn\'t set up for this address yet.';
   return (e && e.message) || 'Something went wrong.';
 }
@@ -3152,7 +3153,7 @@ async function googleSignIn(err) {
     const cred = await auth.signInWithPopup(googleProvider());
     if ((await enterAs(cred.user, err)) === false) showPickView(cred.user);
   } catch (e) {
-    if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') err.textContent = authErrorText(e);
+    if (e.code !== 'auth/cancelled-popup-request') err.textContent = authErrorText(e);
   }
 }
 $('login-google').onclick = () => googleSignIn($('login-error'));
@@ -3207,7 +3208,7 @@ function renderAccountSignin() {
     msg.textContent = '';
     try { await auth.currentUser.linkWithPopup(googleProvider()); renderAccountSignin(); toast('Google is connected.'); }
     catch (e) {
-      if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') return;
+      if (e.code === 'auth/cancelled-popup-request') return;
       msg.textContent = /already-in-use/.test(e.code || '') ? 'That Google account is already used by another Frixion account.' : authErrorText(e);
     }
   };
