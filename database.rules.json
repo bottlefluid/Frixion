@@ -1,0 +1,14 @@
+{
+  "rules": {
+    "presence": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "ocrng": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}

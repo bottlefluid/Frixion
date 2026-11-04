@@ -13,12 +13,13 @@
 // SETUP, once: Cloudflare > Workers & Pages > frixionbeta > Settings > Variables and Secrets: add a Secret called
 // VAPID_PRIVATE_KEY with the private key (a JSON web key; it's kept off the repo, see D:\Downloads\frixion-push-key on
 // the owner's computer), then redeploy. Its public half is VAPID_PUBLIC in script.js. Changing the key means everyone
-// turns notifications on again.
+// turns notifications on again. Since v4.51 the database's rules are locked, so it also needs the
+// FIREBASE_SERVICE_ACCOUNT secret, the same one as the Discord bridge (see step 5 in functions/api/discord).
 //
-// Frixion's database is open to every visitor, so a request is only trusted as far as the database backs it up: the
-// message has to exist, be by the sender named, be new, and each message is only sent once (the first request claims
-// it). Notifications are encrypted for each device (RFC 8291) and signed with the key (VAPID, RFC 8292).
-// For tests, FIRESTORE_URL and FIREBASE_KEY can point at the Firebase emulator.
+// Anyone can call this function, so a request is only trusted as far as the database backs it up: the message has to
+// exist, be by the sender named, be new, and each message is only sent once (the first request claims it).
+// Notifications are encrypted for each device (RFC 8291) and signed with the key (VAPID, RFC 8292).
+// For tests, FIRESTORE_URL and FIREBASE_KEY (or FIRESTORE_BEARER) can point at the Firebase emulator.
 const FIRESTORE = 'https://firestore.googleapis.com/v1/projects/liquidalt/databases/(default)/documents';
 const FIREBASE_KEY = 'AIzaSyCaDVRWLOSgC_Nl0YOeoG86G_hd_LKdW2U';   // the site's public web key
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -48,32 +49,72 @@ export async function onRequest({ request, env, params }) {
 // Ready only once the key works: signing a token with it proves it was pasted whole. key is its public half, to compare
 // with VAPID_PUBLIC in script.js.
 async function info(env) {
-  if (!env.VAPID_PRIVATE_KEY) return { ready: false };
+  const db = await dbStatus(env);
+  if (!env.VAPID_PRIVATE_KEY) return { ready: false, db };
   try {
     await vapid(env, 'https://push.example/');
-    return { ready: true, key: signer.pub };
+    return { ready: true, db, key: signer.pub };
   } catch (e) {
-    return { ready: false, error: 'VAPID_PRIVATE_KEY is there but isn\'t a working key. Paste everything in VAPID_PRIVATE_KEY.txt again.' };
+    return { ready: false, db, error: 'VAPID_PRIVATE_KEY is there but isn\'t a working key. Paste everything in VAPID_PRIVATE_KEY.txt again.' };
   }
 }
 
 // ---------------- Frixion's database, through Firestore's REST API ----------------
 const fsBase = env => env.FIRESTORE_URL || FIRESTORE;
-const fsKey = env => encodeURIComponent(env.FIREBASE_KEY || FIREBASE_KEY);
 const docPath = p => p.split('/').map(encodeURIComponent).join('/');
+// The database's rules only let Frixion's pages in as whoever is signed in there. This function is nobody's page, so it
+// signs in as Frixion itself: a Google service account, whose key is the FIREBASE_SERVICE_ACCOUNT secret. Without one it
+// uses the public web key, which only works while the rules leave things open. For tests, FIRESTORE_BEARER can be
+// "owner", the emulator's way of skipping the rules. (The same code is in functions/api/discord.)
+let gToken = null;   // Google's access token for the service account, kept until a minute before it runs out
+const b64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const b64urlText = s => b64url(new TextEncoder().encode(s));
+async function dbToken(env) {
+  if (env.FIRESTORE_BEARER) return env.FIRESTORE_BEARER;
+  if (!env.FIREBASE_SERVICE_ACCOUNT) return null;
+  if (gToken && gToken.until > Date.now() + 60000) return gToken.value;
+  const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT), now = Math.floor(Date.now() / 1000);
+  const head = b64urlText(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: sa.private_key_id }));
+  const claims = b64urlText(JSON.stringify({ iss: sa.client_email, scope: 'https://www.googleapis.com/auth/datastore', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }));
+  const der = Uint8Array.from(atob(String(sa.private_key).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')), c => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  const sig = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(head + '.' + claims)));
+  const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'grant_type=' + encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') + '&assertion=' + head + '.' + claims + '.' + b64url(sig) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) throw new Error('Google refused the service account (' + (j.error_description || j.error || r.status) + ')');
+  gToken = { value: j.access_token, until: Date.now() + (Number(j.expires_in) || 3600) * 1000 };
+  return gToken.value;
+}
+// A request to the database, signed in as the service account when there is one (or with the public web key).
+async function dbFetch(env, url, init = {}) {
+  const token = await dbToken(env);
+  if (token) return fetch(url, { ...init, headers: { ...(init.headers || {}), Authorization: 'Bearer ' + token } });
+  const u = new URL(url);
+  u.searchParams.set('key', env.FIREBASE_KEY || FIREBASE_KEY);
+  return fetch(u, init);
+}
+// How this function gets into the database, for /info: "service account" once it works, "public key" without one.
+async function dbStatus(env) {
+  if (!env.FIREBASE_SERVICE_ACCOUNT && !env.FIRESTORE_BEARER) return 'public key';
+  try {
+    const r = await dbFetch(env, `${fsBase(env)}/config/filter?mask.fieldPaths=enabled`);
+    return r.ok || r.status === 404 ? 'service account' : `the service account can't read the database (${r.status}): give it the Cloud Datastore User role`;
+  } catch (e) { return e.message; }
+}
 const dec = v => ('stringValue' in v ? v.stringValue : 'integerValue' in v ? Number(v.integerValue) : 'doubleValue' in v ? v.doubleValue : 'booleanValue' in v ? v.booleanValue
   : 'timestampValue' in v ? Date.parse(v.timestampValue) : 'mapValue' in v ? decFields(v.mapValue.fields) : 'arrayValue' in v ? (v.arrayValue.values || []).map(dec) : 'nullValue' in v ? null : undefined);
 const decFields = f => Object.fromEntries(Object.entries(f || {}).map(([k, v]) => [k, dec(v)]));
 const fsName = (env, path) => new URL(fsBase(env)).pathname.replace(/^\/v1\//, '') + '/' + path;
 async function fsGet(env, path, mask) {
-  const q = new URLSearchParams({ key: env.FIREBASE_KEY || FIREBASE_KEY });
+  const q = new URLSearchParams();
   for (const f of mask || []) q.append('mask.fieldPaths', f);
-  const r = await fetch(`${fsBase(env)}/${docPath(path)}?${q}`);
+  const r = await dbFetch(env, `${fsBase(env)}/${docPath(path)}?${q}`);
   if (r.status === 404) return null;
   if (!r.ok) fail(502, 'Could not read Frixion.');
   return decFields((await r.json()).fields);
 }
-const fsCommit = (env, writes) => fetch(`${fsBase(env)}:commit?key=${fsKey(env)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ writes }) });
+const fsCommit = (env, writes) => dbFetch(env, `${fsBase(env)}:commit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ writes }) });
 // Adds 1 to the message's pushClaim and says what that came to: only the request that gets 1 sends it.
 async function claim(env, path) {
   const r = await fsCommit(env, [{ update: { name: fsName(env, path), fields: {} }, updateMask: { fieldPaths: [] }, updateTransforms: [{ fieldPath: 'pushClaim', increment: { integerValue: '1' } }], currentDocument: { exists: true } }]);
@@ -87,7 +128,7 @@ async function subsOf(env, uids) {
   for (let i = 0; i < uids.length; i += 30) {
     const values = uids.slice(i, i + 30).map(u => ({ stringValue: u }));
     const q = { structuredQuery: { from: [{ collectionId: 'pushSubs' }], where: { fieldFilter: { field: { fieldPath: 'uid' }, op: 'IN', value: { arrayValue: { values } } } }, limit: 300 } };
-    const r = await fetch(`${fsBase(env)}:runQuery?key=${fsKey(env)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(q) });
+    const r = await dbFetch(env, `${fsBase(env)}:runQuery`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(q) });
     if (!r.ok) continue;
     for (const x of (await r.json().catch(() => [])) || []) if (x.document) out.push({ id: x.document.name.split('/').pop(), ...decFields(x.document.fields) });
   }

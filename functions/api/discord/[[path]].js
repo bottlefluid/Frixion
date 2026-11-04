@@ -29,12 +29,18 @@
 //        export default { async scheduled(event, env, ctx) {
 //          const tick = () => fetch('https://equilibrium-incarnate.pages.dev/api/discord/tick', { method: 'POST' }).catch(() => {});
 //          ctx.waitUntil((async () => { for (let i = 0; i < 6; i++) { if (i) await new Promise(r => setTimeout(r, 10000)); await tick(); } })()); } };
+//   5. Since v4.51 the database's rules are locked (firestore.rules), so this function signs in as a service account:
+//      Google Cloud > IAM & Admin > Service Accounts (project liquidalt) > Create service account, give it the role
+//      "Cloud Datastore User", then Keys > Add key > JSON. Add a Secret called FIREBASE_SERVICE_ACCOUNT with that whole
+//      file's text here (and on frixionbeta for /api/push), then redeploy. /api/discord/info then says db: "service
+//      account". Keep the file out of the repo and out of chats.
 //
-// Frixion's database is open to every visitor, so nothing stored in it is trusted on its own: a link only counts with
-// the signature verify made from the bot's token (which only this function knows), and a message is sent once (the
-// first request claims it with an update that fails if the message changed after it was read). sync only ever changes
-// the bot's own webhook posts, and only deletes one once no Frixion message points at it any more.
-// For tests, DISCORD_API, FIRESTORE_URL and FIREBASE_KEY can point at a fake Discord and the Firebase emulators.
+// Anyone can call this function, so nothing it's told is trusted on its own: a link only counts with the signature
+// verify made from the bot's token (which only this function knows), and a message is sent once (the first request
+// claims it with an update that fails if the message changed after it was read). sync only ever changes the bot's own
+// webhook posts, and only deletes one once no Frixion message points at it any more.
+// For tests, DISCORD_API, FIRESTORE_URL and FIREBASE_KEY (or FIRESTORE_BEARER) can point at a fake Discord and the
+// Firebase emulators.
 const DISCORD = 'https://discord.com/api/v10';
 const FIRESTORE = 'https://firestore.googleapis.com/v1/projects/liquidalt/databases/(default)/documents';
 const FIREBASE_KEY = 'AIzaSyCaDVRWLOSgC_Nl0YOeoG86G_hd_LKdW2U';   // the site's public web key
@@ -97,10 +103,11 @@ async function botUser(env) {
   return user;
 }
 async function info(env) {
-  if (!env.DISCORD_BOT_TOKEN) return { ready: false };
+  const db = await dbStatus(env);
+  if (!env.DISCORD_BOT_TOKEN) return { ready: false, db };
   const me = await botUser(env).catch(() => null);
-  if (!me) return { ready: false, error: 'The bot token was refused. Make a new one and save it again.' };
-  return { ready: true, bot: me.username, invite: `https://discord.com/oauth2/authorize?client_id=${me.id}&scope=bot&permissions=${PERMS}` };
+  if (!me) return { ready: false, db, error: 'The bot token was refused. Make a new one and save it again.' };
+  return { ready: true, db, bot: me.username, invite: `https://discord.com/oauth2/authorize?client_id=${me.id}&scope=bot&permissions=${PERMS}` };
 }
 // The webhook the bot posts through in a Discord channel (one per channel, made the first time it's needed).
 const hooks = new Map();
@@ -136,6 +143,46 @@ function avatarOf(u) {
 
 // ---------------- Frixion's database, through Firestore's REST API ----------------
 const fsBase = env => env.FIRESTORE_URL || FIRESTORE;
+// The database's rules only let Frixion's pages in as whoever is signed in there. This function is nobody's page, so it
+// signs in as Frixion itself: a Google service account (setup step 5), whose key is the FIREBASE_SERVICE_ACCOUNT secret.
+// Without one it uses the public web key, which only works while the rules leave things open. For tests,
+// FIRESTORE_BEARER can be "owner", the emulator's way of skipping the rules.
+let gToken = null;   // Google's access token for the service account, kept until a minute before it runs out
+const b64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const b64urlText = s => b64url(new TextEncoder().encode(s));
+async function dbToken(env) {
+  if (env.FIRESTORE_BEARER) return env.FIRESTORE_BEARER;
+  if (!env.FIREBASE_SERVICE_ACCOUNT) return null;
+  if (gToken && gToken.until > Date.now() + 60000) return gToken.value;
+  const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT), now = Math.floor(Date.now() / 1000);
+  const head = b64urlText(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: sa.private_key_id }));
+  const claims = b64urlText(JSON.stringify({ iss: sa.client_email, scope: 'https://www.googleapis.com/auth/datastore', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }));
+  const der = Uint8Array.from(atob(String(sa.private_key).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')), c => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  const sig = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(head + '.' + claims)));
+  const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'grant_type=' + encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') + '&assertion=' + head + '.' + claims + '.' + b64url(sig) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) throw new Error('Google refused the service account (' + (j.error_description || j.error || r.status) + ')');
+  gToken = { value: j.access_token, until: Date.now() + (Number(j.expires_in) || 3600) * 1000 };
+  return gToken.value;
+}
+// A request to the database, signed in as the service account when there is one (or with the public web key).
+async function dbFetch(env, url, init = {}) {
+  const token = await dbToken(env);
+  if (token) return fetch(url, { ...init, headers: { ...(init.headers || {}), Authorization: 'Bearer ' + token } });
+  const u = new URL(url);
+  u.searchParams.set('key', env.FIREBASE_KEY || FIREBASE_KEY);
+  return fetch(u, init);
+}
+// How this function gets into the database, for /info: "service account" once it works, "public key" without one.
+async function dbStatus(env) {
+  if (!env.FIREBASE_SERVICE_ACCOUNT && !env.FIRESTORE_BEARER) return 'public key';
+  try {
+    const r = await dbFetch(env, `${fsBase(env)}/config/filter?mask.fieldPaths=enabled`);
+    return r.ok || r.status === 404 ? 'service account' : `the service account can't read the database (${r.status}): give it the Cloud Datastore User role`;
+  } catch (e) { return e.message; }
+}
 const docPath = p => p.split('/').map(encodeURIComponent).join('/');
 const dec = v => ('stringValue' in v ? v.stringValue : 'integerValue' in v ? Number(v.integerValue) : 'doubleValue' in v ? v.doubleValue : 'booleanValue' in v ? v.booleanValue
   : 'timestampValue' in v ? Date.parse(v.timestampValue) : 'mapValue' in v ? decFields(v.mapValue.fields) : 'arrayValue' in v ? (v.arrayValue.values || []).map(dec) : 'nullValue' in v ? null : undefined);
@@ -145,9 +192,9 @@ const enc = v => (v === null ? { nullValue: null } : v instanceof Date ? { times
 // (a field set to undefined is deleted: it's in the update mask but not in the fields)
 const encFields = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined).map(([k, v]) => [k, enc(v)]));
 async function fsGet(env, path, mask) {
-  const q = new URLSearchParams({ key: env.FIREBASE_KEY || FIREBASE_KEY });
+  const q = new URLSearchParams();
   for (const f of mask || []) q.append('mask.fieldPaths', f);
-  const r = await fetch(`${fsBase(env)}/${docPath(path)}?${q}`);
+  const r = await dbFetch(env, `${fsBase(env)}/${docPath(path)}?${q}`);
   if (r.status === 404) return null;
   if (!r.ok) fail(502, 'Could not read Frixion.');
   const j = await r.json();
@@ -157,7 +204,7 @@ async function fsGet(env, path, mask) {
 // changed since then either), or { exists: false } (only if it isn't there yet). Keys can be paths ('discord.last').
 // (A commit, because that's where the precondition is kept: the emulator ignores one passed to PATCH in the URL.)
 const fsName = (env, path) => new URL(fsBase(env)).pathname.replace(/^\/v1\//, '') + '/' + path;
-const fsCommit = (env, writes) => fetch(`${fsBase(env)}:commit?key=${encodeURIComponent(env.FIREBASE_KEY || FIREBASE_KEY)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ writes }) });
+const fsCommit = (env, writes) => dbFetch(env, `${fsBase(env)}:commit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ writes }) });
 async function fsPatch(env, path, data, when) {
   const fields = {};
   for (const [k, v] of Object.entries(data)) { const parts = k.split('.'); let o = fields; parts.slice(0, -1).forEach(s => { o = o[s] = o[s] || {}; }); o[parts[parts.length - 1]] = v; }
@@ -174,7 +221,7 @@ async function fsDelete(env, path) {
   return r.ok;
 }
 async function fsList(env, coll) {
-  const r = await fetch(`${fsBase(env)}/${docPath(coll)}?pageSize=100&key=${encodeURIComponent(env.FIREBASE_KEY || FIREBASE_KEY)}`);
+  const r = await dbFetch(env, `${fsBase(env)}/${docPath(coll)}?pageSize=100`);
   if (!r.ok) return [];
   const j = await r.json().catch(() => ({}));
   return (j.documents || []).map(d => decFields(d.fields));
@@ -514,7 +561,7 @@ async function rehost(a) {
 // the Frixion message that went to Discord as this Discord message
 async function findByDc(env, sid, cid, id) {
   const q = { structuredQuery: { from: [{ collectionId: 'messages' }], where: { fieldFilter: { field: { fieldPath: 'dc' }, op: 'EQUAL', value: { stringValue: id } } }, limit: 1 } };
-  const r = await fetch(`${fsBase(env)}/${docPath(`servers/${sid}/channels/${cid}`)}:runQuery?key=${encodeURIComponent(env.FIREBASE_KEY || FIREBASE_KEY)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(q) });
+  const r = await dbFetch(env, `${fsBase(env)}/${docPath(`servers/${sid}/channels/${cid}`)}:runQuery`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(q) });
   if (!r.ok) return null;
   const hit = ((await r.json().catch(() => [])) || []).find(x => x.document);
   if (!hit) return null;

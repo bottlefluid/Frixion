@@ -93,6 +93,19 @@ const firebaseConfig = {
   measurementId: "G-3BFEPRKV3X"
 };
 firebase.initializeApp(firebaseConfig);
+// Testing on your own computer: http://localhost:<port>/?emulators talks to the Firebase emulators (firebase
+// emulators:start) instead of the real database, so test accounts and messages never reach it. Ignored on the live site.
+const USING_EMULATORS = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && new URLSearchParams(location.search).has('emulators');
+// App Check (v4.51): every request to the database carries a pass from Google's reCAPTCHA, which only Frixion's own
+// addresses can get (the reCAPTCHA key lists them). Once it's enforced (Firebase console > App Check), a copy of Frixion
+// on another address can't use the database at all. The site key is public, like the rest of this config; the secret
+// half is only in the Firebase console. Empty: App Check is off.
+const APP_CHECK_SITE_KEY = '';
+const APP_CHECK_ON = !!(APP_CHECK_SITE_KEY && !USING_EMULATORS && firebase.appCheck);
+if (APP_CHECK_ON) {
+  try { firebase.appCheck().activate(APP_CHECK_SITE_KEY, true); document.documentElement.classList.add('has-recaptcha'); }
+  catch (e) { console.warn('App Check could not start.', e); }
+}
 const db = firebase.firestore();
 // Phones on mobile data (or behind some proxies) can stall on the default connection type; this lets Firestore switch to long-polling on its own.
 try { db.settings({ experimentalAutoDetectLongPolling: true, merge: true }); } catch (e) { console.warn('Firestore settings not applied.', e); }
@@ -100,9 +113,7 @@ const FieldValue = firebase.firestore.FieldValue;
 let rtdb = null;
 try { rtdb = firebase.database(); } catch (e) { console.warn('Realtime Database not available — presence will stay manual-only.', e); }
 const auth = firebase.auth();   // signing in (see AUTH)
-// Testing on your own computer: http://localhost:<port>/?emulators talks to the Firebase emulators (firebase
-// emulators:start) instead of the real database, so test accounts and messages never reach it. Ignored on the live site.
-if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && new URLSearchParams(location.search).has('emulators')) {
+if (USING_EMULATORS) {
   db.useEmulator('127.0.0.1', 8080);
   if (rtdb) rtdb.useEmulator('127.0.0.1', 9000);
   auth.useEmulator('http://127.0.0.1:9099', { disableWarnings: true });
@@ -457,6 +468,13 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.51', date: '2026-11-04', title: 'Your messages, locked down',
+    notes: [
+      'Only the people in a DM or group can read it, and only a server\'s members can read its channels. Nobody can post as someone else, change your profile, or say you\'re online when you aren\'t.',
+      'Server roles count for real now: deleting or pinning other people\'s messages, kicking, banning, timeouts, nicknames, roles and channels all need the matching permission (or owning the server). If you run a server, check your moderators have what they need.',
+      'Invite links can\'t be taken over: if two servers ever had the same code, the original keeps it.',
+      'Logging out stops that device\'s notifications straight away.',
+    ] },
   { v: '4.50', date: '2026-11-03', title: 'Safer sign-in, and Continue with Google',
     notes: [
       'Signing in is real now: your password is checked by Google\'s Firebase instead of in your browser, and passwords are no longer kept on profiles where anyone could read them. Tricks that logged people into other accounts don\'t work any more.',
@@ -2050,10 +2068,18 @@ function updateMyConnection() {
   if (!rtdb || !myUid || !myPresenceConnRef) return;
   try { myPresenceConnRef.update(myConnectionState()); } catch (e) {}
 }
+// Presence lives under each account's sign-in (presence/<its Firebase uid>, which is authUid on the profile), because the
+// Realtime Database's rules only let a sign-in write its own (database.rules.json). Before v4.51 it was by username.
+const myPresenceKey = () => (auth.currentUser ? auth.currentUser.uid : null);
+function presenceKeyOf(uid) {
+  if (uid === myUid) return myPresenceKey();
+  const p = profileCache[uid];
+  return p && typeof p.authUid === 'string' && p.authUid ? p.authUid : null;
+}
 function initPresence() {
-  if (!rtdb || !myUid || OVERLAY_WINDOW) return;   // the app's main window is the one that says you're online
+  if (!rtdb || !myUid || OVERLAY_WINDOW || !myPresenceKey()) return;   // the app's main window is the one that says you're online
   try {
-    const myRef = rtdb.ref('presence/' + myUid);
+    const myRef = rtdb.ref('presence/' + myPresenceKey());
     if (presenceConnectedCb) rtdb.ref('.info/connected').off('value', presenceConnectedCb);
     presenceConnectedCb = (snap) => {
       if (snap.val() !== true) return;
@@ -2080,7 +2106,7 @@ function teardownPresence() {
     if (myPresenceConnRef) { myPresenceConnRef.onDisconnect().cancel(); myPresenceConnRef.remove(); }
     myPresenceConnRef = null;
   } catch (e) {}
-  Object.values(presenceListeners).forEach(l => { try { l.ref.off('value', l.cb); } catch (e) {} });
+  Object.values(presenceListeners).forEach(l => { try { if (l.ref) l.ref.off('value', l.cb); } catch (e) {} });
   presenceListeners = {};
   presenceCache = {};
   idleCache = {};
@@ -2090,8 +2116,21 @@ function teardownPresence() {
 }
 function subscribePresence(uid) {
   if (!rtdb || presenceListeners[uid]) return;
+  const key = presenceKeyOf(uid);
+  if (!key) {
+    // their profile (which says where their presence is) isn't loaded yet: load it, then listen. Bots and people on
+    // Discord have no presence.
+    if (/^(bot-|discord:)/.test(String(uid))) return;
+    presenceListeners[uid] = { pending: true };
+    getProfile(uid).then(() => {
+      if (!presenceListeners[uid] || !presenceListeners[uid].pending) return;   // signed out meanwhile
+      delete presenceListeners[uid];
+      if (presenceKeyOf(uid)) subscribePresence(uid);
+    }).catch(() => { delete presenceListeners[uid]; });
+    return;
+  }
   try {
-    const ref = rtdb.ref('presence/' + uid);
+    const ref = rtdb.ref('presence/' + key);
     const cb = (snap) => {
       const val = snap.val();
       const conns = val && val.connections ? Object.values(val.connections).filter(c => c && typeof c === 'object') : [];
@@ -2220,8 +2259,8 @@ function publishActivity() {
   if (sig === myActivityPublished) return;
   myActivityPublished = sig;
   try {
-    if (rtdb) {
-      const ref = rtdb.ref('presence/' + myUid + '/activity');
+    if (rtdb && myPresenceKey()) {
+      const ref = rtdb.ref('presence/' + myPresenceKey() + '/activity');
       if (act) { ref.onDisconnect().remove(); ref.set(act); } else ref.remove();
     }
   } catch (e) { console.warn('Could not share activity.', e); }
@@ -3235,7 +3274,8 @@ $('logout-btn').onclick = async () => {
   ggRaccoonSeen = null;
   teardownPresence();
   try { if (myUid) await db.collection('users').doc(myUid).update({ status: 'offline' }); } catch (e) {}
-  if (pushOn()) { db.collection('pushSubs').doc(pushId).delete().catch(() => {}); pushId = null; }   // this device stops getting their notifications
+  // this device stops getting their notifications (waited for: once signed out, the database won't let it)
+  if (pushOn()) { await db.collection('pushSubs').doc(pushId).delete().catch(() => {}); pushId = null; }
   clearMyTypingDoc();
   cleanupAllListeners();
   setSession(null);
@@ -3695,9 +3735,12 @@ function inviteCodeFromLocation() {
   const seg = location.pathname.replace(/^\/+|\/+$/g, '');
   return INVITE_CODE_RE.test(seg) ? seg : null;
 }
+// If two servers ever have the same code, the older one keeps it: the database only lets a new server be stamped with
+// the real time it was made, so a copycat can't take over someone's invite links.
 async function findServerByInvite(code) {
-  const q = await db.collection('servers').where('inviteCode', '==', code).limit(1).get();
-  return q.empty ? null : q.docs[0];
+  const q = await db.collection('servers').where('inviteCode', '==', code).limit(10).get();
+  const made = d => { const c = d.data().createdAt; return c && c.toMillis ? c.toMillis() : 0; };
+  return q.empty ? null : q.docs.slice().sort((a, b) => made(a) - made(b))[0];
 }
 async function joinServerDoc(doc) {
   const data = doc.data();
@@ -4197,7 +4240,9 @@ async function hydrateConversationPreviews(collection, conversations) {
         .orderBy('createdAt', 'desc').limit(1).get();
       conversationPreviewCache.set(key, snap.empty ? null : snap.docs[0].data());
     } catch (e) {
-      conversationPreviewCache.set(key, null);
+      // A group you just made shows up here a moment before the database has it, and the database refuses to show its
+      // messages until then: try again on the next update instead of remembering "nothing".
+      if (e.code !== 'permission-denied') conversationPreviewCache.set(key, null);
     }
   }));
   renderDMRows();
@@ -4573,11 +4618,15 @@ function bridgeGone(P, ch, recent) {
   if (currentThreadId || currentServerId !== P.sid || currentChannelId !== P.cid || !Array.isArray(recent.ids) || !recent.ids.length || !Number.isFinite(recent.at)) return;
   const there = new Set(recent.ids), from = BigInt(isSnowflake(recent.from) ? recent.from : '0'), since = BigInt(maxSnowflake(ch.discord.since));
   const coll = db.collection('servers').doc(P.sid).collection('channels').doc(P.cid).collection('messages');
+  // The database only lets anyone delete a Discord user's message, their own, or (with Manage Messages) anyone's; the
+  // bridge's timer deletes the rest within seconds anyway.
+  const mod = isFrixionStaff() || hasServerPerm(currentServerData, myUid, 'manageMessages');
   for (const m of lastRawMessages) {
     if (!isSnowflake(m.dc) || there.has(m.dc) || P.gone.has(m.id)) continue;
     if (BigInt(m.dc) < from || BigInt(m.dc) <= since || snowflakeMs(m.dc) > recent.at - 2000) continue;
+    if (!mod && m.uid !== myUid && !/^discord:/.test(m.uid || '')) continue;
     P.gone.add(m.id);
-    coll.doc(m.id).delete().catch(() => P.gone.delete(m.id));
+    coll.doc(m.id).delete().catch(e => { if (e.code !== 'permission-denied') P.gone.delete(m.id); });
   }
 }
 // ---- with nobody watching (see the notes above) ----

@@ -264,6 +264,11 @@ a { color: var(--text-link); text-decoration: none; }
 .auth-switch a { cursor: pointer; }
 .auth-error { color: #f87171; font-size: 13px; margin-bottom: 12px; min-height: 16px; }
 .auth-hint { margin: -4px 0 14px; font-size: 12.5px; line-height: 1.45; color: var(--text-muted); }
+/* App Check uses reCAPTCHA: Google allows hiding its corner badge when this line is shown where people sign in */
+.recaptcha-note { display: none; margin: 16px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--text-muted); text-align: center; }
+.recaptcha-note a { color: inherit; text-decoration: underline; }
+.has-recaptcha .recaptcha-note { display: block; }
+.grecaptcha-badge { visibility: hidden !important; }
 /* Continue with Google: Google's own look (white, the four-colour G), as its sign-in guidelines ask */
 .auth-or { display: flex; align-items: center; gap: 10px; margin: 14px 0 12px; font-size: 12px; color: var(--text-muted); text-transform: uppercase; }
 .auth-or::before, .auth-or::after { content: ''; flex: 1; height: 1px; background: var(--divider, rgba(255,255,255,.1)); }

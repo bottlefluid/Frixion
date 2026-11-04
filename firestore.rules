@@ -1,58 +1,555 @@
 rules_version = '2';
-// Frixion's Firestore rules, phase 1 (v4.50). To use them: Firebase console > Firestore Database > Rules, paste all of
-// this in, then Publish.
-// Phase 1 protects who owns each account and who is staff: an account's sign-in (authUid, accounts/) can't be changed,
-// nobody can make themselves owner, co-owner or admin, and only the owner or a co-owner can terminate an account.
-// Everything else is still open, as it was before; phase 2 locks that down too.
+// Frixion's Firestore rules, phase 2 (v4.51). To use them: Firebase console > Firestore Database > Rules, paste all of
+// this in, then Publish. database.rules.json goes in Realtime Database > Rules the same way.
+//
+// Who is asking comes from the sign-in (Firebase Authentication) and accounts/{its uid}, which says which Frixion
+// account it is. That entry is made once, for a profile that names the same sign-in back, and nothing can change it
+// afterwards. Everything below checks the person asking against it, so a copy of Frixion on another address, or a
+// script, can only do what that person could do in Frixion anyway.
+//
+// What these rules can't check (the app checks them, so only a script gets round them):
+// - Orbs and Premium. Games run in the browser, so a player can still give themselves Orbs or Premium days.
+// - Channel-level permissions (a channel only some roles can see or post in) and role order (someone with Manage Roles
+//   can change any role, not only the ones below theirs). Server-wide role permissions ARE checked: deleting or pinning
+//   other people's messages, kicks, bans, timeouts, nicknames, and managing channels, roles and the server itself.
+//   Only a server's first 12 roles count here.
+// - Messages that come over from Discord: a member of a server with a linked channel could add a fake one.
+// The Discord bridge and push notifications (functions/api) use a service account, which these rules don't limit.
+//
+// For whoever edits this: rules may only evaluate 1000 steps per request, and a function runs again every time it's
+// called, but a value passed to a function is worked out once. So each rule works out who is asking once, with who(),
+// and passes it on as `m`; and a server, DM or group is fetched once and passed on as `s` or `c`.
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function account(uid) { return /databases/$(database)/documents/accounts/$(uid); }
-    function profile(username) { return /databases/$(database)/documents/users/$(username); }
-    // the Frixion account behind this sign-in, if it has one
-    function hasAccount() { return signedIn() && exists(account(request.auth.uid)); }
-    function myProfile() { return get(profile(get(account(request.auth.uid)).data.username)).data; }
-    function isOwner() { return hasAccount() && myProfile().get('owner', false) == true; }
-    function isOwnerLevel() { return hasAccount() && (myProfile().get('owner', false) == true || myProfile().get('coowner', false) == true); }
-    function same(f) { return request.resource.data.get(f, null) == resource.data.get(f, null); }
 
-    // Which Frixion account a sign-in is: made once, by that sign-in, for a profile it owns or is about to make.
+    // ---------- who is asking ----------
+    function signedIn() { return request.auth != null; }
+    function acctPath() { return /databases/$(database)/documents/accounts/$(request.auth.uid); }
+    function profilePath(name) { return /databases/$(database)/documents/users/$(name); }
+    // Owner 3 > Co-Owner 2 > Admin 1 > everyone 0, the same order as platformRank() in script.js.
+    function rankOf(u) {
+      return u.get('owner', false) == true ? 3 : (u.get('coowner', false) == true ? 2 : (u.get('op', false) == true ? 1 : 0));
+    }
+    // The person asking: name (their username), ok (the sign-in really is that account: its accounts/ entry names the
+    // profile, and the profile names the sign-in back), rank and u (their profile). A sign-in with no Frixion account
+    // makes this an error, which refuses the request.
+    function who() {
+      let name = get(acctPath()).data.username;
+      let u = get(profilePath(name)).data;
+      return { 'name': name, 'ok': signedIn() && u.get('authUid', '') == request.auth.uid, 'rank': rankOf(u), 'u': u };
+    }
+    function isWho(m, name) { return m.ok && m.name == name; }
+    function isStaff(m) { return m.ok && m.rank >= 1; }
+    function isOwnerLevel(m) { return m.ok && m.rank >= 2; }
+    // Banned and muted accounts can still read, but can't post.
+    function canPost(m) {
+      let now = request.time.toMillis();
+      let bannedUntil = m.u.get('bannedUntil', null);
+      let mutedUntil = m.u.get('mutedUntil', null);
+      return !(m.u.get('banned', false) == true && (bannedUntil == null || bannedUntil > now))
+        && (mutedUntil == null || mutedUntil <= now);
+    }
+
+    // ---------- what is changing ----------
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function same(f) { return request.resource.data.get(f, null) == resource.data.get(f, null); }
+    function listAfter(f) { return request.resource.data.get(f, []); }
+    function listBefore(f) { return resource.data.get(f, []); }
+    // The list `f` gained (or lost) `name`, and nothing else changed in it.
+    function onlyAdded(f, name) { return listAfter(f).toSet() == listBefore(f).toSet().union([name].toSet()); }
+    function onlyTakenOut(f, name) { return listAfter(f).toSet() == listBefore(f).toSet().difference([name].toSet()); }
+    // The list `f` only lost names.
+    function onlyRemoved(f) { return listAfter(f).toSet().difference(listBefore(f).toSet()).size() == 0; }
+
+    // ---------- accounts ----------
+    // Which Frixion account a sign-in is: made once, by that sign-in, for the profile it just made (or moved over).
     match /accounts/{uid} {
-      allow read: if true;
+      allow get: if signedIn() && (request.auth.uid == uid || isStaff(who()));
       allow create: if signedIn() && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['username', 'at'])
         && request.resource.data.username is string
-        && (!exists(profile(request.resource.data.username))
-          || get(profile(request.resource.data.username)).data.get('authUid', '') == uid);
-      allow update, delete: if false;
+        && exists(profilePath(request.resource.data.username))
+        && get(profilePath(request.resource.data.username)).data.get('authUid', '') == uid;
+      allow list, update, delete: if false;
     }
 
+    // ---------- profiles ----------
     match /users/{username} {
-      allow read: if true;
-      // A new profile belongs to the sign-in making it, with no password on it and no staff powers.
-      allow create: if signedIn() && request.resource.data.get('authUid', '') == request.auth.uid
-        && !('password' in request.resource.data) && request.resource.data.get('op', false) == false
-        && !('owner' in request.resource.data) && !('coowner' in request.resource.data) && !('terminated' in request.resource.data);
-      // Changes never touch who owns it or the owner flag. Co-owner: only the owner. Admin and terminations: only the
-      // owner or a co-owner (the account itself may clear a termination). And no password goes back on.
-      allow update: if signedIn() && same('authUid') && same('owner')
-        && (same('coowner') || isOwner())
-        && (same('op') || isOwnerLevel())
-        && (same('terminated') || isOwnerLevel()
-          || (request.resource.data.get('terminated', null) == null && resource.data.get('authUid', '') == request.auth.uid))
-        && !('password' in request.resource.data);
-      allow delete: if signedIn() && (resource.data.get('authUid', '') == request.auth.uid || isOwnerLevel());
+      allow get: if true;                                           // signing up checks a name is free first
+      allow list: if signedIn();
+      // A new profile belongs to the sign-in making it (one per sign-in), with no staff powers, bans or extra Orbs.
+      allow create: if signedIn() && !exists(acctPath())
+        && request.resource.data.get('username', '') == username
+        && request.resource.data.get('authUid', '') == request.auth.uid
+        && !request.resource.data.keys().hasAny(['password', 'owner', 'coowner', 'terminated', 'redirectUrl', 'redirectNonce', 'mutedUntil', 'muteReason'])
+        && request.resource.data.get('op', false) == false
+        && request.resource.data.get('banned', false) == false
+        && request.resource.data.get('premiumUntil', null) == null
+        && request.resource.data.get('orbs', 0) <= 50;
+      allow update: if profileUpdate(who(), username);
+      allow delete: if profileDelete(who(), username);
 
-      // its mentions, what it has read and the rest: unchanged for now (phase 2). ({sub} first: a bare {rest=**} would
-      // also match the profile itself, and open it right back up.)
-      match /{sub}/{rest=**} {
-        allow read, write: if true;
+      // Notes for the person they mention (from a server both are in). Only that person reads them.
+      match /mentions/{id} {
+        allow read, delete: if isWho(who(), username);
+        allow create: if mentionCreate(who(), username);
+      }
+      // What you have read (unread dots), synced between your devices.
+      match /meta/{docId} {
+        allow read, write: if isWho(who(), username);
+      }
+      // Notes about this person that only their author can see.
+      match /privateNotes/{author} {
+        allow read, write: if isWho(who(), author);
+      }
+    }
+    function profileUpdate(m, username) {
+      let k = changed();
+      return m.ok && (selfEdit(m, k, username) || staffEdit(m, k, username) || friendEdit(m, k));
+    }
+    // Delete Account: the owner flags the account and its own app removes it at the end of the sequence.
+    function profileDelete(m, username) {
+      return m.ok && ((m.name == username && resource.data.get('terminated', {}).get('mode', '') == 'real') || m.rank >= 2);
+    }
+    // Your own profile: anything except your rank, sign-in, bans and mutes. A few staff-set fields may only be cleared.
+    function selfEdit(m, k, username) {
+      return m.name == username
+        && !k.hasAny(['authUid', 'owner', 'coowner', 'op', 'username', 'createdAt', 'mutedUntil', 'muteReason'])
+        && (!k.hasAny(['banned', 'banReason', 'bannedUntil']) || clearingExpiredBan())
+        && (!k.hasAny(['redirectUrl', 'redirectNonce']) || !request.resource.data.keys().hasAny(['redirectUrl', 'redirectNonce']))
+        && (!k.hasAny(['terminated']) || !('terminated' in request.resource.data))
+        && !('password' in request.resource.data);
+    }
+    function clearingExpiredBan() {
+      return resource.data.get('banned', false) == true
+        && resource.data.get('bannedUntil', null) is number
+        && resource.data.bannedUntil <= request.time.toMillis()
+        && request.resource.data.get('banned', true) == false;
+    }
+    // Staff on someone else: Admins can change Orbs, Premium, bans and mutes; Co-Owners and the Owner anything except
+    // ownership and sign-ins, and only the Owner makes Co-Owners. Nobody touches an equal or higher Co-Owner/Owner
+    // (canManagePlatformUser() in script.js).
+    function staffEdit(m, k, username) {
+      let theirs = rankOf(resource.data);
+      return m.rank >= 1
+        && (m.name == username || (theirs >= 2 ? m.rank > theirs : true))
+        && !k.hasAny(['owner', 'username', 'createdAt', 'authUid'])
+        && (!k.hasAny(['coowner']) || m.rank == 3)
+        && !('password' in request.resource.data)
+        && (m.rank >= 2 || k.hasOnly(['premiumUntil', 'orbs', 'banned', 'banReason', 'bannedUntil', 'mutedUntil', 'muteReason']));
+    }
+    // Friend requests change both accounts. On the other person's account you may only add or remove yourself, and you
+    // may only add yourself to their friends while their request to you is still there (script.js sends these together).
+    function friendEdit(m, k) {
+      return k.hasOnly(['incomingRequests', 'outgoingRequests', 'friends'])
+        && (!k.hasAny(['incomingRequests']) || onlyAdded('incomingRequests', m.name) || onlyTakenOut('incomingRequests', m.name))
+        && (!k.hasAny(['outgoingRequests']) || onlyTakenOut('outgoingRequests', m.name))
+        && (!k.hasAny(['friends']) || onlyTakenOut('friends', m.name)
+            || (onlyAdded('friends', m.name) && m.name in resource.data.get('outgoingRequests', [])));
+    }
+    function mentionCreate(m, username) {
+      let s = get(/databases/$(database)/documents/servers/$(request.resource.data.sid)).data;
+      return m.ok && username != m.name && request.resource.data.get('from', '') == m.name
+        && m.name in s.get('members', []) && username in s.get('members', []);
+    }
+
+    // ---------- things staff publish (the Shop, emoji, stickers, the word filter: nothing private) ----------
+    match /config/{docId}            { allow read: if true; allow write: if isStaff(who()); }
+    match /customEmojis/{id}         { allow read: if true; allow write: if isStaff(who()); }
+    match /stickers/{id}             { allow read: if true; allow write: if isStaff(who()); }
+    match /shopDecorations/{id}      { allow read: if true; allow write: if isStaff(who()); }
+    match /shopThemes/{id}           { allow read: if true; allow write: if isStaff(who()); }
+    match /shopNameplates/{id}       { allow read: if true; allow write: if isStaff(who()); }
+    match /shopBanners/{id}          { allow read: if true; allow write: if isStaff(who()); }
+    match /shopProfileEffects/{id}   { allow read: if true; allow write: if isStaff(who()); }
+    match /shopProfileFrames/{id}    { allow read: if true; allow write: if isStaff(who()); }
+    match /gardenSeeds/{id}          { allow read: if true; allow write: if isStaff(who()); }
+    match /gardenSprinklers/{id}     { allow read: if true; allow write: if isStaff(who()); }
+    match /gardenPets/{id}           { allow read: if true; allow write: if isStaff(who()); }
+
+    // ---------- codes ----------
+    match /redeemCodes/{code} {
+      allow get: if signedIn();                                     // redeeming: you have to know the code
+      allow list, delete: if isStaff(who());
+      allow create: if codeCreate(who());
+      allow update: if codeUpdate(who());
+    }
+    function codeCreate(m) { return m.ok && (m.rank >= 1 || buyingPremiumCode(m)); }
+    function codeUpdate(m) { return m.ok && (m.rank >= 1 || redeeming(m)); }
+    // A Premium code someone buys, in the same transaction that takes 1400 of their Orbs (buyPremiumCode()).
+    function buyingPremiumCode(m) {
+      let d = request.resource.data;
+      return d.get('type', '') == 'premium' && d.get('value', 0) is int && d.value > 0 && d.value <= 31
+        && d.get('createdBy', '') == m.name
+        && d.get('redeemedBy', null) == null && d.get('uses', 0) == 0 && d.get('usedBy', []).size() == 0
+        && d.get('maxUses', 1) == 1
+        && getAfter(profilePath(m.name)).data.get('orbs', 0) <= m.u.get('orbs', 0) - 1400;
+    }
+    // Using a code once: you join its usedBy and its use count goes up by one, while it has uses left (codeUsage()).
+    function redeeming(m) {
+      let before = resource.data;
+      let used = before.keys().hasAny(['usedBy']) ? before.usedBy : (before.get('redeemedBy', null) != null ? [before.redeemedBy] : []);
+      let n = before.get('uses', 0) > used.size() ? before.get('uses', 0) : used.size();
+      let most = before.get('maxUses', 1);
+      let after = request.resource.data;
+      return changed().hasOnly(['uses', 'usedBy', 'redeemedBy', 'redeemedAt'])
+        && !(m.name in used)
+        && (most == 0 || n < most)
+        && after.get('uses', -1) == n + 1
+        && after.get('usedBy', []) == used.concat([m.name])
+        && after.get('redeemedBy', null) == m.name;
+    }
+
+    // ---------- device bans ----------
+    match /devices/{id} {
+      allow get: if true;                                           // the ban check runs before anyone signs in
+      allow list: if deviceList(who());
+      allow create: if deviceCreate(who(), id);
+      allow update: if deviceUpdate(who());
+      allow delete: if isOwnerLevel(who());
+    }
+    function deviceList(m) { return m.ok && (m.rank >= 2 || m.name in resource.data.get('accounts', [])); }
+    function deviceCreate(m, id) {
+      return m.ok && request.resource.data.get('id', '') == id
+        && request.resource.data.get('banned', false) == false
+        && request.resource.data.get('accounts', []) == [m.name];
+    }
+    // Anyone may record their own visit or ban their own device (the ban-evasion check bans itself); only the Owner and
+    // Co-Owners unban or change other people's devices.
+    function deviceUpdate(m) {
+      let k = changed();
+      return m.ok && (m.rank >= 2 || (same('id')
+        && m.name in request.resource.data.get('accounts', [])
+        && (same('accounts') || onlyAdded('accounts', m.name))
+        && (!k.hasAny(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned', 'unbannedBy', 'unbannedAt'])
+            || (resource.data.get('banned', false) == false && request.resource.data.get('banned', false) == true
+                && k.hasOnly(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned'])))));
+    }
+
+    // ---------- messages (servers, threads, DMs and group DMs) ----------
+    function newAuthorIsMe(m) { return request.resource.data.get('uid', '') == m.name; }
+    // Sapphire posts purge results and Wordle posts game cards, both as themselves (postBotMessage()), and nothing else.
+    function newBotMessage(m) {
+      let d = request.resource.data;
+      return (d.get('uid', '') == 'bot-sapphire' && d.keys().hasOnly(['uid', 'username', 'createdAt', 'purgeResult', 'replyTo']))
+        || (d.get('uid', '') == 'bot-wordle' && d.keys().hasOnly(['uid', 'username', 'createdAt', 'wordle', 'replyTo'])
+            && d.get('wordle', {}).get('startedBy', '') == m.name);
+    }
+    function isMine(m) { return resource.data.get('uid', '') == m.name; }
+    function fromDiscordUser() { return resource.data.get('uid', '') is string && resource.data.uid.matches('discord:[0-9]{1,25}'); }
+    // Your own message: anything but who sent it.
+    function ownEdit(m, k) { return isMine(m) && !k.hasAny(['uid']); }
+    function pollVoteOnly(m) {
+      let before = resource.data.get('poll', {});
+      let after = request.resource.data.get('poll', {});
+      return after.diff(before).affectedKeys().hasOnly(['votes'])
+        && after.get('votes', {}).diff(before.get('votes', {})).affectedKeys().hasOnly([m.name]);
+    }
+    function wordleOnlyMine(m) {
+      let before = resource.data.get('wordle', {});
+      let after = request.resource.data.get('wordle', {});
+      return after.diff(before).affectedKeys().hasOnly(['plays'])
+        && after.get('plays', {}).diff(before.get('plays', {})).affectedKeys().hasOnly([m.name]);
+    }
+    // Moderation on someone else's message only takes things away: its text (when a file stays) or a file.
+    function clearingOnly(k) {
+      return (!k.hasAny(['text']) || request.resource.data.get('text', '') == '')
+        && (!k.hasAny(['edited']) || request.resource.data.get('edited', false) == false)
+        && (!k.hasAny(['attachments']) || request.resource.data.get('attachments', []).size()
+              < resource.data.get('attachments', []).size() + ('attachment' in resource.data ? 1 : 0))
+        && (!k.hasAny(['attachment']) || !('attachment' in request.resource.data));
+    }
+    // Someone else's message in a DM or group: react, vote, play its Wordle.
+    function dmOthersEdit(m, k) {
+      return k.hasOnly(['reactions', 'poll', 'wordle'])
+        && (!k.hasAny(['poll']) || pollVoteOnly(m))
+        && (!k.hasAny(['wordle']) || wordleOnlyMine(m));
+    }
+    // ... and in a server: also start a thread on it, and (with the permission) pin it or clear it.
+    function serverOthersEdit(m, k, s) {
+      return k.hasOnly(['reactions', 'poll', 'wordle', 'thread', 'pinned', 'text', 'edited', 'attachments', 'attachment'])
+        && (!k.hasAny(['poll']) || pollVoteOnly(m))
+        && (!k.hasAny(['wordle']) || wordleOnlyMine(m))
+        && (!k.hasAny(['text', 'edited', 'attachments', 'attachment']) || clearingOnly(k))
+        && (!k.hasAny(['pinned', 'text', 'edited', 'attachments', 'attachment'])
+            || serverCanAny(m, s, k.hasAny(['text', 'edited', 'attachments', 'attachment']) ? ['manageMessages'] : ['pinMessages', 'manageMessages']));
+    }
+    // Auto-delete: whoever opens a conversation sweeps its messages older than 7 days (sweepOldMessages()).
+    function isOld() { return resource.data.get('createdAt', null) is timestamp && resource.data.createdAt < request.time - duration.value(7, 'd'); }
+    // A Discord message coming over (bridgeImport()): messages/dc_<its Discord id>, into a linked channel.
+    function discordImport(ch, mid) {
+      let d = request.resource.data;
+      return d.get('uid', '') is string && d.uid.matches('discord:[0-9]{1,25}')
+        && d.get('dc', '') is string && d.dc.matches('[0-9]{15,22}') && mid == 'dc_' + d.dc
+        && ch.get('discord', {}).get('sig', '') != '';
+    }
+
+    // ---------- servers ----------
+    function srv(sid) { return get(/databases/$(database)/documents/servers/$(sid)).data; }
+    function chan(sid, cid) { return get(/databases/$(database)/documents/servers/$(sid)/channels/$(cid)).data; }
+    function isMember(m, s) { return m.name in s.get('members', []); }
+    function inServer(m, s) { return m.ok && (isMember(m, s) || m.rank >= 1); }
+    function notTimedOut(m, s) { return s.get('timeouts', {}).get(m.name, 0) <= request.time.toMillis(); }
+    // Server permissions, as hasServerPerm() in script.js: the server's owner and Frixion staff have them all; everyone
+    // else has what @everyone and their roles give them, and Administrator gives everything. (Rules can't loop, so the
+    // roles are gone through one by one, and only a server's first 12 count.)
+    function rp(r, mine) { return r.get('id', '') == 'everyone' || r.get('id', '') in mine ? r.get('permissions', []) : []; }
+    function rolePermsOf(m, s) {
+      let roles = s.get('roles', []);
+      let n = roles.size();
+      let mine = s.get('memberRoles', {}).get(m.name, []);
+      return (n > 0 ? rp(roles[0], mine) : []).concat(n > 1 ? rp(roles[1], mine) : []).concat(n > 2 ? rp(roles[2], mine) : [])
+        .concat(n > 3 ? rp(roles[3], mine) : []).concat(n > 4 ? rp(roles[4], mine) : []).concat(n > 5 ? rp(roles[5], mine) : [])
+        .concat(n > 6 ? rp(roles[6], mine) : []).concat(n > 7 ? rp(roles[7], mine) : []).concat(n > 8 ? rp(roles[8], mine) : [])
+        .concat(n > 9 ? rp(roles[9], mine) : []).concat(n > 10 ? rp(roles[10], mine) : []).concat(n > 11 ? rp(roles[11], mine) : []);
+    }
+    function isServerBoss(m, s) { return s.get('ownerId', '') == m.name || m.rank >= 1; }
+    // You have every one of `needed` here, or at least one of `perms`.
+    function serverCan(m, s, needed) { return needed.size() == 0 || isServerBoss(m, s) || givesAll(rolePermsOf(m, s), needed); }
+    function givesAll(p, needed) { return p.hasAny(['administrator']) || p.hasAll(needed); }
+    function serverCanAny(m, s, perms) { return isServerBoss(m, s) || rolePermsOf(m, s).hasAny(perms.concat(['administrator'])); }
+    function canManageChannels(m, s) { return m.ok && serverCanAny(m, s, ['manageChannels']); }
+
+    // A new server is its maker's, with only them in it. createdAt is the real time, so the oldest server with an invite
+    // code keeps it (findServerByInvite()).
+    function serverCreate(m) {
+      return m.ok
+        && request.resource.data.get('ownerId', '') == m.name
+        && request.resource.data.get('members', []) == [m.name]
+        && request.resource.data.get('bannedUsers', []).size() == 0
+        && request.resource.data.get('memberRoles', {}).size() == 0
+        && request.resource.data.get('createdAt', null) == request.time;
+    }
+    // Nobody can take a server over or change its invite code. Anyone can join (unless banned), leave, vanish or set their
+    // own nickname; everything else needs the matching permission.
+    function serverUpdate(m, s) {
+      let k = changed();
+      return m.ok && same('ownerId') && same('inviteCode') && same('createdAt')
+        && (joining(m, k, s) || leaving(m, k) || vanishing(m, k, s) || ownNickname(m, k, s) || managing(m, k, s));
+    }
+    function joining(m, k, s) { return k.hasOnly(['members']) && onlyAdded('members', m.name) && !(m.name in s.get('bannedUsers', [])); }
+    function leaving(m, k) {
+      return k.hasOnly(['members', 'vanished']) && onlyTakenOut('members', m.name) && (!k.hasAny(['vanished']) || onlyTakenOut('vanished', m.name));
+    }
+    function vanishing(m, k, s) {
+      return k.hasOnly(['vanished']) && isMember(m, s) && (onlyAdded('vanished', m.name) || onlyTakenOut('vanished', m.name));
+    }
+    function ownNickname(m, k, s) {
+      return k.hasOnly(['nicknames']) && isMember(m, s)
+        && request.resource.data.get('nicknames', {}).diff(s.get('nicknames', {})).affectedKeys().hasOnly([m.name]);
+    }
+    // A kick needs Kick Members, a ban (it takes them out too) Ban Members, and so on. The audit log is kept by whoever
+    // does something worth logging.
+    function managing(m, k, s) {
+      let needed = (k.hasAny(['name', 'description', 'iconUrl']) ? ['manageServer'] : [])
+        .concat(k.hasAny(['roles', 'memberRoles']) ? ['manageRoles'] : [])
+        .concat(k.hasAny(['bannedUsers', 'banInfo']) ? ['banMembers'] : [])
+        .concat(k.hasAny(['timeouts']) ? ['timeoutMembers'] : [])
+        .concat(k.hasAny(['nicknames']) ? ['manageNicknames'] : [])
+        .concat(k.hasAny(['members']) && !k.hasAny(['bannedUsers', 'banInfo']) ? ['kickMembers'] : [])
+        .concat(k.difference(['name', 'description', 'iconUrl', 'roles', 'memberRoles', 'bannedUsers', 'banInfo', 'timeouts',
+              'nicknames', 'members', 'apps', 'auditLog'].toSet()).size() > 0 ? ['manageServer'] : []);
+      return (isMember(m, s) || m.rank >= 1)
+        && (!k.hasAny(['members']) || onlyRemoved('members'))
+        && (!k.hasAny(['apps']) || s.get('ownerId', '') == m.name || m.rank >= 2)
+        && serverCan(m, s, needed);
+    }
+    function serverDelete(m) { return m.ok && (resource.data.get('ownerId', '') == m.name || m.rank >= 2); }
+    // What anyone in a server may change on a channel: when its last message was, and how far Discord has come over.
+    function channelUpdate(m, s) {
+      let k = changed();
+      return inServer(m, s) && ((k.hasOnly(['lastMessageAt', 'lastMessage', 'discord'])
+          && (!k.hasAny(['discord']) || (resource.data.get('discord', null) is map && request.resource.data.get('discord', null) is map
+              && request.resource.data.discord.diff(resource.data.discord).affectedKeys().hasOnly(['last']))))
+        || serverCanAny(m, s, ['manageChannels']));
+    }
+    function chMsgCreate(m, s, ch, mid) {
+      return inServer(m, s) && canPost(m) && notTimedOut(m, s)
+        && (newAuthorIsMe(m) || newBotMessage(m) || discordImport(ch, mid));
+    }
+    function chMsgUpdate(m, s) {
+      let k = changed();
+      return inServer(m, s) && (ownEdit(m, k) || serverOthersEdit(m, k, s)
+        || (fromDiscordUser() && k.hasOnly(['attachments'])));   // its files copied somewhere that lasts (bridgeRehost())
+    }
+    // Your own; anyone's with Manage Messages (and while deleting a whole channel); a Discord user's message that is gone
+    // from Discord (bridgeGone()); and old ones when the channel auto-deletes.
+    function chMsgDelete(m, s, sid, cid) {
+      return m.ok && (isMine(m) || m.rank >= 1 || (isMember(m, s) && (fromDiscordUser()
+        || (isOld() && chan(sid, cid).get('autoDelete', true) != false)
+        || serverCanAny(m, s, ['manageMessages', 'manageChannels']))));
+    }
+    function threadCreate(m, s) { return inServer(m, s) && canPost(m) && request.resource.data.get('createdBy', '') == m.name; }
+    function threadUpdate(m, s) {
+      return inServer(m, s) && (changed().hasOnly(['lastMessageAt', 'messageCount'])
+        || resource.data.get('createdBy', '') == m.name || serverCanAny(m, s, ['manageThreads']));
+    }
+    function threadDelete(m, s) {
+      return m.ok && (resource.data.get('createdBy', '') == m.name || serverCanAny(m, s, ['manageThreads', 'manageChannels']));
+    }
+    function threadMsgCreate(m, s) { return inServer(m, s) && canPost(m) && notTimedOut(m, s) && (newAuthorIsMe(m) || newBotMessage(m)); }
+    function threadMsgUpdate(m, s) { let k = changed(); return inServer(m, s) && (ownEdit(m, k) || serverOthersEdit(m, k, s)); }
+    function threadMsgDelete(m, s) {
+      return m.ok && (isMine(m) || m.rank >= 1 || (isMember(m, s) && serverCanAny(m, s, ['manageMessages', 'manageChannels'])));
+    }
+    function typingWrite(m, s, name) { return m.ok && m.name == name && (isMember(m, s) || m.rank >= 1); }
+
+    match /servers/{sid} {
+      allow get, list: if signedIn();                               // Explore Servers lists every server
+      allow create: if serverCreate(who());
+      allow update: if serverUpdate(who(), resource.data);
+      allow delete: if serverDelete(who());
+
+      match /categories/{cat} {
+        allow read: if inServer(who(), srv(sid));
+        allow write: if canManageChannels(who(), srv(sid));
+      }
+      match /channels/{cid} {
+        allow read: if inServer(who(), srv(sid));
+        allow create, delete: if canManageChannels(who(), srv(sid));
+        allow update: if channelUpdate(who(), srv(sid));
+
+        match /messages/{mid} {
+          allow read: if inServer(who(), srv(sid));
+          allow create: if chMsgCreate(who(), srv(sid), chan(sid, cid), mid);
+          allow update: if chMsgUpdate(who(), srv(sid));
+          allow delete: if chMsgDelete(who(), srv(sid), sid, cid);
+        }
+        match /typing/{name} {
+          allow read: if inServer(who(), srv(sid));
+          allow write: if typingWrite(who(), srv(sid), name);
+        }
+      }
+      match /threads/{tid} {
+        allow read: if inServer(who(), srv(sid));
+        allow create: if threadCreate(who(), srv(sid));
+        allow update: if threadUpdate(who(), srv(sid));
+        allow delete: if threadDelete(who(), srv(sid));
+
+        match /messages/{mid} {
+          allow read: if inServer(who(), srv(sid));
+          allow create: if threadMsgCreate(who(), srv(sid));
+          allow update: if threadMsgUpdate(who(), srv(sid));
+          allow delete: if threadMsgDelete(who(), srv(sid));
+        }
+        match /typing/{name} {
+          allow read: if inServer(who(), srv(sid));
+          allow write: if typingWrite(who(), srv(sid), name);
+        }
       }
     }
 
-    // everything else: unchanged for now (phase 2)
-    match /{coll}/{rest=**} {
-      allow read, write: if coll != 'users' && coll != 'accounts';
+    // ---------- DMs and group DMs ----------
+    function dmData(did) { return get(/databases/$(database)/documents/dms/$(did)).data; }
+    function gdmData(gid) { return get(/databases/$(database)/documents/groupDMs/$(gid)).data; }
+    function inConv(m, c) { return m.ok && m.name in c.get('participants', []); }
+    function convGet(m) { return m.ok && (resource == null || m.name in resource.data.get('participants', []) || m.rank >= 1); }
+    function convList(m) { return m.ok && (m.name in resource.data.get('participants', []) || m.rank >= 1); }
+    function convMsgCreate(m, c) { return inConv(m, c) && canPost(m) && (newAuthorIsMe(m) || newBotMessage(m)); }
+    function convMsgUpdate(m, c) { let k = changed(); return inConv(m, c) && (ownEdit(m, k) || dmOthersEdit(m, k)); }
+    function convMsgDelete(m, c) { return inConv(m, c) && (isMine(m) || m.rank >= 1 || (isOld() && c.get('autoDelete', true) != false)); }
+    function convTyping(m, c, name) { return inConv(m, c) && m.name == name; }
+
+    // A DM's id is its two usernames, sorted and joined with "_" (dmIdFor() in script.js).
+    function dmCreate(m, did) {
+      let p = request.resource.data.get('participants', null);
+      return m.ok && p is list && p.size() == 2 && m.name in p && (did == p[0] + '_' + p[1] || did == p[1] + '_' + p[0]);
+    }
+    function dmUpdate(m) { return m.ok && same('participants') && (m.name in resource.data.get('participants', []) || m.rank >= 1); }
+    // Only your friends can be put in a group by you.
+    function onlyFriendsAdded(m, before) {
+      return request.resource.data.get('participants', []).toSet().difference(before.toSet())
+        .difference(m.u.get('friends', []).toSet().union([m.name].toSet())).size() == 0;
+    }
+    function groupCreate(m) {
+      let p = request.resource.data.get('participants', null);
+      return m.ok && p is list && m.name in p && request.resource.data.get('ownerId', '') == m.name && onlyFriendsAdded(m, []);
+    }
+    // People in the group change it; the group's owner hands it on when they leave.
+    function groupUpdate(m) {
+      return m.ok && (m.name in resource.data.get('participants', []) || m.rank >= 1)
+        && (same('ownerId') || resource.data.get('ownerId', '') == m.name || m.rank >= 1)
+        && (same('participants') || onlyFriendsAdded(m, resource.data.get('participants', [])) || m.rank >= 1);
+    }
+
+    match /dms/{did} {
+      allow get: if convGet(who());
+      allow list: if convList(who());
+      allow create: if dmCreate(who(), did);
+      allow update: if dmUpdate(who());
+      allow delete: if isOwnerLevel(who());
+
+      match /messages/{mid} {
+        allow read: if inConv(who(), dmData(did));
+        allow create: if convMsgCreate(who(), dmData(did));
+        allow update: if convMsgUpdate(who(), dmData(did));
+        allow delete: if convMsgDelete(who(), dmData(did));
+      }
+      match /typing/{name} {
+        allow read: if inConv(who(), dmData(did));
+        allow write: if convTyping(who(), dmData(did), name);
+      }
+    }
+    match /groupDMs/{gid} {
+      allow get: if convGet(who());
+      allow list: if convList(who());
+      allow create: if groupCreate(who());
+      allow update: if groupUpdate(who());
+      allow delete: if isOwnerLevel(who());
+
+      match /messages/{mid} {
+        allow read: if inConv(who(), gdmData(gid));
+        allow create: if convMsgCreate(who(), gdmData(gid));
+        allow update: if convMsgUpdate(who(), gdmData(gid));
+        allow delete: if convMsgDelete(who(), gdmData(gid));
+      }
+      match /typing/{name} {
+        allow read: if inConv(who(), gdmData(gid));
+        allow write: if convTyping(who(), gdmData(gid), name);
+      }
+    }
+
+    // ---------- push notifications ----------
+    // Each device's subscription (savePushSub()). Only its owner sees or changes it; the same device signing in as
+    // someone else takes it over (it has to know the subscription's address to do that).
+    match /pushSubs/{id} {
+      allow get, delete: if pushMine(who());
+      allow create: if pushNew(who());
+      allow update: if pushNew(who()) && (pushMine(who()) || resource.data.get('endpoint', '') == request.resource.data.get('endpoint', null));
+    }
+    function pushMine(m) { return m.ok && resource.data.get('uid', '') == m.name; }
+    function pushNew(m) { return m.ok && request.resource.data.get('uid', '') == m.name; }
+
+    // ---------- Discord bridge ----------
+    // The list of linked channels the bridge's timer goes through (bridgeList()). Anyone in the server keeps it up to
+    // date; the bridge checks each link's signature itself, so a made-up entry does nothing.
+    match /discordLinks/{key} {
+      allow read: if isStaff(who());
+      allow create: if request.resource.data.keys().hasOnly(['sid', 'cid', 'channel', 'at'])
+        && request.resource.data.get('sid', null) is string && request.resource.data.get('cid', null) is string
+        && key == request.resource.data.sid + '__' + request.resource.data.cid
+        && inServer(who(), srv(request.resource.data.sid));
+      allow update: if changed().hasOnly(['channel', 'at']) && inServer(who(), srv(resource.data.sid));
+      allow delete: if canManageChannels(who(), srv(resource.data.sid));
+    }
+
+    // ---------- games ----------
+    // Overcontrol RNG saves: yours (and your Steal a Character fallback) are yours; its admin tools are for the Owner and
+    // Co-Owners (staff in games/ocrng/ocrng.js).
+    match /rngSaves/{id} {
+      allow read: if signedIn();
+      allow write: if rngWrite(who(), id);
+    }
+    function rngWrite(m, id) { return m.ok && (m.name == id || id == 'sac_' + m.name || m.rank >= 2); }
+    match /rngCodes/{code} {
+      allow get: if signedIn();
+      allow list, create, delete: if isOwnerLevel(who());
+      allow update: if (signedIn() && changed().hasOnly(['uses']) && request.resource.data.get('uses', 0) == resource.data.get('uses', 0) + 1)
+        || isOwnerLevel(who());
+    }
+    match /sacSaves/{id} {
+      allow read: if signedIn();
+      allow write: if isWho(who(), id) || isOwnerLevel(who());
     }
   }
 }

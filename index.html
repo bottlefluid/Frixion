@@ -20,7 +20,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=99">
+<link rel="stylesheet" href="style.css?v=100">
 </head>
 <body>
 
@@ -136,6 +136,7 @@
       <button class="btn-primary" id="pick-btn">Continue</button>
       <div class="auth-switch">Already have a Frixion account? <a id="pick-cancel">Log in to it</a>, then connect Google in Settings, My Account.</div>
     </div>
+    <p class="recaptcha-note">This site is protected by reCAPTCHA and the Google <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="https://policies.google.com/terms" target="_blank" rel="noopener">Terms of Service</a> apply.</p>
   </div>
 </div>
 
@@ -1677,9 +1678,10 @@
 
 <!-- All scripts are deferred: the page (and the loading screen) paints first, then they run in order. Firebase Storage is not loaded because nothing uses it. -->
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=126"></script>
+<script defer src="script.js?v=127"></script>
 </body>
 </html>
