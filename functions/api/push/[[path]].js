@@ -31,7 +31,7 @@ export async function onRequest({ request, env, params }) {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   const route = [].concat(params.path || []).join('/');
   try {
-    if (route === 'info' && request.method === 'GET') return json({ ready: !!env.VAPID_PRIVATE_KEY });
+    if (route === 'info' && request.method === 'GET') return json(await info(env));
     if (!env.VAPID_PRIVATE_KEY) fail(503, 'Push notifications aren\'t set up on this site yet.');
     if (route === 'send' && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));   // sent as text/plain, so other sites can call it without a preflight
@@ -42,6 +42,18 @@ export async function onRequest({ request, env, params }) {
     if (e instanceof Fail) return json({ error: e.message }, e.status);
     console.error(e);
     return json({ error: 'Push notifications hit a problem.' }, 500);
+  }
+}
+
+// Ready only once the key works: signing a token with it proves it was pasted whole. key is its public half, to compare
+// with VAPID_PUBLIC in script.js.
+async function info(env) {
+  if (!env.VAPID_PRIVATE_KEY) return { ready: false };
+  try {
+    await vapid(env, 'https://push.example/');
+    return { ready: true, key: signer.pub };
+  } catch (e) {
+    return { ready: false, error: 'VAPID_PRIVATE_KEY is there but isn\'t a working key. Paste everything in VAPID_PRIVATE_KEY.txt again.' };
   }
 }
 
