@@ -455,6 +455,12 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.49', date: '2026-11-03', title: 'Notifications, even with Frixion closed',
+    notes: [
+      'Frixion can tell you about new messages even when it is closed: direct messages, group messages, mentions and replies, and @everyone. It asks once after you sign in, or go to Settings, Notifications and tap Allow notifications.',
+      'On iPhone this works from the home screen (Settings, Frixion App shows how to put Frixion there), on iOS 16.4 or newer. On Android phones and on computers it works in the browser too.',
+      'Each device has its own switch, and a chat you mute on a device stays quiet there. Tapping a notification opens that chat.',
+    ] },
   { v: '4.48', date: '2026-11-03', title: 'Frixion for Android and iPhone',
     notes: [
       'On iPhone and iPad, Frixion can go on your home screen: open it in Safari, tap Share, then Add to Home Screen. It then opens full screen from its own icon, like an app. Sign in once inside it. Settings, Frixion App shows the steps.',
@@ -3069,6 +3075,7 @@ $('logout-btn').onclick = async () => {
   ggRaccoonSeen = null;
   teardownPresence();
   try { if (myUid) await db.collection('users').doc(myUid).update({ status: 'offline' }); } catch (e) {}
+  if (pushOn()) { db.collection('pushSubs').doc(pushId).delete().catch(() => {}); pushId = null; }   // this device stops getting their notifications
   clearMyTypingDoc();
   cleanupAllListeners();
   setSession(null);
@@ -3327,6 +3334,8 @@ function initAppForUser() {
     }
     syncGameState(myProfile);
     maybeShowAppPrompt();
+    refreshPushSub();
+    maybeAskPush();
     const liveBan = banStatus(myProfile);
     if (liveBan.banned) showBanScreen(liveBan, true);   // banned while signed in
     applyShopTheme(myProfile.equippedTheme);
@@ -4502,6 +4511,7 @@ const lookingAtFrixion = () => document.visibilityState === 'visible' && documen
 const notifiedKeys = new Set();       // a message mentioning you and @everyone notifies once
 function notifyMessage(n, force) {
   if (OVERLAY_WINDOW || !n || (!force && (!notifyOn() || lookingAtFrixion()))) return;
+  if (!force && n.pushed && pushOn()) return;   // this device gets it as a push notification instead (see PUSH NOTIFICATIONS)
   if (n.key) { if (notifiedKeys.has(n.key)) return; notifiedKeys.add(n.key); }
   const body = String(n.body || '').slice(0, 180), title = String(n.title || 'Frixion').slice(0, 100);
   if (ANDROID_APP) { try { ANDROID_APP.notification(JSON.stringify({ title, body, open: n.open || null })); } catch (e) {} return; }
@@ -4522,8 +4532,8 @@ function notifyConversation(kind, id, data) {
   if ((kind === 'dm' ? currentDMId : currentGroupDMId) === id && lookingAtFrixion()) return;
   const open = kind === 'dm' ? { type: 'dm', id, other: (data.participants || []).find(p => p !== myUid) } : { type: 'gdm', id };
   notifyFrom(lm.username, (p, name, icon) => kind === 'dm'
-    ? { key: `c:${id}:${timeValue(data.updatedAt)}`, title: name, body: lm.text, icon, open }
-    : { key: `c:${id}:${timeValue(data.updatedAt)}`, title: groupDMDisplayName({ id, ...data }), body: `${name}: ${lm.text || ''}`, icon, open });
+    ? { key: `c:${id}:${timeValue(data.updatedAt)}`, title: name, body: lm.text, icon, open, pushed: true }
+    : { key: `c:${id}:${timeValue(data.updatedAt)}`, title: groupDMDisplayName({ id, ...data }), body: `${name}: ${lm.text || ''}`, icon, open, pushed: true });
 }
 function onNewMention(m) {
   if (!freshMessage(timeValue(m.at))) return;          // an old note coming back into view, not a new message
@@ -4533,7 +4543,7 @@ function onNewMention(m) {
   if (!open) playPingSound();                           // the open chat already pings for its own mentions
   const where = m.thread ? `${m.thread} in #${m.channel}` : `#${m.channel || 'channel'}`;
   notifyFrom(m.from, (p, name, icon) => ({ key: 'msg:' + m.mid, title: `${name} (${where}, ${m.server || 'server'})`, body: m.text, icon,
-    open: { type: 'ch', sid: m.sid, cid: m.cid, tid: m.tid || null } }));
+    open: { type: 'ch', sid: m.sid, cid: m.cid, tid: m.tid || null }, pushed: true }));
 }
 function maybeNotifyEveryone(sid, c, prev) {
   const lm = c.lastMessage, at = timeValue(c.lastMessageAt);
@@ -4541,7 +4551,7 @@ function maybeNotifyEveryone(sid, c, prev) {
   const server = serverById(sid);
   if (!server || !canViewChannel(c, server, myUid) || isConversationMuted('ch', c.id)) return;
   if (!lookingAtChannel(sid, c.id)) playPingSound();
-  notifyFrom(lm.uid, (p, name, icon) => ({ key: 'msg:' + lm.mid, title: `${name} (#${c.name}, ${server.name})`, body: lm.text, icon, open: { type: 'ch', sid, cid: c.id } }));
+  notifyFrom(lm.uid, (p, name, icon) => ({ key: 'msg:' + lm.mid, title: `${name} (#${c.name}, ${server.name})`, body: lm.text, icon, open: { type: 'ch', sid, cid: c.id }, pushed: !isChannelPrivate(c) }));
 }
 // Clicking a notification opens that chat. A channel in another server opens once that server's channels have loaded.
 let pendingChannelOpen = null;
@@ -4567,37 +4577,48 @@ function openChannelTarget(o) {
 }
 // Settings → Notifications
 function populateNotifySettings() {
-  const inApp = !!DESKTOP || !!ANDROID_APP, canAsk = !inApp && !isMobile() && 'Notification' in window;
+  const inApp = !!DESKTOP || !!ANDROID_APP, push = pushSupported(), canAsk = !inApp && 'Notification' in window && (push || !isMobile());
   $('notify-toggle').checked = notifyOn();
   $('notify-game-toggle').checked = notifyInGame();
   $('notify-game-row').classList.toggle('hidden', !desktopNotifies());
   $('notify-app-note').classList.toggle('hidden', !inApp || appNotifies());
   $('notify-where').textContent = ANDROID_APP ? 'In the Frixion app for Android they show as phone notifications while Frixion is in the background.'
     : inApp ? 'In the Frixion app they show as Windows notifications, or over your game while you play.'
-    : isMobile() ? 'Phones don\'t show them yet. Notifications work in the Frixion app for computers and in a computer\'s browser.'
+    : push ? (pushOn() ? 'They show up on this device even when Frixion is closed.' : 'Allow them, and they show up on this device even when Frixion is closed.')
+    : appOS === 'ios' ? 'On iPhone, put Frixion on your home screen first (Settings, Frixion App), then turn notifications on there.'
+    : isMobile() ? 'This browser can\'t show them. Notifications work in the Frixion apps, and from the home screen on iPhone.'
     : 'Your browser shows them while Frixion is open in a tab, even in the background.';
-  $('notify-permission').classList.toggle('hidden', !canAsk || Notification.permission === 'granted');
+  $('notify-permission').classList.toggle('hidden', !canAsk || (Notification.permission === 'granted' && (!push || pushOn())));
   if (canAsk) {
     const denied = Notification.permission === 'denied';
-    $('notify-permission-text').textContent = denied ? 'Your browser is blocking notifications from Frixion. Allow them in this site\'s settings (the icon to the left of the address).'
-      : 'Your browser needs your OK before Frixion can show notifications.';
+    $('notify-permission-text').textContent = denied ? 'Notifications from Frixion are blocked. Allow them in this site\'s settings (in a browser, the icon to the left of the address; on iPhone, Settings, Notifications, Frixion).'
+      : push ? 'Frixion needs your OK to send notifications to this device.' : 'Your browser needs your OK before Frixion can show notifications.';
     $('notify-allow-btn').classList.toggle('hidden', denied);
   }
 }
+// From a tap: on a device that can get push notifications this turns them on (see PUSH NOTIFICATIONS)
 function askNotifyPermission() {
+  if (pushSupported()) return turnOnPush().then(populateNotifySettings);
   if (DESKTOP || ANDROID_APP || !('Notification' in window) || Notification.permission !== 'default') return Promise.resolve();
   return Promise.resolve(Notification.requestPermission()).catch(() => {}).then(populateNotifySettings);
 }
-$('notify-toggle').onchange = e => { try { localStorage.setItem(NOTIFY_KEY, e.target.checked ? '1' : '0'); } catch (err) {} if (e.target.checked) askNotifyPermission(); };
+$('notify-toggle').onchange = e => {
+  try { localStorage.setItem(NOTIFY_KEY, e.target.checked ? '1' : '0'); } catch (err) {}
+  if (e.target.checked) askNotifyPermission();
+  else if (pushOn()) turnOffPush().then(populateNotifySettings);
+};
 $('notify-game-toggle').onchange = e => { try { localStorage.setItem(NOTIFY_GAME_KEY, e.target.checked ? '1' : '0'); } catch (err) {} };
 $('notify-allow-btn').onclick = () => askNotifyPermission();
 $('notify-test-btn').onclick = () => {
-  const hint = $('notify-test-hint');
-  if (!DESKTOP && !ANDROID_APP && (!('Notification' in window) || Notification.permission !== 'granted')) { hint.textContent = isMobile() ? 'Phones don\'t show notifications yet.' : 'Allow notifications first.'; return; }
-  hint.textContent = ANDROID_APP ? 'Sending one in 5 seconds. Go to your home screen to see it.'
+  const hint = $('notify-test-hint'), push = pushSupported() && Notification.permission === 'granted';
+  if (!DESKTOP && !ANDROID_APP && (!('Notification' in window) || Notification.permission !== 'granted')) { hint.textContent = appOS === 'ios' ? 'Put Frixion on your home screen first.' : 'Allow notifications first.'; return; }
+  hint.textContent = ANDROID_APP || (push && isMobile()) ? 'Sending one in 5 seconds. Go to your home screen to see it.'
     : DESKTOP ? 'Sending one in 5 seconds. Switch to a game or another window to see it.' : 'Sending one in 5 seconds. Switch to another tab or window to see it.';
-  setTimeout(() => {
-    notifyMessage({ title: 'Frixion', body: 'This is what a notification looks like.', icon: (myProfile && myProfile.avatarUrl) || DEFAULT_AVATAR_URL, open: null }, true);
+  setTimeout(async () => {
+    const n = { title: 'Frixion', body: 'This is what a notification looks like.', icon: (myProfile && myProfile.avatarUrl) || DEFAULT_AVATAR_URL, open: null };
+    // shown the way a push is (an iPhone home screen app can't show any other kind)
+    if (push) { try { (pushReg || await navigator.serviceWorker.ready).showNotification(n.title, { body: n.body, icon: '/icons/icon-192.png' }); } catch (e) {} }
+    else notifyMessage(n, true);
     hint.textContent = '';
   }, 5000);
 };
@@ -4625,12 +4646,7 @@ if (ANDROID_APP) {
     if ($('app').classList.contains('mobile-show-chat')) { if (!(currentThreadId && goToThreadParent())) setMobilePane('list'); return true; }
     return false;
   };
-  window.frixionAndroidOpen = o => {
-    if (!o || typeof o !== 'object') return;
-    let tries = 0;
-    const go = () => { if (myUid) openNotifyTarget(o); else if (++tries < 60) setTimeout(go, 500); };
-    go();
-  };
+  window.frixionAndroidOpen = openWhenReady;
   window.frixionAndroidLink = url => {
     let u;
     try { u = new URL(url); } catch (e) { return; }
@@ -4639,6 +4655,107 @@ if (ANDROID_APP) {
     else if (u.href !== location.href) location.href = u.href;
   };
 }
+// A tapped notification's chat, as soon as Frixion is signed in and ready
+function openWhenReady(o) {
+  if (!o || typeof o !== 'object') return;
+  let tries = 0;
+  const go = () => { if (myUid) openNotifyTarget(o); else if (++tries < 60) setTimeout(go, 500); };
+  go();
+}
+
+// ---------- PUSH NOTIFICATIONS (v4.49) ----------
+// With Frixion closed, a phone or computer still gets notifications: the sender's Frixion asks functions/api/push (on the
+// main site) to send one to every device of everyone who should hear about the message, and /sw.js shows it. A device
+// opts in with Allow notifications (Settings > Notifications, or the ask after signing in), which needs a tap; iPhones
+// also need Frixion on the home screen. Its pushSubs/{id} doc says who is signed in there and which chats it muted.
+// Not in the computer app or the Android app, which show their own (see notifyMessage).
+const PUSH_API = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'http://127.0.0.1:8788/api/push' : 'https://frixionbeta.pages.dev/api/push';
+const VAPID_PUBLIC = 'BI0G-1ruzfkYfbVq9inwLSoZWLNn1ci7ad5wCJ9_6kSuTIRfeU8sOARfXTfm2y9Icy_bWn8lzWpJb8CIgGIt31A';   // its private half is the function's VAPID_PRIVATE_KEY
+const pushSupported = () => !DESKTOP && !ANDROID_APP && !OVERLAY_WINDOW && window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+let pushReg = null, pushId = null;   // this device's service worker, and its pushSubs doc once notifications are on
+if (pushSupported()) {
+  navigator.serviceWorker.register('/sw.js').then(r => { pushReg = r; }).catch(() => {});
+  navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.type === 'frixion-open') openWhenReady(e.data.open); });
+}
+// opened from a notification while Frixion was closed (/?open=...)
+(() => {
+  const q = new URLSearchParams(location.search).get('open');
+  if (!q) return;
+  try { openWhenReady(JSON.parse(q)); } catch (e) {}
+  const url = new URL(location.href);
+  url.searchParams.delete('open');
+  history.replaceState(null, '', url.pathname + url.search + url.hash);
+})();
+const pushOn = () => !!pushId;
+const pushKey = () => Uint8Array.from(atob(VAPID_PUBLIC.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - VAPID_PUBLIC.length % 4) % 4)), c => c.charCodeAt(0));
+async function pushDocId(endpoint) {
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(endpoint));
+  return [...new Uint8Array(h)].slice(0, 20).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+// the chats muted on this device, as the function reads them ("dm:<id>", "gdm:<id>", "ch:<channel id>")
+function mutedChats() {
+  const out = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i), m = /^frixion_mute:(dm|gdm|ch):(.+)$/.exec(k || '');
+      if (m && localStorage.getItem(k) === '1') out.push(`${m[1]}:${m[2]}`);
+    }
+  } catch (e) {}
+  return out;
+}
+async function savePushSub(sub) {
+  const j = sub.toJSON();
+  if (!myUid || !j.endpoint || !j.keys) return;
+  const id = await pushDocId(j.endpoint);
+  await db.collection('pushSubs').doc(id).set({ uid: myUid, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, muted: mutedChats(), at: Date.now(), ua: navigator.userAgent.slice(0, 160) });
+  pushId = id;
+}
+// Turns them on for this device. Call it straight from a tap: iPhones only ask then (and browsers prefer it).
+async function turnOnPush() {
+  if (!pushSupported() || !myUid) return 'unsupported';
+  const perm = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+  if (perm !== 'granted') return perm;
+  try {
+    const reg = pushReg || await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: pushKey() });
+    await savePushSub(sub);
+    return 'granted';
+  } catch (e) { console.warn('Push:', e); return 'failed'; }
+}
+async function turnOffPush() {
+  const id = pushId;
+  pushId = null;
+  if (id) await db.collection('pushSubs').doc(id).delete().catch(() => {});
+  try { const reg = pushReg || await navigator.serviceWorker.getRegistration(); const sub = reg && await reg.pushManager.getSubscription(); if (sub) await sub.unsubscribe(); } catch (e) {}
+}
+// After signing in: a device that already allowed notifications gets (or keeps) them, for whoever is signed in now
+async function refreshPushSub() {
+  if (!pushSupported() || Notification.permission !== 'granted' || !notifyOn()) return;
+  await turnOnPush();
+}
+// Asks once in a while (after "Not now", a week later), when nothing else is open
+function maybeAskPush() {
+  if (!pushSupported() || Notification.permission !== 'default' || !notifyOn()) return;
+  try { if (Date.now() - Number(localStorage.getItem('frixion_push_asked') || 0) < 7 * 86400000) return; } catch (e) {}
+  setTimeout(() => {
+    if (!myUid || Notification.permission !== 'default' || document.querySelector('.modal-overlay:not(.hidden)')) return;
+    try { localStorage.setItem('frixion_push_asked', String(Date.now())); } catch (e) {}
+    confirmAction({
+      title: 'Turn on notifications?', danger: false, confirmLabel: 'Turn on',
+      body: 'Get a notification when someone messages you or mentions you, even when Frixion is closed. You can change this any time in Settings, Notifications.',
+      onConfirm: async () => {
+        const r = await turnOnPush();
+        toast(r === 'granted' ? 'Notifications are on.' : r === 'denied' ? 'Notifications are blocked. Allow them in this site\'s settings to turn them on.' : 'Notifications could not be turned on.', r === 'granted' ? undefined : 'error');
+      },
+    });
+  }, 6000);
+}
+// After a message goes into a DM, a group, or a channel with a mention, reply or @everyone in it
+function pushOut(o) {
+  if (!myUid || !o || !o.mid) return;
+  fetch(`${PUSH_API}/send`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ ...o, uid: myUid }) }).catch(() => {});
+}
+const mayNotify = p => !!(p && (p.replyTo || /(^|[\s(>])@([A-Za-z0-9_]{3,24}|everyone|here)\b/i.test(p.text || '')));
 function renderDMRows() {
   const wrap = $('dm-rows');
   wrap.innerHTML = '';
@@ -7205,6 +7322,7 @@ $('mute-toggle').onclick = () => {
   const key = muteKey();
   const wasMuted = localStorage.getItem(key) === '1';
   if (wasMuted) localStorage.removeItem(key); else localStorage.setItem(key, '1');
+  if (pushOn()) db.collection('pushSubs').doc(pushId).update({ muted: mutedChats() }).catch(() => {});   // so push respects it too
   updateMuteIcon();
   toast(wasMuted ? 'Unmuted.' : 'Muted. You can still open it manually.');
 };
@@ -8568,10 +8686,12 @@ async function sendToCurrentConversation(payload) {
     // the message the thread started from shows how many replies it has
     if (starter) channelRef(currentChannelId).collection('messages').doc(starter).update({ 'thread.count': FieldValue.increment(1) }).catch(() => {});
     noteChannelMessage(currentServerId, currentChannelId, payload, ref, tid);
+    if (mayNotify(payload)) pushOut({ kind: 'ch', sid: currentServerId, cid: currentChannelId, tid, mid: ref.id });
     db.collection('users').doc(myUid).update({ 'dailyStats.channelsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else if (currentView === 'channel') {
     ref = await db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').add(payload);
     noteChannelMessage(currentServerId, currentChannelId, payload, ref, null);
+    if (mayNotify(payload)) pushOut({ kind: 'ch', sid: currentServerId, cid: currentChannelId, mid: ref.id });
     bridgeOut(currentServerId, currentChannelId, ref, currentChannelObj());
     db.collection('users').doc(myUid).update({ 'dailyStats.channelsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else if (currentView === 'dm') {
@@ -8580,6 +8700,7 @@ async function sendToCurrentConversation(payload) {
       updatedAt: FieldValue.serverTimestamp(),
       lastMessage: { text: previewForMessage(payload), username: myProfile.username },
     });
+    pushOut({ kind: 'dm', id: currentDMId, mid: ref.id });
     db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else if (currentView === 'groupdm') {
     ref = await db.collection('groupDMs').doc(currentGroupDMId).collection('messages').add(payload);
@@ -8587,6 +8708,7 @@ async function sendToCurrentConversation(payload) {
       updatedAt: FieldValue.serverTimestamp(),
       lastMessage: { text: previewForMessage(payload), username: myProfile.username },
     });
+    pushOut({ kind: 'gdm', id: currentGroupDMId, mid: ref.id });
     db.collection('users').doc(myUid).update({ 'dailyStats.dmsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else {
     throw new Error('No conversation selected.');
