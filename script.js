@@ -455,8 +455,9 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
-  { v: '4.48', date: '2026-11-03', title: 'Frixion for Android',
+  { v: '4.48', date: '2026-11-03', title: 'Frixion for Android and iPhone',
     notes: [
+      'On iPhone and iPad, Frixion can go on your home screen: open it in Safari, tap Share, then Add to Home Screen. It then opens full screen from its own icon, like an app. Sign in once inside it. Settings, Frixion App shows the steps.',
       'Frixion is an app for Android phones now. Open Frixion on your phone, go to Settings, Frixion App, and tap Download for Android. When the file has downloaded, open it, and if your phone asks, allow installing apps from your browser.',
       'The app is Frixion full screen with its own icon. Messages show up as phone notifications, the back button works like in other apps, and Frixion links and invites open straight in the app.',
       'Frixion itself always stays up to date in the app. When a new version of the app comes out, Settings, Frixion App shows a button to get it.',
@@ -10702,23 +10703,28 @@ $('emoji-search').addEventListener('input', renderEmojiPickerGrids);
 document.addEventListener('click', emojiPickerOutsideClick);
 
 // ============================================================
-// THE FRIXION APP FOR COMPUTERS AND ANDROID PHONES: a reminder to get it, and the Settings > Frixion App tab.
+// THE FRIXION APP FOR COMPUTERS, ANDROID PHONES AND IPHONES: a reminder to get it, and the Settings > Frixion App tab.
 // Downloads come from the GitHub Releases of the app's repo (publish a release there and the newest one is picked up
-// here). A release's APK is the Android app, built from android/ in the same repo.
+// here). A release's APK is the Android app, built from android/ in the same repo. iPhones and iPads can't install
+// apps from outside the App Store, so there Frixion goes on the home screen instead (manifest.json and the
+// apple-mobile-web-app tags in index.html make it open full screen from its own icon).
 // ============================================================
 const APP_REPO = 'bottlefluid/frx';                      // the app's GitHub repo: owner/name
 const APP_RELEASES_PAGE = `https://github.com/${APP_REPO}/releases/latest`;
+// opened from a home screen icon (iPhone: Add to Home Screen; Android: Install app) rather than in a browser tab
+const HOME_SCREEN_APP = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
 const appOS = (() => {
   const ua = navigator.userAgent || '';
-  if (ANDROID_APP) return null;                         // already in the Android app
+  if (ANDROID_APP || HOME_SCREEN_APP) return null;      // already in an app
   if (/Android/i.test(ua)) return 'android';
-  if (isMobileDevice()) return null;                    // iPhones and iPads can't install it
+  if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';   // (iPads say they're Macs)
+  if (isMobileDevice()) return null;
   if (/Windows/i.test(ua)) return 'win';
   if (/Mac OS X|Macintosh/i.test(ua)) return 'mac';
   if (/Linux|X11/i.test(ua)) return 'linux';
   return null;
 })();
-const APP_OS_NAMES = { win: 'Windows', mac: 'Mac', linux: 'Linux', android: 'Android' };
+const APP_OS_NAMES = { win: 'Windows', mac: 'Mac', linux: 'Linux', android: 'Android', ios: 'iPhone' };
 const APP_TIPS = {
   win: 'If Windows says it protected your PC, click More info, then Run anyway.',
   mac: 'The first time, right-click the app and choose Open.',
@@ -10726,6 +10732,8 @@ const APP_TIPS = {
   android: 'Open the file once it has downloaded. If your phone asks, allow installing apps from your browser, then tap Install.',
 };
 const ANDROID_PERKS = '<li>Notifications show up as phone notifications</li><li>Frixion links and invites open in the app</li><li>Full screen, with its own icon</li>';
+const IOS_PERKS = '<li>Opens full screen from its own icon, like an app</li><li>No App Store needed, and it is always up to date</li>';
+const IOS_STEPS = '<ol class="app-perks"><li>Tap <b>Share</b> (the square with an arrow pointing up). In Safari it is at the bottom; in Chrome, next to the address bar.</li><li>Tap <b>Add to Home Screen</b>, then <b>Add</b>.</li><li>Open Frixion from its new icon and sign in once.</li></ol>';
 const newerVersion = (a, b) => { const x = String(a || '').split('.').map(Number), y = String(b || '').split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
 let appReleaseP = null;
 // { version, win, mac: [{label,url}], linux, android } from the newest release, or null if it cannot be read (then the Releases page is linked).
@@ -10769,6 +10777,7 @@ const labelOS = l => /^Mac/.test(l) ? 'mac' : /^Windows/.test(l) ? 'win' : /^And
 // Fills a box with a big button for this device and smaller links for the others.
 async function renderAppDownloads(box) {
   if (!box) return;
+  if (appOS === 'ios') { box.innerHTML = IOS_STEPS; return; }   // nothing to download: the home screen instead
   box.innerHTML = `<a class="app-dl-main" href="${APP_RELEASES_PAGE}" target="_blank" rel="noopener">Download the app</a>`;
   const rel = await getAppRelease();
   if (appOS === 'android' && !(rel && rel.android)) { box.innerHTML = '<div class="app-dl-tip">The Android app isn\'t out yet. Check back soon.</div>'; return; }
@@ -10786,8 +10795,9 @@ async function setAppPromptOff(off) {
   if (myUid) { try { await db.collection('users').doc(myUid).update({ hideAppPrompt: off ? true : FieldValue.delete() }); } catch (e) {} }
 }
 let appPromptDone = false;
-// Called once per visit, after sign-in. Not in an app, not on an iPhone, not on an Android phone until a release has an
-// APK, and not if "do not remind me again" was chosen.
+// Called once per visit, after sign-in. Not in an app (or from the home screen), not on an Android phone until a
+// release has an APK, and not if "do not remind me again" was chosen. On an iPhone it shows how to add Frixion to the
+// home screen.
 function maybeShowAppPrompt() {
   if (appPromptDone) return;
   appPromptDone = true;
@@ -10799,6 +10809,11 @@ function maybeShowAppPrompt() {
       if (!rel || !rel.android) return;
       document.querySelector('#app-prompt-modal .desc').textContent = 'Frixion works best as an app on your phone.';
       document.querySelector('#app-prompt-modal .app-perks').innerHTML = ANDROID_PERKS;
+    }
+    if (appOS === 'ios') {
+      $('app-prompt-title').textContent = 'Put Frixion on your home screen';
+      document.querySelector('#app-prompt-modal .desc').textContent = 'Frixion works best from your home screen.';
+      document.querySelector('#app-prompt-modal .app-perks').innerHTML = IOS_PERKS;
     }
     renderAppDownloads($('app-prompt-dl'));
     openModal('app-prompt-modal');
@@ -10825,9 +10840,13 @@ function populateAppPane() {
     });
     return;
   }
-  const android = appOS === 'android';
-  box.innerHTML = `<p class="desc">${android ? 'Get Frixion as an app on your phone.' : appOS ? 'Get Frixion as an app on your computer.' : 'The Frixion app is for Android phones and for Windows, Mac and Linux computers. Open Frixion on one of those to download it.'}</p>
-    <ul class="app-perks">${android ? ANDROID_PERKS : '<li>Your friends see the game you are playing and your Spotify song</li><li>Stays in your tray so you do not miss messages</li><li>Can start with your computer</li><li>Updates itself</li>'}</ul>
+  if (HOME_SCREEN_APP) {
+    box.innerHTML = '<p class="desc">You are using Frixion from your home screen. It always stays up to date, so there is nothing to do.</p>';
+    return;
+  }
+  const android = appOS === 'android', ios = appOS === 'ios';
+  box.innerHTML = `<p class="desc">${android ? 'Get Frixion as an app on your phone.' : ios ? 'Put Frixion on your home screen, and it opens like an app.' : appOS ? 'Get Frixion as an app on your computer.' : 'The Frixion app is for Android phones, iPhones and Windows, Mac and Linux computers. Open Frixion on one of those to get it.'}</p>
+    <ul class="app-perks">${android ? ANDROID_PERKS : ios ? IOS_PERKS : '<li>Your friends see the game you are playing and your Spotify song</li><li>Stays in your tray so you do not miss messages</li><li>Can start with your computer</li><li>Updates itself</li>'}</ul>
     <div id="app-pane-dl" class="app-dl"></div>
     ${appOS ? `<div class="setting-row"><div class="setting-row-text"><div class="setting-row-title">Remind me to get the app</div><div class="setting-row-desc">Shows a reminder when you open Frixion in a browser.</div></div>
       <label class="toggle-switch"><input type="checkbox" id="app-remind-toggle"${appPromptOff() ? '' : ' checked'}><span class="toggle-slider"></span></label></div>` : ''}`;
