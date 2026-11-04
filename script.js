@@ -99,11 +99,13 @@ try { db.settings({ experimentalAutoDetectLongPolling: true, merge: true }); } c
 const FieldValue = firebase.firestore.FieldValue;
 let rtdb = null;
 try { rtdb = firebase.database(); } catch (e) { console.warn('Realtime Database not available — presence will stay manual-only.', e); }
+const auth = firebase.auth();   // signing in (see AUTH)
 // Testing on your own computer: http://localhost:<port>/?emulators talks to the Firebase emulators (firebase
 // emulators:start) instead of the real database, so test accounts and messages never reach it. Ignored on the live site.
 if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && new URLSearchParams(location.search).has('emulators')) {
   db.useEmulator('127.0.0.1', 8080);
   if (rtdb) rtdb.useEmulator('127.0.0.1', 9000);
+  auth.useEmulator('http://127.0.0.1:9099', { disableWarnings: true });
   console.info('Frixion is using the local Firebase emulators.');
 }
 
@@ -455,6 +457,14 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.50', date: '2026-11-03', title: 'Safer sign-in, and Continue with Google',
+    notes: [
+      'Signing in is real now: your password is checked by Google\'s Firebase instead of in your browser, and passwords are no longer kept on profiles where anyone could read them. Tricks that logged people into other accounts don\'t work any more.',
+      'Everyone logs in once more with their usual username and password. Your username is already filled in.',
+      'Continue with Google is on the login screen. Someone new picks a username once; if you already have an account, connect Google in Settings, My Account, and then use either way to log in.',
+      'Settings, My Account also lets you change your password. The computer and Android apps can\'t use Google sign-in, so a Google account sets a password there to log in with its username.',
+      'Nobody can make themselves admin, owner or co-owner any more, or take over someone else\'s account by changing the database.',
+    ] },
   { v: '4.49', date: '2026-11-03', title: 'Notifications, even with Frixion closed',
     notes: [
       'Frixion can tell you about new messages even when it is closed: direct messages, group messages, mentions and replies, and @everyone. It asks once after you sign in, or go to Settings, Notifications and tap Allow notifications.',
@@ -2550,6 +2560,7 @@ function showBanScreen(ban, signedIn) {
     el.remove();
     if (signedIn && myUid) { await $('logout-btn').onclick(); return; }
     setSession(null);
+    await auth.signOut().catch(() => {});
     $('login-password').value = '';
     $('login-btn').disabled = false; $('login-btn').textContent = 'Log In';
     showAuthScreen();
@@ -2954,31 +2965,29 @@ async function loadUserDevicesBlock(username) {
 }
 
 async function boot() {
-  // Start loading the profile at the same time as the device check instead of after it: that's one network round trip saved on every launch.
-  const saved = getSession();
-  const profileP = saved ? db.collection('users').doc(saved).get().catch(e => e) : null;
+  // Who is signed in is worked out at the same time as the device check instead of after it.
+  const userP = authReady();
   try { await initDeviceBan(); } catch (e) { console.warn('device check failed', e); }
   if (deviceBan.banned) { showAuthScreen(); return; }     // the device ban screen is already covering everything
-  if (!saved) { showAuthScreen(); return; }
-  const snap = await profileP;
-  if (snap instanceof Error) { showAuthScreen(); return; }
-  if (!snap.exists) { setSession(null); showAuthScreen(); return; }
-  const data = snap.data();
-  const ban = banStatus(data);
-  if (ban.banned) { showAuthScreen(); showBanScreen(ban, false); return; }
-  await normalizeProfile(saved, data);
-  myUid = saved;
-  myProfile = data;
-  profileCache[myUid] = data;
-  enterApp();
+  const user = await userP;
+  if (!user) {
+    showAuthScreen();
+    // someone signed in from before real sign-in (only their username was remembered): they log in once more
+    const old = getSession();
+    if (old) { $('login-username').value = old; $('login-sub').textContent = 'Frixion has a safer sign-in now. Log in once more with your password.'; }
+    return;
+  }
+  const r = await enterAs(user).catch(e => { console.warn('Sign-in:', e); return null; });
+  if (r === false) showPickView(user);   // signed in with Google, but no Frixion account yet
+  else if (!r && !myUid) showAuthScreen();
 }
 
 function showAuthScreen() {
   $('boot-screen').classList.add('hidden');
   $('auth-screen').classList.remove('hidden');
   $('app').classList.add('hidden');
-  $('login-view').classList.remove('hidden');
-  $('register-view').classList.add('hidden');
+  authView('login-view');
+  document.querySelectorAll('.auth-google').forEach(el => el.classList.toggle('hidden', !googleSignInWorks()));
   if (OVERLAY_WINDOW) desktopOverlayReady(false);   // nobody is signed in: the app opens its main window instead
 }
 
@@ -2995,36 +3004,122 @@ function enterApp() {
 }
 
 // ============================================================
-// AUTH
+// AUTH  (real sign-in since v4.50)
+// NOTES FOR AI MODELS:
+//  - Signing in is Firebase Authentication; nothing else counts. A username + password account is an email/password
+//    account whose made-up email is the username in hex at u.frixionbeta.pages.dev (authEmail; no email is ever sent),
+//    and whose Firebase password is the typed one with "frixion:" in front (authPass: Firebase wants 6+ characters,
+//    Frixion allows 4). "Continue with Google" is a Firebase Google account (not in the apps: Google refuses its sign-in
+//    inside an app's own browser window).
+//  - accounts/{auth uid} = { username } says which Frixion account a sign-in is, and users/{username}.authUid says which
+//    sign-in owns a profile. Both are written once, when the account is made or moved over, and firestore.rules keeps
+//    them (and owner, co-owner, admin and terminated) from being changed by anyone else.
+//  - Passwords aren't kept in the database. Accounts from before were moved over all at once on 2026-11-03; one that
+//    somehow still has a password on its profile moves over when it next logs in (moveOver).
+//  - The username in localStorage (frixion_user, setSession) only fills in the login form and tells the overlay window
+//    to reload. It never signs anyone in.
 // ============================================================
-$('show-register').onclick = () => { $('login-view').classList.add('hidden'); $('register-view').classList.remove('hidden'); };
-$('show-login').onclick = () => { $('register-view').classList.add('hidden'); $('login-view').classList.remove('hidden'); };
+const AUTH_EMAIL_DOMAIN = 'u.frixionbeta.pages.dev';
+const authEmail = username => [...new TextEncoder().encode(username)].map(b => b.toString(16).padStart(2, '0')).join('') + '@' + AUTH_EMAIL_DOMAIN;
+const authPass = pass => 'frixion:' + pass;
+const WRONG_LOGIN = new Set(['auth/invalid-credential', 'auth/invalid-login-credentials', 'auth/user-not-found', 'auth/wrong-password', 'auth/invalid-email']);
+const GOOGLE_G = '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
+function authErrorText(e) {
+  const c = (e && e.code) || '';
+  if (c === 'auth/too-many-requests') return 'Too many tries. Wait a minute, then try again.';
+  if (c === 'auth/network-request-failed') return 'Can\'t reach Frixion. Check your internet connection.';
+  if (c === 'auth/popup-blocked') return 'Your browser blocked the Google window. Allow pop-ups for Frixion, then try again.';
+  if (c === 'auth/unauthorized-domain') return 'Google sign-in isn\'t set up for this address yet.';
+  return (e && e.message) || 'Something went wrong.';
+}
+// Google sign-in opens a Google window, which Google refuses inside the computer app, the Android app and the overlay;
+// an iPhone home screen app can't get the answer back from it either.
+const googleSignInWorks = () => !DESKTOP && !ANDROID_APP && !OVERLAY_WINDOW && !(HOME_SCREEN_APP && appOS === null && /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent));
+function googleProvider() { const p = new firebase.auth.GoogleAuthProvider(); p.setCustomParameters({ prompt: 'select_account' }); return p; }
+['login-google', 'register-google'].forEach(id => { $(id).innerHTML = `${GOOGLE_G}<span>Continue with Google</span>`; });
+// who is signed in when the page opens (Firebase keeps the sign-in between visits)
+function authReady() { return new Promise(r => { const off = auth.onAuthStateChanged(u => { off(); r(u); }); }); }
+
+// After any sign-in: the Frixion account it is, checked against the profile, then into the app. false: a sign-in with no
+// Frixion account yet (Google, see the pick view); null: not let in (the reason is shown).
+async function enterAs(user, errEl) {
+  const acc = await db.collection('accounts').doc(user.uid).get();
+  if (!acc.exists) return false;
+  const username = acc.data().username;
+  const snap = await db.collection('users').doc(username).get();
+  if (!snap.exists || snap.data().authUid !== user.uid) {
+    await auth.signOut();
+    if (errEl) errEl.textContent = 'That account isn\'t available.';
+    return null;
+  }
+  const data = snap.data(), ban = banStatus(data);
+  if (ban.banned) { showAuthScreen(); showBanScreen(ban, false); return null; }
+  if (ban.expired) { await db.collection('users').doc(username).update({ banned: false, banReason: '', bannedUntil: null }); data.banned = false; }
+  await normalizeProfile(username, data);
+  myUid = username; myProfile = data; profileCache[myUid] = data;
+  setSession(username);
+  enterApp();
+  return true;
+}
+// An account from before real sign-in whose password is still on its profile: if it's the right one, the account gets a
+// real sign-in now and the password comes off the profile.
+async function moveOver(username, pass) {
+  const snap = await db.collection('users').doc(username).get();
+  const d = snap.exists ? snap.data() : null;
+  if (!d || typeof d.password !== 'string' || d.password !== pass || d.authUid) return null;
+  const cred = await auth.createUserWithEmailAndPassword(authEmail(username), authPass(pass)).catch(() => null);
+  if (!cred) return null;
+  await db.collection('users').doc(username).update({ authUid: cred.user.uid, password: FieldValue.delete() });
+  await db.collection('accounts').doc(cred.user.uid).set({ username, at: Date.now() });
+  return cred;
+}
+// A new profile, for a sign-in that was just made (username + password, or Google)
+async function createProfile(user, username) {
+  const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
+  const data = {
+    username, authUid: user.uid, avatarColor: color, status: 'online',
+    premiumUntil: null, theme: 'dark', op: false,
+    orbs: STARTING_ORBS,
+    stats: { messagesSent: 0, reactionsGiven: 0, dmsStarted: 0, serversCount: 0 },
+    questsDate: todayStr(),
+    dailyStats: { messagesSent: 0, reactionsGiven: 0, dmsMessaged: 0, channelsMessaged: 0 },
+    claimedQuestsToday: [],
+    bio: '', pronouns: '', bannerColor: color,
+    friends: [], incomingRequests: [], outgoingRequests: [],
+    banned: false, banReason: '', bannedUntil: null,
+    createdAt: FieldValue.serverTimestamp(),
+  };
+  const ref = db.collection('users').doc(username);
+  await db.runTransaction(async t => { if ((await t.get(ref)).exists) throw Object.assign(new Error('That username is already taken.'), { code: 'taken' }); t.set(ref, data); });
+  await db.collection('accounts').doc(user.uid).set({ username, at: Date.now() });
+  myUid = username; myProfile = data; profileCache[myUid] = data;
+  setSession(username);
+  enterApp();
+}
+function usernameProblem(username) {
+  if (username.length < 3) return 'Username must be at least 3 characters.';
+  if (!/^[A-Za-z0-9_]+$/.test(username)) return 'Letters, numbers, and underscores only.';
+  return '';
+}
+function authView(id) { ['login-view', 'register-view', 'pick-view'].forEach(v => $(v).classList.toggle('hidden', v !== id)); }
+
+$('show-register').onclick = () => authView('register-view');
+$('show-login').onclick = () => authView('login-view');
 
 $('login-btn').onclick = async () => {
   const username = $('login-username').value.trim();
   const pass = $('login-password').value;
-  $('login-error').textContent = '';
-  if (!username || !pass) { $('login-error').textContent = 'Please fill in both fields.'; return; }
+  const err = $('login-error');
+  err.textContent = '';
+  if (!username || !pass) { err.textContent = 'Please fill in both fields.'; return; }
   $('login-btn').disabled = true; $('login-btn').textContent = 'Checking...';
   try {
-    const snap = await db.collection('users').doc(username).get();
-    if (!snap.exists || snap.data().password !== pass) {
-      $('login-error').textContent = 'Incorrect username or password.';
-      $('login-btn').disabled = false; $('login-btn').textContent = 'Log In'; return;
-    }
-    const data = snap.data();
-    const ban = banStatus(data);
-    if (ban.banned) {
-      $('login-btn').disabled = false; $('login-btn').textContent = 'Log In';
-      showBanScreen(ban, false); return;
-    }
-    if (ban.expired) { await db.collection('users').doc(username).update({ banned: false, banReason: '', bannedUntil: null }); data.banned = false; }
-    await normalizeProfile(username, data);
-    myUid = username; myProfile = data; profileCache[myUid] = data;
-    setSession(username);
-    enterApp();
+    let cred = await auth.signInWithEmailAndPassword(authEmail(username), authPass(pass)).catch(e => (WRONG_LOGIN.has(e.code) ? null : Promise.reject(e)));
+    if (!cred) cred = await moveOver(username, pass);
+    if (!cred) err.textContent = 'Incorrect username or password.';
+    else if ((await enterAs(cred.user, err)) === false) { await auth.signOut(); err.textContent = 'Incorrect username or password.'; }
   } catch (e) {
-    $('login-error').textContent = e.message || 'Something went wrong.';
+    err.textContent = authErrorText(e);
   }
   $('login-btn').disabled = false; $('login-btn').textContent = 'Log In';
 };
@@ -3032,41 +3127,105 @@ $('login-btn').onclick = async () => {
 $('register-btn').onclick = async () => {
   const username = $('reg-username').value.trim();
   const pass = $('reg-password').value;
-  $('register-error').textContent = '';
-  if (!username || !pass) { $('register-error').textContent = 'Please fill in both fields.'; return; }
-  if (username.length < 3) { $('register-error').textContent = 'Username must be at least 3 characters.'; return; }
-  if (!/^[A-Za-z0-9_]+$/.test(username)) { $('register-error').textContent = 'Letters, numbers, and underscores only.'; return; }
-  if (pass.length < 4) { $('register-error').textContent = 'Password must be at least 4 characters.'; return; }
+  const err = $('register-error');
+  err.textContent = '';
+  if (!username || !pass) { err.textContent = 'Please fill in both fields.'; return; }
+  if (usernameProblem(username)) { err.textContent = usernameProblem(username); return; }
+  if (pass.length < 4) { err.textContent = 'Password must be at least 4 characters.'; return; }
   $('register-btn').disabled = true; $('register-btn').textContent = 'Creating...';
   try {
-    const existing = await db.collection('users').doc(username).get();
-    if (existing.exists) {
-      $('register-error').textContent = 'That username is already taken.';
-      $('register-btn').disabled = false; $('register-btn').textContent = 'Continue'; return;
-    }
-    const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
-    const data = {
-      username, password: pass, avatarColor: color, status: 'online',
-      premiumUntil: null, theme: 'dark', op: false,
-      orbs: STARTING_ORBS,
-      stats: { messagesSent: 0, reactionsGiven: 0, dmsStarted: 0, serversCount: 0 },
-      questsDate: todayStr(),
-      dailyStats: { messagesSent: 0, reactionsGiven: 0, dmsMessaged: 0, channelsMessaged: 0 },
-      claimedQuestsToday: [],
-      bio: '', pronouns: '', bannerColor: color,
-      friends: [], incomingRequests: [], outgoingRequests: [],
-      banned: false, banReason: '', bannedUntil: null,
-      createdAt: FieldValue.serverTimestamp(),
-    };
-    await db.collection('users').doc(username).set(data);
-    myUid = username; myProfile = data; profileCache[myUid] = data;
-    setSession(username);
-    enterApp();
+    if ((await db.collection('users').doc(username).get()).exists) throw Object.assign(new Error('That username is already taken.'), { code: 'taken' });
+    // the sign-in is made first: its made-up email is the username, so two people can't both get the same one
+    const cred = await auth.createUserWithEmailAndPassword(authEmail(username), authPass(pass))
+      .catch(e => Promise.reject(e.code === 'auth/email-already-in-use' ? Object.assign(new Error('That username is already taken.'), { code: 'taken' }) : e));
+    await createProfile(cred.user, username);
   } catch (e) {
-    $('register-error').textContent = e.message || 'Something went wrong.';
+    err.textContent = e.code === 'taken' ? e.message : authErrorText(e);
   }
   $('register-btn').disabled = false; $('register-btn').textContent = 'Continue';
 };
+
+// ---------- Continue with Google ----------
+async function googleSignIn(err) {
+  err.textContent = '';
+  try {
+    const cred = await auth.signInWithPopup(googleProvider());
+    if ((await enterAs(cred.user, err)) === false) showPickView(cred.user);
+  } catch (e) {
+    if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') err.textContent = authErrorText(e);
+  }
+}
+$('login-google').onclick = () => googleSignIn($('login-error'));
+$('register-google').onclick = () => googleSignIn($('register-error'));
+// Someone new who continued with Google picks their username (and, if they like, a password for the apps)
+let pickUser = null;
+function showPickView(user) {
+  pickUser = user;
+  $('boot-screen').classList.add('hidden');
+  $('auth-screen').classList.remove('hidden');
+  $('app').classList.add('hidden');
+  authView('pick-view');
+  $('pick-error').textContent = '';
+}
+$('pick-cancel').onclick = async () => { pickUser = null; await auth.signOut(); authView('login-view'); };
+$('pick-btn').onclick = async () => {
+  const username = $('pick-username').value.trim(), pass = $('pick-password').value, err = $('pick-error');
+  err.textContent = '';
+  if (!pickUser || auth.currentUser !== pickUser) { authView('login-view'); return; }
+  if (!username) { err.textContent = 'Pick a username.'; return; }
+  if (usernameProblem(username)) { err.textContent = usernameProblem(username); return; }
+  if (pass && pass.length < 4) { err.textContent = 'Password must be at least 4 characters.'; return; }
+  $('pick-btn').disabled = true; $('pick-btn').textContent = 'Creating...';
+  try {
+    if ((await db.collection('users').doc(username).get()).exists) throw Object.assign(new Error('That username is already taken.'), { code: 'taken' });
+    // with a password, the username + password sign-in is joined to this one first (which also claims the username)
+    if (pass) await pickUser.linkWithCredential(firebase.auth.EmailAuthProvider.credential(authEmail(username), authPass(pass)))
+      .catch(e => Promise.reject(/already-in-use/.test(e.code || '') ? Object.assign(new Error('That username is already taken.'), { code: 'taken' }) : e));
+    await createProfile(pickUser, username);
+    pickUser = null;
+  } catch (e) {
+    err.textContent = e.code === 'taken' ? e.message : authErrorText(e);
+  }
+  $('pick-btn').disabled = false; $('pick-btn').textContent = 'Continue';
+};
+
+// ---------- Settings > My Account: how you sign in ----------
+// Connect Google to a username + password account, or set (or change) the password of any account
+function renderAccountSignin() {
+  const box = $('account-signin'), user = auth.currentUser;
+  if (!box || !user || !myUid) return;
+  const google = user.providerData.some(p => p.providerId === 'google.com'), hasPass = user.providerData.some(p => p.providerId === 'password');
+  const gmail = (user.providerData.find(p => p.providerId === 'google.com') || {}).email || '';
+  box.innerHTML = `
+    <div class="as-row">${GOOGLE_G}<div class="as-text">Google<small>${google ? `Connected${gmail ? ` (${esc(gmail)})` : ''}. You can log in with Continue with Google.` : 'Not connected. Connect it to log in with Continue with Google too.'}</small></div>
+      ${google ? '' : googleSignInWorks() ? '<button type="button" class="btn-secondary slim" id="as-google">Connect Google</button>' : ''}</div>
+    <div class="as-row"><div class="as-text">Password<small>${hasPass ? 'Log in with your username and this password, here and in the Frixion apps.' : 'None yet. Set one to log in with your username in the Frixion apps.'}</small></div></div>
+    <div class="as-form"><input type="password" id="as-pass" placeholder="${hasPass ? 'New password' : 'Password'}" autocomplete="new-password"><button type="button" class="btn-secondary slim" id="as-pass-btn">${hasPass ? 'Change password' : 'Set password'}</button></div>
+    <div class="as-msg" id="as-msg"></div>`;
+  const msg = $('as-msg');
+  if ($('as-google')) $('as-google').onclick = async () => {
+    msg.textContent = '';
+    try { await auth.currentUser.linkWithPopup(googleProvider()); renderAccountSignin(); toast('Google is connected.'); }
+    catch (e) {
+      if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') return;
+      msg.textContent = /already-in-use/.test(e.code || '') ? 'That Google account is already used by another Frixion account.' : authErrorText(e);
+    }
+  };
+  $('as-pass-btn').onclick = async () => {
+    const pass = $('as-pass').value;
+    msg.textContent = '';
+    if (pass.length < 4) { msg.textContent = 'Password must be at least 4 characters.'; return; }
+    try {
+      if (hasPass) await auth.currentUser.updatePassword(authPass(pass));
+      else await auth.currentUser.linkWithCredential(firebase.auth.EmailAuthProvider.credential(authEmail(myUid), authPass(pass)));
+      $('as-pass').value = '';
+      renderAccountSignin();
+      toast(hasPass ? 'Password changed.' : 'Password set.');
+    } catch (e) {
+      msg.textContent = e.code === 'auth/requires-recent-login' ? 'For safety, log out and back in, then change your password.' : authErrorText(e);
+    }
+  };
+}
 
 $('logout-btn').onclick = async () => {
   setMobileTab('home');
@@ -3079,6 +3238,7 @@ $('logout-btn').onclick = async () => {
   clearMyTypingDoc();
   cleanupAllListeners();
   setSession(null);
+  await auth.signOut().catch(() => {});
   stopGameEngines();
   myUid = null; myProfile = null; profileCache = {}; isAdmin = false; isOwner = false; sfMode = false; ephemeralMsgs = []; seedBotProfiles();
   applyAdminVisibility();
@@ -11134,6 +11294,7 @@ $('open-owner-panel').onclick = () => { closeModal('settings-modal'); openAdminP
 function populateSettings() {
   if (!myProfile) return;
   $('set-username').value = myProfile.username;
+  renderAccountSignin();
   $('autocorrect-toggle').checked = isAutocorrectEnabled();
   $('custom-keyboard-toggle').checked = useCustomKeyboard();
   $('quick-buttons-toggle').checked = showQuickButtons();

@@ -263,6 +263,26 @@ a { color: var(--text-link); text-decoration: none; }
 .auth-switch { margin-top: 14px; font-size: 14px; color: var(--text-muted); text-align: center; }
 .auth-switch a { cursor: pointer; }
 .auth-error { color: #f87171; font-size: 13px; margin-bottom: 12px; min-height: 16px; }
+.auth-hint { margin: -4px 0 14px; font-size: 12.5px; line-height: 1.45; color: var(--text-muted); }
+/* Continue with Google: Google's own look (white, the four-colour G), as its sign-in guidelines ask */
+.auth-or { display: flex; align-items: center; gap: 10px; margin: 14px 0 12px; font-size: 12px; color: var(--text-muted); text-transform: uppercase; }
+.auth-or::before, .auth-or::after { content: ''; flex: 1; height: 1px; background: var(--divider, rgba(255,255,255,.1)); }
+.btn-google {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 14px; border-radius: 4px;
+  border: 1px solid #dadce0; background: #fff; color: #1f1f1f; font-family: inherit; font-weight: 600; font-size: 15px; cursor: pointer;
+}
+.btn-google:hover { background: #f2f2f2; }
+.btn-google:disabled { opacity: .6; cursor: default; }
+.btn-google svg { width: 18px; height: 18px; flex: none; }
+/* Settings > My Account: how you sign in */
+.account-signin { margin: 4px 0 18px; display: flex; flex-direction: column; gap: 10px; }
+.account-signin .as-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 6px; background: var(--bg-secondary); }
+.account-signin .as-row svg { width: 18px; height: 18px; flex: none; }
+.account-signin .as-text { flex: 1; min-width: 0; font-size: 14px; }
+.account-signin .as-text small { display: block; color: var(--text-muted); font-size: 12.5px; margin-top: 2px; }
+.account-signin .as-form { display: flex; gap: 8px; flex-wrap: wrap; }
+.account-signin .as-form input { flex: 1; min-width: 160px; }
+.account-signin .as-msg { font-size: 13px; color: var(--text-muted); min-height: 16px; }
 
 /* ============ APP LAYOUT ============ */
 #app {

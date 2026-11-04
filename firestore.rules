@@ -1,0 +1,58 @@
+rules_version = '2';
+// Frixion's Firestore rules, phase 1 (v4.50). To use them: Firebase console > Firestore Database > Rules, paste all of
+// this in, then Publish.
+// Phase 1 protects who owns each account and who is staff: an account's sign-in (authUid, accounts/) can't be changed,
+// nobody can make themselves owner, co-owner or admin, and only the owner or a co-owner can terminate an account.
+// Everything else is still open, as it was before; phase 2 locks that down too.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function account(uid) { return /databases/$(database)/documents/accounts/$(uid); }
+    function profile(username) { return /databases/$(database)/documents/users/$(username); }
+    // the Frixion account behind this sign-in, if it has one
+    function hasAccount() { return signedIn() && exists(account(request.auth.uid)); }
+    function myProfile() { return get(profile(get(account(request.auth.uid)).data.username)).data; }
+    function isOwner() { return hasAccount() && myProfile().get('owner', false) == true; }
+    function isOwnerLevel() { return hasAccount() && (myProfile().get('owner', false) == true || myProfile().get('coowner', false) == true); }
+    function same(f) { return request.resource.data.get(f, null) == resource.data.get(f, null); }
+
+    // Which Frixion account a sign-in is: made once, by that sign-in, for a profile it owns or is about to make.
+    match /accounts/{uid} {
+      allow read: if true;
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['username', 'at'])
+        && request.resource.data.username is string
+        && (!exists(profile(request.resource.data.username))
+          || get(profile(request.resource.data.username)).data.get('authUid', '') == uid);
+      allow update, delete: if false;
+    }
+
+    match /users/{username} {
+      allow read: if true;
+      // A new profile belongs to the sign-in making it, with no password on it and no staff powers.
+      allow create: if signedIn() && request.resource.data.get('authUid', '') == request.auth.uid
+        && !('password' in request.resource.data) && request.resource.data.get('op', false) == false
+        && !('owner' in request.resource.data) && !('coowner' in request.resource.data) && !('terminated' in request.resource.data);
+      // Changes never touch who owns it or the owner flag. Co-owner: only the owner. Admin and terminations: only the
+      // owner or a co-owner (the account itself may clear a termination). And no password goes back on.
+      allow update: if signedIn() && same('authUid') && same('owner')
+        && (same('coowner') || isOwner())
+        && (same('op') || isOwnerLevel())
+        && (same('terminated') || isOwnerLevel()
+          || (request.resource.data.get('terminated', null) == null && resource.data.get('authUid', '') == request.auth.uid))
+        && !('password' in request.resource.data);
+      allow delete: if signedIn() && (resource.data.get('authUid', '') == request.auth.uid || isOwnerLevel());
+
+      // its mentions, what it has read and the rest: unchanged for now (phase 2). ({sub} first: a bare {rest=**} would
+      // also match the profile itself, and open it right back up.)
+      match /{sub}/{rest=**} {
+        allow read, write: if true;
+      }
+    }
+
+    // everything else: unchanged for now (phase 2)
+    match /{coll}/{rest=**} {
+      allow read, write: if coll != 'users' && coll != 'accounts';
+    }
+  }
+}

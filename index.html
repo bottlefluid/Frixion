@@ -20,7 +20,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=98">
+<link rel="stylesheet" href="style.css?v=99">
 </head>
 <body>
 
@@ -104,11 +104,12 @@
     <!-- LOGIN -->
     <div id="login-view">
       <h1>Welcome back!</h1>
-      <p class="sub">Log in with your username and password.</p>
+      <p class="sub" id="login-sub">Log in with your username and password.</p>
       <div class="auth-error" id="login-error"></div>
       <div class="field"><label>Username</label><input type="text" id="login-username" autocomplete="username"></div>
       <div class="field"><label>Password</label><input type="password" id="login-password" autocomplete="current-password"></div>
       <button class="btn-primary" id="login-btn">Log In</button>
+      <div class="auth-google"><div class="auth-or"><span>or</span></div><button type="button" class="btn-google" id="login-google"></button></div>
       <div class="auth-switch">Need an account? <a id="show-register">Register</a></div>
     </div>
 
@@ -120,7 +121,20 @@
       <div class="field"><label>Username</label><input type="text" id="reg-username" maxlength="24" autocomplete="username"></div>
       <div class="field"><label>Password</label><input type="password" id="reg-password" autocomplete="new-password"></div>
       <button class="btn-primary" id="register-btn">Continue</button>
+      <div class="auth-google"><div class="auth-or"><span>or</span></div><button type="button" class="btn-google" id="register-google"></button></div>
       <div class="auth-switch">Already have an account? <a id="show-login">Log In</a></div>
+    </div>
+
+    <!-- AFTER "CONTINUE WITH GOOGLE", FOR SOMEONE NEW -->
+    <div id="pick-view" class="hidden">
+      <h1>Pick a username</h1>
+      <p class="sub">This is your name on Frixion. It can't be changed later.</p>
+      <div class="auth-error" id="pick-error"></div>
+      <div class="field"><label>Username</label><input type="text" id="pick-username" maxlength="24" autocomplete="username"></div>
+      <div class="field"><label>Password (for the Frixion apps)</label><input type="password" id="pick-password" autocomplete="new-password"></div>
+      <p class="auth-hint">The computer and Android apps can't use Google sign-in, so a password lets you log in there with your username. You can leave it empty and set one later in Settings, My Account.</p>
+      <button class="btn-primary" id="pick-btn">Continue</button>
+      <div class="auth-switch">Already have a Frixion account? <a id="pick-cancel">Log in to it</a>, then connect Google in Settings, My Account.</div>
     </div>
   </div>
 </div>
@@ -883,7 +897,8 @@
 
       <div class="settings-pane" id="pane-account">
         <h2>My Account</h2>
-        <div class="field"><label>Username</label><input type="text" id="set-username" maxlength="24" disabled title="Usernames can't be changed — set a Display Name from your profile instead."></div>
+        <div class="field"><label>Username</label><input type="text" id="set-username" maxlength="24" disabled title="Usernames can't be changed — set a Display Name from your profile instead.">
+        <div class="account-signin" id="account-signin"></div></div>
         <div class="field">
           <label>Avatar Color</label>
           <div class="color-swatches" id="avatar-color-swatches"></div>
@@ -1662,8 +1677,9 @@
 
 <!-- All scripts are deferred: the page (and the loading screen) paints first, then they run in order. Firebase Storage is not loaded because nothing uses it. -->
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=124"></script>
+<script defer src="script.js?v=125"></script>
 </body>
 </html>
