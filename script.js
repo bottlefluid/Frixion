@@ -2979,11 +2979,14 @@ function adminBanDevice(g, profiles) {
   if (!isOwner) { toast('Only the owner can ban devices.', 'error'); return; }
   if (g.members.some(m => m.id === myDeviceId || (myHw && m.hw === myHw && hwBannable(m)))) { toast("You can't ban the computer you're using.", 'error'); return; }
   if ((profiles || []).some(p => p && !canManagePlatformUser(p))) { toast("An account on this device outranks you, so it can't be banned.", 'error'); return; }
-  const todo = g.members.filter(m => !m.banned);
+  const todo = g.members.filter(m => !m.banned), whole = g.members.some(hwBannable);
+  const seen = g.accounts.length ? '. Accounts seen on it: ' + g.accounts.join(', ') : '';
   confirmAction({
-    title: 'Ban Device',
-    body: `Ban ${g.name} (${browsersLabel(g)})? Nobody can use Frixion in ${todo.length === 1 ? 'that browser' : 'any of its ' + todo.length + ' browsers'}, whatever account they try${g.accounts.length ? '. Accounts seen on it: ' + g.accounts.join(', ') : ''}. The accounts themselves are not banned and still work on other devices.`,
-    confirmLabel: 'Ban Device', input: { placeholder: 'Reason (optional)', maxLength: 120 },
+    title: whole ? 'Ban Computer' : 'Ban Device',
+    body: whole
+      ? `Ban ${g.name} (${browsersLabel(g)})? Nobody can use Frixion anywhere on it, in any browser or the app, whatever account they try${seen}. A computer exactly like it (same model, screen and time zone, like a school's matching laptops) is banned too. The accounts themselves are not banned and still work on other devices.`
+      : `Ban ${g.name} (${browsersLabel(g)})? Nobody can use Frixion in ${todo.length === 1 ? 'that browser' : 'any of its ' + todo.length + ' browsers'}, whatever account they try${seen}. The accounts themselves are not banned and still work on other devices.`,
+    confirmLabel: whole ? 'Ban Computer' : 'Ban Device', input: { placeholder: 'Reason (optional)', maxLength: 120 },
     onConfirm: async typed => {
       try {
         await Promise.all(todo.map(m => db.collection('devices').doc(m.id).update({ banned: true, banReason: typed || 'No reason given', bannedBy: myUid, bannedAt: Date.now() })));
