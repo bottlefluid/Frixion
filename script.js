@@ -489,6 +489,7 @@ const UPDATES = [
       'Invite links can\'t be taken over: if two servers ever had the same code, the original keeps it.',
       'Logging out stops that device\'s notifications straight away.',
       'Frixion now proves it\'s the real Frixion every time it talks to the database, so copies of Frixion on other addresses will soon be shut out completely. Settings, My Account shows whether that works on your device.',
+      'Profiles, the Shop, emoji and stickers can only be seen by people signed in to Frixion.',
     ] },
   { v: '4.50', date: '2026-11-03', title: 'Safer sign-in, and Continue with Google',
     notes: [
@@ -1256,26 +1257,29 @@ function cleanCatalogItem(raw) {
   return it;
 }
 let customEmojis = {}; // name -> { name, dataUrl }
+// The Shop, emoji, sticker and word-filter listeners, closed when you log out (they need a sign-in, and logging back in
+// starts them again).
+let catalogUnsubs = [];
 function subscribeCustomEmojis() {
-  db.collection('customEmojis').onSnapshot(snap => {
+  catalogUnsubs.push(db.collection('customEmojis').onSnapshot(snap => {
     const map = {};
     snap.forEach(d => { const e = cleanCatalogItem(d.data()); if (e.dataUrl) map[d.id] = e; });
     customEmojis = map;
     renderEmojiPickerGrids();
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminEmojiList();
-  });
+  }));
 }
 function subscribeCustomDecorations() {
-  db.collection('shopDecorations').onSnapshot(snap => {
+  catalogUnsubs.push(db.collection('shopDecorations').onSnapshot(snap => {
     const items = [];
     snap.forEach(d => items.push(cleanCatalogItem({ id: d.id, animated: false, ...d.data() })));
     customDecorations = items;
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) { renderAdminDecorationList(); renderAdminMaskList(); }
-  });
+  }));
 }
 function subscribeCustomThemes() {
-  db.collection('shopThemes').onSnapshot(snap => {
+  catalogUnsubs.push(db.collection('shopThemes').onSnapshot(snap => {
     const items = [];
     snap.forEach(d => items.push(cleanCatalogItem({ id: d.id, ...d.data() })));
     customThemes = items;
@@ -1287,43 +1291,43 @@ function subscribeCustomThemes() {
     if (myProfile && myProfile.equippedTheme) applyShopTheme(myProfile.equippedTheme);
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminThemeList();
-  });
+  }));
 }
 function subscribeCustomNameplates() {
-  db.collection('shopNameplates').onSnapshot(snap => {
+  catalogUnsubs.push(db.collection('shopNameplates').onSnapshot(snap => {
     const items = [];
     snap.forEach(d => items.push(cleanCatalogItem({ id: d.id, ...d.data() })));
     customNameplates = items;
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminNameplateList();
-  });
+  }));
 }
 function subscribeCustomBanners() {
-  db.collection('shopBanners').onSnapshot(snap => {
+  catalogUnsubs.push(db.collection('shopBanners').onSnapshot(snap => {
     const items = [];
     snap.forEach(d => items.push(cleanCatalogItem({ id: d.id, ...d.data() })));
     customBanners = items;
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminBannerList();
-  }, (err) => console.warn('shopBanners listener failed — add a Firestore rule for /shopBanners/{id}.', err));
+  }, (err) => console.warn('shopBanners listener failed — add a Firestore rule for /shopBanners/{id}.', err)));
 }
 function subscribeCustomProfileEffects() {
-  db.collection('shopProfileEffects').onSnapshot(snap => {
+  catalogUnsubs.push(db.collection('shopProfileEffects').onSnapshot(snap => {
     const items = [];
     snap.forEach(d => items.push(cleanCatalogItem({ id: d.id, ...d.data() })));
     customProfileEffects = items;
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminProfileEffectList();
-  });
+  }));
 }
 function subscribeCustomProfileFrames() {
-  db.collection('shopProfileFrames').onSnapshot(snap => {
+  catalogUnsubs.push(db.collection('shopProfileFrames').onSnapshot(snap => {
     const items = [];
     snap.forEach(d => items.push(cleanCatalogItem({ id: d.id, ...d.data() })));
     customProfileFrames = items;
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminProfileFrameList();
-  });
+  }));
 }
 // [label](https://link) shows as a clickable "label". /hyperlink writes this form, and
 // anyone can type it too. The destination is always visible on hover.
@@ -1485,13 +1489,13 @@ let filteredWords = [];
 let disabledFilterWords = [];
 let filterEnabled = true;
 function subscribeMessageFilter() {
-  db.collection('config').doc('filter').onSnapshot(snap => {
+  catalogUnsubs.push(db.collection('config').doc('filter').onSnapshot(snap => {
     const d = snap.exists ? snap.data() : {};
     filteredWords = Array.isArray(d.words) ? d.words : [];
     disabledFilterWords = Array.isArray(d.disabledWords) ? d.disabledWords : [];
     filterEnabled = d.enabled !== false;
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminFilterList();
-  });
+  }));
 }
 function buildFilterRegex(word) {
   const chars = word.toLowerCase().split('').filter(c => /[a-z0-9]/.test(c));
@@ -3119,8 +3123,10 @@ async function enterAs(user, errEl) {
 // An account from before real sign-in whose password is still on its profile: if it's the right one, the account gets a
 // real sign-in now and the password comes off the profile.
 async function moveOver(username, pass) {
-  const snap = await db.collection('users').doc(username).get();
-  const d = snap.exists ? snap.data() : null;
+  // (Every account has moved over, and nobody signed out may read profiles any more: a wrong password ends up here
+  // and simply isn't a move.)
+  const snap = await db.collection('users').doc(username).get().catch(() => null);
+  const d = snap && snap.exists ? snap.data() : null;
   if (!d || typeof d.password !== 'string' || d.password !== pass || d.authUid) return null;
   const cred = await auth.createUserWithEmailAndPassword(authEmail(username), authPass(pass)).catch(() => null);
   if (!cred) return null;
@@ -3189,11 +3195,13 @@ $('register-btn').onclick = async () => {
   if (pass.length < 4) { err.textContent = 'Password must be at least 4 characters.'; return; }
   $('register-btn').disabled = true; $('register-btn').textContent = 'Creating...';
   try {
-    if ((await db.collection('users').doc(username).get()).exists) throw Object.assign(new Error('That username is already taken.'), { code: 'taken' });
-    // the sign-in is made first: its made-up email is the username, so two people can't both get the same one
+    // The sign-in is made first: its made-up email is the username, so two people can't both get the same one. Nobody
+    // signed out may read profiles, so a name taken by someone who only uses Google (no such sign-in) is found by
+    // createProfile instead, and the sign-in just made is removed again.
     const cred = await auth.createUserWithEmailAndPassword(authEmail(username), authPass(pass))
       .catch(e => Promise.reject(e.code === 'auth/email-already-in-use' ? Object.assign(new Error('That username is already taken.'), { code: 'taken' }) : e));
-    await createProfile(cred.user, username);
+    try { await createProfile(cred.user, username); }
+    catch (e) { if (e.code === 'taken') await cred.user.delete().catch(() => auth.signOut()); throw e; }
   } catch (e) {
     err.textContent = e.code === 'taken' ? e.message : authErrorText(e);
   }
@@ -3321,6 +3329,8 @@ function cleanupAllListeners() {
   if (unsub.mentions) unsub.mentions();
   if (unsub.threads) unsub.threads();
   stopServerChannelListeners();
+  catalogUnsubs.forEach(u => { try { u(); } catch (e) {} });
+  catalogUnsubs = [];
   unsub = { servers: null, channels: null, categories: null, messages: null, dms: null, groupDms: null, self: null, typing: null };
 }
 
@@ -5732,12 +5742,12 @@ $('composer-input').addEventListener('paste', (e) => {
 // ============================================================
 let stickerCache = {};
 function subscribeStickers() {
-  db.collection('stickers').onSnapshot(snap => {
+  catalogUnsubs.push(db.collection('stickers').onSnapshot(snap => {
     const map = {};
     snap.forEach(d => { const s = cleanCatalogItem(d.data()); if (s.dataUrl) map[d.id] = s; });
     stickerCache = map;
     renderStickerGrid();
-  });
+  }));
 }
 function renderStickerGrid() {
   const wrap = $('sticker-grid');
@@ -13289,7 +13299,7 @@ function renderAdminProfileFrameList() {
 // ---------- Staff: add a song ----------
 const isHttpsUrl = (u) => typeof u === 'string' && /^https:\/\//i.test(u);
 function subscribeCustomMusic() {
-  db.collection('config').doc('customMusic').onSnapshot(doc => {
+  catalogUnsubs.push(db.collection('config').doc('customMusic').onSnapshot(doc => {
     const data = (doc.exists && doc.data()) || {};
     customMusicTracks = Object.entries(data)
       .filter(([, v]) => v && typeof v === 'object' && isHttpsUrl(v.src) && v.name)
@@ -13304,7 +13314,7 @@ function subscribeCustomMusic() {
     if (!$('admin-panel-modal').classList.contains('hidden')) renderAdminMusicList();
     // The equipped song may be one of these, and it can't start until the list has loaded.
     if (typeof myProfile !== 'undefined' && myProfile) musicSync(myProfile.equippedMusic || null);
-  }, err => console.warn('customMusic listener failed.', err));
+  }, err => console.warn('customMusic listener failed.', err)));
 }
 const MUSIC_MAX_ANIMATIONS = 3;
 function updateMusicAnimControls() {
@@ -13445,7 +13455,7 @@ function applyShopOverrides() {
   });
 }
 function subscribeShopOverrides() {
-  db.collection('config').doc('shopOverrides').onSnapshot(doc => {
+  catalogUnsubs.push(db.collection('config').doc('shopOverrides').onSnapshot(doc => {
     // Only these fields may be changed on a built-in item, and they are cleaned like any staff-made item.
     const allowed = ['name', 'desc', 'price', 'featured', 'banner', 'bannerPos', 'src', 'cutscenes', 'disabled'];
     shopOverrides = {};
@@ -13460,7 +13470,7 @@ function subscribeShopOverrides() {
     applyShopOverrides();
     refreshOpenShopPanes();
     if (!$('admin-panel-modal').classList.contains('hidden')) Object.values(SHOP_EDIT_TYPES).forEach(d => d.render());
-  }, err => console.warn('shopOverrides listener failed.', err));
+  }, err => console.warn('shopOverrides listener failed.', err)));
 }
 
 function builtinChipVisual(type, item) {

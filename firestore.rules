@@ -75,7 +75,7 @@ service cloud.firestore {
 
     // ---------- profiles ----------
     match /users/{username} {
-      allow get: if true;                                           // signing up checks a name is free first
+      allow get: if signedIn();                                     // (signing up checks names after making the sign-in)
       allow list: if signedIn();
       // A new profile belongs to the sign-in making it (one per sign-in), with no staff powers, bans or extra Orbs.
       allow create: if signedIn() && !exists(acctPath())
@@ -153,19 +153,19 @@ service cloud.firestore {
         && m.name in s.get('members', []) && username in s.get('members', []);
     }
 
-    // ---------- things staff publish (the Shop, emoji, stickers, the word filter: nothing private) ----------
-    match /config/{docId}            { allow read: if true; allow write: if isStaff(who()); }
-    match /customEmojis/{id}         { allow read: if true; allow write: if isStaff(who()); }
-    match /stickers/{id}             { allow read: if true; allow write: if isStaff(who()); }
-    match /shopDecorations/{id}      { allow read: if true; allow write: if isStaff(who()); }
-    match /shopThemes/{id}           { allow read: if true; allow write: if isStaff(who()); }
-    match /shopNameplates/{id}       { allow read: if true; allow write: if isStaff(who()); }
-    match /shopBanners/{id}          { allow read: if true; allow write: if isStaff(who()); }
-    match /shopProfileEffects/{id}   { allow read: if true; allow write: if isStaff(who()); }
-    match /shopProfileFrames/{id}    { allow read: if true; allow write: if isStaff(who()); }
-    match /gardenSeeds/{id}          { allow read: if true; allow write: if isStaff(who()); }
-    match /gardenSprinklers/{id}     { allow read: if true; allow write: if isStaff(who()); }
-    match /gardenPets/{id}           { allow read: if true; allow write: if isStaff(who()); }
+    // ---------- things staff publish (the Shop, emoji, stickers, the word filter): for anyone signed in ----------
+    match /config/{docId}            { allow read: if signedIn(); allow write: if isStaff(who()); }
+    match /customEmojis/{id}         { allow read: if signedIn(); allow write: if isStaff(who()); }
+    match /stickers/{id}             { allow read: if signedIn(); allow write: if isStaff(who()); }
+    match /shopDecorations/{id}      { allow read: if signedIn(); allow write: if isStaff(who()); }
+    match /shopThemes/{id}           { allow read: if signedIn(); allow write: if isStaff(who()); }
+    match /shopNameplates/{id}       { allow read: if signedIn(); allow write: if isStaff(who()); }
+    match /shopBanners/{id}          { allow read: if signedIn(); allow write: if isStaff(who()); }
+    match /shopProfileEffects/{id}   { allow read: if signedIn(); allow write: if isStaff(who()); }
+    match /shopProfileFrames/{id}    { allow read: if signedIn(); allow write: if isStaff(who()); }
+    match /gardenSeeds/{id}          { allow read: if signedIn(); allow write: if isStaff(who()); }
+    match /gardenSprinklers/{id}     { allow read: if signedIn(); allow write: if isStaff(who()); }
+    match /gardenPets/{id}           { allow read: if signedIn(); allow write: if isStaff(who()); }
 
     // ---------- codes ----------
     match /redeemCodes/{code} {
