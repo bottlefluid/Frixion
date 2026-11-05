@@ -43,9 +43,15 @@ async function info(env) {
   if (!env.FIREBASE_SERVICE_ACCOUNT && !env.FIRESTORE_BEARER) return { ready: false };
   try {
     const r = await authCall(env, 'accounts:query', { returnUserInfo: false, limit: 1 });
-    return { ready: true, auth: r.ok ? 'ready' : `the service account can't manage sign-ins (${r.status}): give it the Firebase Authentication Admin role` };
+    if (r.ok) return { ready: true, auth: 'ready' };
+    const why = await googleWhy(r);
+    return { ready: true, auth: noRole(r, why) ? 'the service account needs the Firebase Authentication Admin role' : `Google said ${r.status}: ${why.slice(0, 200)}` };
   } catch (e) { return { ready: true, auth: e.message }; }
 }
+// What Google's answer says went wrong, and whether it's the missing role (Google answers that with 400
+// INSUFFICIENT_PERMISSION, or a 403).
+const googleWhy = async r => { const j = await r.json().catch(() => ({})); return String((j.error && j.error.message) || r.status); };
+const noRole = (r, why) => r.status === 403 || /INSUFFICIENT_PERMISSION|PERMISSION_DENIED/.test(why);
 
 // ---------------- signing in as Frixion (the service account) ----------------
 const tokens = new Map();   // scope -> { value, until }
@@ -135,10 +141,10 @@ async function setPassword(env, { token, username, password }) {
   // (validSince: everywhere they were signed in is signed out)
   const r = await authCall(env, 'accounts:update', { localId: target.authUid, email: authEmail(username), password: 'frixion:' + password, validSince: String(Math.floor(Date.now() / 1000)) });
   if (!r.ok) {
-    const j = await r.json().catch(() => ({})), why = String((j.error && j.error.message) || r.status);
+    const why = await googleWhy(r);
     if (/EMAIL_EXISTS/.test(why)) fail(409, 'Another sign-in already uses this username\'s login. Ask for help to clear it.');
     if (/USER_NOT_FOUND/.test(why)) fail(404, 'That account\'s sign-in is gone.');
-    if (r.status === 403) fail(503, 'The service account can\'t change sign-ins yet: give it the Firebase Authentication Admin role.');
+    if (noRole(r, why)) fail(503, 'The service account can\'t change sign-ins yet: give it the Firebase Authentication Admin role.');
     fail(502, 'Google refused (' + why + ').');
   }
   return { ok: true };
