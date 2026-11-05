@@ -482,6 +482,15 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.52', date: '2026-11-04', title: 'Even tighter',
+    notes: [
+      'Hidden channels stay hidden: only people whose roles can see a channel can read it, and read-only channels really are read-only.',
+      'People who aren\'t in a server only see its name, picture and member count, in Explore Servers and invites. Its members, roles, bans and audit log stay inside.',
+      'Reactions, poll votes and mentions can only ever be in your own name, and nobody can fake a message from Discord, a Sapphire card or a channel\'s latest-message preview.',
+      'Only a server\'s owner and Administrators make and edit roles. Manage Roles still lets you give and take roles from other members, never yourself.',
+      'Only moderators write to a server\'s audit log, only a group\'s owner can take someone out of the group, and banned accounts can\'t see anything.',
+      'If your browser blocks Google\'s security check, Frixion now tells you what\'s wrong and how to fix it.',
+    ] },
   { v: '4.51', date: '2026-11-04', title: 'Your messages, locked down',
     notes: [
       'Only the people in a DM or group can read it, and only a server\'s members can read its channels. Nobody can post as someone else, change your profile, or say you\'re online when you aren\'t.',
@@ -1876,7 +1885,7 @@ function everyoneRole(server) {
 // One-time upgrade that writes Discord's @everyone defaults into an older
 // server so they show (and can be turned off) in the Roles editor.
 async function maybeMigrateEveryonePerms(server) {
-  if (!server || !hasServerPerm(server, myUid, 'manageRoles')) return;
+  if (!server || !canEditRoles(server)) return;
   const roles = serverRoles(server);
   const stored = roles.find(r => r.id === 'everyone');
   if (stored && stored.permsV2) return;
@@ -2472,7 +2481,8 @@ async function loadExploreServers() {
   const wrap = $('explore-server-list');
   wrap.innerHTML = `<div class="explore-loading">Loading servers…</div>`;
   try {
-    const snap = await db.collection('servers').get();
+    // Only a server's members can read the server itself; everyone else sees its card (see syncServerCard()).
+    const snap = await db.collection('serverCards').get();
     const servers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderExploreServers(servers);
   } catch (e) {
@@ -2489,10 +2499,10 @@ function renderExploreServers(servers) {
   }
   servers
     .slice()
-    .sort((a, b) => (b.members || []).length - (a.members || []).length || (a.name || '').localeCompare(b.name || ''))
+    .sort((a, b) => (b.memberCount || 0) - (a.memberCount || 0) || (a.name || '').localeCompare(b.name || ''))
     .forEach(s => {
-      const memberCount = visibleMemberCount(s);
-      const joined = (s.members || []).includes(myUid);
+      const memberCount = s.memberCount || 0;
+      const joined = !!serverById(s.id);
       const row = document.createElement('div');
       row.className = 'explore-server-row';
       row.innerHTML = `
@@ -2510,14 +2520,9 @@ function renderExploreServers(servers) {
 
 async function joinExploreServer(server, alreadyJoined) {
   try {
-    let s = server;
-    if (!alreadyJoined) {
-      await db.collection('servers').doc(server.id).update({ members: FieldValue.arrayUnion(myUid) });
-      db.collection('users').doc(myUid).update({ 'stats.serversCount': FieldValue.increment(1) }).catch(() => {});
-      postServerJoinMessage(server.id);
-      s = { ...server, members: [...(server.members || []), myUid] };
-      toast(`Joined ${s.name}.`);
-    }
+    if (!alreadyJoined) await joinServerById(server.id);
+    const s = await fullServer(server.id);
+    if (!alreadyJoined) toast(`Joined ${s.name}.`);
     closeModal('explore-servers-modal');
     selectServer(s);
   } catch (e) { toast(e.message || 'Could not join that server.', 'error'); }
@@ -3035,9 +3040,13 @@ async function boot() {
     if (old) { $('login-username').value = old; $('login-sub').textContent = 'Frixion has a safer sign-in now. Log in once more with your password.'; }
     return;
   }
-  const r = await enterAs(user).catch(e => { console.warn('Sign-in:', e); return null; });
+  let failed = null;
+  const r = await enterAs(user).catch(e => { console.warn('Sign-in:', e); failed = e; return null; });
   if (r === false) showPickView(user);   // signed in with Google, but no Frixion account yet
-  else if (!r && !myUid) showAuthScreen();
+  else if (!r && !myUid) {
+    showAuthScreen();
+    if (failed && /permission-denied|unauthenticated/.test(failed.code || '')) $('login-error').textContent = SECURITY_CHECK_BLOCKED;
+  }
 }
 
 function showAuthScreen() {
@@ -3089,8 +3098,12 @@ function authErrorText(e) {
   if (c === 'auth/popup-blocked') return 'Your browser blocked the Google window. Allow pop-ups for Frixion, then try again.';
   if (c === 'auth/popup-closed-by-user') return 'The Google window closed before it finished. Try again.';
   if (c === 'auth/unauthorized-domain') return 'Google sign-in isn\'t set up for this address yet.';
+  // Signing in reads your own account, which the database always allows, unless this browser can't get App Check's
+  // pass (an ad blocker or a strict privacy setting blocking Google's reCAPTCHA).
+  if (c === 'permission-denied' || c === 'unauthenticated') return SECURITY_CHECK_BLOCKED;
   return (e && e.message) || 'Something went wrong.';
 }
+const SECURITY_CHECK_BLOCKED = 'Frixion can\'t reach its database from this browser. Something here, usually an ad blocker or a strict privacy setting, is blocking Google\'s security check (reCAPTCHA) that Frixion needs. Allow it for this site, or try another browser.';
 // Google sign-in opens a Google window, which Google refuses inside the computer app, the Android app and the overlay;
 // an iPhone home screen app can't get the answer back from it either.
 const googleSignInWorks = () => !DESKTOP && !ANDROID_APP && !OVERLAY_WINDOW && !(HOME_SCREEN_APP && appOS === null && /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent));
@@ -3602,6 +3615,7 @@ function initAppForUser() {
     const servers = [];
     snap.forEach(d => servers.push({ id: d.id, ...d.data() }));
     window.__myServers = servers;
+    servers.forEach(syncServerCard);
     if (typeof ovOnServersChanged === 'function') ovOnServersChanged();
     renderServerRail(servers);
     syncServerChannelListeners(servers);
@@ -3765,19 +3779,50 @@ function inviteCodeFromLocation() {
 // If two servers ever have the same code, the older one keeps it: the database only lets a new server be stamped with
 // the real time it was made, so a copycat can't take over someone's invite links.
 async function findServerByInvite(code) {
-  const q = await db.collection('servers').where('inviteCode', '==', code).limit(10).get();
+  const q = await db.collection('serverCards').where('inviteCode', '==', code).limit(10).get();
   const made = d => { const c = d.data().createdAt; return c && c.toMillis ? c.toMillis() : 0; };
   return q.empty ? null : q.docs.slice().sort((a, b) => made(a) - made(b))[0];
 }
+// doc is the server's card (serverCards): joining needs only its id.
 async function joinServerDoc(doc) {
-  const data = doc.data();
-  if ((data.bannedUsers || []).includes(myUid)) throw new Error('You are banned from this server.');
-  if (!(data.members || []).includes(myUid)) {
-    await doc.ref.update({ members: FieldValue.arrayUnion(myUid) });
-    db.collection('users').doc(myUid).update({ 'stats.serversCount': FieldValue.increment(1) }).catch(() => {});
-    postServerJoinMessage(doc.id);
+  if (!serverById(doc.id)) await joinServerById(doc.id);
+  selectServer(await fullServer(doc.id));
+}
+// Adds you to a server (the database refuses if you're banned from it), with the welcome line.
+async function joinServerById(sid) {
+  try { await db.collection('servers').doc(sid).update({ members: FieldValue.arrayUnion(myUid) }); }
+  catch (e) {
+    throw new Error(e.code === 'permission-denied' ? 'You are banned from this server.' : e.code === 'not-found' ? 'That server doesn\'t exist any more.' : 'Could not join that server.');
   }
-  selectServer({ id: doc.id, ...data });
+  db.collection('users').doc(myUid).update({ 'stats.serversCount': FieldValue.increment(1) }).catch(() => {});
+  postServerJoinMessage(sid);
+}
+// A server you're in, read whole (only its members can).
+async function fullServer(sid) {
+  const known = serverById(sid);
+  if (known && known.roles) return known;
+  const d = await db.collection('servers').doc(sid).get();
+  return { id: d.id, ...d.data() };
+}
+// Everyone can see a server's card (Explore Servers and invite previews), but only its members can read the server.
+// The database only takes a card that matches its server exactly (firestore.rules), so whenever the servers you're in
+// change, a card that's missing or out of date is written again (by whichever member notices first).
+const serverCardsKnown = new Map();   // server id -> the card as last read or written here
+function serverCardOf(s) {
+  const card = { memberCount: new Set((s.members || []).filter(u => !(s.vanished || []).includes(u))).size };
+  for (const k of ['name', 'iconUrl', 'description', 'inviteCode', 'createdAt']) if (s[k] !== undefined && s[k] !== null) card[k] = s[k];
+  return card;
+}
+const cardKey = c => JSON.stringify([c.name, c.iconUrl, c.description, c.inviteCode, c.memberCount, c.createdAt && c.createdAt.toMillis ? c.createdAt.toMillis() : null]);
+async function syncServerCard(s) {
+  if (!s || !s.id || s.createdAt === null) return;   // (a server just made has no real time yet: wait for it)
+  const card = serverCardOf(s), key = cardKey(card);
+  if (serverCardsKnown.get(s.id) === key) return;
+  serverCardsKnown.set(s.id, key);
+  try {
+    const now = await db.collection('serverCards').doc(s.id).get();
+    if (!now.exists || cardKey(now.data()) !== key) await db.collection('serverCards').doc(s.id).set(card);
+  } catch (e) { serverCardsKnown.delete(s.id); }
 }
 
 $('confirm-join-server').onclick = async () => {
@@ -3800,13 +3845,13 @@ async function openInvitePreview(code) {
   try {
     const doc = await findServerByInvite(code);
     if (!doc) { toast('That invite link is invalid or has expired.', 'error'); return; }
-    const data = doc.data();
-    if ((data.members || []).includes(myUid)) { selectServer({ id: doc.id, ...data }); return; }
+    const data = doc.data();   // the server's card (serverCards)
+    if (serverById(doc.id)) { selectServer(await fullServer(doc.id)); return; }
     pendingInviteDoc = doc;
     $('invite-icon').innerHTML = serverIconInner(data);   // the server's picture, or its letters
     $('invite-name').textContent = data.name;
     $('invite-desc').textContent = data.description || '';
-    const n = (data.members || []).length;
+    const n = data.memberCount || 0;
     $('invite-meta').textContent = `${n} ${n === 1 ? 'Member' : 'Members'}`;
     openModal('invite-preview-modal');
   } catch (e) { toast(e.message || 'Could not load that invite.', 'error'); }
@@ -4518,12 +4563,12 @@ function noteChannelMessage(sid, cid, payload, ref, tid, channelName) {
 //  - Out: after a message goes into a linked channel (not a thread), bridgeOut asks the function to post it. The
 //    function claims the message first, so it's posted once however often this is called, then writes dc (the
 //    Discord message's id) on it.
-//  - In: while a linked channel is open and the tab is visible, bridgeTick asks for new Discord messages (every
-//    second while a conversation is going, every 2.5 seconds otherwise, slower if the function says Discord wants
-//    that) and adds each one as messages/dc_<Discord id> in a transaction, so two people with it open can't add it
-//    twice. Its uid is "discord:<their id>" and ext has their name and picture (discordProfile turns that into a
-//    profileCache entry; there's no users/ doc). Discord's file links expire, so whoever added it copies its files to
-//    Cloudinary.
+//  - In: while a linked channel is open and the tab is visible, bridgeTick asks the function for new Discord messages
+//    (every second while a conversation is going, every 2.5 seconds otherwise, slower if the function says Discord
+//    wants that), and the function adds each one as messages/dc_<Discord id>, only once, with its files copied to
+//    Cloudinary (Discord's file links expire). Since v4.51 pages never write these themselves: the database's rules
+//    refuse it, so nobody can make up a "Discord" message. Its uid is "discord:<their id>" and ext has their name
+//    and picture (discordProfile turns that into a profileCache entry; there's no users/ doc).
 //  - With nobody watching: the function's POST tick brings every linked channel's new Discord messages over (and
 //    stamps the channel, so everyone gets the unread dot). A Cloudflare timer calls it every 10 seconds (its setup is
 //    in functions/api/discord), and every open Frixion in a server with a link calls it every couple of minutes too.
@@ -4600,42 +4645,13 @@ async function bridgeTick() {
   try {
     const r = await bridgeCall(`pull?sid=${encodeURIComponent(P.sid)}&cid=${encodeURIComponent(P.cid)}&after=${maxSnowflake(P.after, ch.discord.last, ch.discord.since)}`);
     if (bridgePoll !== P) return;
-    if (await bridgeImport(P, ch, r.messages || [], r.last)) bridgeHot();
+    if ((r.messages || []).length) bridgeHot();   // the bridge has added them (see pull in functions/api/discord)
     if (r.recent) bridgeGone(P, ch, r.recent);
     P.after = maxSnowflake(P.after, r.last);
     // the next one a set time after this one started, so slow answers don't stretch the gap
     again(Math.max(r.pace || 0, (Date.now() < (P.hot || 0) ? BRIDGE_FAST : BRIDGE_SLOW) - (Date.now() - t0)));
   } catch (e) { again(e.status === 429 ? Math.min(30, e.retry || 5) * 1000 : e.status === 503 ? 60000 : e.status === 404 ? 5000 : 10000); }
   finally { P.busy = false; }
-}
-// Adds what came over (all at once), and says whether anything did.
-async function bridgeImport(P, ch, list, last) {
-  const chRef = db.collection('servers').doc(P.sid).collection('channels').doc(P.cid), coll = chRef.collection('messages');
-  const ours = new Map(lastRawMessages.filter(m => m.dc).map(m => [m.dc, m]));   // this channel's own messages, already in Discord
-  const have = new Set(lastRawMessages.map(m => m.id));   // someone else already brought these over
-  const one = async d => {
-    if (!d || !isSnowflake(d.id) || !d.author || ours.has(d.id) || have.has('dc_' + d.id)) return null;
-    const ext = { src: 'discord', id: String(d.author.id), name: String(d.author.name || 'Discord user').slice(0, 80), tag: String(d.author.tag || '').slice(0, 40), avatar: /^https:\/\//.test(d.author.avatar || '') ? d.author.avatar : '', bot: !!d.author.bot };
-    const payload = { uid: 'discord:' + ext.id, username: ext.name, ext, dc: d.id, createdAt: firebase.firestore.Timestamp.fromMillis(d.at || Date.now()), text: String(d.text || (d.stickers && d.stickers.length ? `[sticker: ${d.stickers[0]}]` : '')).slice(0, 4000) };
-    const files = (d.files || []).filter(f => f && /^https?:\/\//.test(f.url || '')).slice(0, 10);
-    if (files.length) payload.attachments = files.map(f => ({ url: f.url, name: String(f.name || 'file').slice(0, 200), type: /^image\//.test(f.type || '') ? 'image' : 'file', size: +f.size || 0 }));
-    if (d.reply) { const o = d.reply.hook ? ours.get(d.reply.id) : null; payload.replyTo = { id: o ? o.id : 'dc_' + d.reply.id, uid: o ? o.uid : 'discord:' + d.reply.uid, username: o ? (o.username || '') : String(d.reply.name || ''), text: String(d.reply.text || '').slice(0, 200) }; }
-    if (!payload.text && !payload.attachments) return null;
-    const ref = coll.doc('dc_' + d.id);
-    try {
-      if (await db.runTransaction(async t => { if ((await t.get(ref)).exists) return false; t.set(ref, payload); return true; })) { bridgeRehost(ref, payload.attachments); return { ref, payload, id: d.id }; }
-    } catch (e) { console.warn('Discord bridge: could not add a message.', e); }
-    return null;
-  };
-  const done = (await Promise.all(list.map(one))).filter(Boolean);
-  const added = done.reduce((a, b) => (!a || BigInt(b.id) > BigInt(a.id) ? b : a), null);
-  // How far it got (a page opening the channel later starts there) and, for whoever added something, the channel's
-  // unread dot. Only written when something was added, or the saved place is more than 10 minutes behind.
-  const up = {}, newest = maxSnowflake(last, ...list.map(d => d && d.id));
-  if (isSnowflake(newest) && BigInt(newest) > BigInt(maxSnowflake(ch.discord.last)) && (added || snowflakeMs(newest) - snowflakeMs(maxSnowflake(ch.discord.last, ch.discord.since)) > 600000)) up['discord.last'] = newest;
-  if (added) { up.lastMessageAt = FieldValue.serverTimestamp(); up.lastMessage = { uid: added.payload.uid, text: previewForMessage(added.payload).slice(0, 200), everyone: false, mid: added.ref.id }; }
-  if (Object.keys(up).length) chRef.update(up).catch(() => {});
-  return list.length > 0;
 }
 // What was deleted in Discord goes here too, as soon as an open channel notices: a message whose Discord side (its
 // copy there, or the Discord message it came from) isn't among the newest 50 any more, though it's within them and
@@ -4671,20 +4687,6 @@ setTimeout(function bridgeNudge() {
   for (const [sid, chs] of Object.entries(serverChannels)) for (const c of Object.values(chs || {})) if (bridgeLinked(c)) { any = true; bridgeList(sid, c.id, c.discord.channel); }
   if (any) bridgeCall('tick', {}).catch(() => {});
 }, 15000);
-// Discord's file links stop working after a day, so files coming over are copied to Cloudinary like files sent here.
-async function bridgeRehost(ref, atts) {
-  if (!atts || !atts.length) return;
-  const out = await Promise.all(atts.map(async a => {
-    if (!/^https:\/\/(cdn|media)\.discordapp\.(com|net)\//.test(a.url) || (a.size || 0) > 10 * 1024 * 1024) return a;
-    try {
-      const fd = new FormData(); fd.append('file', a.url); fd.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-      const r = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${a.type === 'image' ? 'image' : 'auto'}/upload`, { method: 'POST', body: fd });
-      const j = await r.json();
-      return j && j.secure_url ? { ...a, url: j.secure_url } : a;
-    } catch (e) { return a; }
-  }));
-  if (out.some((a, i) => a.url !== atts[i].url)) ref.update({ attachments: out }).catch(() => {});
-}
 // ---- Channel Settings > Discord ----
 let csDiscordCode = '';
 async function renderChannelDiscordPane() {
@@ -6342,6 +6344,7 @@ $('delete-server-btn').onclick = async () => {
           await ch.ref.delete();
         }
         await db.collection('servers').doc(sid).delete();
+        db.collection('serverCards').doc(sid).delete().catch(() => {});   // its card in Explore Servers goes too
         closeModal('server-settings-modal');
         showHomeView();
         toast('Server deleted.');
@@ -6435,11 +6438,14 @@ function roleMemberIds(roleId) {
 }
 // Owner-level can edit anything; Manage Roles can edit only roles ranked
 // strictly below their own highest role — same ceiling as Discord.
+// Making, editing and deleting roles is for the server's owner and Administrators (the database checks the same since
+// v4.52). Manage Roles still lets someone give and take roles from other members.
+function canEditRoles(server = currentServerData) {
+  return !!server && (isServerOwnerLevel(server, myUid) || hasServerPerm(server, myUid, 'administrator'));
+}
 function canEditRole(role) {
   if (!currentServerData || !role) return false;
-  if (isServerOwnerLevel(currentServerData, myUid)) return true;
-  if (!hasServerPerm(currentServerData, myUid, 'manageRoles')) return false;
-  return topRoleOf(currentServerData, myUid).position > role.position;
+  return canEditRoles();
 }
 
 function renderRolesPane() {
@@ -6451,7 +6457,7 @@ function renderRolesPane() {
 }
 
 function renderRolesListView(root) {
-  const canManage = hasServerPerm(currentServerData, myUid, 'manageRoles');
+  const canManage = canEditRoles();   // making and reordering roles (canEditRoles())
   const roles = sortedServerRoles().filter(r => r.id !== 'everyone');
   root.innerHTML = `
     <h2 class="ss-h2">Roles</h2>
@@ -6561,7 +6567,7 @@ function renderRoleEditView(root) {
   const role = findServerRole(selectedRoleId);
   const isEveryone = role.id === 'everyone';
   const canEdit = canEditRole(role);
-  const canManage = hasServerPerm(currentServerData, myUid, 'manageRoles');
+  const canManage = canEditRoles();
   if (roleEditorPendingRoleId !== role.id) { roleEditorPending = roleSnapshotOf(role); roleEditorPendingRoleId = role.id; }
   roleEditorSnapshot = roleSnapshotOf(role);
   if (isEveryone) roleEditorTab = 'permissions';
@@ -6822,7 +6828,7 @@ async function setMemberRole(uid, roleId, add) {
 // named "new role", and opened straight into the editor — same as Discord.
 async function createServerRole() {
   if (!currentServerData) return;
-  if (!hasServerPerm(currentServerData, myUid, 'manageRoles')) { toast('You need Manage Roles permission to do that.'); return; }
+  if (!canEditRoles()) { toast('Only the server owner and Administrators can make roles.'); return; }
   if (roleFormIsDirty(roleEditorPending, roleEditorSnapshot)) { flashUnsavedBar(); return; }
   const shifted = serverRoles(currentServerData).map(r => r.id === 'everyone' ? r : { ...r, position: (r.position || 0) + 1 });
   const newRole = {
@@ -8608,7 +8614,8 @@ async function toggleReaction(msgId, emoji) {
     if (/^:[A-Za-z0-9_]+:$/.test(emoji) && !canHere('useExternalEmoji')) { toast('You cannot use custom emoji in this channel.', 'error'); return; }
   }
   try {
-    await ref.update({ [`reactions.${emoji}`]: already ? FieldValue.arrayRemove(myUid) : FieldValue.arrayUnion(myUid) });
+    // lastReaction says which reaction this is, so the database can check you only added or took off your own name
+    await ref.update({ [`reactions.${emoji}`]: already ? FieldValue.arrayRemove(myUid) : FieldValue.arrayUnion(myUid), lastReaction: { e: emoji, by: myUid } });
     if (!already) db.collection('users').doc(myUid).update({
       'stats.reactionsGiven': FieldValue.increment(1),
       'dailyStats.reactionsGiven': FieldValue.increment(1),

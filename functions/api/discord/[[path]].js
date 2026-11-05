@@ -435,8 +435,37 @@ async function pull(env, url) {
   const out = behind ? await discordSince(env, link, after)
     : { last: newestOf(after, ...w.list.map(m => m.id)), messages: w.list.filter(m => BigInt(m.id) > BigInt(after) && w.keep(m)).map(fromDiscord) };
   if (w.list.length) out.recent = { at: w.at, from: w.list.length < 50 ? '0' : w.list[0].id, ids: w.list.map(m => m.id) };
+  out.added = await importPulled(env, sid, cid, link, out).catch(() => 0);
   const nb = buckets.get(link.channel);
   return { ...out, pace: nb && nb.left <= 1 && nb.until > Date.now() ? Math.ceil(nb.until - Date.now()) : 0 };
+}
+// What a pull found is added here, the way the timer adds it (messages/dc_<Discord id>, only if it isn't there yet), so
+// no page ever writes a Discord user's message itself: since v4.51 the database's rules don't let pages do that, which
+// keeps anyone from making up "Discord" messages. Then the channel's place and newest message are stamped, as the
+// timer does. Screens asking at the same moment share one import of each message here.
+const importing = new Map();   // Discord message id -> its import, while running (and a minute after)
+async function importPulled(env, sid, cid, link, out) {
+  const done = BigInt(newestOf(link.since, link.last));
+  const fresh = (out.messages || []).filter(d => d && SNOWFLAKE.test(d.id || '') && BigInt(d.id) > done);
+  const dir = `servers/${sid}/channels/${cid}/messages`;
+  const made = (await Promise.all(fresh.map(d => {
+    if (!importing.has(d.id)) {
+      importing.set(d.id, (async () => {
+        if (await fsGet(env, `${dir}/dc_${d.id}`, ['dc']).catch(() => null)) return null;   // already over (another copy of this function)
+        const m = await importedMessage(env, sid, cid, d);
+        return m && await fsCreate(env, `${dir}/dc_${d.id}`, m) ? m : null;
+      })().catch(() => null));
+      setTimeout(() => importing.delete(d.id), 60000);
+    }
+    return importing.get(d.id);
+  }))).filter(Boolean);
+  const newest = made.reduce((a, b) => (!a || BigInt(b.dc) > BigInt(a.dc) ? b : a), null);
+  const up = {}, last = newestOf(out.last, link.last);
+  // how far it got: saved with anything new, or when the saved place is more than 10 minutes behind
+  if (BigInt(last) > BigInt(newestOf(link.last)) && (newest || snowflakeMs(last) - snowflakeMs(newestOf(link.last, link.since)) > 600000)) { up['discord.last'] = last; link.last = last; }
+  if (newest) up.lastMessageAt = newest.createdAt, up.lastMessage = { uid: newest.uid, text: (newest.text || (newest.attachments ? 'Sent a file' : '')).slice(0, 200), everyone: false, mid: 'dc_' + newest.dc };
+  if (Object.keys(up).length) await fsPatch(env, `servers/${sid}/channels/${cid}`, up).catch(() => {});
+  return made.length;
 }
 
 // ---------------- Discord to Frixion, with nobody watching ----------------
