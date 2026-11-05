@@ -488,6 +488,7 @@ const UPDATES = [
       'Network bans: the Owner panel has a new IP tab that shows each network with the devices and accounts seen on it, and can ban a whole network. Only the start of each address is kept, never the whole thing.',
       'The Owner can no longer set anyone\'s password. Instead they can make one-time passwords for someone who can\'t log in: each one logs them in once, and their own password stays the same.',
       'Forgot your password? The login screen now says what to do.',
+      'Logging out and back in (as anyone) no longer shows you as offline until you reload.',
     ] },
   { v: '4.54', date: '2026-11-05', title: 'Stress tested',
     notes: [
@@ -2157,13 +2158,20 @@ function teardownPresence() {
     if (myPresenceConnRef) { myPresenceConnRef.onDisconnect().cancel(); myPresenceConnRef.remove(); }
     myPresenceConnRef = null;
   } catch (e) {}
+  clearPresenceListeners();
+  myActivityPublished = null; rpcMedia = null;
+}
+// Stops listening to everyone's presence and forgets it. Logging out does this again at the very end: screens drawn
+// while signing out start new listeners (for the old account's friends), and one of those, cut off once signed out,
+// would otherwise keep the next account showing as offline until the page reloads.
+function clearPresenceListeners() {
   Object.values(presenceListeners).forEach(l => { try { if (l.ref) l.ref.off('value', l.cb); } catch (e) {} });
   presenceListeners = {};
   presenceCache = {};
   idleCache = {};
   mobileCache = {};
   appCache = {};
-  activityCache = {}; activityCacheSig = {}; myActivityPublished = null; rpcMedia = null;
+  activityCache = {}; activityCacheSig = {};
 }
 function subscribePresence(uid) {
   if (!rtdb || presenceListeners[uid]) return;
@@ -2212,7 +2220,8 @@ function subscribePresence(uid) {
       renderHomeActivity();
       if (currentView === 'friends') renderFriendsView();
     };
-    ref.on('value', cb);
+    // cut off (signed out, or no longer allowed): forget it, so the next screen that needs it listens again
+    ref.on('value', cb, () => { if (presenceListeners[uid] && presenceListeners[uid].cb === cb) { delete presenceListeners[uid]; delete presenceCache[uid]; } });
     presenceListeners[uid] = { ref, cb };
   } catch (e) {}
 }
@@ -3553,6 +3562,7 @@ $('logout-btn').onclick = async () => {
   await auth.signOut().catch(() => {});
   stopGameEngines();
   myUid = null; myProfile = null; profileCache = {}; isAdmin = false; isOwner = false; sfMode = false; ephemeralMsgs = []; seedBotProfiles();
+  clearPresenceListeners();   // the ones screens started while signing out (see clearPresenceListeners())
   applyAdminVisibility();
   currentServerId = null; currentServerData = null; currentChannelId = null; currentThreadId = null; currentThreadData = null;
   currentDMId = null; currentDMOtherUid = null; currentView = 'none';
