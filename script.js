@@ -482,6 +482,13 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.53', date: '2026-11-04', title: 'Banned means banned',
+    notes: [
+      'Banning a computer in the Owner panel now bans the whole computer: every browser and the app on it, before anyone even logs in. Phones and Safari keep the per-browser ban, since every phone of a model looks the same.',
+      'The Owner can set a new password for someone who forgot theirs (Owner panel, Password). They\'re signed out everywhere, then log in with the new one.',
+      'Messages can\'t be backdated or dated in the future, and scripts can\'t post giant messages. Edits now have the same length limit as new messages.',
+      'Nobody can say someone else is typing, put someone else\'s name on a DM\'s latest-message preview, or push a thread\'s reply count up by more than one.',
+    ] },
   { v: '4.52', date: '2026-11-04', title: 'Even tighter',
     notes: [
       'Hidden channels stay hidden: only people whose roles can see a channel can read it, and read-only channels really are read-only.',
@@ -2842,7 +2849,34 @@ async function initDeviceBan() {
       if (myUid) Promise.resolve($('logout-btn').onclick()).catch(() => {});
     } else if (!now && was) location.reload();        // unbanned: start fresh
   }, () => {});
+  await initHardwareBan();
 }
+// Whole-computer bans (v4.53): banning a computer also bans its hardware fingerprint (bannedHw/<hw>, see
+// describeThisDevice()), so every browser and app on it is banned too, before anyone logs in and whatever account.
+// Phones and Safari report a generic graphics chip, so every phone of a model would match: only computers that report
+// their real one get these (hwBannable()), and the rest keep the per-browser ban.
+let myHw = '', hwBanUnsub = null, hwBan = { banned: false, reason: '' };
+async function initHardwareBan() {
+  try { myHw = (await describeThisDevice()).hw || ''; } catch (e) { myHw = ''; }
+  if (!myHw) return;
+  const ref = db.collection('bannedHw').doc(myHw);
+  try {
+    const snap = await ref.get();
+    if (snap.exists) { hwBan = { banned: true, reason: snap.data().reason || 'No reason given' }; deviceBan = { banned: true, reason: hwBan.reason }; showDeviceBanScreen(hwBan.reason); }
+  } catch (e) {}                                       // can't reach the database: don't lock anyone out over it
+  if (hwBanUnsub) hwBanUnsub();
+  hwBanUnsub = ref.onSnapshot(snap => {
+    const was = hwBan.banned;
+    hwBan = { banned: snap.exists, reason: (snap.exists && snap.data().reason) || 'No reason given' };
+    if (hwBan.banned && !was) {
+      deviceBan = { banned: true, reason: hwBan.reason };
+      showDeviceBanScreen(hwBan.reason);
+      if (myUid) Promise.resolve($('logout-btn').onclick()).catch(() => {});
+    } else if (!hwBan.banned && was) location.reload();
+  }, () => {});
+}
+// A device entry whose hardware fingerprint is specific enough to ban the whole computer by.
+const hwBannable = d => !!d.hw && ['Windows PC', 'Linux PC', 'Chromebook', 'Mac'].includes(d.name) && !/^Safari/.test(d.browser || '');
 
 // ---------- Owner panel: Devices tab ----------
 let adminSelectedDevice = null;      // the id of any entry inside the selected device
@@ -2943,7 +2977,7 @@ async function renderDeviceDetail(g, bannedAccounts) {
 
 function adminBanDevice(g, profiles) {
   if (!isOwner) { toast('Only the owner can ban devices.', 'error'); return; }
-  if (g.members.some(m => m.id === myDeviceId)) { toast("You can't ban the device you're using.", 'error'); return; }
+  if (g.members.some(m => m.id === myDeviceId || (myHw && m.hw === myHw && hwBannable(m)))) { toast("You can't ban the computer you're using.", 'error'); return; }
   if ((profiles || []).some(p => p && !canManagePlatformUser(p))) { toast("An account on this device outranks you, so it can't be banned.", 'error'); return; }
   const todo = g.members.filter(m => !m.banned);
   confirmAction({
@@ -2953,7 +2987,10 @@ function adminBanDevice(g, profiles) {
     onConfirm: async typed => {
       try {
         await Promise.all(todo.map(m => db.collection('devices').doc(m.id).update({ banned: true, banReason: typed || 'No reason given', bannedBy: myUid, bannedAt: Date.now() })));
-        toast('Device banned.');
+        // and the whole computer: every browser and app on it, whatever account (initHardwareBan())
+        const hws = [...new Set(g.members.filter(hwBannable).map(m => m.hw))];
+        await Promise.all(hws.map(hw => db.collection('bannedHw').doc(hw).set({ reason: typed || 'No reason given', by: myUid, at: Date.now(), name: g.name || '' })));
+        toast(hws.length ? 'Computer banned: every browser and app on it.' : 'Device banned.');
       } catch (e) { toast(e.message || 'Could not ban device.', 'error'); }
       renderDevicesPane();
     },
@@ -2963,6 +3000,7 @@ async function adminUnbanDevice(g) {
   if (!isOwner) { toast('Only the owner can unban devices.', 'error'); return; }
   try {
     await Promise.all(g.members.filter(m => m.banned).map(m => db.collection('devices').doc(m.id).update({ banned: false, banReason: '', autoBanned: false, unbannedBy: myUid, unbannedAt: Date.now() })));
+    await Promise.all([...new Set(g.members.map(m => m.hw).filter(Boolean))].map(hw => db.collection('bannedHw').doc(hw).delete().catch(() => {})));
     toast('Device unbanned.');
   } catch (e) { toast(e.message || 'Could not unban device.', 'error'); }
   renderDevicesPane();
@@ -8686,6 +8724,7 @@ function buildEditBoxInto(rowWrap, m) {
     if (save) {
       const newText = applyMessageFilter(ta.value.trim());
       if (!newText) { toast('Message can\'t be empty — delete it instead if you want it gone.'); return; }
+      { const tooLong = newText !== (m.text || '') && messageTooLong(newText); if (tooLong) { toast(tooLong, 'error'); return; } }
       if (newText !== (m.text || '')) {
         const here = bridgeHere();
         try { await msgRef(m.id).update({ text: newText, edited: true }); }
@@ -13895,6 +13934,14 @@ async function renderAdminActions() {
         <button class="btn-accent-inline slim" id="admin-redirect-btn">Redirect</button>
       </div>
     </div>
+    <div class="admin-block">
+      <div class="ab-title">Password</div>
+      <div class="ab-row">
+        <input id="admin-pass" type="text" placeholder="New password" class="fld-input" autocomplete="off" maxlength="100">
+        <button class="btn-accent-inline slim" id="admin-pass-btn">Set Password</button>
+      </div>
+      <div class="ab-note" style="margin-top:6px;opacity:.7;font-size:12px">For someone who can't log in. They're signed out everywhere, then log in with their username and this password.</div>
+    </div>
     ${adminItemsBlockHTML(u)}
     <div id="admin-user-devices"></div>
     <div class="admin-block">
@@ -13916,6 +13963,7 @@ async function renderAdminActions() {
     if (u.op) $('admin-deop-btn').onclick = () => adminSetOp(u.username, false);
     else $('admin-op-btn').onclick = () => adminSetOp(u.username, true);
     $('admin-redirect-btn').onclick = () => adminRedirect(u.username);
+    $('admin-pass-btn').onclick = () => adminSetPassword(u.username);
     $('admin-delete-btn').onclick = adminDelete;
     $('admin-fake-delete-btn').onclick = adminFakeDelete;
     wrap.querySelectorAll('[data-rm-item]').forEach(b => { b.onclick = () => adminRemoveItem(u.username, b.dataset.field, b.dataset.id); });
@@ -14030,6 +14078,28 @@ async function adminUnban() {
   await db.collection('users').doc(adminSelectedUser).update({ banned: false, banReason: '', bannedUntil: null });
   toast(`Unbanned ${adminSelectedUser}.`);
   renderAdminList(); renderAdminActions();
+}
+// Owner only: sets someone's password, for someone who can't log in. Only Google's admin powers can do that, so
+// functions/api/admin does it, after checking the request comes from the Owner's own sign-in.
+const ADMIN_API = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'http://127.0.0.1:8788/api/admin' : 'https://frixionbeta.pages.dev/api/admin';
+async function adminSetPassword(username) {
+  if (!isOwner) { toast('Only the owner can set passwords.', 'error'); return; }
+  const pass = $('admin-pass').value;
+  if (pass.length < 4) { toast('Passwords need at least 4 characters.', 'error'); return; }
+  confirmAction({
+    title: 'Set Password', body: `Set ${username}'s password? They're signed out everywhere, then log in with their username and the new password.`,
+    confirmLabel: 'Set Password', danger: false,
+    onConfirm: async () => {
+      try {
+        const token = await auth.currentUser.getIdToken(true);
+        const r = await fetch(`${ADMIN_API}/set-password`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token, username, password: pass }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || 'Could not set the password.');
+        if ($('admin-pass')) $('admin-pass').value = '';
+        toast(`${username}'s password is set. Tell them to log in with it.`);
+      } catch (e) { toast(e.message || 'Could not set the password.', 'error'); }
+    },
+  });
 }
 async function adminRedirect(username) {
   if (!isOwner) { toast('Only the owner can redirect users.', 'error'); return; }

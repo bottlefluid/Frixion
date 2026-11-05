@@ -211,6 +211,14 @@ service cloud.firestore {
         && after.get('redeemedBy', null) == m.name;
     }
 
+    // ---------- whole-computer bans ----------
+    // A banned computer's hardware fingerprint (adminBanDevice()). Every browser and app on that computer checks it before
+    // anyone signs in, so it can be read by its exact id (a hash, which nobody can list); only the Owner and Co-Owners set it.
+    match /bannedHw/{hw} {
+      allow get: if true;
+      allow list, write: if isOwnerLevel(who());
+    }
+
     // ---------- device bans ----------
     match /devices/{id} {
       allow get: if true;                                           // the ban check runs before anyone signs in
@@ -238,19 +246,31 @@ service cloud.firestore {
     }
 
     // ---------- messages (servers, threads, DMs and group DMs) ----------
-    function newAuthorIsMe(m) { return request.resource.data.get('uid', '') == m.name; }
+    function newAuthorIsMe(m) { return request.resource.data.get('uid', '') == m.name && freshAndSmall(request.resource.data, m); }
+    // A new message is stamped with the real time (the app always uses the server's clock), give or take a few minutes,
+    // so nobody posts something dated in the past or stuck at the bottom in the future; and its text isn't huge.
+    function freshAndSmall(d, m) {
+      return d.get('createdAt', null) is timestamp && d.createdAt > request.time - duration.value(5, 'm') && d.createdAt < request.time + duration.value(1, 'm')
+        && (!('text' in d) || textFits(d.text, m));
+    }
+    // Message text within the app's limits (myMessageLimit() in script.js): the Owner's go up to 900,000 characters
+    // (MESSAGE_SIZE_CAP), everyone else's to 10,000 (the app itself stops them at 1,000, or 5,000 for co-owners).
+    function textFits(t, m) { return t is string && t.size() <= (m.ok && m.rank >= 3 ? 900000 : 10000); }
     // Sapphire posts purge results (only for someone who can purge there: canPurge) and Wordle posts game cards, both as
     // themselves (postBotMessage()), and nothing else.
     function newBotMessage(m, canPurge) {
       let d = request.resource.data;
-      return (d.get('uid', '') == 'bot-sapphire' && canPurge && d.keys().hasOnly(['uid', 'username', 'createdAt', 'purgeResult', 'replyTo']))
+      return freshAndSmall(d, m) && (d.get('uid', '') == 'bot-sapphire' && canPurge && d.keys().hasOnly(['uid', 'username', 'createdAt', 'purgeResult', 'replyTo']))
         || (d.get('uid', '') == 'bot-wordle' && d.keys().hasOnly(['uid', 'username', 'createdAt', 'wordle', 'replyTo'])
-            && d.get('wordle', {}).get('startedBy', '') == m.name);
+            && d.get('wordle', {}).get('startedBy', '') == m.name && freshAndSmall(d, m));
     }
     function isMine(m) { return resource.data.get('uid', '') == m.name; }
     function fromDiscordUser() { return resource.data.get('uid', '') is string && resource.data.uid.matches('discord:[0-9]{1,25}'); }
     // Your own message: anything but who sent it, and (like on anyone's message) only your own reaction.
-    function ownEdit(m, k) { return isMine(m) && !k.hasAny(['uid']) && (!k.hasAny(['reactions', 'lastReaction']) || myReactionOnly(m)); }
+    function ownEdit(m, k) {
+      return isMine(m) && !k.hasAny(['uid', 'createdAt']) && (!k.hasAny(['reactions', 'lastReaction']) || myReactionOnly(m))
+        && (!k.hasAny(['text']) || textFits(request.resource.data.text, m));
+    }
     // A reaction: only the one lastReaction names (toggleReaction() sends it), and only your own name added or taken off.
     function myReactionOnly(m) {
       let lr = request.resource.data.get('lastReaction', {});
@@ -442,7 +462,9 @@ service cloud.firestore {
         && canInChannel(m, s, ch, permsIn(m, s), ['viewChannels']);
     }
     function threadUpdate(m, s) {
-      return inServer(m, s) && (changed().hasOnly(['lastMessageAt', 'messageCount'])
+      // anyone in it counts a reply (one at a time); its starter and Manage Threads change the rest
+      return inServer(m, s) && ((changed().hasOnly(['lastMessageAt', 'messageCount'])
+          && request.resource.data.get('messageCount', 0) == resource.data.get('messageCount', 0) + 1)
         || resource.data.get('createdBy', '') == m.name || hasOne(permsIn(m, s), ['manageThreads']));
     }
     function threadDelete(m, s) {
@@ -462,7 +484,9 @@ service cloud.firestore {
     function threadMsgDelete(m, s) {
       return m.ok && (isMine(m) || m.rank >= 1 || (isMember(m, s) && active(m) && hasOne(permsIn(m, s), ['manageMessages', 'manageChannels'])));
     }
-    function typingWrite(m, s, ch, name) { return m.name == name && seesChannel(m, s, ch); }
+    // (a typing note shows the name of whoever it belongs to, nobody else's)
+    function typingWrite(m, s, ch, name) { return m.name == name && typingName(name) && seesChannel(m, s, ch); }
+    function typingName(name) { return request.resource == null || request.resource.data.get('username', name) == name; }
     // What anyone may see of a server before joining it: its card (Explore Servers and invites), a copy of its name,
     // picture, description, invite code, size and age that its members keep up to date (syncServerCard() in script.js).
     // It has to match the server exactly, so nobody can make a card say something else.
@@ -536,14 +560,18 @@ service cloud.firestore {
     function convMsgCreate(m, c) { return inConv(m, c) && canPost(m) && (newAuthorIsMe(m) || newBotMessage(m, m.rank >= 1)); }
     function convMsgUpdate(m, c) { let k = changed(); return inConv(m, c) && (ownEdit(m, k) || dmOthersEdit(m, k)); }
     function convMsgDelete(m, c) { return inConv(m, c) && (isMine(m) || m.rank >= 1 || (isOld() && c.get('autoDelete', true) != false)); }
-    function convTyping(m, c, name) { return inConv(m, c) && m.name == name; }
+    function convTyping(m, c, name) { return inConv(m, c) && m.name == name && typingName(name); }
 
     // A DM's id is its two usernames, sorted and joined with "_" (dmIdFor() in script.js).
     function dmCreate(m, did) {
       let p = request.resource.data.get('participants', null);
       return m.ok && p is list && p.size() == 2 && m.name in p && (did == p[0] + '_' + p[1] || did == p[1] + '_' + p[0]);
     }
-    function dmUpdate(m) { return active(m) && same('participants') && (m.name in resource.data.get('participants', []) || m.rank >= 1); }
+    // The preview of a conversation's last message carries the sender's own name, or a bot's (postBotMessage()).
+    function previewOk(m) {
+      return !changed().hasAny(['lastMessage']) || request.resource.data.get('lastMessage', {}).get('username', '') in [m.name, 'Sapphire', 'Wordle'];
+    }
+    function dmUpdate(m) { return active(m) && previewOk(m) && same('participants') && (m.name in resource.data.get('participants', []) || m.rank >= 1); }
     // Only your friends can be put in a group by you.
     function onlyFriendsAdded(m, before) {
       return request.resource.data.get('participants', []).toSet().difference(before.toSet())
@@ -558,7 +586,7 @@ service cloud.firestore {
     function groupUpdate(m) {
       let before = resource.data.get('participants', []);
       let owner = resource.data.get('ownerId', '') == m.name;
-      return active(m) && (m.name in before || m.rank >= 1)
+      return active(m) && (m.name in before || m.rank >= 1) && previewOk(m)
         && (same('ownerId') || owner || m.rank >= 1)
         && (same('participants') || m.rank >= 1 || (onlyFriendsAdded(m, before)
             && (owner || before.toSet().difference(listAfter('participants').toSet()).difference([m.name].toSet()).size() == 0)));
