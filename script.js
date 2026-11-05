@@ -482,6 +482,13 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.55', date: '2026-11-05', title: 'Banned, then gone',
+    notes: [
+      'Banned people go straight to Nitro Type. If something stops that, the ban screen is still waiting.',
+      'Network bans: the Owner panel has a new IP tab that shows each network with the devices and accounts seen on it, and can ban a whole network. Only the start of each address is kept, never the whole thing.',
+      'The Owner can no longer set anyone\'s password. Instead they can make a one-time password for someone who can\'t log in: it works for one login, then that person picks their own, so nobody else ever knows it.',
+      'Forgot your password? The login screen now says what to do.',
+    ] },
   { v: '4.54', date: '2026-11-05', title: 'Stress tested',
     notes: [
       'Overcontrol RNG\'s shared lobby is locked down: nobody can wipe it, give themselves auras, turn on server luck, close someone else\'s game or chat as someone else. Events, gifts and wipes are for the Owner and Co-Owners.',
@@ -2610,8 +2617,17 @@ function banLeftText(ms) {
   const t = Math.max(0, Math.floor(ms / 1000)), d = Math.floor(t / 86400), hr = Math.floor(t % 86400 / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60;
   return d ? `${d}d ${hr}h ${m}m` : hr ? `${hr}h ${m}m ${sec}s` : m ? `${m}m ${sec}s` : `${sec}s`;
 }
+// Banned (v4.55): the page goes straight to Nitro Type. Whatever stops that (the computer app opening it outside,
+// a blocked redirect, coming back with Back) still finds the ban screen here. Testing on this computer only notes it.
+const BAN_REDIRECT_URL = 'https://www.nitrotype.com/';
+function banRedirect() {
+  if (OVERLAY_WINDOW) return;
+  if (USING_EMULATORS) { window.__banRedirect = BAN_REDIRECT_URL; return; }
+  try { location.replace(BAN_REDIRECT_URL); } catch (e) {}
+}
 function showBanScreen(ban, signedIn) {
   if (deviceBan.banned) return;                           // a device ban outranks an account ban notice
+  setTimeout(banRedirect, 0);                             // after the ban screen is up
   musicStop();
   let el = $('ban-screen');
   if (!el) { el = document.createElement('div'); el.id = 'ban-screen'; document.body.append(el); }
@@ -2674,16 +2690,16 @@ function devIdbOpen() {
     r.onerror = () => rej(r.error);
   });
 }
-async function devIdbGet() {
+async function devIdbGet(key = 'id') {
   try {
     const d = await devIdbOpen();
-    return await new Promise(res => { const q = d.transaction('kv').objectStore('kv').get('id'); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); });
+    return await new Promise(res => { const q = d.transaction('kv').objectStore('kv').get(key); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); });
   } catch (e) { return null; }
 }
-async function devIdbSet(v) {
+async function devIdbSet(v, key = 'id') {
   try {
     const d = await devIdbOpen();
-    await new Promise(res => { const tx = d.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v, 'id'); tx.oncomplete = tx.onerror = tx.onabort = () => res(); });
+    await new Promise(res => { const tx = d.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v, key); tx.oncomplete = tx.onerror = tx.onabort = () => res(); });
   } catch (e) {}
 }
 async function ensureDeviceId() {
@@ -2842,7 +2858,8 @@ async function registerDevice(username) {
   } catch (e) { console.warn('device register failed', e); }
 }
 
-function showDeviceBanScreen(reason) {
+function showDeviceBanScreen(reason, network) {
+  setTimeout(banRedirect, 0);                             // after the ban screen is up (banRedirect())
   let el = $('ban-screen');
   if (!el) { el = document.createElement('div'); el.id = 'ban-screen'; document.body.append(el); }
   clearInterval(banScreenTimer);
@@ -2850,8 +2867,8 @@ function showDeviceBanScreen(reason) {
   el.innerHTML = `
     <div class="ban-card" role="alertdialog" aria-modal="true" aria-labelledby="ban-title">
       <div class="ban-icon"><svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.5"/><path d="M5.3 5.3l13.4 13.4"/></svg></div>
-      <h1 id="ban-title">This device has been banned</h1>
-      <p class="ban-lead">This device can't be used on Frixion, with any account.</p>
+      <h1 id="ban-title">${network ? 'This network has been banned' : 'This device has been banned'}</h1>
+      <p class="ban-lead">${network ? 'Nobody on this network can use Frixion, with any account.' : 'This device can\'t be used on Frixion, with any account.'}</p>
       <dl class="ban-facts">
         <div><dt>Time remaining</dt><dd>Until further notice</dd></div>
         <div class="wide"><dt>Reason</dt><dd>${esc(reason || 'No reason given')}</dd></div>
@@ -2862,13 +2879,13 @@ function showDeviceBanScreen(reason) {
 // What bans this browser right now, if anything: its own entry (doc), its computer's fingerprint (hw, initHardwareBan())
 // or running in a virtual machine (vm, vmCheck()) that the Owner hasn't let in (the entry's vmAllowed). The first ban
 // shows the ban screen and signs out; when the last one is lifted, the page starts over.
-const banSources = { doc: '', hw: '', vm: '' };
+const banSources = { doc: '', hw: '', ip: '', vm: '' };
 function setBans(patch) {
   Object.assign(banSources, patch);
-  const reason = banSources.doc || banSources.hw || banSources.vm, was = deviceBan.banned;
+  const reason = banSources.doc || banSources.hw || banSources.ip || banSources.vm, was = deviceBan.banned;
   deviceBan = { banned: !!reason, reason };
   if (deviceBan.banned && !was) {
-    showDeviceBanScreen(reason);
+    showDeviceBanScreen(reason, !banSources.doc && !banSources.hw && !!banSources.ip);
     if (myUid) Promise.resolve($('logout-btn').onclick()).catch(() => {});
   } else if (!deviceBan.banned && was) location.reload();
 }
@@ -2882,6 +2899,25 @@ async function initDeviceBan() {
   if (deviceBanUnsub) deviceBanUnsub();
   deviceBanUnsub = ref.onSnapshot(snap => fromEntry(snap.exists ? snap.data() : null), () => {});
   await initHardwareBan();
+  await Promise.race([checkIpBan(), new Promise(r => setTimeout(r, 3000))]);   // a slow answer doesn't hold the page up
+  setInterval(checkIpBan, 10 * 60000);
+}
+// IP bans (v4.55): a page can't see its own network address, so functions/api/admin/ip checks it (bannedIps/<id>),
+// before anyone signs in and every 10 minutes after. Signed-in visits are noted (recordIp(): ips/<id>) for the Owner
+// panel's IP tab. Only ids and a shortened label are kept, never whole addresses.
+let myIpId = '';
+async function checkIpBan() {
+  try {
+    const r = await fetch(`${ADMIN_API}/ip`, { cache: 'no-store' });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return;
+    myIpId = j.id || myIpId;
+    setBans({ ip: j.banned ? j.reason || 'No reason given' : '' });
+  } catch (e) {}                                      // can't reach it: don't lock anyone out over it
+}
+function recordIp() {
+  if (!auth.currentUser) return;
+  auth.currentUser.getIdToken().then(token => fetch(`${ADMIN_API}/seen`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token, device: myDeviceId }) })).catch(() => {});
 }
 // A virtual machine that was signed in (a saved session, or signing in as the check finished): its entry is recorded
 // under that account and banned, so the Owner sees it in the Devices tab (and can let it in there), then it's signed out.
@@ -2918,6 +2954,90 @@ async function initHardwareBan() {
 }
 // A device entry whose hardware fingerprint is specific enough to ban the whole computer by.
 const hwBannable = d => !!d.hw && ['Windows PC', 'Linux PC', 'Chromebook', 'Mac'].includes(d.name) && !/^Safari/.test(d.browser || '');
+
+// ---------- Owner panel: IP tab (v4.55) ----------
+// Each network address signed-in people used (ips/<id>: a shortened label, the accounts and devices seen on it), and
+// banning one (bannedIps/<id>, see checkIpBan()). A network ban bans everyone on it: a whole school or home can share one
+// address, and most home addresses change now and then.
+let adminSelectedIp = null, ipsCache = [];
+const NET_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>';
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+async function renderIpsPane() {
+  if (!isOwner) return;
+  const list = $('ips-list');
+  if (!list) return;
+  const q = ($('ips-search').value || '').toLowerCase().trim();
+  list.innerHTML = '<div class="empty">Loading...</div>';
+  const ips = [], bans = {};
+  try {
+    const [a, b] = await Promise.all([db.collection('ips').get(), db.collection('bannedIps').get()]);
+    a.forEach(d => ips.push({ id: d.id, ...d.data() }));
+    b.forEach(d => { bans[d.id] = d.data(); });
+  } catch (e) { list.innerHTML = '<div class="empty">Could not load networks.</div>'; return; }
+  for (const [id, b] of Object.entries(bans)) if (!ips.some(x => x.id === id)) ips.push({ id, label: b.label || id });
+  ips.forEach(x => { x.ban = bans[x.id] || null; x.seen = x.lastSeen && x.lastSeen.toMillis ? x.lastSeen.toMillis() : 0; x.accounts = x.accounts || []; x.devices = x.devices || []; });
+  ipsCache = ips;
+  const shown = ips.filter(x => !q || [x.label, x.id, ...x.accounts].join(' ').toLowerCase().includes(q)).sort((a, b) => b.seen - a.seen);
+  list.innerHTML = shown.map(x => `<div class="admin-row ${x.id === adminSelectedIp ? 'on' : ''}" data-ip="${esc(x.id)}">
+      <span class="dev-ico">${NET_ICON}</span>
+      <span class="ar-name">${esc(x.label || 'Unknown')}<small class="dev-sub">${plural(x.accounts.length, 'account')} · ${plural(x.devices.length, 'device')}${x.id === myIpId ? ' · yours' : ''}</small></span>
+      ${x.ban ? '<span class="ban-tag">Banned</span>' : ''}
+    </div>`).join('') || '<div class="empty">No networks yet. One shows up here after someone signs in on it.</div>';
+  list.querySelectorAll('.admin-row').forEach(row => { row.onclick = () => { adminSelectedIp = row.dataset.ip; renderIpsPane(); }; });
+  renderIpDetail(ipsCache.find(x => x.id === adminSelectedIp) || null);
+}
+async function renderIpDetail(x) {
+  const wrap = $('ips-detail');
+  if (!wrap) return;
+  if (!x) { wrap.innerHTML = '<div class="empty">Select a network to manage.</div>'; return; }
+  const devs = await Promise.all(x.devices.map(id => db.collection('devices').doc(id).get().then(s => (s.exists ? s.data() : { id })).catch(() => ({ id }))));
+  if (adminSelectedIp !== x.id) return;
+  const mine = x.id === myIpId;
+  const accounts = x.accounts.map(a => `<button type="button" class="dev-chip" data-u="${esc(a)}">${esc(a)}</button>`).join('') || '<span class="ab-note">None recorded.</span>';
+  const devices = devs.map(d => `<button type="button" class="dev-chip" data-dev="${esc(d.id)}">${esc(d.name || 'Unknown device')}${d.browser ? ', ' + esc(d.browser) : ''}${d.banned ? '<span class="ban-tag">Banned</span>' : ''}</button>`).join('') || '<span class="ab-note">None recorded.</span>';
+  wrap.innerHTML = `
+    <div class="admin-sel-head"><span class="dev-ico big">${NET_ICON}</span><div>
+      <div class="as-name">${esc(x.label || 'Unknown')}${mine ? ' <span class="ban-tag mute-tag">Your network</span>' : ''}</div>
+      <div class="as-sub">${x.ban ? 'Banned: ' + esc(x.ban.reason || 'No reason given') : 'Not banned'}</div></div></div>
+    <div class="admin-block">
+      <div class="ab-title">Network</div>
+      <dl class="dev-facts">
+        <dt>Address</dt><dd>${esc(x.label || 'Unknown')} (only the start is kept, never the whole address)</dd>
+        <dt>Last seen</dt><dd>${esc(x.seen ? fmtDeviceTime(x.seen) : 'Unknown')}</dd>
+        <dt>ID</dt><dd>${esc(x.id)}</dd>
+      </dl>
+    </div>
+    <div class="admin-block"><div class="ab-title">Accounts on this network (${x.accounts.length})</div><div class="dev-accts">${accounts}</div></div>
+    <div class="admin-block"><div class="ab-title">Devices on this network (${devs.length})</div><div class="dev-accts">${devices}</div></div>
+    <div class="admin-block">
+      <div class="ab-title">Network ban${x.ban ? ' — banned' : ''}</div>
+      <div class="ab-row"><span class="ab-note">${x.ban ? `Banned ${esc(fmtDeviceTime(x.ban.at))}${x.ban.by ? ' by ' + esc(x.ban.by) : ''}.` : mine ? 'You can\'t ban the network you\'re on.' : 'Bans everyone on this network, whatever device or account.'}</span>
+        ${x.ban ? '<button class="btn-secondary slim" id="ip-unban-btn">Unban Network</button>' : `<button class="btn-danger slim" id="ip-ban-btn" ${mine ? 'disabled' : ''}>Ban Network</button>`}</div>
+    </div>`;
+  wrap.querySelectorAll('.dev-chip[data-u]').forEach(b => { b.onclick = () => { adminSelectedUser = b.dataset.u; document.querySelector('.admin-tab[data-admin-tab="systemhub"]').click(); renderAdminList(); }; });
+  wrap.querySelectorAll('.dev-chip[data-dev]').forEach(b => { b.onclick = () => { adminSelectedDevice = b.dataset.dev; document.querySelector('.admin-tab[data-admin-tab="devices"]').click(); }; });
+  if ($('ip-ban-btn')) $('ip-ban-btn').onclick = () => adminBanIp(x);
+  if ($('ip-unban-btn')) $('ip-unban-btn').onclick = () => adminUnbanIp(x);
+}
+function adminBanIp(x) {
+  if (!isOwner) { toast('Only the owner can ban networks.', 'error'); return; }
+  if (x.id === myIpId) { toast('You can\'t ban the network you\'re on.', 'error'); return; }
+  confirmAction({
+    title: 'Ban Network',
+    body: `Ban ${x.label || 'this network'}? Nobody on it can use Frixion, with any device or account${x.accounts.length ? '. Accounts seen on it: ' + x.accounts.join(', ') : ''}. Everyone sharing it is banned too, like a whole school or home, and most home networks get a new address now and then.`,
+    confirmLabel: 'Ban Network', input: { placeholder: 'Reason (optional)', maxLength: 120 },
+    onConfirm: async typed => {
+      try { await db.collection('bannedIps').doc(x.id).set({ reason: typed || 'No reason given', by: myUid, at: Date.now(), label: x.label || '' }); toast('Network banned.'); }
+      catch (e) { toast(e.message || 'Could not ban it.', 'error'); }
+      renderIpsPane();
+    },
+  });
+}
+async function adminUnbanIp(x) {
+  if (!isOwner) { toast('Only the owner can unban networks.', 'error'); return; }
+  try { await db.collection('bannedIps').doc(x.id).delete(); toast('Network unbanned.'); } catch (e) { toast(e.message || 'Could not unban it.', 'error'); }
+  renderIpsPane();
+}
 
 // ---------- Owner panel: Devices tab ----------
 let adminSelectedDevice = null;      // the id of any entry inside the selected device
@@ -3154,8 +3274,9 @@ function showAuthScreen() {
 
 function enterApp() {
   if (deviceBan.banned) { if (banSources.vm) recordVmBan(myUid); return; }
-  if (!OVERLAY_WINDOW) registerDevice(myUid);
+  if (!OVERLAY_WINDOW) { registerDevice(myUid); recordIp(); }
   ensureClaims();
+  if (!OVERLAY_WINDOW) setTimeout(forcePasswordChange, 0);   // logged in with a one-time password
   $('boot-screen').classList.add('hidden');
   $('auth-screen').classList.add('hidden');
   $('app').classList.remove('hidden');
@@ -3270,10 +3391,13 @@ function usernameProblem(username) {
   if (!/^[A-Za-z0-9_]+$/.test(username)) return 'Letters, numbers, and underscores only.';
   return '';
 }
-function authView(id) { ['login-view', 'register-view', 'pick-view'].forEach(v => $(v).classList.toggle('hidden', v !== id)); }
+function authView(id) { ['login-view', 'register-view', 'pick-view', 'forgot-view'].forEach(v => $(v).classList.toggle('hidden', v !== id)); }
 
 $('show-register').onclick = () => authView('register-view');
 $('show-login').onclick = () => authView('login-view');
+// Forgot password? (v4.55): the Owner makes one-time passwords (showPasswordHelp()); this just says so.
+$('show-forgot').onclick = () => authView('forgot-view');
+$('forgot-back').onclick = () => authView('login-view');
 
 $('login-btn').onclick = async () => {
   const username = $('login-username').value.trim();
@@ -12372,7 +12496,8 @@ function openAdminPanel() {
   $('admin-tab-players').classList.toggle('hidden', isOwner);
   $('admin-tab-systemhub').classList.toggle('hidden', !isOwner);
   $('admin-tab-devices').classList.toggle('hidden', !isOwner);
-  adminSelectedDevice = null;
+  $('admin-tab-ips').classList.toggle('hidden', !isOwner);
+  adminSelectedDevice = null; adminSelectedIp = null;
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('on'));
   document.querySelectorAll('.admin-pane').forEach(p => p.classList.add('hidden'));
   const defaultTab = isOwner ? 'systemhub' : 'players';
@@ -12385,6 +12510,7 @@ function openAdminPanel() {
 $('admin-search').addEventListener('input', renderAdminList);
 if ($('system-hub-search')) $('system-hub-search').addEventListener('input', renderAdminList);
 if ($('devices-search')) $('devices-search').addEventListener('input', renderDevicesPane);
+if ($('ips-search')) $('ips-search').addEventListener('input', renderIpsPane);
 if ($('devices-cleanup-btn')) $('devices-cleanup-btn').onclick = adminCleanUpDevices;
 
 document.querySelectorAll('.admin-tab').forEach(tab => {
@@ -12394,6 +12520,7 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
     document.querySelectorAll('.admin-pane').forEach(p => p.classList.add('hidden'));
     $('admin-pane-' + tab.dataset.adminTab).classList.remove('hidden');
     if (tab.dataset.adminTab === 'devices') renderDevicesPane();
+    if (tab.dataset.adminTab === 'ips') renderIpsPane();
     if (tab.dataset.adminTab === 'emojis') renderAdminEmojiList();
     if (tab.dataset.adminTab === 'stickers') renderAdminStickerList();
     if (tab.dataset.adminTab === 'filter') renderAdminFilterList();
@@ -14015,11 +14142,11 @@ async function renderAdminActions() {
     </div>
     <div class="admin-block">
       <div class="ab-title">Password</div>
-      <div class="ab-row">
-        <input id="admin-pass" type="text" placeholder="New password" class="fld-input" autocomplete="off" maxlength="100">
-        <button class="btn-accent-inline slim" id="admin-pass-btn">Set Password</button>
+      <div class="ab-note" id="admin-pass-note" style="opacity:.7;font-size:12px"></div>
+      <div class="ab-row" style="margin-top:8px">
+        <button class="btn-accent-inline slim" id="admin-pass-btn" disabled>Create One-Time Password</button>
       </div>
-      <div class="ab-note" style="margin-top:6px;opacity:.7;font-size:12px">For someone who can't log in. They're signed out everywhere, then log in with their username and this password.</div>
+      <div id="admin-pass-out"></div>
     </div>
     ${adminItemsBlockHTML(u)}
     <div id="admin-user-devices"></div>
@@ -14042,7 +14169,7 @@ async function renderAdminActions() {
     if (u.op) $('admin-deop-btn').onclick = () => adminSetOp(u.username, false);
     else $('admin-op-btn').onclick = () => adminSetOp(u.username, true);
     $('admin-redirect-btn').onclick = () => adminRedirect(u.username);
-    $('admin-pass-btn').onclick = () => adminSetPassword(u.username);
+    showPasswordHelp(u.username);
     $('admin-delete-btn').onclick = adminDelete;
     $('admin-fake-delete-btn').onclick = adminFakeDelete;
     wrap.querySelectorAll('[data-rm-item]').forEach(b => { b.onclick = () => adminRemoveItem(u.username, b.dataset.field, b.dataset.id); });
@@ -14160,8 +14287,8 @@ async function adminUnban() {
   toast(`Unbanned ${adminSelectedUser}.`);
   renderAdminList(); renderAdminActions();
 }
-// Owner only: sets someone's password, for someone who can't log in. Only Google's admin powers can do that, so
-// functions/api/admin does it, after checking the request comes from the Owner's own sign-in.
+// Owner tools that need Google's admin powers (functions/api/admin), which checks each request comes from the Owner's
+// own sign-in: one-time passwords (showPasswordHelp()) and the claims below.
 const ADMIN_API = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'http://127.0.0.1:8788/api/admin' : 'https://frixionbeta.pages.dev/api/admin';
 // The Realtime Database (the games' shared lobby, database.rules.json) can't look at profiles, so it knows who is writing
 // from claims on the sign-in: n (username) and r (rank), which functions/api/admin/claims sets from the profile, so
@@ -14186,24 +14313,67 @@ function refreshClaimsFor(username) {
   if (username === myUid) { ensureClaims(true); return; }
   auth.currentUser.getIdToken().then(token => fetch(`${ADMIN_API}/claims`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token, username }) })).catch(() => {});
 }
-async function adminSetPassword(username) {
-  if (!isOwner) { toast('Only the owner can set passwords.', 'error'); return; }
-  const pass = $('admin-pass').value;
-  if (pass.length < 4) { toast('Passwords need at least 4 characters.', 'error'); return; }
-  confirmAction({
-    title: 'Set Password', body: `Set ${username}'s password? They're signed out everywhere, then log in with their username and the new password.`,
-    confirmLabel: 'Set Password', danger: false,
+// Password help (v4.55), Owner only. Nobody can see or choose anyone's password: the Owner makes a one-time password,
+// which the function generates. They log in with it once and must pick their own right away (mustChangePassword).
+function showPasswordHelp(username) {
+  const note = $('admin-pass-note'), btn = $('admin-pass-btn');
+  if (!note || !btn) return;
+  if (!isOwner) { note.textContent = 'Only the Owner can help with passwords.'; return; }
+  note.textContent = 'For someone who can\'t log in. It works for one login, then they pick their own, so you never know their password.';
+  btn.disabled = false;
+  btn.onclick = () => confirmAction({
+    title: 'One-Time Password', body: `Make a one-time password for ${username}? They're signed out everywhere, log in with it once, and then choose their own password.`,
+    confirmLabel: 'Create It', danger: false,
     onConfirm: async () => {
       try {
         const token = await auth.currentUser.getIdToken(true);
-        const r = await fetch(`${ADMIN_API}/set-password`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token, username, password: pass }) });
+        const r = await fetch(`${ADMIN_API}/one-time-password`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token, username }) });
         const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j.error || 'Could not set the password.');
-        if ($('admin-pass')) $('admin-pass').value = '';
-        toast(`${username}'s password is set. Tell them to log in with it.`);
-      } catch (e) { toast(e.message || 'Could not set the password.', 'error'); }
+        if (!r.ok || !j.password) throw new Error(j.error || 'Could not make one.');
+        const out = $('admin-pass-out');
+        if (out) out.innerHTML = `<div class="ab-row" style="margin-top:8px"><input class="fld-input" id="admin-otp" readonly value="${esc(j.password)}" style="font-family:monospace;letter-spacing:2px"><button class="btn-secondary slim" id="admin-otp-copy">Copy</button></div>
+          <div class="ab-note" style="margin-top:6px;opacity:.7;font-size:12px">Give it to ${esc(username)}. It's shown only this once and works for one login.</div>`;
+        if ($('admin-otp-copy')) $('admin-otp-copy').onclick = () => navigator.clipboard.writeText(j.password).then(() => toast('Copied.')).catch(() => {});
+        note.textContent = 'Done.';
+        btn.disabled = true;
+        toast(`Made a one-time password for ${username}.`);
+      } catch (e) { toast(e.message || 'Could not make one.', 'error'); }
     },
   });
+}
+// After logging in with a one-time password: a new password before anything else. Log Out is the only other way out.
+function forcePasswordChange() {
+  if (!myProfile || myProfile.mustChangePassword !== true || $('pw-change-modal')) return;
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay'; ov.id = 'pw-change-modal'; ov.style.zIndex = 9999;
+  ov.innerHTML = `<div class="modal-box">
+      <div class="modal-header-row"><h2>Choose a new password</h2></div>
+      <p class="desc">You logged in with a one-time password. Pick your own to keep using Frixion. Nobody else will know it.</p>
+      <div class="auth-error" id="pw-change-error"></div>
+      <input type="password" id="pw-change-1" class="fld-input" placeholder="New password" autocomplete="new-password" maxlength="100" style="width:100%;margin-bottom:10px">
+      <input type="password" id="pw-change-2" class="fld-input" placeholder="New password again" autocomplete="new-password" maxlength="100" style="width:100%;margin-bottom:16px">
+      <div class="modal-actions"><button class="btn-secondary" id="pw-change-logout">Log Out</button><button class="btn-accent-inline" id="pw-change-save">Save Password</button></div>
+    </div>`;
+  document.body.append(ov);
+  $('pw-change-logout').onclick = () => { ov.remove(); Promise.resolve($('logout-btn').onclick()).catch(() => {}); };
+  $('pw-change-save').onclick = async () => {
+    const a = $('pw-change-1').value, b = $('pw-change-2').value, err = $('pw-change-error'), btn = $('pw-change-save');
+    err.textContent = '';
+    if (a.length < 4) { err.textContent = 'Password must be at least 4 characters.'; return; }
+    if (a !== b) { err.textContent = 'The two passwords don\'t match.'; return; }
+    btn.disabled = true;
+    try {
+      await auth.currentUser.updatePassword(authPass(a));
+      await db.collection('users').doc(myUid).update({ mustChangePassword: FieldValue.delete() });
+      myProfile.mustChangePassword = false;
+      ov.remove();
+      toast('Your new password is set.');
+    } catch (e) {
+      err.textContent = e.code === 'auth/requires-recent-login' ? 'Log out, log in again with the one-time password, then pick your new one.' : (e.message || 'Could not save it.');
+    }
+    btn.disabled = false;
+  };
+  setTimeout(() => $('pw-change-1') && $('pw-change-1').focus(), 50);
 }
 async function adminRedirect(username) {
   if (!isOwner) { toast('Only the owner can redirect users.', 'error'); return; }

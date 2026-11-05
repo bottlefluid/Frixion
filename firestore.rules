@@ -242,16 +242,31 @@ service cloud.firestore {
         && request.resource.data.get('accounts', []) == [m.name];
     }
     // Anyone may record their own visit or ban their own device (the ban-evasion and virtual machine checks ban
-    // themselves); only the Owner and Co-Owners unban, let a virtual machine in (vmAllowed) or change others' devices.
+    // themselves). The Owner and Co-Owners only ban, unban and let a virtual machine in (vmAllowed) on others' devices
+    // (v4.55): they can't add anyone to a device or rewrite what it says about itself.
     function deviceUpdate(m) {
       let k = changed();
-      return m.ok && (m.rank >= 2 || (same('id')
-        && m.name in request.resource.data.get('accounts', [])
-        && (same('accounts') || onlyAdded('accounts', m.name))
-        && !k.hasAny(['vmAllowed'])
-        && (!k.hasAny(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned', 'unbannedBy', 'unbannedAt'])
-            || (resource.data.get('banned', false) == false && request.resource.data.get('banned', false) == true
-                && k.hasOnly(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned'])))));
+      return m.ok
+        && ((same('id')
+          && m.name in request.resource.data.get('accounts', [])
+          && (same('accounts') || onlyAdded('accounts', m.name))
+          && !k.hasAny(['vmAllowed'])
+          && (!k.hasAny(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned', 'unbannedBy', 'unbannedAt'])
+              || (resource.data.get('banned', false) == false && request.resource.data.get('banned', false) == true
+                  && k.hasOnly(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned']))))
+          || (m.rank >= 2 && k.hasOnly(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned', 'unbannedBy', 'unbannedAt', 'vmAllowed'])));
+    }
+
+    // ---------- network addresses (v4.55) ----------
+    // Which accounts and devices used each address (ips/<id>, written by functions/api/admin/seen), and banned ones
+    // (bannedIps/<id>, which functions/api/admin/ip checks before anyone signs in). Ids, never the addresses.
+    match /ips/{id} {
+      allow read: if isOwnerLevel(who());
+    }
+    match /bannedIps/{id} {
+      allow read, delete: if isOwnerLevel(who());
+      allow create, update: if isOwnerLevel(who()) && request.resource.data.keys().hasOnly(['reason', 'by', 'at', 'label'])
+        && request.resource.data.get('reason', '') is string && request.resource.data.get('reason', '').size() <= 200;
     }
 
     // ---------- messages (servers, threads, DMs and group DMs) ----------

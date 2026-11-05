@@ -111,6 +111,14 @@
       <button class="btn-primary" id="login-btn">Log In</button>
       <div class="auth-google"><div class="auth-or"><span>or</span></div><button type="button" class="btn-google" id="login-google"></button></div>
       <div class="auth-switch">Need an account? <a id="show-register">Register</a></div>
+      <div class="auth-switch"><a id="show-forgot">Forgot password?</a></div>
+    </div>
+
+    <!-- FORGOT PASSWORD: the Owner makes one-time passwords (Owner panel > the user > Password) -->
+    <div id="forgot-view" class="hidden">
+      <h1>Forgot your password?</h1>
+      <p class="sub">Ask the Owner for a one-time password. Log in with it, and you'll pick your own new password right after. Nobody else will know it.</p>
+      <button class="btn-primary" id="forgot-back">Back to Log In</button>
     </div>
 
     <!-- REGISTER -->
@@ -1126,6 +1134,7 @@
       <button class="admin-tab" data-admin-tab="quests">Games</button>
       <button class="admin-tab hidden" data-admin-tab="systemhub" id="admin-tab-systemhub">System Hub</button>
       <button class="admin-tab hidden" data-admin-tab="devices" id="admin-tab-devices">Devices</button>
+      <button class="admin-tab hidden" data-admin-tab="ips" id="admin-tab-ips">IP</button>
     </div>
 
     <div class="admin-pane" id="admin-pane-players">
@@ -1577,6 +1586,15 @@
         <div class="admin-right" id="devices-detail"><div class="empty">Select a device to manage.</div></div>
       </div>
     </div>
+    <div class="admin-pane hidden" id="admin-pane-ips">
+      <div class="admin-layout">
+        <div class="admin-left">
+          <input class="fld-input" id="ips-search" placeholder="Search networks or accounts" autocomplete="off">
+          <div class="admin-user-list" id="ips-list"></div>
+        </div>
+        <div class="admin-right" id="ips-detail"><div class="empty">Select a network to manage.</div></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1682,6 +1700,6 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=132"></script>
+<script defer src="script.js?v=133"></script>
 </body>
 </html>

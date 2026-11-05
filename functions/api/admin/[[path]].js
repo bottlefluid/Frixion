@@ -1,10 +1,16 @@
 // Owner tools that need Google's admin powers, which no page has. A Cloudflare Pages Function, served at /api/admin/* on
 // the main site (frixionbeta, which has the FIREBASE_SERVICE_ACCOUNT secret); Frixion calls it there.
-//   POST /api/admin/set-password  { token, username, password }: the Owner sets someone's password, for someone who
-//                                 can't log in. token is the caller's Firebase ID token, and only the account with
-//                                 owner: true may do this. The person is signed out everywhere and logs in with their
-//                                 username and the new password (the same made-up email and "frixion:" password as
-//                                 everyone: see AUTH in script.js).
+//   POST /api/admin/one-time-password  { token, username }: the Owner (owner: true, from the caller's Firebase ID
+//                                 token) makes a one-time password for someone who can't log in. It's generated here,
+//                                 nobody picks it; they're signed out everywhere, log in with it once, and must choose
+//                                 their own password right away (mustChangePassword on their profile). Nobody can see
+//                                 or set anyone's real password (v4.55: the Owner's Set Password was removed).
+//   GET  /api/admin/ip            whether the network address this comes from is banned (bannedIps/<its id>), checked
+//                                 before anyone signs in; and its id, so the Owner can't ban their own.
+//   POST /api/admin/seen          { token, device }: notes that this account (on this device) used this address
+//                                 (ips/<id>), for the Owner panel's IP tab.
+//                                 Addresses are never kept: only an id (an HMAC of the address, keyed from the service
+//                                 account's own key, so it can't be turned back) and a shortened label like 73.12.x.x.
 //   POST /api/admin/claims        { token, username? }: puts the account's username (n) and rank (r: 3 Owner, 2 Co-Owner,
 //                                 1 Admin, 0 everyone) on its sign-in, from its profile, so the Realtime Database's
 //                                 rules (database.rules.json: the games' shared lobby) know who is writing. Everyone
@@ -32,10 +38,10 @@ export async function onRequest({ request, env, params }) {
   try {
     if (route === 'info' && request.method === 'GET') return json(await info(env));
     if (!env.FIREBASE_SERVICE_ACCOUNT && !env.FIRESTORE_BEARER) fail(503, 'Owner tools aren\'t set up on this site.');
-    if (route === 'set-password' && request.method === 'POST') {
-      const body = await request.json().catch(() => ({}));   // sent as text/plain, so other sites can call it without a preflight
-      return json(await setPassword(env, body));
-    }
+    // (bodies come as text/plain, so other sites can call these without a preflight)
+    if (route === 'one-time-password' && request.method === 'POST') return json(await oneTimePassword(env, await request.json().catch(() => ({}))));
+    if (route === 'ip' && request.method === 'GET') return json(await ipCheck(env, request));
+    if (route === 'seen' && request.method === 'POST') return json(await ipSeen(env, request, await request.json().catch(() => ({}))));
     if (route === 'claims' && request.method === 'POST') return json(await setClaims(env, await request.json().catch(() => ({}))));
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
@@ -92,6 +98,18 @@ async function fsGet(env, path) {
   if (!r.ok) fail(502, 'Could not read Frixion.');
   return decFields((await r.json()).fields);
 }
+const enc = v => (v === null ? { nullValue: null } : v instanceof Date ? { timestampValue: v.toISOString() } : typeof v === 'boolean' ? { booleanValue: v }
+  : typeof v === 'number' ? (Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v }) : { stringValue: String(v) });
+const docUrl = (env, path) => `${fsBase(env)}/${path.split('/').map(encodeURIComponent).join('/')}`;
+// a document's full name, as commits want it (projects/<id>/databases/(default)/documents/<path>)
+const docName = (env, path) => new URL(fsBase(env)).pathname.replace(/^\/v1\//, '') + '/' + path;
+// these fields only (made if the document isn't there)
+async function fsPatch(env, path, data) {
+  const mask = Object.keys(data).map(k => 'updateMask.fieldPaths=' + encodeURIComponent(k)).join('&');
+  const r = await fetch(`${docUrl(env, path)}?${mask}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await googleToken(env) },
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, enc(v)])) }) });
+  if (!r.ok) fail(502, 'Could not save that.');
+}
 async function authCall(env, method, body) {
   return fetch(`${authBase(env)}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await googleToken(env) }, body: JSON.stringify(body) });
 }
@@ -134,15 +152,19 @@ async function requireOwner(env, token) {
   return acct.username;
 }
 
-// ---------------- setting a password ----------------
+// ---------------- password help ----------------
 const authEmail = username => [...new TextEncoder().encode(username)].map(b => b.toString(16).padStart(2, '0')).join('') + '@' + AUTH_EMAIL_DOMAIN;
-async function setPassword(env, { token, username, password }) {
+const USERNAME = /^[A-Za-z0-9_]{1,40}$/;
+// 10 characters from letters and digits that can't be mixed up (no I, O, 0 or 1)
+const OTP_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const makeOtp = () => Array.from(crypto.getRandomValues(new Uint8Array(10)), b => OTP_CHARS[b % OTP_CHARS.length]).join('');
+async function oneTimePassword(env, { token, username }) {
   await requireOwner(env, token);
-  if (typeof username !== 'string' || !/^[A-Za-z0-9_]{1,40}$/.test(username)) fail(400, 'That isn\'t a username.');
-  if (typeof password !== 'string' || password.length < 4 || password.length > 100) fail(400, 'Passwords need 4 to 100 characters.');
+  if (typeof username !== 'string' || !USERNAME.test(username)) fail(400, 'That isn\'t a username.');
   const target = await fsGet(env, `users/${username}`);
   if (!target) fail(404, 'No account has that username.');
   if (typeof target.authUid !== 'string' || !target.authUid) fail(409, 'That account has no sign-in yet.');
+  const password = makeOtp();
   // The username's made-up email goes on too, so an account that only used Google can then log in with its username.
   // (validSince: everywhere they were signed in is signed out)
   const r = await authCall(env, 'accounts:update', { localId: target.authUid, email: authEmail(username), password: 'frixion:' + password, validSince: String(Math.floor(Date.now() / 1000)) });
@@ -153,7 +175,54 @@ async function setPassword(env, { token, username, password }) {
     if (noRole(r, why)) fail(503, 'The service account can\'t change sign-ins yet: give it the Firebase Authentication Admin role.');
     fail(502, 'Google refused (' + why + ').');
   }
-  return { ok: true };
+  await fsPatch(env, `users/${username}`, { mustChangePassword: true });
+  return { ok: true, password };
+}
+
+// ---------------- network addresses (IP bans) ----------------
+// The address a request comes from (Cloudflare says), never kept as is: its id is an HMAC keyed from the service
+// account's private key (or IP_KEY), so the ids can't be turned back into addresses; the label keeps only the start.
+function callerIp(env, request) {
+  const ip = request.headers.get('CF-Connecting-IP') || (env.TEST_TOKENS ? request.headers.get('X-Test-IP') || '127.0.0.1' : '');
+  if (!ip) fail(400, 'No address.');
+  return ip;
+}
+let ipKey = null;
+async function ipId(env, ip) {
+  if (!ipKey) {
+    const secret = env.IP_KEY || (env.FIREBASE_SERVICE_ACCOUNT ? JSON.parse(env.FIREBASE_SERVICE_ACCOUNT).private_key : 'test-ip-key');
+    const raw = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('frixion-ip:' + secret));
+    ipKey = await crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  }
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', ipKey, new TextEncoder().encode(ip.toLowerCase())));
+  return 'ip_' + [...mac.slice(0, 12)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+const ipLabel = ip => (ip.includes(':') ? ip.split(':').slice(0, 2).join(':') + ':…' : ip.split('.').slice(0, 2).join('.') + '.x.x');
+// Is this address banned? Asked on every page load, so the answer is kept for a minute.
+const banLooks = new Map();   // id -> { at, ban }
+async function ipCheck(env, request) {
+  const id = await ipId(env, callerIp(env, request));
+  let hit = banLooks.get(id);
+  if (!hit || Date.now() - hit.at > 60000) {
+    hit = { at: Date.now(), ban: await fsGet(env, `bannedIps/${id}`) };
+    banLooks.set(id, hit);
+    if (banLooks.size > 5000) banLooks.clear();
+  }
+  return hit.ban ? { id, banned: true, reason: hit.ban.reason || 'No reason given' } : { id, banned: false };
+}
+// Who used this address: signed in (their ID token says who), and on which device (as the page says).
+async function ipSeen(env, request, { token, device }) {
+  const claims = await verifyIdToken(env, token);
+  const acct = await fsGet(env, `accounts/${claims.sub}`);
+  const name = acct && typeof acct.username === 'string' ? acct.username : null;
+  if (!name) fail(403, 'That sign-in isn\'t a Frixion account.');
+  const ip = callerIp(env, request), id = await ipId(env, ip);
+  const add = { accounts: [name], ...(/^dev_[a-f0-9]{32}$/.test(device || '') ? { devices: [device] } : {}) };
+  const r = await fetch(`${fsBase(env)}:commit`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await googleToken(env) },
+    body: JSON.stringify({ writes: [{ update: { name: docName(env, `ips/${id}`), fields: { label: enc(ipLabel(ip)), lastSeen: enc(new Date()) } }, updateMask: { fieldPaths: ['label', 'lastSeen'] },
+      updateTransforms: Object.entries(add).map(([f, v]) => ({ fieldPath: f, appendMissingElements: { values: v.map(enc) } })) }] }) });
+  if (!r.ok) fail(502, 'Could not save that.');
+  return { ok: true, id };
 }
 
 // ---------- who someone is, for the Realtime Database ----------
