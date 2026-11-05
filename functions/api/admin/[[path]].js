@@ -5,6 +5,11 @@
 //                                 owner: true may do this. The person is signed out everywhere and logs in with their
 //                                 username and the new password (the same made-up email and "frixion:" password as
 //                                 everyone: see AUTH in script.js).
+//   POST /api/admin/claims        { token, username? }: puts the account's username (n) and rank (r: 3 Owner, 2 Co-Owner,
+//                                 1 Admin, 0 everyone) on its sign-in, from its profile, so the Realtime Database's
+//                                 rules (database.rules.json: the games' shared lobby) know who is writing. Everyone
+//                                 asks for their own when they sign in (ensureClaims() in script.js); the Owner and
+//                                 Co-Owners also redo someone else's after changing their rank.
 //   GET  /api/admin/info          whether it's set up here (auth: "ready" once the service account may change sign-ins).
 //
 // SETUP, once: the service account the other functions use (frixion-functions) also needs the role "Firebase
@@ -31,6 +36,7 @@ export async function onRequest({ request, env, params }) {
       const body = await request.json().catch(() => ({}));   // sent as text/plain, so other sites can call it without a preflight
       return json(await setPassword(env, body));
     }
+    if (route === 'claims' && request.method === 'POST') return json(await setClaims(env, await request.json().catch(() => ({}))));
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
     if (e instanceof Fail) return json({ error: e.message }, e.status);
@@ -148,4 +154,32 @@ async function setPassword(env, { token, username, password }) {
     fail(502, 'Google refused (' + why + ').');
   }
   return { ok: true };
+}
+
+// ---------- who someone is, for the Realtime Database ----------
+const rankOf = u => (u.owner === true ? 3 : u.coowner === true ? 2 : u.op === true ? 1 : 0);
+async function setClaims(env, { token, username }) {
+  const claims = await verifyIdToken(env, token);
+  const acct = await fsGet(env, `accounts/${claims.sub}`);
+  const myName = acct && typeof acct.username === 'string' ? acct.username : null;
+  const me = myName ? await fsGet(env, `users/${myName}`) : null;
+  if (!me || me.authUid !== claims.sub) fail(403, 'That sign-in isn\'t a Frixion account.');
+  let name = myName, target = me;
+  if (username != null && username !== myName) {
+    if (rankOf(me) < 2) fail(403, 'Only the Owner can do that.');
+    if (typeof username !== 'string' || !/^[A-Za-z0-9_]{1,40}$/.test(username)) fail(400, 'That isn\'t a username.');
+    target = await fsGet(env, `users/${username}`);
+    if (!target) fail(404, 'No account has that username.');
+    if (typeof target.authUid !== 'string' || !target.authUid) return { ok: true, skipped: 'no sign-in yet' };
+    name = username;
+  }
+  const want = { n: name, r: rankOf(target) };
+  const r = await authCall(env, 'accounts:update', { localId: target.authUid, customAttributes: JSON.stringify(want) });
+  if (!r.ok) {
+    const why = await googleWhy(r);
+    if (/USER_NOT_FOUND/.test(why)) fail(404, 'That account\'s sign-in is gone.');
+    if (noRole(r, why)) fail(503, 'The service account can\'t change sign-ins yet: give it the Firebase Authentication Admin role.');
+    fail(502, 'Google refused (' + why + ').');
+  }
+  return { ok: true, claims: want };
 }

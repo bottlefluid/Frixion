@@ -482,6 +482,15 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.54', date: '2026-11-05', title: 'Stress tested',
+    notes: [
+      'Overcontrol RNG\'s shared lobby is locked down: nobody can wipe it, give themselves auras, turn on server luck, close someone else\'s game or chat as someone else. Events, gifts and wipes are for the Owner and Co-Owners.',
+      'Virtual machines are banned on sight, before anyone logs in. The Owner can let a specific one in from the Devices tab.',
+      'Slowmode holds even against scripts, and @everyone and @here only ping the whole server from someone allowed to.',
+      'Manage Roles only gives and takes roles ranked below your own, the way the member menu always showed it.',
+      'Messages deleted in Discord are removed here by the Discord bridge itself, after it checks with Discord, so only moderators can delete a Discord user\'s messages.',
+      'Mention notifications always show the real server and channel they came from.',
+    ] },
   { v: '4.53', date: '2026-11-04', title: 'Banned means banned',
     notes: [
       'Banning a computer in the Owner panel now bans the whole computer: every browser and the app on it, before anyone even logs in. Phones and Safari keep the per-browser ban, since every phone of a model looks the same.',
@@ -2740,8 +2749,27 @@ async function describeThisDevice() {
   let tz = ''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
   const gpu = gpuRenderer();
   const hw = gpu ? 'hw_' + hash53([family, Math.max(screen.width, screen.height) + 'x' + Math.min(screen.width, screen.height), navigator.hardwareConcurrency || 0, gpu, tz].join('|')) : '';
-  return { name, os, browser, screen: `${screen.width}×${screen.height}`, tz, suspect, hw };
+  const vmc = vmCheck();
+  return { name, os, browser, screen: `${screen.width}×${screen.height}`, tz, suspect, hw, vm: vmc.vm, softGpu: vmc.soft };
 }
+// Virtual machines (v4.54): a computer ban could be dodged by running Frixion in one, so a browser that reports a virtual
+// machine's graphics card is banned on sight, before anyone logs in (initDeviceBan()). Only names no real graphics card
+// has count. Software graphics (SwiftShader, llvmpipe, Microsoft Basic Render Driver) also run on real computers with
+// graphics acceleration off or no graphics driver, so those are only pointed out to the Owner in the Devices tab.
+const VM_GPUS = [[/vmware|svga ?3d/i, 'VMware'], [/virtualbox|\bvbox/i, 'VirtualBox'], [/parallels/i, 'Parallels'], [/qemu|bochs/i, 'QEMU'],
+  [/virtio|red hat/i, 'VirtIO'], [/hyper-v/i, 'Hyper-V'], [/citrix/i, 'Citrix'], [/\bxen\b/i, 'Xen'], [/android emulator/i, 'Android Emulator']];
+const SOFT_GPUS = /swiftshader|llvmpipe|softpipe|basic render driver|basic display adapter/i;
+function vmCheck() {
+  let s = '';
+  try {
+    const c = document.createElement('canvas'), gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+    const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+    if (ext) s = String(gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) || '') + ' ' + String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '');
+  } catch (e) {}
+  const hit = VM_GPUS.find(([re]) => re.test(s));
+  return { vm: hit ? hit[1] : '', soft: !hit && SOFT_GPUS.test(s) };
+}
+const vmBanReason = vm => `Virtual machines can't be used on Frixion (${vm} detected).`;
 
 // A hardware fingerprint that stays the same across browsers, private windows and cleared site data on one
 // machine: the kind of system, screen size, core count, graphics card and time zone. Many machines share one
@@ -2789,6 +2817,7 @@ function groupDevices(devs) {
       firstSeen: Math.min(...members.map(m => m.firstSeen || Infinity).filter(isFinite)), lastSeen: latest.lastSeen || 0,
       bannedCount, allBanned: bannedCount === members.length, anyBanned: bannedCount > 0,
       suspect: members.some(m => m.suspect),
+      vm: (members.find(m => m.vm) || {}).vm || '', softGpu: members.some(m => m.softGpu), vmAllowed: members.some(m => m.vmAllowed),
     };
   });
 }
@@ -2830,50 +2859,62 @@ function showDeviceBanScreen(reason) {
     </div>`;
 }
 
+// What bans this browser right now, if anything: its own entry (doc), its computer's fingerprint (hw, initHardwareBan())
+// or running in a virtual machine (vm, vmCheck()) that the Owner hasn't let in (the entry's vmAllowed). The first ban
+// shows the ban screen and signs out; when the last one is lifted, the page starts over.
+const banSources = { doc: '', hw: '', vm: '' };
+function setBans(patch) {
+  Object.assign(banSources, patch);
+  const reason = banSources.doc || banSources.hw || banSources.vm, was = deviceBan.banned;
+  deviceBan = { banned: !!reason, reason };
+  if (deviceBan.banned && !was) {
+    showDeviceBanScreen(reason);
+    if (myUid) Promise.resolve($('logout-btn').onclick()).catch(() => {});
+  } else if (!deviceBan.banned && was) location.reload();
+}
 async function initDeviceBan() {
   myDeviceId = await ensureDeviceId();
-  const ref = db.collection('devices').doc(myDeviceId);
-  try {
-    const snap = await ref.get();
-    const d = snap.exists ? snap.data() : null;
-    deviceBan = d && d.banned ? { banned: true, reason: d.banReason || 'No reason given' } : { banned: false, reason: '' };
-  } catch (e) {}                                     // can't reach the database: don't lock anyone out over it
-  if (deviceBan.banned) showDeviceBanScreen(deviceBan.reason);
+  const ref = db.collection('devices').doc(myDeviceId), vm = vmCheck().vm;
+  const fromEntry = d => setBans({ doc: d && d.banned ? d.banReason || 'No reason given' : '', vm: vm && !(d && d.vmAllowed) ? vmBanReason(vm) : '' });
+  let first = null;
+  try { const snap = await ref.get(); first = snap.exists ? snap.data() : null; } catch (e) {}   // can't reach the database: only a virtual machine is turned away then
+  fromEntry(first);
   if (deviceBanUnsub) deviceBanUnsub();
-  deviceBanUnsub = ref.onSnapshot(snap => {
-    const d = snap.exists ? snap.data() : null;
-    const now = !!(d && d.banned), was = deviceBan.banned;
-    deviceBan = { banned: now, reason: (d && d.banReason) || 'No reason given' };
-    if (now && !was) {                                // banned while the site is open
-      showDeviceBanScreen(deviceBan.reason);
-      if (myUid) Promise.resolve($('logout-btn').onclick()).catch(() => {});
-    } else if (!now && was) location.reload();        // unbanned: start fresh
-  }, () => {});
+  deviceBanUnsub = ref.onSnapshot(snap => fromEntry(snap.exists ? snap.data() : null), () => {});
   await initHardwareBan();
+}
+// A virtual machine that was signed in (a saved session, or signing in as the check finished): its entry is recorded
+// under that account and banned, so the Owner sees it in the Devices tab (and can let it in there), then it's signed out.
+async function recordVmBan(username) {
+  if (!banSources.vm) return;
+  if (username && myDeviceId) {
+    const ref = db.collection('devices').doc(myDeviceId);
+    try {
+      const [info, snap] = await Promise.all([describeThisDevice(), ref.get()]);
+      const d = snap.exists ? snap.data() : null;
+      const patch = { id: myDeviceId, ...info, lastSeen: Date.now(), accounts: FieldValue.arrayUnion(username) };
+      if (!info.hw) delete patch.hw;
+      if (!d) patch.firstSeen = Date.now();
+      await ref.set(patch, { merge: true });
+      if (!(d && d.banned)) await ref.update({ banned: true, banReason: banSources.vm, bannedBy: 'auto', bannedAt: Date.now(), autoBanned: true });
+    } catch (e) {}
+  }
+  if (myUid) Promise.resolve($('logout-btn').onclick()).catch(() => {});
+  else auth.signOut().catch(() => {});
 }
 // Whole-computer bans (v4.53): banning a computer also bans its hardware fingerprint (bannedHw/<hw>, see
 // describeThisDevice()), so every browser and app on it is banned too, before anyone logs in and whatever account.
 // Phones and Safari report a generic graphics chip, so every phone of a model would match: only computers that report
 // their real one get these (hwBannable()), and the rest keep the per-browser ban.
-let myHw = '', hwBanUnsub = null, hwBan = { banned: false, reason: '' };
+let myHw = '', hwBanUnsub = null;
 async function initHardwareBan() {
   try { myHw = (await describeThisDevice()).hw || ''; } catch (e) { myHw = ''; }
   if (!myHw) return;
   const ref = db.collection('bannedHw').doc(myHw);
-  try {
-    const snap = await ref.get();
-    if (snap.exists) { hwBan = { banned: true, reason: snap.data().reason || 'No reason given' }; deviceBan = { banned: true, reason: hwBan.reason }; showDeviceBanScreen(hwBan.reason); }
-  } catch (e) {}                                       // can't reach the database: don't lock anyone out over it
+  const fromEntry = snap => setBans({ hw: snap.exists ? snap.data().reason || 'No reason given' : '' });
+  try { fromEntry(await ref.get()); } catch (e) {}     // can't reach the database: don't lock anyone out over it
   if (hwBanUnsub) hwBanUnsub();
-  hwBanUnsub = ref.onSnapshot(snap => {
-    const was = hwBan.banned;
-    hwBan = { banned: snap.exists, reason: (snap.exists && snap.data().reason) || 'No reason given' };
-    if (hwBan.banned && !was) {
-      deviceBan = { banned: true, reason: hwBan.reason };
-      showDeviceBanScreen(hwBan.reason);
-      if (myUid) Promise.resolve($('logout-btn').onclick()).catch(() => {});
-    } else if (!hwBan.banned && was) location.reload();
-  }, () => {});
+  hwBanUnsub = ref.onSnapshot(fromEntry, () => {});
 }
 // A device entry whose hardware fingerprint is specific enough to ban the whole computer by.
 const hwBannable = d => !!d.hw && ['Windows PC', 'Linux PC', 'Chromebook', 'Mac'].includes(d.name) && !/^Safari/.test(d.browser || '');
@@ -2949,6 +2990,8 @@ async function renderDeviceDetail(g, bannedAccounts) {
         <dt>Screen</dt><dd>${esc(g.screen || 'Unknown')}</dd>
         <dt>Time zone</dt><dd>${esc(g.tz || 'Unknown')}</dd>
         ${g.suspect ? '<dt>Heads up</dt><dd>A browser on this device reports details that don\'t match each other (for example Windows and Mac at once). The name and browser may be faked.</dd>' : ''}
+        ${g.vm ? `<dt>Virtual machine</dt><dd>${esc(g.vm)}. ${g.vmAllowed ? 'You let it in, so it isn\'t banned for that.' : 'Banned automatically. Unbanning it lets this device in.'}</dd>` : ''}
+        ${!g.vm && g.softGpu ? '<dt>Heads up</dt><dd>It draws with software graphics instead of a graphics card. A virtual machine with 3D graphics turned off looks like this, but so does a real computer with graphics acceleration off, so it isn\'t banned automatically.</dd>' : ''}
         <dt>First seen</dt><dd>${esc(fmtDeviceTime(g.firstSeen))}</dd>
         <dt>Last seen</dt><dd>${esc(fmtDeviceTime(g.lastSeen))}</dd>
       </dl>
@@ -3002,7 +3045,8 @@ function adminBanDevice(g, profiles) {
 async function adminUnbanDevice(g) {
   if (!isOwner) { toast('Only the owner can unban devices.', 'error'); return; }
   try {
-    await Promise.all(g.members.filter(m => m.banned).map(m => db.collection('devices').doc(m.id).update({ banned: false, banReason: '', autoBanned: false, unbannedBy: myUid, unbannedAt: Date.now() })));
+    // a virtual machine stays let in (vmAllowed), or it would be banned again the next time it opens Frixion
+    await Promise.all(g.members.filter(m => m.banned || (m.vm && !m.vmAllowed)).map(m => db.collection('devices').doc(m.id).update({ banned: false, banReason: '', autoBanned: false, unbannedBy: myUid, unbannedAt: Date.now(), ...(m.vm ? { vmAllowed: true } : {}) })));
     await Promise.all([...new Set(g.members.map(m => m.hw).filter(Boolean))].map(hw => db.collection('bannedHw').doc(hw).delete().catch(() => {})));
     toast('Device unbanned.');
   } catch (e) { toast(e.message || 'Could not unban device.', 'error'); }
@@ -3072,7 +3116,16 @@ async function boot() {
   // Who is signed in is worked out at the same time as the device check instead of after it.
   const userP = authReady();
   try { await initDeviceBan(); } catch (e) { console.warn('device check failed', e); }
-  if (deviceBan.banned) { showAuthScreen(); return; }     // the device ban screen is already covering everything
+  if (deviceBan.banned) {                                // the device ban screen is already covering everything
+    showAuthScreen();
+    // a virtual machine with a saved session: recorded under that account for the Owner, then signed out
+    if (banSources.vm) userP.then(async u => {
+      if (!u) return;
+      const acc = await db.collection('accounts').doc(u.uid).get().catch(() => null);
+      recordVmBan(acc && acc.exists ? acc.data().username : '');
+    });
+    return;
+  }
   const user = await userP;
   if (!user) {
     showAuthScreen();
@@ -3100,8 +3153,9 @@ function showAuthScreen() {
 }
 
 function enterApp() {
-  if (deviceBan.banned) return;
+  if (deviceBan.banned) { if (banSources.vm) recordVmBan(myUid); return; }
   if (!OVERLAY_WINDOW) registerDevice(myUid);
+  ensureClaims();
   $('boot-screen').classList.add('hidden');
   $('auth-screen').classList.add('hidden');
   $('app').classList.remove('hidden');
@@ -4672,7 +4726,7 @@ function bridgeWatch() {
   const key = bridgeLinked(ch) ? `${currentServerId}/${ch.id}/${ch.discord.channel}` : '';
   if ((bridgePoll ? bridgePoll.key : '') === key) return;
   if (bridgePoll) clearTimeout(bridgePoll.timer);
-  bridgePoll = key ? { key, sid: currentServerId, cid: ch.id, after: '', timer: 0, gone: new Set() } : null;
+  bridgePoll = key ? { key, sid: currentServerId, cid: ch.id, after: '', timer: 0, gone: new Set(), ask: new Set() } : null;
   if (bridgePoll) bridgeTick();
 }
 async function bridgeTick() {
@@ -4684,7 +4738,10 @@ async function bridgeTick() {
   if (document.visibilityState !== 'visible') { again(BRIDGE_SLOW); return; }
   P.busy = true;
   try {
-    const r = await bridgeCall(`pull?sid=${encodeURIComponent(P.sid)}&cid=${encodeURIComponent(P.cid)}&after=${maxSnowflake(P.after, ch.discord.last, ch.discord.since)}`);
+    const asking = [...P.ask].slice(0, 20);   // messages whose Discord side looked gone last time (bridgeGone())
+    const r = await bridgeCall(`pull?sid=${encodeURIComponent(P.sid)}&cid=${encodeURIComponent(P.cid)}&after=${maxSnowflake(P.after, ch.discord.last, ch.discord.since)}`
+      + (asking.length ? '&gone=' + asking.map(encodeURIComponent).join(',') : ''));
+    asking.forEach(id => P.ask.delete(id));
     if (bridgePoll !== P) return;
     if ((r.messages || []).length) bridgeHot();   // the bridge has added them (see pull in functions/api/discord)
     if (r.recent) bridgeGone(P, ch, r.recent);
@@ -4697,21 +4754,18 @@ async function bridgeTick() {
 // What was deleted in Discord goes here too, as soon as an open channel notices: a message whose Discord side (its
 // copy there, or the Discord message it came from) isn't among the newest 50 any more, though it's within them and
 // older than that look at Discord. The tick does the same with nobody watching, but only for messages it has seen,
-// and a message deleted seconds after it was sent can come and go between its passes.
+// and a message deleted seconds after it was sent can come and go between its passes. Since v4.54 the next pull asks
+// the bridge to delete them (gone=), which checks each against Discord itself: pages can't delete a Discord user's
+// message (only moderators can), so nobody can wipe a linked channel's Discord messages from a script.
 function bridgeGone(P, ch, recent) {
   if (currentThreadId || currentServerId !== P.sid || currentChannelId !== P.cid || !Array.isArray(recent.ids) || !recent.ids.length || !Number.isFinite(recent.at)) return;
   const there = new Set(recent.ids), from = BigInt(isSnowflake(recent.from) ? recent.from : '0'), since = BigInt(maxSnowflake(ch.discord.since));
-  const coll = db.collection('servers').doc(P.sid).collection('channels').doc(P.cid).collection('messages');
-  // The database only lets anyone delete a Discord user's message, their own, or (with Manage Messages) anyone's; the
-  // bridge's timer deletes the rest within seconds anyway.
-  const mod = isFrixionStaff() || hasServerPerm(currentServerData, myUid, 'manageMessages');
   for (const m of lastRawMessages) {
     if (!isSnowflake(m.dc) || there.has(m.dc) || P.gone.has(m.id)) continue;
     if (BigInt(m.dc) < from || BigInt(m.dc) <= since || snowflakeMs(m.dc) > recent.at - 2000) continue;
-    if (!mod && m.uid !== myUid && !/^discord:/.test(m.uid || '')) continue;
-    P.gone.add(m.id);
-    coll.doc(m.id).delete().catch(e => { if (e.code !== 'permission-denied') P.gone.delete(m.id); });
+    P.gone.add(m.id); P.ask.add(m.id);
   }
+  if (P.ask.size) bridgeHot();                      // ask soon
 }
 // ---- with nobody watching (see the notes above) ----
 const bridgeListed = new Set();
@@ -6854,12 +6908,19 @@ async function renderRoleMembersTab(role, memberIds, canEdit) {
   addWrap.querySelectorAll('[data-add-uid]').forEach(btn => { btn.onclick = () => setMemberRole(btn.dataset.addUid, role.id, true); });
 }
 
+// Gives or takes one role. roleEdit tells the database's rules which (roleEditOk()): m the member, i the role's place in
+// the server's roles, j the place of your highest role, which has to outrank it unless you're an Administrator.
+async function writeMemberRole(sid, server, uid, roleId, add) {
+  const raw = server.roles || [], list = (server.memberRoles || {})[uid] || [], mine = (server.memberRoles || {})[myUid] || [];
+  let j = -1;
+  raw.forEach((r, k) => { if (mine.includes(r.id) && (j < 0 || (r.position || 0) > (raw[j].position || 0))) j = k; });
+  const memberRoles = { ...(server.memberRoles || {}), [uid]: add ? [...new Set([...list, roleId])] : list.filter(id => id !== roleId) };
+  await db.collection('servers').doc(sid).update({ memberRoles, roleEdit: { m: uid, i: raw.findIndex(r => r.id === roleId), j } });
+  return memberRoles;
+}
 async function setMemberRole(uid, roleId, add) {
-  const memberRoles = { ...(currentServerData.memberRoles || {}) };
-  const current = memberRoles[uid] || [];
-  memberRoles[uid] = add ? [...new Set([...current, roleId])] : current.filter(id => id !== roleId);
   try {
-    await db.collection('servers').doc(currentServerId).update({ memberRoles });
+    const memberRoles = await writeMemberRole(currentServerId, currentServerData, uid, roleId, add);
     currentServerData = { ...currentServerData, memberRoles };
     renderRolesPane();
   } catch (e) { toast(e.message || 'Could not update roles.', 'error'); }
@@ -6940,7 +7001,10 @@ function openManageMemberModal(uid, server) {
       });
       const finalRoles = [...new Set([...checked, ...untouchable])];
       try {
-        await db.collection('servers').doc(server.id).update({ memberRoles: { ...(server.memberRoles || {}), [uid]: finalRoles } });
+        // one role per write, each checked against your own rank (writeMemberRole())
+        let s = server;
+        const changes = [...assignedIds.filter(id => !finalRoles.includes(id)).map(id => [id, false]), ...finalRoles.filter(id => !assignedIds.includes(id)).map(id => [id, true])];
+        for (const [id, add] of changes) s = { ...s, memberRoles: await writeMemberRole(server.id, s, uid, id, add) };
         toast('Roles updated.');
         closeModal('manage-member-modal');
       } catch (e) { toast(e.message || 'Could not update roles.', 'error'); }
@@ -8953,6 +9017,18 @@ document.querySelectorAll('#poll-modal [data-close="poll-modal"]').forEach(el =>
   el.addEventListener('click', closeEmojiPickerPanel);
 });
 
+// A new message in a server channel. In a slowmode channel it goes with a stamp of when you posted (slow/<you>, in the
+// same write), which the database's rules check against the one before, so slowmode holds even for a script. The
+// stamp goes even if your role skips slowmode: harmless, and the rules decide that, not this.
+async function addChannelMessage(sid, cid, ch, payload) {
+  const chan = db.collection('servers').doc(sid).collection('channels').doc(cid);
+  if (!(ch && ch.slowmode > 0)) return chan.collection('messages').add(payload);
+  const ref = chan.collection('messages').doc(), batch = db.batch();
+  batch.set(ref, payload);
+  batch.set(chan.collection('slow').doc(myUid), { at: FieldValue.serverTimestamp() });
+  await batch.commit();
+  return ref;
+}
 async function sendToCurrentConversation(payload) {
   if (isSiteMuted()) throw new Error(siteMuteText());
   if (currentView === 'channel' && currentServerData) {
@@ -8975,7 +9051,7 @@ async function sendToCurrentConversation(payload) {
     if (mayNotify(payload)) pushOut({ kind: 'ch', sid: currentServerId, cid: currentChannelId, tid, mid: ref.id });
     db.collection('users').doc(myUid).update({ 'dailyStats.channelsMessaged': FieldValue.increment(1) }).catch(() => {});
   } else if (currentView === 'channel') {
-    ref = await db.collection('servers').doc(currentServerId).collection('channels').doc(currentChannelId).collection('messages').add(payload);
+    ref = await addChannelMessage(currentServerId, currentChannelId, currentChannelObj(), payload);
     noteChannelMessage(currentServerId, currentChannelId, payload, ref, null);
     if (mayNotify(payload)) pushOut({ kind: 'ch', sid: currentServerId, cid: currentChannelId, mid: ref.id });
     bridgeOut(currentServerId, currentChannelId, ref, currentChannelObj());
@@ -14025,6 +14101,7 @@ function renderCoOwnerBlock(wrap, u) {
   $('admin-coowner-btn').onclick = async () => {
     try {
       await db.collection('users').doc(u.username).update({ coowner: !u.coowner });
+      refreshClaimsFor(u.username);
       toast(u.coowner ? `Removed co-owner from ${u.username}.` : `Made ${u.username} a co-owner.`);
       renderAdminList();
     } catch (e) { toast(e.message || 'Could not update co-owner.', 'error'); }
@@ -14039,6 +14116,7 @@ async function adminSetOp(username, val) {
   if (!isOwner) { toast('Only the owner can grant or remove admin.', 'error'); return; }
   if (!guardPlatformTarget(username)) return;
   await db.collection('users').doc(username).update({ op: val });
+  refreshClaimsFor(username);
   if (username === myUid) { isAdmin = val; applyAdminVisibility(); }
   toast(val ? `Made ${username} an admin.` : `Removed admin from ${username}.`);
   renderAdminList();
@@ -14085,6 +14163,29 @@ async function adminUnban() {
 // Owner only: sets someone's password, for someone who can't log in. Only Google's admin powers can do that, so
 // functions/api/admin does it, after checking the request comes from the Owner's own sign-in.
 const ADMIN_API = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'http://127.0.0.1:8788/api/admin' : 'https://frixionbeta.pages.dev/api/admin';
+// The Realtime Database (the games' shared lobby, database.rules.json) can't look at profiles, so it knows who is writing
+// from claims on the sign-in: n (username) and r (rank), which functions/api/admin/claims sets from the profile, so
+// nobody can fake them. Asked for once per sign-in (enterApp()), and again if the rank changed; the game waits for it.
+let claimsPromise = null;
+function ensureClaims(force) {
+  if (!auth.currentUser || !myUid || !myProfile) return Promise.resolve(false);
+  if (claimsPromise && !force) return claimsPromise;
+  const p = claimsPromise = (async () => {
+    const user = auth.currentUser, have = await user.getIdTokenResult();
+    if (have.claims.n === myUid && have.claims.r === platformRank(myProfile)) return true;
+    const r = await fetch(`${ADMIN_API}/claims`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token: have.token }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'claims ' + r.status);
+    await user.getIdToken(true);                    // the new claims come on a fresh token, which the Realtime Database picks up
+    return true;
+  })().catch(e => { console.warn('Game sign-in not set up:', e.message); if (claimsPromise === p) claimsPromise = null; return false; });
+  return p;
+}
+// after the Owner changes someone's rank, their claims are redone too (the function checks the caller may)
+function refreshClaimsFor(username) {
+  if (!auth.currentUser) return;
+  if (username === myUid) { ensureClaims(true); return; }
+  auth.currentUser.getIdToken().then(token => fetch(`${ADMIN_API}/claims`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token, username }) })).catch(() => {});
+}
 async function adminSetPassword(username) {
   if (!isOwner) { toast('Only the owner can set passwords.', 'error'); return; }
   const pass = $('admin-pass').value;
@@ -16622,7 +16723,9 @@ function openOcrng() {
   if (!myUid || !myProfile) return;
   setGameApi();
   if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=14');
-  ocrngModule.then(m => m.open()).catch(err => {
+  // the shared lobby needs the sign-in's claims first (ensureClaims()); if they can't be had, the game plays solo
+  const claimed = Promise.race([ensureClaims(), new Promise(r => setTimeout(r, 6000))]);
+  Promise.all([ocrngModule, claimed]).then(([m]) => m.open()).catch(err => {
     ocrngModule = null;
     console.error(err);
     toast('Overcontrol RNG could not load. Check your connection and try again.', 'error');
@@ -17322,7 +17425,7 @@ async function ovSend(chat, input) {
     } else {
       if (/(^|[\s(>])@(everyone|here)\b/i.test(text) && !hasChannelPerm(ch, server, myUid, 'mentionEveryone')) payload.everyoneBlocked = true;
       if (ch.slowmode) lastChannelSendAt[ch.id] = Date.now();
-      const sent = await db.collection('servers').doc(chat.sid).collection('channels').doc(chat.cid).collection('messages').add(payload);
+      const sent = await addChannelMessage(chat.sid, chat.cid, ch, payload);
       noteChannelMessage(chat.sid, chat.cid, payload, sent, null, chat.channel && chat.channel.name);
       bridgeOut(chat.sid, chat.cid, sent, ch);
       db.collection('users').doc(myUid).update({

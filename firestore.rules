@@ -10,12 +10,12 @@ rules_version = '2';
 // Since v4.52 server and channel permissions are checked too: who can see and post in each channel (its overrides),
 // deleting or pinning other people's messages, kicks, bans, timeouts, nicknames, the audit log, and managing channels,
 // roles and the server itself. Only a server's first 8 roles, and a member's first 4, count here (the 1000-step limit).
+// Since v4.54 also slowmode (slowOk()) and role order (roleEditOk(): Manage Roles only gives roles below your own).
 // What these rules can't check (the app checks them, so only a script gets round them):
 // - Orbs, Premium and the Shop. Games run in the browser, so a player can still give themselves Orbs or Premium days.
-// - Role order: someone with Manage Roles can give anyone (but themselves) any role, an Administrator one included.
-//   Only the owner, Frixion staff and Administrators can make, edit or delete roles.
-// - Slowmode, and the smaller channel permissions (files, embeds, polls, @everyone).
-// The Discord bridge and push notifications (functions/api) use a service account, which these rules don't limit.
+// - Slowmode in threads, and the smaller channel permissions (files, embeds, polls, @everyone).
+// The Discord bridge, push notifications and owner tools (functions/api) use a service account, which these rules don't
+// limit. The games' shared lobby is in the Realtime Database: database.rules.json.
 //
 // For whoever edits this: rules may only evaluate 1000 steps per request, and a function runs again every time it's
 // called, but a value passed to a function is worked out once. So each rule works out who is asking once, with who(),
@@ -153,15 +153,22 @@ service cloud.firestore {
         && (!k.hasAny(['friends']) || onlyTakenOut('friends', m.name)
             || (onlyAdded('friends', m.name) && m.name in resource.data.get('outgoingRequests', [])));
     }
-    // ... and only about your own real message there (noteChannelMessage()).
+    // ... and only about your own real message there (noteChannelMessage()), with the real server, channel and thread
+    // names on it (v4.54: so nobody can make a note look like it came from somewhere else).
     function mentionCreate(m, username) {
       let d = request.resource.data;
       let s = get(/databases/$(database)/documents/servers/$(d.sid)).data;
-      let msg = d.get('tid', null) == null
+      let threaded = d.get('tid', null) != null;
+      let msg = !threaded
         ? get(/databases/$(database)/documents/servers/$(d.sid)/channels/$(d.cid)/messages/$(d.mid)).data
         : get(/databases/$(database)/documents/servers/$(d.sid)/threads/$(d.tid)/messages/$(d.mid)).data;
       return active(m) && username != m.name && d.get('from', '') == m.name
-        && m.name in s.get('members', []) && username in s.get('members', []) && msg.get('uid', '') == m.name;
+        && m.name in s.get('members', []) && username in s.get('members', []) && msg.get('uid', '') == m.name
+        && d.keys().hasOnly(['sid', 'cid', 'tid', 'mid', 'from', 'text', 'at', 'server', 'channel', 'thread'])
+        && d.get('text', '') is string && d.get('text', '').size() <= 200 && d.get('at', null) == request.time
+        && d.get('server', '') == s.get('name', '')
+        && d.get('channel', '') == get(/databases/$(database)/documents/servers/$(d.sid)/channels/$(d.cid)).data.get('name', '')
+        && d.get('thread', '') == (threaded ? get(/databases/$(database)/documents/servers/$(d.sid)/threads/$(d.tid)).data.get('name', '') : '');
     }
 
     // ---------- things staff publish (the Shop, emoji, stickers, the word filter): for anyone signed in ----------
@@ -231,15 +238,17 @@ service cloud.firestore {
     function deviceCreate(m, id) {
       return m.ok && request.resource.data.get('id', '') == id
         && request.resource.data.get('banned', false) == false
+        && !('vmAllowed' in request.resource.data)
         && request.resource.data.get('accounts', []) == [m.name];
     }
-    // Anyone may record their own visit or ban their own device (the ban-evasion check bans itself); only the Owner and
-    // Co-Owners unban or change other people's devices.
+    // Anyone may record their own visit or ban their own device (the ban-evasion and virtual machine checks ban
+    // themselves); only the Owner and Co-Owners unban, let a virtual machine in (vmAllowed) or change others' devices.
     function deviceUpdate(m) {
       let k = changed();
       return m.ok && (m.rank >= 2 || (same('id')
         && m.name in request.resource.data.get('accounts', [])
         && (same('accounts') || onlyAdded('accounts', m.name))
+        && !k.hasAny(['vmAllowed'])
         && (!k.hasAny(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned', 'unbannedBy', 'unbannedAt'])
             || (resource.data.get('banned', false) == false && request.resource.data.get('banned', false) == true
                 && k.hasOnly(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned'])))));
@@ -265,7 +274,6 @@ service cloud.firestore {
             && d.get('wordle', {}).get('startedBy', '') == m.name && freshAndSmall(d, m));
     }
     function isMine(m) { return resource.data.get('uid', '') == m.name; }
-    function fromDiscordUser() { return resource.data.get('uid', '') is string && resource.data.uid.matches('discord:[0-9]{1,25}'); }
     // Your own message: anything but who sent it, and (like on anyone's message) only your own reaction.
     function ownEdit(m, k) {
       return isMine(m) && !k.hasAny(['uid', 'createdAt']) && (!k.hasAny(['reactions', 'lastReaction']) || myReactionOnly(m))
@@ -408,12 +416,12 @@ service cloud.firestore {
     function managing(m, k, s) {
       let p = permsIn(m, s);
       let needed = (k.hasAny(['name', 'description', 'iconUrl']) ? ['manageServer'] : [])
-        .concat(k.hasAny(['roles', 'memberRoles']) ? ['manageRoles'] : [])
+        .concat(k.hasAny(['roles', 'memberRoles', 'roleEdit']) ? ['manageRoles'] : [])
         .concat(k.hasAny(['bannedUsers', 'banInfo']) ? ['banMembers'] : [])
         .concat(k.hasAny(['timeouts']) ? ['timeoutMembers'] : [])
         .concat(k.hasAny(['nicknames']) ? ['manageNicknames'] : [])
         .concat(k.hasAny(['members']) && !k.hasAny(['bannedUsers', 'banInfo']) ? ['kickMembers'] : [])
-        .concat(k.difference(['name', 'description', 'iconUrl', 'roles', 'memberRoles', 'bannedUsers', 'banInfo', 'timeouts',
+        .concat(k.difference(['name', 'description', 'iconUrl', 'roles', 'memberRoles', 'roleEdit', 'bannedUsers', 'banInfo', 'timeouts',
               'nicknames', 'members', 'apps', 'auditLog'].toSet()).size() > 0 ? ['manageServer'] : []);
       return (isMember(m, s) || m.rank >= 1) && active(m)
         && (!k.hasAny(['members']) || onlyRemoved('members'))
@@ -423,10 +431,26 @@ service cloud.firestore {
               'manageRoles', 'manageChannels', 'manageNicknames', 'viewAuditLog']))
         // making, editing and deleting roles: the owner, Frixion staff and Administrators (canEditRoles() in script.js)
         && (!k.hasAny(['roles']) || p.hasAny(['administrator']))
-        // giving and taking roles: Manage Roles is enough, but never for your own roles
-        && (!k.hasAny(['memberRoles']) || p.hasAny(['administrator'])
-            || request.resource.data.get('memberRoles', {}).get(m.name, []) == s.get('memberRoles', {}).get(m.name, []));
+        // giving and taking roles: Manage Roles is enough for roles below your own highest (roleEditOk()), never yours
+        && (!k.hasAny(['memberRoles']) || p.hasAny(['administrator']) || roleEditOk(m, s));
     }
+    // Role order (v4.54), as the member menu shows it: with Manage Roles but not Administrator, you give or take one role
+    // at a time, from someone else, and only a role ranked below one of yours. roleEdit says which (setMemberRole() in
+    // script.js): m the member, i where the role is in the server's roles, j where your role that outranks it is (so
+    // the rules look at just those two, instead of going through every role, which costs too many steps).
+    function roleEditOk(m, s) {
+      let e = request.resource.data.get('roleEdit', {});
+      let roles = s.get('roles', []);
+      let t = e.get('m', '');
+      let i = e.get('i', -1);
+      let j = e.get('j', -1);
+      return t is string && t != m.name && i is int && j is int && i >= 0 && j >= 0 && i < roles.size() && j < roles.size()
+        && request.resource.data.get('memberRoles', {}).diff(s.get('memberRoles', {})).affectedKeys().hasOnly([t])
+        && oneRoleChanged(s.get('memberRoles', {}).get(t, []).toSet(), request.resource.data.get('memberRoles', {}).get(t, []).toSet(), roles[i].get('id', ''))
+        && roles[j].get('id', '') in s.get('memberRoles', {}).get(m.name, [])
+        && roles[j].get('position', 0) > roles[i].get('position', 0);
+    }
+    function oneRoleChanged(was, now, r) { return now == was.union([r].toSet()) || now == was.difference([r].toSet()); }
     function serverDelete(m) { return m.ok && (resource.data.get('ownerId', '') == m.name || m.rank >= 2); }
     function seesServer(m) { return active(m) && (m.name in resource.data.members || m.rank >= 1); }
     // What anyone in a server may change on a channel: the stamp of their own newest message there (unread dots). The
@@ -438,23 +462,42 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/servers/$(sid)/channels/$(cid)/messages/$(lm.get('mid', '-'))).data.get('uid', '') == m.name)
         || hasOne(permsIn(m, s), ['manageChannels']));
     }
-    // Posting needs View Channels and Send Messages in that channel. Messages from Discord only ever come from the
-    // bridge (functions/api/discord), never from a page.
-    function chMsgCreate(m, s, ch) {
+    // Posting needs View Channels and Send Messages in that channel, and keeping to its slowmode. Messages from Discord
+    // only ever come from the bridge (functions/api/discord), never from a page.
+    function chMsgCreate(m, s, ch, sid, cid) {
       let p = permsIn(m, s);
-      return inServer(m, s) && canPost(m) && notTimedOut(m, s) && canInChannel(m, s, ch, p, ['viewChannels', 'sendMessages'])
-        && (newAuthorIsMe(m) || newBotMessage(m, hasOne(p, ['manageMessages'])));
+      let admin = p.hasAny(['administrator']);
+      let cp = admin ? [].toSet() : chanPerms(m, s, ch, p);
+      return inServer(m, s) && canPost(m) && notTimedOut(m, s) && (admin || cp.hasAll(['viewChannels', 'sendMessages']))
+        && ((newAuthorIsMe(m) && (admin || (slowOk(m, ch, cp, sid, cid) && everyoneOk(cp)))) || newBotMessage(m, hasOne(p, ['manageMessages'])));
+    }
+    // @everyone and @here notify the whole server only from someone with Mention @everyone there; anyone else's message
+    // has to carry everyoneBlocked (the app adds it), which the push function and the ping sound respect (v4.54).
+    function everyoneOk(cp) {
+      let d = request.resource.data;
+      return cp.hasAny(['mentionEveryone']) || d.get('everyoneBlocked', false) == true
+        || !(d.get('text', '') is string && d.get('text', '').matches('(?si)(.*[\\s\\(>])?@(everyone|here)(\\b.*)?'));
+    }
+    // Slowmode (v4.54): a message in a slowmode channel comes with a stamp of when its sender last posted there
+    // (slow/{name}, written with it: addChannelMessage() in script.js), and the stamp before it has to be at least that
+    // many seconds old. Bypass Slowmode, Manage Channels and Manage Messages there skip it, as in the app.
+    function slowPath(sid, cid, name) { return /databases/$(database)/documents/servers/$(sid)/channels/$(cid)/slow/$(name); }
+    function slowOk(m, ch, cp, sid, cid) {
+      let secs = ch.get('slowmode', 0);
+      return !(secs is number) || secs <= 0 || cp.hasAny(['bypassSlowmode', 'manageChannels', 'manageMessages'])
+        || (getAfter(slowPath(sid, cid, m.name)).data.get('at', null) == request.time
+            && (!exists(slowPath(sid, cid, m.name)) || get(slowPath(sid, cid, m.name)).data.at <= request.time - duration.value(int(secs), 's')));
     }
     function chMsgUpdate(m, s, ch) {
       let k = changed();
       let p = permsIn(m, s);
       return inServer(m, s) && canInChannel(m, s, ch, p, ['viewChannels']) && (ownEdit(m, k) || serverOthersEdit(m, k, p));
     }
-    // Your own; anyone's with Manage Messages (and while deleting a whole channel); a Discord user's message that is gone
-    // from Discord (bridgeGone()); and old ones when the channel auto-deletes.
+    // Your own; anyone's with Manage Messages (and while deleting a whole channel); and old ones when the channel
+    // auto-deletes. (A Discord user's message that is gone from Discord is deleted by the bridge, which checks Discord
+    // first: removeGone() in functions/api/discord.)
     function chMsgDelete(m, s, ch) {
-      return m.ok && (isMine(m) || m.rank >= 1 || (isMember(m, s) && active(m) && (fromDiscordUser()
-        || (isOld() && ch.get('autoDelete', true) != false)
+      return m.ok && (isMine(m) || m.rank >= 1 || (isMember(m, s) && active(m) && ((isOld() && ch.get('autoDelete', true) != false)
         || hasOne(permsIn(m, s), ['manageMessages', 'manageChannels']))));
     }
     function threadCreate(m, s, ch) {
@@ -473,8 +516,10 @@ service cloud.firestore {
     // A thread's messages go with its channel: seeing them needs View Channels there, posting Send Messages in Threads.
     function threadMsgCreate(m, s, ch) {
       let p = permsIn(m, s);
-      return inServer(m, s) && canPost(m) && notTimedOut(m, s) && canInChannel(m, s, ch, p, ['viewChannels', 'sendMessagesInThreads'])
-        && (newAuthorIsMe(m) || newBotMessage(m, hasOne(p, ['manageMessages'])));
+      let admin = p.hasAny(['administrator']);
+      let cp = admin ? [].toSet() : chanPerms(m, s, ch, p);
+      return inServer(m, s) && canPost(m) && notTimedOut(m, s) && (admin || cp.hasAll(['viewChannels', 'sendMessagesInThreads']))
+        && ((newAuthorIsMe(m) && (admin || everyoneOk(cp))) || newBotMessage(m, hasOne(p, ['manageMessages'])));
     }
     function threadMsgUpdate(m, s, ch) {
       let k = changed();
@@ -517,13 +562,19 @@ service cloud.firestore {
 
         match /messages/{mid} {
           allow read: if seesChannel(who(), srv(sid), chan(sid, cid));
-          allow create: if chMsgCreate(who(), srv(sid), chan(sid, cid));
+          allow create: if chMsgCreate(who(), srv(sid), chan(sid, cid), sid, cid);
           allow update: if chMsgUpdate(who(), srv(sid), chan(sid, cid));
           allow delete: if chMsgDelete(who(), srv(sid), chan(sid, cid));
         }
         match /typing/{name} {
           allow read: if seesChannel(who(), srv(sid), chan(sid, cid));
           allow write: if typingWrite(who(), srv(sid), chan(sid, cid), name);
+        }
+        // when each person last posted here, for slowmode (slowOk()): only ever set to now, by its owner, never removed
+        match /slow/{name} {
+          allow read: if isWho(who(), name);
+          allow create, update: if isWho(who(), name) && request.resource.data.keys().hasOnly(['at']) && request.resource.data.at == request.time
+            && inServer(who(), srv(sid));
         }
       }
       match /threads/{tid} {

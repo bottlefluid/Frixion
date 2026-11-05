@@ -436,8 +436,26 @@ async function pull(env, url) {
     : { last: newestOf(after, ...w.list.map(m => m.id)), messages: w.list.filter(m => BigInt(m.id) > BigInt(after) && w.keep(m)).map(fromDiscord) };
   if (w.list.length) out.recent = { at: w.at, from: w.list.length < 50 ? '0' : w.list[0].id, ids: w.list.map(m => m.id) };
   out.added = await importPulled(env, sid, cid, link, out).catch(() => 0);
+  // messages here whose Discord side an open screen saw go missing (gone: their ids, from bridgeGone() in script.js)
+  const gone = String(url.searchParams.get('gone') || '').split(',').filter(x => ID.test(x)).slice(0, 20);
+  if (gone.length && w.list.length) out.removed = await removeGone(env, sid, cid, link, w, gone).catch(() => 0);
   const nb = buckets.get(link.channel);
   return { ...out, pace: nb && nb.left <= 1 && nb.until > Date.now() ? Math.ceil(nb.until - Date.now()) : 0 };
+}
+// Deleted in Discord, so deleted here (v4.54): each message a screen names is checked against this look at Discord, and
+// only one whose Discord side really isn't among the newest 50 any more (though it's within them, from after the link,
+// and older than the look) is deleted. Pages used to delete these themselves, which meant the rules had to let anyone
+// in a server delete any Discord user's message; now only moderators can, and this does the rest.
+async function removeGone(env, sid, cid, link, w, mids) {
+  const there = new Set(w.list.map(m => m.id)), from = BigInt(w.list.length < 50 ? '0' : w.list[0].id), since = BigInt(newestOf(link.since));
+  const dir = `servers/${sid}/channels/${cid}/messages`;
+  let n = 0;
+  for (const mid of mids) {
+    const doc = await fsGet(env, `${dir}/${mid}`, ['dc']).catch(() => null), dc = doc && doc.data.dc;
+    if (!SNOWFLAKE.test(dc || '') || there.has(dc) || BigInt(dc) < from || BigInt(dc) <= since || snowflakeMs(dc) > w.at - 2000) continue;
+    if (await fsDelete(env, `${dir}/${mid}`).catch(() => false)) n++;
+  }
+  return n;
 }
 // What a pull found is added here, the way the timer adds it (messages/dc_<Discord id>, only if it isn't there yet), so
 // no page ever writes a Discord user's message itself: since v4.51 the database's rules don't let pages do that, which

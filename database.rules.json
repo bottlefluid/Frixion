@@ -8,7 +8,92 @@
     },
     "ocrng": {
       ".read": "auth != null",
-      ".write": "auth != null"
+      "roster": {
+        "$name": {
+          ".write": "auth != null && auth.token.n === $name",
+          ".validate": "!newData.exists() || !newData.child('name').exists() || (newData.child('name').isString() && newData.child('name').val().length <= 64)"
+        }
+      },
+      "pos": {
+        "$name": {
+          ".write": "auth != null && auth.token.n === $name"
+        }
+      },
+      "session": {
+        "$name": {
+          ".write": "auth != null && auth.token.n === $name"
+        }
+      },
+      "hits": {
+        "$name": {
+          ".write": "auth != null && auth.token.n === $name",
+          "$hit": {
+            ".write": "auth != null && auth.token.n != null && !data.exists() && newData.child('from').val() === auth.token.n"
+          }
+        }
+      },
+      "fx": {
+        "$id": {
+          ".write": "auth != null && auth.token.n != null && (data.exists() ? !newData.exists() && (data.child('uid').val() === auth.token.n || data.child('t').val() < now - 60000) : newData.child('uid').val() === auth.token.n)"
+        }
+      },
+      "announce": {
+        "$id": {
+          ".write": "auth != null && auth.token.n != null && (data.exists() ? !newData.exists() && (data.child('uid').val() === auth.token.n || data.child('t').val() < now - 120000) : newData.child('uid').val() === auth.token.n)"
+        }
+      },
+      "chat": {
+        "$id": {
+          ".write": "auth != null && auth.token.n != null && (data.exists() ? !newData.exists() && (data.child('uid').val() === auth.token.n || data.child('t').val() < now - 60000) : newData.child('uid').val() === auth.token.n && newData.child('text').isString() && newData.child('text').val().length <= 150 && newData.child('name').isString() && newData.child('name').val().length <= 64)"
+        }
+      },
+      "world": {
+        ".write": "auth != null && auth.token.r >= 2",
+        "weather": {
+          ".write": "auth != null && auth.token.n != null && newData.exists() && newData.child('type').isString() && newData.child('until').isNumber() && newData.child('until').val() <= now + 900000"
+        }
+      },
+      "raid": {
+        ".write": "auth != null && auth.token.n != null && (newData.exists() || auth.token.r >= 2)"
+      },
+      "xboss": {
+        ".write": "auth != null && auth.token.n != null && (newData.exists() || auth.token.r >= 2)"
+      },
+      "wipe": {
+        "$name": {
+          ".write": "auth != null && auth.token.r >= 2"
+        }
+      },
+      "gifts": {
+        "$name": {
+          "$id": {
+            ".write": "auth != null && (auth.token.r >= 2 || (auth.token.n === $name && !newData.exists()))"
+          }
+        }
+      },
+      "sweeps": {
+        "$key": {
+          ".write": "auth != null && auth.token.n != null && !data.exists() && newData.exists()"
+        }
+      },
+      "cmd": {
+        "$host": {
+          ".write": "auth != null && auth.token.n === $host",
+          "join": {
+            "$name": {
+              ".write": "auth != null && auth.token.n === $name && auth.token.r >= 2"
+            }
+          },
+          "hit": {
+            "$id": {
+              ".write": "auth != null && auth.token.r >= 2 && !data.exists()"
+            }
+          }
+        }
+      },
+      "sac": {
+        ".write": "auth != null && auth.token.r >= 2"
+      }
     }
   }
 }
