@@ -257,6 +257,14 @@ service cloud.firestore {
           || (m.rank >= 2 && k.hasOnly(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned', 'unbannedBy', 'unbannedAt', 'vmAllowed'])));
     }
 
+    // ---------- one-time passwords (v4.55) ----------
+    // Codes the Owner made (functions/api/admin/one-time-password), each logging one person in once
+    // (functions/api/admin/redeem). Only a code's SHA-256 is kept (the id), never the code. The Owner panel counts and
+    // cancels unused ones; nothing makes them from a page.
+    match /loginCodes/{id} {
+      allow read, delete: if isOwnerLevel(who());
+    }
+
     // ---------- network addresses (v4.55) ----------
     // Which accounts and devices used each address (ips/<id>, written by functions/api/admin/seen), and banned ones
     // (bannedIps/<id>, which functions/api/admin/ip checks before anyone signs in). Ids, never the addresses.

@@ -1,10 +1,11 @@
 // Owner tools that need Google's admin powers, which no page has. A Cloudflare Pages Function, served at /api/admin/* on
 // the main site (frixionbeta, which has the FIREBASE_SERVICE_ACCOUNT secret); Frixion calls it there.
 //   POST /api/admin/one-time-password  { token, username }: the Owner (owner: true, from the caller's Firebase ID
-//                                 token) makes a one-time password for someone who can't log in. It's generated here,
-//                                 nobody picks it; they're signed out everywhere, log in with it once, and must choose
-//                                 their own password right away (mustChangePassword on their profile). Nobody can see
-//                                 or set anyone's real password (v4.55: the Owner's Set Password was removed).
+//                                 token) makes a one-time password: a code, generated here, that logs that person in
+//                                 once. Several can be waiting at once and they don't expire. Their own password never
+//                                 changes, and nobody can see or set it (v4.55: the Owner's Set Password was removed).
+//   POST /api/admin/redeem        { username, code }: logging in with one (nobody signed in yet): the code is used up
+//                                 and a Firebase custom token for that account comes back (signInWithCustomToken).
 //   GET  /api/admin/ip            whether the network address this comes from is banned (bannedIps/<its id>), checked
 //                                 before anyone signs in; and its id, so the Owner can't ban their own.
 //   POST /api/admin/seen          { token, device }: notes that this account (on this device) used this address
@@ -26,7 +27,6 @@
 const PROJECT = 'liquidalt';
 const FIRESTORE = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`;
 const IDENTITY = `https://identitytoolkit.googleapis.com/v1/projects/${PROJECT}`;
-const AUTH_EMAIL_DOMAIN = 'u.frixionbeta.pages.dev';
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400' };
 const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...CORS } });
 class Fail extends Error { constructor(status, message) { super(message); this.status = status; } }
@@ -40,6 +40,7 @@ export async function onRequest({ request, env, params }) {
     if (!env.FIREBASE_SERVICE_ACCOUNT && !env.FIRESTORE_BEARER) fail(503, 'Owner tools aren\'t set up on this site.');
     // (bodies come as text/plain, so other sites can call these without a preflight)
     if (route === 'one-time-password' && request.method === 'POST') return json(await oneTimePassword(env, await request.json().catch(() => ({}))));
+    if (route === 'redeem' && request.method === 'POST') return json(await redeem(env, request, await request.json().catch(() => ({}))));
     if (route === 'ip' && request.method === 'GET') return json(await ipCheck(env, request));
     if (route === 'seen' && request.method === 'POST') return json(await ipSeen(env, request, await request.json().catch(() => ({}))));
     if (route === 'claims' && request.method === 'POST') return json(await setClaims(env, await request.json().catch(() => ({}))));
@@ -70,6 +71,15 @@ const tokens = new Map();   // scope -> { value, until }
 const b64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const b64urlText = s => b64url(new TextEncoder().encode(s));
 const unb64url = s => Uint8Array.from(atob(String(s).replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - String(s).length % 4) % 4)), c => c.charCodeAt(0));
+// the service account's private key, ready to sign with
+let saKeyP = null;
+function saKey(sa) {
+  if (!saKeyP) {
+    const der = Uint8Array.from(atob(String(sa.private_key).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')), c => c.charCodeAt(0));
+    saKeyP = crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  }
+  return saKeyP;
+}
 async function googleToken(env) {
   if (env.FIRESTORE_BEARER) return env.FIRESTORE_BEARER;
   const scope = 'https://www.googleapis.com/auth/cloud-platform', hit = tokens.get(scope);
@@ -77,9 +87,7 @@ async function googleToken(env) {
   const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT), now = Math.floor(Date.now() / 1000);
   const head = b64urlText(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: sa.private_key_id }));
   const claims = b64urlText(JSON.stringify({ iss: sa.client_email, scope, aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }));
-  const der = Uint8Array.from(atob(String(sa.private_key).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')), c => c.charCodeAt(0));
-  const key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
-  const sig = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(head + '.' + claims)));
+  const sig = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', await saKey(sa), new TextEncoder().encode(head + '.' + claims)));
   const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: 'grant_type=' + encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') + '&assertion=' + head + '.' + claims + '.' + b64url(sig) });
   const j = await r.json().catch(() => ({}));
@@ -153,30 +161,59 @@ async function requireOwner(env, token) {
 }
 
 // ---------------- password help ----------------
-const authEmail = username => [...new TextEncoder().encode(username)].map(b => b.toString(16).padStart(2, '0')).join('') + '@' + AUTH_EMAIL_DOMAIN;
 const USERNAME = /^[A-Za-z0-9_]{1,40}$/;
 // 10 characters from letters and digits that can't be mixed up (no I, O, 0 or 1)
 const OTP_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const makeOtp = () => Array.from(crypto.getRandomValues(new Uint8Array(10)), b => OTP_CHARS[b % OTP_CHARS.length]).join('');
+// The code is kept only as its SHA-256 (loginCodes/c_<hash>, with whose it is), so nobody reading the database can use
+// it. Any number can be waiting at once, for anyone, and they don't run out on their own.
+const CODE_RE = /^[A-HJ-NP-Z2-9]{10}$/;
+const sha256Hex = async s => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map(b => b.toString(16).padStart(2, '0')).join('');
 async function oneTimePassword(env, { token, username }) {
-  await requireOwner(env, token);
+  const me = await requireOwner(env, token);
   if (typeof username !== 'string' || !USERNAME.test(username)) fail(400, 'That isn\'t a username.');
   const target = await fsGet(env, `users/${username}`);
   if (!target) fail(404, 'No account has that username.');
   if (typeof target.authUid !== 'string' || !target.authUid) fail(409, 'That account has no sign-in yet.');
   const password = makeOtp();
-  // The username's made-up email goes on too, so an account that only used Google can then log in with its username.
-  // (validSince: everywhere they were signed in is signed out)
-  const r = await authCall(env, 'accounts:update', { localId: target.authUid, email: authEmail(username), password: 'frixion:' + password, validSince: String(Math.floor(Date.now() / 1000)) });
-  if (!r.ok) {
-    const why = await googleWhy(r);
-    if (/EMAIL_EXISTS/.test(why)) fail(409, 'Another sign-in already uses this username\'s login. Ask for help to clear it.');
-    if (/USER_NOT_FOUND/.test(why)) fail(404, 'That account\'s sign-in is gone.');
-    if (noRole(r, why)) fail(503, 'The service account can\'t change sign-ins yet: give it the Firebase Authentication Admin role.');
-    fail(502, 'Google refused (' + why + ').');
-  }
-  await fsPatch(env, `users/${username}`, { mustChangePassword: true });
+  await fsPatch(env, `loginCodes/c_${await sha256Hex(password)}`, { username, by: me, at: new Date() });
   return { ok: true, password };
+}
+// Logging in with one (typed in the password box: redeemLoginCode() in script.js): the code is used up, and the page
+// gets a sign-in for that account (a Firebase custom token), whose own password doesn't change. A few tries a minute
+// per address, so nobody can guess codes (there are about a million billion of them anyway).
+const tries = new Map();   // address -> { at, n }
+async function redeem(env, request, { username, code }) {
+  const ip = request.headers.get('CF-Connecting-IP') || 'local', t = tries.get(ip);
+  if (t && Date.now() - t.at < 60000 && t.n >= 10) fail(429, 'Too many tries. Wait a minute.');
+  tries.set(ip, t && Date.now() - t.at < 60000 ? { at: t.at, n: t.n + 1 } : { at: Date.now(), n: 1 });
+  if (tries.size > 5000) tries.clear();
+  if (typeof username !== 'string' || !USERNAME.test(username) || typeof code !== 'string' || !CODE_RE.test(code)) fail(403, 'That one-time password doesn\'t work.');
+  const path = `loginCodes/c_${await sha256Hex(code)}`;
+  const c = await fsGet(env, path);
+  if (!c || c.username !== username) fail(403, 'That one-time password doesn\'t work.');
+  // used up: deleted only if it's still there, so two tries at once can't both get in
+  const r = await fetch(`${fsBase(env)}:commit`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await googleToken(env) },
+    body: JSON.stringify({ writes: [{ delete: docName(env, path), currentDocument: { exists: true } }] }) });
+  if (!r.ok) fail(403, 'That one-time password doesn\'t work.');
+  const target = await fsGet(env, `users/${username}`);
+  if (!target || typeof target.authUid !== 'string' || !target.authUid) fail(409, 'That account has no sign-in yet.');
+  return { token: await customToken(env, target.authUid) };
+}
+// A Firebase custom token: signed with the service account's key, it lets a page sign in as that account once.
+// (The Auth emulator takes unsigned ones, for tests.)
+const CUSTOM_AUD = 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit';
+async function customToken(env, uid) {
+  const now = Math.floor(Date.now() / 1000);
+  if (!env.FIREBASE_SERVICE_ACCOUNT) {
+    if (!env.TEST_TOKENS) fail(503, 'Owner tools aren\'t set up on this site.');
+    return b64urlText(JSON.stringify({ alg: 'none', typ: 'JWT' })) + '.' + b64urlText(JSON.stringify({ iss: 'test@liquidalt.iam.gserviceaccount.com', sub: 'test@liquidalt.iam.gserviceaccount.com', aud: CUSTOM_AUD, iat: now, exp: now + 3600, uid })) + '.';
+  }
+  const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+  const head = b64urlText(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: sa.private_key_id }));
+  const body = b64urlText(JSON.stringify({ iss: sa.client_email, sub: sa.client_email, aud: CUSTOM_AUD, iat: now, exp: now + 3600, uid }));
+  const sig = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', await saKey(sa), new TextEncoder().encode(head + '.' + body)));
+  return head + '.' + body + '.' + b64url(sig);
 }
 
 // ---------------- network addresses (IP bans) ----------------

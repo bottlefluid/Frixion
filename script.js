@@ -486,7 +486,7 @@ const UPDATES = [
     notes: [
       'Banned people go straight to Nitro Type. If something stops that, the ban screen is still waiting.',
       'Network bans: the Owner panel has a new IP tab that shows each network with the devices and accounts seen on it, and can ban a whole network. Only the start of each address is kept, never the whole thing.',
-      'The Owner can no longer set anyone\'s password. Instead they can make a one-time password for someone who can\'t log in: it works for one login, then that person picks their own, so nobody else ever knows it.',
+      'The Owner can no longer set anyone\'s password. Instead they can make one-time passwords for someone who can\'t log in: each one logs them in once, and their own password stays the same.',
       'Forgot your password? The login screen now says what to do.',
     ] },
   { v: '4.54', date: '2026-11-05', title: 'Stress tested',
@@ -3276,7 +3276,8 @@ function enterApp() {
   if (deviceBan.banned) { if (banSources.vm) recordVmBan(myUid); return; }
   if (!OVERLAY_WINDOW) { registerDevice(myUid); recordIp(); }
   ensureClaims();
-  if (!OVERLAY_WINDOW) setTimeout(forcePasswordChange, 0);   // logged in with a one-time password
+  // (a leftover from the first one-time passwords, which made people pick a new password: nothing asks for that now)
+  if (myProfile && myProfile.mustChangePassword) db.collection('users').doc(myUid).update({ mustChangePassword: FieldValue.delete() }).catch(() => {});
   $('boot-screen').classList.add('hidden');
   $('auth-screen').classList.add('hidden');
   $('app').classList.remove('hidden');
@@ -3395,7 +3396,19 @@ function authView(id) { ['login-view', 'register-view', 'pick-view', 'forgot-vie
 
 $('show-register').onclick = () => authView('register-view');
 $('show-login').onclick = () => authView('login-view');
-// Forgot password? (v4.55): the Owner makes one-time passwords (showPasswordHelp()); this just says so.
+// One-time passwords (v4.55): a code from the Owner (showPasswordHelp()) goes in the password box like a password and
+// logs that person in once. functions/api/admin/redeem uses it up and hands back a sign-in for the account (a custom
+// token); the account's own password doesn't change (they can set a new one in Settings > My Account).
+const OTP_RE = /^[A-HJ-NP-Z2-9]{10}$/;
+async function redeemLoginCode(username, typed) {
+  const code = String(typed || '').trim().toUpperCase();
+  if (!OTP_RE.test(code)) return null;
+  const r = await fetch(`${ADMIN_API}/redeem`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ username, code }) }).catch(() => null);
+  const j = r ? await r.json().catch(() => ({})) : {};
+  if (!r || !r.ok || !j.token) return null;
+  return auth.signInWithCustomToken(j.token);
+}
+// Forgot password? (v4.55): the Owner makes one-time passwords; this just says so.
 $('show-forgot').onclick = () => authView('forgot-view');
 $('forgot-back').onclick = () => authView('login-view');
 
@@ -3408,6 +3421,7 @@ $('login-btn').onclick = async () => {
   $('login-btn').disabled = true; $('login-btn').textContent = 'Checking...';
   try {
     let cred = await auth.signInWithEmailAndPassword(authEmail(username), authPass(pass)).catch(e => (WRONG_LOGIN.has(e.code) ? null : Promise.reject(e)));
+    if (!cred) cred = await redeemLoginCode(username, pass);   // a one-time password from the Owner
     if (!cred) cred = await moveOver(username, pass);
     if (!cred) err.textContent = 'Incorrect username or password.';
     else if ((await enterAs(cred.user, err)) === false) { await auth.signOut(); err.textContent = 'Incorrect username or password.'; }
@@ -14147,6 +14161,7 @@ async function renderAdminActions() {
         <button class="btn-accent-inline slim" id="admin-pass-btn" disabled>Create One-Time Password</button>
       </div>
       <div id="admin-pass-out"></div>
+      <div id="admin-pass-codes"></div>
     </div>
     ${adminItemsBlockHTML(u)}
     <div id="admin-user-devices"></div>
@@ -14313,16 +14328,17 @@ function refreshClaimsFor(username) {
   if (username === myUid) { ensureClaims(true); return; }
   auth.currentUser.getIdToken().then(token => fetch(`${ADMIN_API}/claims`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token, username }) })).catch(() => {});
 }
-// Password help (v4.55), Owner only. Nobody can see or choose anyone's password: the Owner makes a one-time password,
-// which the function generates. They log in with it once and must pick their own right away (mustChangePassword).
+// Password help (v4.55), Owner only. Nobody can see or choose anyone's password: the Owner makes one-time passwords,
+// codes the function generates, each logging that person in once (redeemLoginCode()). Any number can be waiting, they
+// don't expire, and the person's own password never changes. Unused ones can be cancelled here.
 function showPasswordHelp(username) {
   const note = $('admin-pass-note'), btn = $('admin-pass-btn');
   if (!note || !btn) return;
   if (!isOwner) { note.textContent = 'Only the Owner can help with passwords.'; return; }
-  note.textContent = 'For someone who can\'t log in. It works for one login, then they pick their own, so you never know their password.';
+  note.textContent = 'Makes a code they type in the password box. It logs them in once, then it\'s used up. Their own password doesn\'t change.';
   btn.disabled = false;
   btn.onclick = () => confirmAction({
-    title: 'One-Time Password', body: `Make a one-time password for ${username}? They're signed out everywhere, log in with it once, and then choose their own password.`,
+    title: 'One-Time Password', body: `Make a one-time password for ${username}? It logs them in once. It doesn't expire, so only give it to them.`,
     confirmLabel: 'Create It', danger: false,
     onConfirm: async () => {
       try {
@@ -14334,46 +14350,26 @@ function showPasswordHelp(username) {
         if (out) out.innerHTML = `<div class="ab-row" style="margin-top:8px"><input class="fld-input" id="admin-otp" readonly value="${esc(j.password)}" style="font-family:monospace;letter-spacing:2px"><button class="btn-secondary slim" id="admin-otp-copy">Copy</button></div>
           <div class="ab-note" style="margin-top:6px;opacity:.7;font-size:12px">Give it to ${esc(username)}. It's shown only this once and works for one login.</div>`;
         if ($('admin-otp-copy')) $('admin-otp-copy').onclick = () => navigator.clipboard.writeText(j.password).then(() => toast('Copied.')).catch(() => {});
-        note.textContent = 'Done.';
-        btn.disabled = true;
         toast(`Made a one-time password for ${username}.`);
+        showUnusedCodes(username);
       } catch (e) { toast(e.message || 'Could not make one.', 'error'); }
     },
   });
+  showUnusedCodes(username);
 }
-// After logging in with a one-time password: a new password before anything else. Log Out is the only other way out.
-function forcePasswordChange() {
-  if (!myProfile || myProfile.mustChangePassword !== true || $('pw-change-modal')) return;
-  const ov = document.createElement('div');
-  ov.className = 'modal-overlay'; ov.id = 'pw-change-modal'; ov.style.zIndex = 9999;
-  ov.innerHTML = `<div class="modal-box">
-      <div class="modal-header-row"><h2>Choose a new password</h2></div>
-      <p class="desc">You logged in with a one-time password. Pick your own to keep using Frixion. Nobody else will know it.</p>
-      <div class="auth-error" id="pw-change-error"></div>
-      <input type="password" id="pw-change-1" class="fld-input" placeholder="New password" autocomplete="new-password" maxlength="100" style="width:100%;margin-bottom:10px">
-      <input type="password" id="pw-change-2" class="fld-input" placeholder="New password again" autocomplete="new-password" maxlength="100" style="width:100%;margin-bottom:16px">
-      <div class="modal-actions"><button class="btn-secondary" id="pw-change-logout">Log Out</button><button class="btn-accent-inline" id="pw-change-save">Save Password</button></div>
-    </div>`;
-  document.body.append(ov);
-  $('pw-change-logout').onclick = () => { ov.remove(); Promise.resolve($('logout-btn').onclick()).catch(() => {}); };
-  $('pw-change-save').onclick = async () => {
-    const a = $('pw-change-1').value, b = $('pw-change-2').value, err = $('pw-change-error'), btn = $('pw-change-save');
-    err.textContent = '';
-    if (a.length < 4) { err.textContent = 'Password must be at least 4 characters.'; return; }
-    if (a !== b) { err.textContent = 'The two passwords don\'t match.'; return; }
-    btn.disabled = true;
-    try {
-      await auth.currentUser.updatePassword(authPass(a));
-      await db.collection('users').doc(myUid).update({ mustChangePassword: FieldValue.delete() });
-      myProfile.mustChangePassword = false;
-      ov.remove();
-      toast('Your new password is set.');
-    } catch (e) {
-      err.textContent = e.code === 'auth/requires-recent-login' ? 'Log out, log in again with the one-time password, then pick your new one.' : (e.message || 'Could not save it.');
-    }
-    btn.disabled = false;
+async function showUnusedCodes(username) {
+  let ids = [];
+  try { ids = (await db.collection('loginCodes').where('username', '==', username).get()).docs.map(d => d.id); } catch (e) {}
+  const box = $('admin-pass-codes');
+  if (!box || adminSelectedUser !== username) return;
+  box.innerHTML = ids.length ? `<div class="ab-row" style="margin-top:8px"><span class="ab-note">${plural(ids.length, 'unused one-time password')}.</span>
+    <button class="btn-secondary slim" id="admin-codes-cancel">Cancel ${ids.length === 1 ? 'It' : 'Them'}</button></div>` : '';
+  if ($('admin-codes-cancel')) $('admin-codes-cancel').onclick = async () => {
+    await Promise.all(ids.map(id => db.collection('loginCodes').doc(id).delete().catch(() => {})));
+    if ($('admin-pass-out')) $('admin-pass-out').innerHTML = '';
+    toast(ids.length === 1 ? 'It won\'t work anymore.' : 'They won\'t work anymore.');
+    showUnusedCodes(username);
   };
-  setTimeout(() => $('pw-change-1') && $('pw-change-1').focus(), 50);
 }
 async function adminRedirect(username) {
   if (!isOwner) { toast('Only the owner can redirect users.', 'error'); return; }
