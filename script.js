@@ -96,15 +96,29 @@ firebase.initializeApp(firebaseConfig);
 // Testing on your own computer: http://localhost:<port>/?emulators talks to the Firebase emulators (firebase
 // emulators:start) instead of the real database, so test accounts and messages never reach it. Ignored on the live site.
 const USING_EMULATORS = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && new URLSearchParams(location.search).has('emulators');
-// App Check (v4.51): every request to the database carries a pass from Google's reCAPTCHA, which only Frixion's own
-// addresses can get (the reCAPTCHA key lists them). Once it's enforced (Firebase console > App Check), a copy of Frixion
-// on another address can't use the database at all. The site key is public, like the rest of this config; the secret
-// half is only in the Firebase console. Empty: App Check is off.
-const APP_CHECK_SITE_KEY = '';
-const APP_CHECK_ON = !!(APP_CHECK_SITE_KEY && !USING_EMULATORS && firebase.appCheck);
+// App Check (v4.51): every request to the database carries a pass from Google Cloud Fraud Defense (the new name for
+// reCAPTCHA Enterprise), and only Frixion's own 5 addresses can get one: the key lists them. Once it's enforced (Firebase
+// console > App Check > APIs), a copy of Frixion on another address can't use the database at all. The key is public,
+// like the rest of this config (Fraud Defense keys have no secret half). Passes last a day (set in the Firebase console),
+// which keeps Frixion well inside Fraud Defense's free 10,000 checks a month; without billing, checks past that fail until
+// the month ends, so don't shorten it. Settings, My Account shows whether this device gets passes (appCheckStatus()).
+const APP_CHECK_SITE_KEY = '6LfgihAuAAAAAHEY8GpUCwJF9R6iW92Kv8X5jsX4';
+const APP_CHECK_ON = !!(APP_CHECK_SITE_KEY && firebase.appCheck && /^(frixionbeta|equilibrium-incarnate|frixionalpha|skymc|airmc)\.pages\.dev$/.test(location.hostname));
 if (APP_CHECK_ON) {
-  try { firebase.appCheck().activate(APP_CHECK_SITE_KEY, true); document.documentElement.classList.add('has-recaptcha'); }
-  catch (e) { console.warn('App Check could not start.', e); }
+  try {
+    firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(APP_CHECK_SITE_KEY), true);
+    document.documentElement.classList.add('has-recaptcha');
+  } catch (e) { console.warn('App Check could not start.', e); }
+}
+// Whether this device gets App Check's pass: shown in Settings, My Account, so every device and app can be checked before
+// the database starts requiring one.
+async function appCheckStatus() {
+  if (!APP_CHECK_ON) return 'Off here.';
+  try {
+    const r = await firebase.appCheck().getToken(false);
+    if (r && r.error) throw r.error;
+    return r && r.token ? 'Working on this device.' : 'Not working on this device.';
+  } catch (e) { return `Not working on this device (${(e && (e.code || e.message)) || 'unknown error'}).`; }
 }
 const db = firebase.firestore();
 // Phones on mobile data (or behind some proxies) can stall on the default connection type; this lets Firestore switch to long-polling on its own.
@@ -474,6 +488,7 @@ const UPDATES = [
       'Server roles count for real now: deleting or pinning other people\'s messages, kicking, banning, timeouts, nicknames, roles and channels all need the matching permission (or owning the server). If you run a server, check your moderators have what they need.',
       'Invite links can\'t be taken over: if two servers ever had the same code, the original keeps it.',
       'Logging out stops that device\'s notifications straight away.',
+      'Frixion now proves it\'s the real Frixion every time it talks to the database, so copies of Frixion on other addresses will soon be shut out completely. Settings, My Account shows whether that works on your device.',
     ] },
   { v: '4.50', date: '2026-11-03', title: 'Safer sign-in, and Continue with Google',
     notes: [
@@ -3241,7 +3256,9 @@ function renderAccountSignin() {
       ${google ? '' : googleSignInWorks() ? '<button type="button" class="btn-secondary slim" id="as-google">Connect Google</button>' : ''}</div>
     <div class="as-row"><div class="as-text">Password<small>${hasPass ? 'Log in with your username and this password, here and in the Frixion apps.' : 'None yet. Set one to log in with your username in the Frixion apps.'}</small></div></div>
     <div class="as-form"><input type="password" id="as-pass" placeholder="${hasPass ? 'New password' : 'Password'}" autocomplete="new-password"><button type="button" class="btn-secondary slim" id="as-pass-btn">${hasPass ? 'Change password' : 'Set password'}</button></div>
-    <div class="as-msg" id="as-msg"></div>`;
+    <div class="as-msg" id="as-msg"></div>
+    <div class="as-row"><div class="as-text">Security check<small id="as-appcheck">Checking...</small></div></div>`;
+  appCheckStatus().then(t => { const el = $('as-appcheck'); if (el) el.textContent = t; });
   const msg = $('as-msg');
   if ($('as-google')) $('as-google').onclick = async () => {
     msg.textContent = '';
