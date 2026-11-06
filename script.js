@@ -482,6 +482,14 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.57', date: '2026-11-06', title: 'Orbs you can trust',
+    notes: [
+      'Orbs, Premium and Shop items can\'t be cheated any more: nobody can give themselves Orbs, Premium time or items from their browser. Frixion\'s own server adds them, and it decides the amounts.',
+      'Games can give up to 20,000 Orbs a day per account (the day starts over at midnight UTC), and Cookie Clicker tells you first if a cash-out won\'t all fit.',
+      'Shop prices come from Frixion, not your browser, and buying something twice at once can\'t spend the same Orbs twice.',
+      'Codes are checked and paid out by the server too, so each one still works only once per person.',
+      'Two-color banners and names show only while that person has Premium.',
+    ] },
   { v: '4.56', date: '2026-11-05', title: 'Premium, upgraded',
     notes: [
       'Frixion Premium got a lot better: your name in two colors you pick, your own two-color profile banners, 4,000-character messages, 10 MB uploads and 100 MB videos, and 1.25x luck in Overcontrol RNG.',
@@ -3304,6 +3312,7 @@ function enterApp() {
   if (deviceBan.banned) { if (banSources.vm) recordVmBan(myUid); return; }
   if (!OVERLAY_WINDOW) { registerDevice(myUid); recordIp(); }
   ensureClaims();
+  syncShopPrices();
   // (a leftover from the first one-time passwords, which made people pick a new password: nothing asks for that now)
   if (myProfile && myProfile.mustChangePassword) db.collection('users').doc(myUid).update({ mustChangePassword: FieldValue.delete() }).catch(() => {});
   $('boot-screen').classList.add('hidden');
@@ -3576,6 +3585,8 @@ $('logout-btn').onclick = async () => {
   // this device stops getting their notifications (waited for: once signed out, the database won't let it)
   if (pushOn()) { await db.collection('pushSubs').doc(pushId).delete().catch(() => {}); pushId = null; }
   clearMyTypingDoc();
+  // Orbs a game just paid go out first (sent as this account, so they can't land on the next one)
+  await Promise.race([flushEarn(), new Promise(r => setTimeout(r, 3000))]);
   cleanupAllListeners();
   setSession(null);
   await auth.signOut().catch(() => {});
@@ -5649,7 +5660,9 @@ async function openProfileModal(username) {
   }
 
   const shopBanner = bannerById(p.equippedBanner);
-  $('profile-banner').style.background = shopBanner ? bannerGradientCSS(shopBanner) : (p.bannerColor || p.avatarColor || '#5865f2');
+  // a two-color banner is a Premium perk (v4.56): once Premium runs out, everyone sees the profile color instead
+  const ownBanner = p.bannerColor && (isPremium(p) || !/gradient/.test(p.bannerColor)) ? p.bannerColor : null;
+  $('profile-banner').style.background = shopBanner ? bannerGradientCSS(shopBanner) : (ownBanner || p.avatarColor || '#5865f2');
   $('profile-banner').classList.toggle('banner-anim', !!(shopBanner && shopBanner.animated));
   $('profile-avatar').style.background = 'transparent';
   $('profile-avatar').classList.add('has-image');
@@ -11825,6 +11838,7 @@ async function buyPremiumCode(days) {
   if (premiumPurchaseBusy) throw new Error('busy');
   premiumPurchaseBusy = true;
   try {
+    await flushEarn();   // Orbs a game just paid count too
     const userRef = db.collection('users').doc(myUid);
     let code = null;
     for (let tries = 0; tries < 5 && !code; tries++) {
@@ -11856,6 +11870,7 @@ async function subscribeToPremium() {
 }
 
 async function giftPremiumTo(recipientUsername) {
+  await flushEarn();
   const fresh = (await db.collection('users').doc(myUid).get()).data();
   if ((fresh.orbs || 0) < PREMIUM_COST_ORBS) { toast(`You need ${PREMIUM_COST_ORBS} Orbs to gift Premium.`); return; }
   const days = Math.round(PREMIUM_DURATION_MS / 86400000);
@@ -11886,8 +11901,9 @@ async function giftPremiumTo(recipientUsername) {
   });
 }
 
-// Checking the code, marking it used and giving the reward all happen in one transaction, so a code can only ever pay out
-// once, even if the button is pressed twice or two people try the same code at the same moment.
+// The server (functions/api/admin/code) checks the code, marks it used and gives the reward in one go, so a code can only
+// ever pay out once, even if the button is pressed twice or two people try the same code at the same moment (v4.57: a
+// page can't add Orbs or Premium time to itself).
 async function redeemCode() {
   const code = ($('redeem-code-input').value || '').trim().toUpperCase();
   const btn = $('redeem-code-btn');
@@ -11897,31 +11913,11 @@ async function redeemCode() {
   if (btn.disabled) return;
   btn.disabled = true;
   try {
-    const ref = db.collection('redeemCodes').doc(code);
-    const userRef = db.collection('users').doc(myUid);
-    const result = await db.runTransaction(async tx => {
-      const [snap, me] = await Promise.all([tx.get(ref), tx.get(userRef)]);
-      if (!snap.exists) return { error: 'That code is invalid.' };
-      const data = snap.data();
-      const usage = codeUsage(data);
-      if (usage.usedBy.includes(myUid)) return { error: 'You have already redeemed this code.' };
-      if (usage.usedUp) return { error: usage.maxUses === 1 ? 'That code has already been redeemed.' : 'That code has been used up.' };
-      const value = Math.max(0, Math.floor(Number(data.value) || 0));
-      if (data.type === 'orbs') {
-        tx.update(userRef, { orbs: FieldValue.increment(value) });
-      } else if (data.type === 'premium') {
-        const fresh = me.data() || {};
-        const base = isPremium(fresh) ? fresh.premiumUntil : Date.now();
-        tx.update(userRef, { premiumUntil: base + value * 86400000 });
-      } else return { error: 'That code is invalid.' };
-      tx.update(ref, { uses: usage.uses + 1, usedBy: [...usage.usedBy, myUid], redeemedBy: myUid, redeemedAt: FieldValue.serverTimestamp() });
-      return { type: data.type, value };
-    });
-    if (result.error) { $('redeem-code-error').textContent = result.error; return; }
+    const result = await orbsCall('code', { code });
     toast(result.type === 'orbs' ? `+${result.value} Orbs redeemed!` : `Frixion Premium extended by ${result.value} days!`);
     $('redeem-code-input').value = '';
     renderCodesView();
-  } catch (e) { $('redeem-code-error').textContent = 'Something went wrong.'; }
+  } catch (e) { $('redeem-code-error').textContent = e.message || 'Something went wrong.'; }
   finally { btn.disabled = false; }
 }
 
@@ -12478,25 +12474,24 @@ function refreshOpenShopPanes() {
   Object.keys(SHOP_CATEGORY_DEFS).forEach(renderShopCategoryPane);
 }
 
+let shopBuying = false;
 async function buyShopItem(key, id) {
   const def = SHOP_CATEGORY_DEFS[key];
   const item = def && def.catalog.find(i => i.id === id);
-  if (!item) return;
+  if (!item || shopBuying) return;
   if (item.disabled) { toast('That item is not available right now.', 'error'); return; }
+  if ((myProfile[def.ownedField] || []).includes(id)) { toast('You already own this.'); return; }
+  if ((myProfile.orbs || 0) + pendingOrbs() < item.price) { toast('Not enough Orbs. Play games to earn more.'); return; }
+  shopBuying = true;
   try {
-    const fresh = (await db.collection('users').doc(myUid).get()).data();
-    if ((fresh[def.ownedField] || []).includes(id)) { toast('You already own this.'); return; }
-    if ((fresh.orbs || 0) < item.price) { toast('Not enough Orbs. Play games to earn more.'); return; }
+    await flushEarn();   // Orbs a game just paid count too
     // The first purchase of a track with a cutscene plays it, so hold the music back until it ends.
     const cuts = itemCutscenes(item);
     const showCut = cuts.length && !epilepsyMode();   // Epilepsy mode: not played automatically (it can be replayed from the Shop)
     if (showCut) cutsceneActive = true;
-    // Equip it immediately on purchase, matching how Discord's own shop works.
-    await db.collection('users').doc(myUid).update({
-      orbs: FieldValue.increment(-item.price),
-      [def.ownedField]: FieldValue.arrayUnion(id),
-      [def.equipField]: id,
-    });
+    // The server (functions/api/admin/buy) charges the database's price, adds it and equips it right away, matching how
+    // Discord's own shop works (v4.57: a page can't add items or Orbs to itself).
+    await orbsCall('buy', { cat: key, id });
     toast(`Purchased ${item.name}!`);
     refreshOpenShopPanes();
     if (cuts.length && !showCut) toast('Epilepsy mode is on, so the cutscenes were skipped. You can replay them from the Shop.');
@@ -12505,7 +12500,8 @@ async function buyShopItem(key, id) {
       cutsceneActive = false;
       musicSync(myProfile && myProfile[def.equipField] === id ? id : (myProfile && myProfile.equippedMusic) || null);
     }
-  } catch (e) { cutsceneActive = false; toast('Purchase failed.', 'error'); }
+  } catch (e) { cutsceneActive = false; toast(e.message || 'Purchase failed.', 'error'); }
+  finally { shopBuying = false; }
 }
 
 // Plays an unlocked item's cutscene again. The music stops while it plays and carries on afterwards.
@@ -14632,18 +14628,24 @@ function avatarBox(u, size) {
   return avatarHTML(size, u.avatarColor, initials(u.username), null, u.avatarUrl);
 }
 
-// Games write Toblox-shaped changes. `coins` becomes an Orb increment and
-// everything else is stored under `tb`.
+// Games write Toblox-shaped changes. `coins` is the Orb balance: what a game paid out goes to the server (queueEarn(),
+// v4.57), what it cost comes off right here, and everything else is stored under `tb`.
 async function dbUpdateUser(uid, changes) {
   const update = {};
   for (const [key, val] of Object.entries(changes)) if (key !== 'coins') update['tb.' + key] = val;
+  let spend = 0;
   if (uid === myUid) {
     if ('coins' in changes) {
-      const delta = changes.coins - settledOrbs;
+      const delta = Math.round(changes.coins - settledOrbs);
       settledOrbs = changes.coins;
-      if (delta) update.orbs = firebase.firestore.FieldValue.increment(delta);
+      if (delta > 0) queueEarn(delta);
+      else if (delta < 0) spend = delta;
     }
     Object.assign(UC, changes);
+  }
+  if (spend) {
+    await flushEarn();   // Orbs a game just paid have to be in before they can be spent
+    update.orbs = firebase.firestore.FieldValue.increment(spend);
   }
   if (Object.keys(update).length) await db.collection('users').doc(uid).update(update);
 }
@@ -14657,7 +14659,7 @@ function syncGameState(profile) {
     Object.assign(UC, gameDefaults(), profile.tb || {});
     startCookieEngine();
   }
-  UC.coins = settledOrbs = profile.orbs || 0;
+  UC.coins = settledOrbs = (profile.orbs || 0) + pendingOrbs();
   refreshCaps();
 }
 
@@ -14669,6 +14671,112 @@ function stopGameEngines() {
 
 function refreshCaps() {
   document.querySelectorAll('.fg-orbs').forEach(e => { e.textContent = fmtOrbs(UC.coins); });
+}
+
+// ---------- Orbs through the server (v4.57) ----------
+// A page can't add Orbs, Premium time or Shop items to its own account any more (firestore.rules). Those go through
+// functions/api/admin, which works the amounts out itself: earn (what games pay, up to 20,000 Orbs a day per account),
+// buy (Shop items, at the database's prices) and code (Orbs and Premium codes). Taking Orbs away (a game's costs, Quick
+// Roll, buying a Premium code) still happens right in the page.
+const EARN_CAP = 20000;
+let earnQueued = 0, earnSending = 0, earnFor = null, earnTimer = 0, earnTries = 0, earnChain = Promise.resolve(), earnCapDay = '', lastIdToken = '';
+async function orbsCall(route, body) {
+  if (!auth.currentUser) throw new Error('Sign in again, then try once more.');
+  const token = lastIdToken = await auth.currentUser.getIdToken();
+  let r;
+  try { r = await fetch(`${ADMIN_API}/${route}`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token, ...body }) }); }
+  catch (e) { throw Object.assign(new Error('Could not reach Frixion. Check your connection and try again.'), { offline: true }); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw Object.assign(new Error(j.error || 'Something went wrong.'), { status: r.status });
+  return j;
+}
+// Orbs still on their way to the server count in the balance games show.
+function pendingOrbs() { return earnFor === myUid ? earnQueued + earnSending : 0; }
+function settleOrbs() {
+  if (!myProfile || gameStateOwner !== myUid) return;
+  UC.coins = settledOrbs = (myProfile.orbs || 0) + pendingOrbs();
+  refreshCaps();
+}
+// What games pay is gathered for a moment and sent together, so a game that pays often makes one request.
+function queueEarn(n) {
+  if (earnFor !== myUid) { earnQueued = 0; earnFor = myUid; }
+  earnQueued += n;
+  if (auth.currentUser) auth.currentUser.getIdToken().then(t => { lastIdToken = t; }).catch(() => {});
+  clearTimeout(earnTimer);
+  earnTimer = setTimeout(flushEarn, 1500);
+}
+// Sends whatever is waiting. Resolves once everything sent so far has been answered.
+function flushEarn() {
+  clearTimeout(earnTimer); earnTimer = 0;
+  earnChain = earnChain.then(sendEarn, sendEarn);
+  return earnChain;
+}
+async function sendEarn() {
+  const n = earnQueued, who = earnFor;
+  if (!n || !who || who !== myUid) { earnQueued = 0; return; }
+  earnQueued = 0; earnSending += n;
+  try {
+    const res = await orbsCall('earn', { n });
+    earnTries = 0;
+    if (res.added < n) earnCapped();
+  } catch (e) {
+    // no connection: tried again a few times, a little later each time; anything else (signed out, banned) drops it
+    if (e.offline && ++earnTries <= 3 && myUid === who) { earnQueued += n; earnTimer = setTimeout(flushEarn, 5000 * earnTries); }
+    else console.warn('Orbs not added:', e.message);
+  } finally {
+    earnSending -= n;
+    settleOrbs();
+  }
+}
+// The day the limit counts is UTC, so it starts over at a different hour wherever you are.
+function earnResetText() {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+function earnCapText() { return `You've reached today's limit of ${fmtOrbs(EARN_CAP)} Orbs from games. It starts over at ${earnResetText()}.`; }
+function earnCapped() {
+  const day = new Date().toISOString().slice(0, 10);
+  if (earnCapDay === day) return;   // once a day is enough
+  earnCapDay = day;
+  toast(earnCapText());
+}
+// How many more Orbs games can pay today: orbDays/<you> (only the server writes it), less what's on its way.
+async function earnRoom() {
+  let got = 0;
+  try {
+    const d = (await db.collection('orbDays').doc(myUid).get()).data();
+    if (d && d.day === new Date().toISOString().slice(0, 10)) got = Math.max(0, Number(d.got) || 0);
+  } catch (e) {}
+  return Math.max(0, EARN_CAP - got - pendingOrbs());
+}
+// Leaving: what's waiting goes now, and on the way out (pagehide) by beacon, which needs no answer.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && earnQueued) flushEarn(); });
+addEventListener('pagehide', () => {
+  if (earnQueued > 0 && earnFor === myUid && lastIdToken && navigator.sendBeacon) {
+    navigator.sendBeacon(`${ADMIN_API}/earn`, JSON.stringify({ token: lastIdToken, n: earnQueued }));
+    earnQueued = 0;
+  }
+});
+
+// The Shop's built-in prices, for functions/api/admin/buy, which can't read this file: the Owner's and Co-Owners' apps
+// save them to shopPrices/builtin whenever they differ (unless a newer version of Frixion already saved its own).
+function builtinShopPrices() {
+  const lists = { decorations: AVATAR_DECORATIONS, nameplates: NAMEPLATES, profile_effects: PROFILE_EFFECTS, profile_frames: PROFILE_FRAMES, themes: SHOP_THEMES, music: MUSIC_TRACKS };
+  return Object.fromEntries(Object.entries(lists).map(([cat, list]) =>
+    [cat, Object.fromEntries(list.filter(i => !i.disabled && Number.isInteger(i.price) && i.price >= 0).map(i => [i.id, i.price]))]));
+}
+const versionNum = v => String(v || '0').split('.').reduce((a, x) => a * 1000 + (parseInt(x, 10) || 0), 0);
+const pricesKey = p => Object.keys(p || {}).sort().map(c => c + ':' + Object.keys(p[c] || {}).sort().map(id => id + '=' + p[c][id]).join(',')).join('|');
+async function syncShopPrices() {
+  if (!myProfile || platformRank(myProfile) < 2) return;
+  try {
+    const ref = db.collection('shopPrices').doc('builtin');
+    const snap = await ref.get();
+    const have = snap.exists ? snap.data() : null, mine = UPDATES[0].v, want = builtinShopPrices();
+    if (have && versionNum(have.v) > versionNum(mine)) return;
+    if (have && pricesKey(have.p) === pricesKey(want)) return;
+    await ref.set({ v: mine, p: want, by: myUid, at: FieldValue.serverTimestamp() });
+  } catch (e) { console.warn('Shop prices not saved:', e.message); }
 }
 
 
@@ -14937,12 +15045,17 @@ function cashOutCookies(){
   if(!UC) return;
   const baked=Math.floor(cookieBaked()), orbs=Math.floor(baked/COOKIE_CASH_RATE);
   if(orbs<1){ showToast('Bake at least '+fmtNum(COOKIE_CASH_RATE)+' cookies this run to cash out.'); return; }
+  // games can pay up to EARN_CAP Orbs a day (v4.57), and cashing out resets the whole run, so say first if it won't all fit
+  earnRoom().then(room=>{
+  if(room<1){ showToast(earnCapText()); return; }
+  const short=orbs>room;
   confirmAction({
     title:'Cash out and start over?',
-    body:'You baked '+fmtNum(baked)+' cookies this run. Cashing out pays '+fmtOrbs(orbs)+' Orbs and resets your cookies, buildings, upgrades and momentum.',
-    confirmLabel:'Cash out', danger:false,
+    body:'You baked '+fmtNum(baked)+' cookies this run. Cashing out pays '+fmtOrbs(Math.min(orbs,room))+' Orbs and resets your cookies, buildings, upgrades and momentum.'
+      +(short?' Games can only give you '+fmtOrbs(room)+' more Orbs today, so the rest of this run would be lost. Cash out after '+earnResetText()+' to get all '+fmtOrbs(orbs)+'.':''),
+    confirmLabel:short?'Cash out anyway':'Cash out', danger:short,
     onConfirm: async ()=>{
-      const paid=Math.floor(cookieBaked()/COOKIE_CASH_RATE);
+      const paid=Math.min(Math.floor(cookieBaked()/COOKIE_CASH_RATE), room);
       if(paid<1) return;
       UC.cookies=0; UC.cookiesRun=0; UC.cookieRunSecs=0; UC.cookieBuildings={}; UC.cookieUpgrades=[];
       UC.coins=(UC.coins||0)+paid;
@@ -14951,6 +15064,7 @@ function cashOutCookies(){
       if(currentGameId==='cookie'){ renderCookieShop(); updateCookieView(); }
       showToast('Cashed out '+fmtOrbs(paid)+' Orbs. Fresh run started.');
     }
+  });
   });
 }
 
@@ -15385,8 +15499,12 @@ function ggExpand(){
 }
 async function ggCashOut(){
   if(!UC) return;
-  const caps=Math.floor((UC.ggSheckles||0)/GG_CASH_RATE);
+  let caps=Math.floor((UC.ggSheckles||0)/GG_CASH_RATE);
   if(caps<1){ showToast('Need at least '+fmtNum(GG_CASH_RATE)+' Sheckles to cash out.'); return; }
+  // only what today's limit from games still has room for (v4.57); the rest of the Sheckles stay
+  const room=await earnRoom();
+  if(room<1){ showToast(earnCapText()); return; }
+  caps=Math.min(caps, room);
   UC.ggSheckles-=caps*GG_CASH_RATE; UC.coins=(UC.coins||0)+caps; trackQuest('caps',caps);
   await dbUpdateUser(getU(), {ggSheckles:UC.ggSheckles, coins:UC.coins});
   refreshCaps(); updateGGBank(); renderGGShop();
@@ -16980,13 +17098,13 @@ function setGameApi() {
     rank: () => (sfMode ? 0 : platformRank(myProfile)),        // 3 Owner, 2 Co-Owner, 1 Admin (0 in sfmode)
     premium: () => isPremium(myProfile),
     orbs: () => (myProfile && myProfile.orbs) || 0,
-    // Takes n Orbs if you have them. Resolves true when paid.
-    spendOrbs: n => db.runTransaction(async tx => {
+    // Takes n Orbs if you have them (counting ones a game just paid). Resolves true when paid.
+    spendOrbs: n => flushEarn().then(() => db.runTransaction(async tx => {
       const ref = db.collection('users').doc(myUid), d = await tx.get(ref);
       if (((d.data() || {}).orbs || 0) < n) return false;
       tx.update(ref, { orbs: FieldValue.increment(-n) });
       return true;
-    }),
+    })),
   };
 }
 function openOcrng() {

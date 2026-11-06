@@ -19,6 +19,16 @@
 //                                 Co-Owners also redo someone else's after changing their rank.
 //   GET  /api/admin/info          whether it's set up here (auth: "ready" once the service account may change sign-ins).
 //
+// The Orbs economy (v4.57). A page can't add Orbs, Premium time or Shop items to its own account any more
+// (firestore.rules); they come from here, where the page can't change the numbers:
+//   POST /api/admin/earn          { token, n }: Orbs a game paid out. Each account gets up to 20,000 a day from games
+//                                 (the day is UTC), counted in orbDays/<username>; past that it adds nothing.
+//   POST /api/admin/buy           { token, cat, id }: buys a Shop item. The price comes from the database: the item's own
+//                                 document (or its entry in config/customMusic) for ones staff made, and
+//                                 shopPrices/builtin for the ones built into script.js, which the Owner's and Co-Owners'
+//                                 apps keep in step with it (syncShopPrices()).
+//   POST /api/admin/code          { token, code }: redeems an Orbs or Premium code (redeemCodes/<code>).
+//
 // SETUP, once: the service account the other functions use (frixion-functions) also needs the role "Firebase
 // Authentication Admin": Google Cloud > IAM & Admin > IAM > the pencil next to frixion-functions > Add another role.
 //
@@ -44,6 +54,9 @@ export async function onRequest({ request, env, params }) {
     if (route === 'ip' && request.method === 'GET') return json(await ipCheck(env, request));
     if (route === 'seen' && request.method === 'POST') return json(await ipSeen(env, request, await request.json().catch(() => ({}))));
     if (route === 'claims' && request.method === 'POST') return json(await setClaims(env, await request.json().catch(() => ({}))));
+    if (route === 'earn' && request.method === 'POST') return json(await earn(env, await request.json().catch(() => ({}))));
+    if (route === 'buy' && request.method === 'POST') return json(await buy(env, await request.json().catch(() => ({}))));
+    if (route === 'code' && request.method === 'POST') return json(await redeemCode(env, await request.json().catch(() => ({}))));
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
     if (e instanceof Fail) return json({ error: e.message }, e.status);
@@ -106,7 +119,7 @@ async function fsGet(env, path) {
   if (!r.ok) fail(502, 'Could not read Frixion.');
   return decFields((await r.json()).fields);
 }
-const enc = v => (v === null ? { nullValue: null } : v instanceof Date ? { timestampValue: v.toISOString() } : typeof v === 'boolean' ? { booleanValue: v }
+const enc = v => (v === null ? { nullValue: null } : v instanceof Date ? { timestampValue: v.toISOString() } : Array.isArray(v) ? { arrayValue: { values: v.map(enc) } } : typeof v === 'boolean' ? { booleanValue: v }
   : typeof v === 'number' ? (Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v }) : { stringValue: String(v) });
 const docUrl = (env, path) => `${fsBase(env)}/${path.split('/').map(encodeURIComponent).join('/')}`;
 // a document's full name, as commits want it (projects/<id>/databases/(default)/documents/<path>)
@@ -288,4 +301,179 @@ async function setClaims(env, { token, username }) {
     fail(502, 'Google refused (' + why + ').');
   }
   return { ok: true, claims: want };
+}
+
+// ---------------- the Orbs economy (v4.57) ----------------
+// Orbs only ever go up here (or by staff): a page may only take its own away (firestore.rules). Each change is one commit
+// that only lands if what it read hasn't changed since (otherwise it reads again and retries), so two requests at once
+// can't spend the same Orbs or use the same code twice.
+const EARN_CAP = 20000;   // Orbs a day from games, per account
+const utcDay = () => new Date().toISOString().slice(0, 10);
+const nextUtcDay = () => { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1); };
+const own = (o, k) => !!o && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k);
+
+// several documents in one read: { data, updateTime } for each path (null if it isn't there), in the same order
+async function fsGetMany(env, paths) {
+  const names = paths.map(p => docName(env, p));
+  const r = await fetch(`${fsBase(env)}:batchGet`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await googleToken(env) },
+    body: JSON.stringify({ documents: names }) });
+  if (!r.ok) fail(502, 'Could not read Frixion.');
+  const got = new Map();
+  for (const x of await r.json()) if (x.found) got.set(x.found.name, { data: decFields(x.found.fields), updateTime: x.found.updateTime });
+  return names.map(n => got.get(n) || null);
+}
+// these writes together, or none: null when one of their checks failed because something changed since it was read
+async function fsCommit(env, writes) {
+  const r = await fetch(`${fsBase(env)}:commit`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await googleToken(env) },
+    body: JSON.stringify({ writes }) });
+  if (r.ok) return r.json();
+  const j = await r.json().catch(() => ({})), status = String((j.error && j.error.status) || '');
+  if (/^(FAILED_PRECONDITION|NOT_FOUND|ALREADY_EXISTS|ABORTED)$/.test(status)) return null;
+  console.error('commit refused', r.status, status, j.error && j.error.message);
+  fail(502, 'Could not save that.');
+}
+// the new Orbs balance a commit's increment left (Firestore says it back)
+const orbsAfter = (done, i) => { const t = done && done.writeResults && done.writeResults[i] && done.writeResults[i].transformResults; return t && t[0] ? dec(t[0]) : null; };
+
+// Who is asking: their ID token, and the username on it (n, which /claims put there from the profile) or else their
+// accounts/ entry. Every route then reads the profile, which has to name this sign-in back.
+async function caller(env, token) {
+  const claims = await verifyIdToken(env, token);
+  let name = typeof claims.n === 'string' && USERNAME.test(claims.n) ? claims.n : null;
+  if (!name) {
+    const acct = await fsGet(env, `accounts/${claims.sub}`);
+    name = acct && typeof acct.username === 'string' && USERNAME.test(acct.username) ? acct.username : null;
+  }
+  if (!name) fail(403, 'That sign-in isn\'t a Frixion account.');
+  return { uid: claims.sub, name };
+}
+const bannedNow = u => u.banned === true && (u.bannedUntil == null || u.bannedUntil > Date.now());
+function mine(prof, me) {
+  if (!prof || prof.data.authUid !== me.uid) fail(403, 'That sign-in isn\'t a Frixion account.');
+  if (bannedNow(prof.data)) fail(403, 'This account is banned.');
+  return prof.data;
+}
+// a few requests a minute per account and route (each copy of this function counts its own)
+const asks = new Map();   // "route:name" -> { at, n }
+function slowDown(key, most) {
+  const t = asks.get(key), now = Date.now();
+  if (t && now - t.at < 60000 && t.n >= most) fail(429, 'Too many tries. Wait a minute.');
+  asks.set(key, t && now - t.at < 60000 ? { at: t.at, n: t.n + 1 } : { at: now, n: 1 });
+  if (asks.size > 5000) asks.clear();
+}
+
+// Orbs from games: up to EARN_CAP a day per account; whatever is past that isn't added.
+async function earn(env, { token, n }) {
+  const me = await caller(env, token);
+  const want = Math.floor(Number(n));
+  if (!(want >= 1)) fail(400, 'Nothing to add.');
+  slowDown('earn:' + me.name, 40);
+  for (let i = 0; i < 6; i++) {
+    const [prof, day] = await fsGetMany(env, [`users/${me.name}`, `orbDays/${me.name}`]);
+    mine(prof, me);
+    const today = utcDay(), got = day && day.data.day === today ? Math.max(0, Number(day.data.got) || 0) : 0;
+    const add = Math.min(want, EARN_CAP - got);
+    if (add <= 0) return { added: 0, left: 0, cap: EARN_CAP, resetsAt: nextUtcDay() };
+    const done = await fsCommit(env, [
+      { update: { name: docName(env, `orbDays/${me.name}`), fields: { day: enc(today), got: enc(got + add), at: enc(new Date()) } },
+        currentDocument: day ? { updateTime: day.updateTime } : { exists: false } },
+      { transform: { document: docName(env, `users/${me.name}`), fieldTransforms: [{ fieldPath: 'orbs', increment: enc(add) }] }, currentDocument: { exists: true } },
+    ]);
+    if (done) return { added: add, left: EARN_CAP - got - add, cap: EARN_CAP, resetsAt: nextUtcDay(), orbs: orbsAfter(done, 1) };
+  }
+  fail(409, 'Frixion is busy. Try again.');
+}
+
+// The Shop: [owned list, equipped field, the collection staff-made ones live in] for each tab (SHOP_CATEGORY_DEFS in
+// script.js). Staff songs are entries in config/customMusic instead.
+const SHOP = {
+  decorations: ['ownedDecorations', 'equippedDecoration', 'shopDecorations'],
+  masks: ['ownedDecorations', 'equippedMask', 'shopDecorations'],
+  nameplates: ['ownedNameplates', 'equippedNameplate', 'shopNameplates'],
+  profile_effects: ['ownedProfileEffects', 'equippedProfileEffect', 'shopProfileEffects'],
+  profile_frames: ['ownedProfileFrames', 'equippedProfileFrame', 'shopProfileFrames'],
+  themes: ['ownedThemes', 'equippedTheme', 'shopThemes'],
+  banners: ['ownedBanners', 'equippedBanner', 'shopBanners'],
+  music: ['ownedMusic', 'equippedMusic', null],
+};
+const ITEM_ID = /^(?!__)[A-Za-z0-9_-]{1,100}$/;
+const wholePrice = p => (Number.isInteger(p) && p >= 0 ? p : null);
+// What an item costs, or null when it isn't for sale: the built-in price (shopPrices/builtin), else the staff-made item's
+// own, while it isn't switched off.
+function priceOf(cat, id, builtin, custom) {
+  const list = builtin && builtin.data.p && builtin.data.p[cat];
+  if (own(list, id)) return wholePrice(Number(list[id]));
+  const coll = SHOP[cat][2], item = custom && (coll ? custom.data : (own(custom.data, id) ? custom.data[id] : null));
+  if (!item || typeof item !== 'object' || item.disabled === true) return null;
+  if (coll === 'shopDecorations' && (item.mask === true) !== (cat === 'masks')) return null;
+  if (!coll && !(typeof item.src === 'string' && /^https:\/\//i.test(item.src) && item.name)) return null;
+  return wholePrice(Number(item.price));
+}
+async function buy(env, { token, cat, id }) {
+  const me = await caller(env, token);
+  if (!own(SHOP, cat) || typeof id !== 'string' || !ITEM_ID.test(id)) fail(404, 'That item isn\'t in the Shop.');
+  slowDown('buy:' + me.name, 20);
+  const [owned, equip, coll] = SHOP[cat];
+  for (let i = 0; i < 6; i++) {
+    const [prof, builtin, custom] = await fsGetMany(env, [`users/${me.name}`, 'shopPrices/builtin', coll ? `${coll}/${id}` : 'config/customMusic']);
+    const u = mine(prof, me);
+    const price = priceOf(cat, id, builtin, custom);
+    if (price == null) fail(404, 'That item isn\'t for sale right now.');
+    if ((Array.isArray(u[owned]) ? u[owned] : []).includes(id)) fail(409, 'You already own this.');
+    if ((Number(u.orbs) || 0) < price) fail(402, 'Not enough Orbs. Play games to earn more.');
+    // paid, owned and worn at once (like Discord's shop), only if the profile is still what was read
+    const done = await fsCommit(env, [{
+      update: { name: docName(env, `users/${me.name}`), fields: { [equip]: enc(id) } }, updateMask: { fieldPaths: [equip] },
+      updateTransforms: [{ fieldPath: 'orbs', increment: enc(-price) }, { fieldPath: owned, appendMissingElements: { values: [enc(id)] } }],
+      currentDocument: { updateTime: prof.updateTime },
+    }]);
+    if (done) return { ok: true, price, orbs: orbsAfter(done, 0) };
+  }
+  fail(409, 'Frixion is busy. Try again.');
+}
+
+// Codes (Settings > Codes): FRX-XXXX-XXXX ones bought with Orbs, or whatever staff typed. Each account can use a code
+// once, and it pays out while it has uses left (maxUses 0: no limit).
+function codeId(code) {
+  const c = typeof code === 'string' ? code.trim().toUpperCase() : '';
+  return c && c.length <= 64 && !c.includes('/') && c !== '.' && c !== '..' && !/^__.*__$/.test(c) ? c : null;
+}
+// (codeUsage() in script.js: codes made before limits existed only had redeemedBy)
+function codeUsage(d) {
+  const n = Number(d.maxUses), maxUses = Number.isFinite(n) && n >= 0 ? Math.floor(n) : 1;
+  const usedBy = Array.isArray(d.usedBy) ? d.usedBy : (d.redeemedBy ? [d.redeemedBy] : []);
+  const uses = Math.max(Number(d.uses) || 0, usedBy.length);
+  return { maxUses, usedBy, uses, usedUp: maxUses > 0 && uses >= maxUses };
+}
+async function redeemCode(env, { token, code }) {
+  const me = await caller(env, token);
+  slowDown('code:' + me.name, 10);
+  const id = codeId(code);
+  if (!id) fail(404, 'That code is invalid.');
+  for (let i = 0; i < 6; i++) {
+    const [prof, c] = await fsGetMany(env, [`users/${me.name}`, `redeemCodes/${id}`]);
+    const u = mine(prof, me);
+    if (!c) fail(404, 'That code is invalid.');
+    const usage = codeUsage(c.data), type = c.data.type;
+    if (usage.usedBy.includes(me.name)) fail(409, 'You have already redeemed this code.');
+    if (usage.usedUp) fail(409, usage.maxUses === 1 ? 'That code has already been redeemed.' : 'That code has been used up.');
+    if (type !== 'orbs' && type !== 'premium') fail(404, 'That code is invalid.');
+    const value = Math.max(0, Math.floor(Number(c.data.value) || 0));
+    const writes = [{
+      update: { name: docName(env, `redeemCodes/${id}`), fields: { uses: enc(usage.uses + 1), usedBy: enc([...usage.usedBy, me.name]), redeemedBy: enc(me.name), redeemedAt: enc(new Date()) } },
+      updateMask: { fieldPaths: ['uses', 'usedBy', 'redeemedBy', 'redeemedAt'] }, currentDocument: { updateTime: c.updateTime },
+    }];
+    let until = null;
+    if (type === 'orbs') {
+      writes.push({ transform: { document: docName(env, `users/${me.name}`), fieldTransforms: [{ fieldPath: 'orbs', increment: enc(value) }] }, currentDocument: { exists: true } });
+    } else {
+      // more days on top of Premium that's still running, or from now
+      const now = Date.now(), base = typeof u.premiumUntil === 'number' && u.premiumUntil > now ? u.premiumUntil : now;
+      until = base + value * 86400000;
+      writes.push({ update: { name: docName(env, `users/${me.name}`), fields: { premiumUntil: enc(until) } }, updateMask: { fieldPaths: ['premiumUntil'] }, currentDocument: { updateTime: prof.updateTime } });
+    }
+    const done = await fsCommit(env, writes);
+    if (done) return { ok: true, type, value, ...(until ? { premiumUntil: until } : { orbs: orbsAfter(done, 1) }) };
+  }
+  fail(409, 'Frixion is busy. Try again.');
 }

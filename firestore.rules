@@ -91,7 +91,11 @@ service cloud.firestore {
         && request.resource.data.get('op', false) == false
         && request.resource.data.get('banned', false) == false
         && request.resource.data.get('premiumUntil', null) == null
-        && request.resource.data.get('orbs', 0) <= 50;
+        && request.resource.data.get('orbs', 0) is int && request.resource.data.get('orbs', 0) <= 50
+        // ... no Shop items yet, and plain colors only (v4.57)
+        && !request.resource.data.keys().hasAny(['ownedDecorations', 'ownedNameplates', 'ownedProfileEffects', 'ownedProfileFrames', 'ownedThemes', 'ownedBanners', 'ownedMusic',
+             'equippedDecoration', 'equippedMask', 'equippedNameplate', 'equippedProfileEffect', 'equippedProfileFrame', 'equippedTheme', 'equippedBanner', 'equippedMusic'])
+        && plainColors(request.resource.data.keys(), request.resource.data, false);
       allow update: if profileUpdate(who(), username);
       allow delete: if profileDelete(who(), username);
 
@@ -125,17 +129,40 @@ service cloud.firestore {
         && (!k.hasAny(['redirectUrl', 'redirectNonce']) || !request.resource.data.keys().hasAny(['redirectUrl', 'redirectNonce']))
         && (!k.hasAny(['terminated']) || !('terminated' in request.resource.data))
         && !('password' in request.resource.data)
-        && plainColors(k, request.resource.data);
+        && plainColors(k, request.resource.data, premiumNow(resource.data))
+        && economyOk(k, request.resource.data);
     }
+    function premiumNow(u) { return u.get('premiumUntil', null) is number && u.premiumUntil > request.time.toMillis(); }
     // Colors everyone else's screen draws from your profile are plain colors (v4.56): a hex color, or a two-color
-    // gradient of them, so nothing else (like a web address that would load on their screen) can hide in them.
-    function plainColors(k, d) {
+    // gradient of them, so nothing else (like a web address that would load on their screen) can hide in them. The
+    // gradients (a two-color banner or name) are Premium's, so they need Premium running (v4.57).
+    function plainColors(k, d, premium) {
       return (!k.hasAny(['bannerColor']) || !('bannerColor' in d)
-          || (d.bannerColor is string && d.bannerColor.matches('#[0-9a-fA-F]{6}|linear-gradient\\([0-9]{1,3}deg,#[0-9a-fA-F]{6},#[0-9a-fA-F]{6}\\)')))
+          || (d.bannerColor is string && (d.bannerColor.matches('#[0-9a-fA-F]{6}')
+            || (premium && d.bannerColor.matches('linear-gradient\\([0-9]{1,3}deg,#[0-9a-fA-F]{6},#[0-9a-fA-F]{6}\\)')))))
         && (!k.hasAny(['avatarColor']) || !('avatarColor' in d) || (d.avatarColor is string && d.avatarColor.matches('#[0-9a-fA-F]{6}')))
-        && (!k.hasAny(['nameGradient']) || !('nameGradient' in d) || (d.nameGradient is list && d.nameGradient.size() == 2
+        && (!k.hasAny(['nameGradient']) || !('nameGradient' in d) || (premium && d.nameGradient is list && d.nameGradient.size() == 2
           && d.nameGradient[0] is string && d.nameGradient[0].matches('#[0-9a-fA-F]{6}') && d.nameGradient[1] is string && d.nameGradient[1].matches('#[0-9a-fA-F]{6}')));
     }
+    // Orbs, Premium and Shop items (v4.57) only come from functions/api/admin (Orbs from games, at most 20,000 a day;
+    // codes; Shop items at the database's prices) or from staff. Your own app may spend Orbs (never below 0; a profile
+    // from before Orbs existed may get the 50 new accounts start with), never touch Premium time, let go of items but not
+    // add any, and wear only items it owns.
+    function economyOk(k, d) {
+      return (!k.hasAny(['orbs']) || (d.get('orbs', null) is number && d.orbs >= 0
+            && (resource.data.get('orbs', null) is number ? d.orbs < resource.data.orbs : d.orbs <= 50)))
+        && !k.hasAny(['premiumUntil'])
+        && (!k.hasAny(['ownedDecorations', 'ownedNameplates', 'ownedProfileEffects', 'ownedProfileFrames', 'ownedThemes', 'ownedBanners', 'ownedMusic'])
+          || (onlyRemoved('ownedDecorations') && onlyRemoved('ownedNameplates') && onlyRemoved('ownedProfileEffects') && onlyRemoved('ownedProfileFrames')
+            && onlyRemoved('ownedThemes') && onlyRemoved('ownedBanners') && onlyRemoved('ownedMusic')))
+        && (!k.hasAny(['equippedDecoration', 'equippedMask', 'equippedNameplate', 'equippedProfileEffect', 'equippedProfileFrame', 'equippedTheme', 'equippedBanner', 'equippedMusic'])
+          || (wears(k, d, 'equippedDecoration', 'ownedDecorations') && wears(k, d, 'equippedMask', 'ownedDecorations')
+            && wears(k, d, 'equippedNameplate', 'ownedNameplates') && wears(k, d, 'equippedProfileEffect', 'ownedProfileEffects')
+            && wears(k, d, 'equippedProfileFrame', 'ownedProfileFrames') && wears(k, d, 'equippedTheme', 'ownedThemes')
+            && wears(k, d, 'equippedBanner', 'ownedBanners') && wears(k, d, 'equippedMusic', 'ownedMusic')));
+    }
+    // (only checked when that slot changes, so something worn from before still shows until it's taken off)
+    function wears(k, d, eq, owned) { return !k.hasAny([eq]) || d.get(eq, null) == null || d.get(eq, null) in d.get(owned, []); }
     function clearingExpiredBan() {
       return resource.data.get('banned', false) == true
         && resource.data.get('bannedUntil', null) is number
@@ -197,13 +224,17 @@ service cloud.firestore {
 
     // ---------- codes ----------
     match /redeemCodes/{code} {
-      allow get: if signedIn();                                     // redeeming: you have to know the code
+      // (a code nobody has yet can be looked up, so buying one can check it's new; v4.57: a code that exists is read only
+      // by staff and whoever made it, since using one happens in functions/api/admin/code)
+      allow get: if resource == null || codeReader(who());
       allow list, delete: if isStaff(who());
       allow create: if codeCreate(who());
       allow update: if codeUpdate(who());
     }
+    function codeReader(m) { return m.ok && (m.rank >= 1 || resource.data.get('createdBy', '') == m.name); }
     function codeCreate(m) { return m.ok && (m.rank >= 1 || buyingPremiumCode(m)); }
-    function codeUpdate(m) { return m.ok && (m.rank >= 1 || redeeming(m)); }
+    // Using a code happens in functions/api/admin/code, which pays it out (v4.57); only staff change codes here.
+    function codeUpdate(m) { return m.ok && m.rank >= 1; }
     // A Premium code someone buys, in the same transaction that takes 1400 of their Orbs (buyPremiumCode()).
     function buyingPremiumCode(m) {
       let d = request.resource.data;
@@ -213,19 +244,20 @@ service cloud.firestore {
         && d.get('maxUses', 1) == 1
         && getAfter(profilePath(m.name)).data.get('orbs', 0) <= m.u.get('orbs', 0) - 1400;
     }
-    // Using a code once: you join its usedBy and its use count goes up by one, while it has uses left (codeUsage()).
-    function redeeming(m) {
-      let before = resource.data;
-      let used = before.keys().hasAny(['usedBy']) ? before.usedBy : (before.get('redeemedBy', null) != null ? [before.redeemedBy] : []);
-      let n = before.get('uses', 0) > used.size() ? before.get('uses', 0) : used.size();
-      let most = before.get('maxUses', 1);
-      let after = request.resource.data;
-      return changed().hasOnly(['uses', 'usedBy', 'redeemedBy', 'redeemedAt'])
-        && !(m.name in used)
-        && (most == 0 || n < most)
-        && after.get('uses', -1) == n + 1
-        && after.get('usedBy', []) == used.concat([m.name])
-        && after.get('redeemedBy', null) == m.name;
+
+    // ---------- Orbs (v4.57) ----------
+    // How many Orbs games paid each account today: functions/api/admin/earn counts it, and nothing else writes it.
+    match /orbDays/{name} {
+      allow get: if seesOrbDay(who(), name);
+      allow list: if isStaff(who());
+      allow write: if false;
+    }
+    function seesOrbDay(m, name) { return m.ok && (m.name == name || m.rank >= 1); }
+    // The prices of the Shop items built into script.js, which functions/api/admin/buy charges (syncShopPrices() keeps
+    // them in step from the Owner's and Co-Owners' apps).
+    match /shopPrices/{id} {
+      allow read: if signedIn();
+      allow write: if isOwnerLevel(who());
     }
 
     // ---------- whole-computer bans ----------
