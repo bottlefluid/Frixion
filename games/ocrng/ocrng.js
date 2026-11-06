@@ -1176,7 +1176,7 @@ function luckNow(b = buffs()) {
   const bi = bonusInfo();
   let luck = b.luck * (tenthRoll() ? (bi.all || bi.mult) : 1);
   for (const r of G.rollBuffs) { const p = POTION[r.id]; if (p && p.boost) luck += p.boost.l; }
-  return luck * b.server;
+  return luck * b.server * (API().premium() ? 1.25 : 1);   // Frixion Premium: 1.25x luck
 }
 function addEffect(id, out) {
   const p = POTION[id], cur = G.effects.find(e => e.id === id && !e.out);

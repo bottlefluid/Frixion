@@ -124,7 +124,17 @@ service cloud.firestore {
         && (!k.hasAny(['banned', 'banReason', 'bannedUntil']) || clearingExpiredBan())
         && (!k.hasAny(['redirectUrl', 'redirectNonce']) || !request.resource.data.keys().hasAny(['redirectUrl', 'redirectNonce']))
         && (!k.hasAny(['terminated']) || !('terminated' in request.resource.data))
-        && !('password' in request.resource.data);
+        && !('password' in request.resource.data)
+        && plainColors(k, request.resource.data);
+    }
+    // Colors everyone else's screen draws from your profile are plain colors (v4.56): a hex color, or a two-color
+    // gradient of them, so nothing else (like a web address that would load on their screen) can hide in them.
+    function plainColors(k, d) {
+      return (!k.hasAny(['bannerColor']) || !('bannerColor' in d)
+          || (d.bannerColor is string && d.bannerColor.matches('#[0-9a-fA-F]{6}|linear-gradient\\([0-9]{1,3}deg,#[0-9a-fA-F]{6},#[0-9a-fA-F]{6}\\)')))
+        && (!k.hasAny(['avatarColor']) || !('avatarColor' in d) || (d.avatarColor is string && d.avatarColor.matches('#[0-9a-fA-F]{6}')))
+        && (!k.hasAny(['nameGradient']) || !('nameGradient' in d) || (d.nameGradient is list && d.nameGradient.size() == 2
+          && d.nameGradient[0] is string && d.nameGradient[0].matches('#[0-9a-fA-F]{6}') && d.nameGradient[1] is string && d.nameGradient[1].matches('#[0-9a-fA-F]{6}')));
     }
     function clearingExpiredBan() {
       return resource.data.get('banned', false) == true

@@ -482,6 +482,13 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.56', date: '2026-11-05', title: 'Premium, upgraded',
+    notes: [
+      'Frixion Premium got a lot better: your name in two colors you pick, your own two-color profile banners, 4,000-character messages, 10 MB uploads and 100 MB videos, and 1.25x luck in Overcontrol RNG.',
+      'Without Premium, uploads are 5 MB a file and 50 MB a video or song. Big photos shrink by themselves so they still send.',
+      'A Premium that lasts practically forever now says "Active forever" instead of "Invalid Date".',
+      'Profile colors can only be plain colors, so nobody can hide anything else in them.',
+    ] },
   { v: '4.55', date: '2026-11-05', title: 'Banned, then gone',
     notes: [
       'Banned people go straight to Nitro Type. If something stops that, the ban screen is still waiting.',
@@ -1629,6 +1636,18 @@ function safeUrl(u, kind) {
   return '';
 }
 // A colour for a style attribute: #rgb / #rrggbb(aa), rgb()/hsl(), or a plain name. Anything else uses the fallback.
+// Frixion Premium (v4.56): a name in two colors (nameGradient on the profile: two #rrggbb), on messages and in member
+// lists, instead of the role color. Only while Premium is active, and only plain colors (the rules check them too).
+const HEX6 = /^#[0-9a-f]{6}$/i;
+function nameGradientOf(p) {
+  const g = p && isPremium(p) && Array.isArray(p.nameGradient) ? p.nameGradient : null;
+  return g && g.length === 2 && HEX6.test(g[0]) && HEX6.test(g[1]) ? g : null;
+}
+function nameStyle(p, roleColor) {
+  const g = nameGradientOf(p);
+  if (g) return ` style="background:linear-gradient(90deg,${g[0]},${g[1]});-webkit-background-clip:text;background-clip:text;color:transparent"`;
+  return roleColor ? ` style="color:${esc(cssColor(roleColor, 'inherit'))}"` : '';
+}
 function cssColor(c, fallback = 'transparent') {
   const s = typeof c === 'string' ? c.trim() : '';
   return /^#[0-9a-f]{3,8}$/i.test(s) || /^(rgb|hsl)a?\([\d\s.,%/-]{1,60}\)$/i.test(s) || /^[a-z]{3,20}$/i.test(s) ? s : fallback;
@@ -5562,6 +5581,44 @@ function renderBannerSwatches(current) {
   const premium = isPremium(myProfile);
   BANNER_GRADIENTS.forEach(g => gradWrap.appendChild(makeSwatch(g, !premium)));
   $('banner-gradient-label').textContent = premium ? 'Gradient Banners' : 'Gradient Banners (Frixion Premium)';
+  // Premium (v4.56): mix your own two-color banner (saved like the others: linear-gradient(135deg,#..,#..))
+  const mix = $('banner-mix'), m1 = $('banner-mix-1'), m2 = $('banner-mix-2');
+  const own = /^linear-gradient\(135deg,(#[0-9a-f]{6}),(#[0-9a-f]{6})\)$/i.exec(current || '');
+  const isOwn = !!own && !BANNER_GRADIENTS.includes(current);
+  if (own) { m1.value = own[1]; m2.value = own[2]; }
+  const custom = document.createElement('div');
+  custom.className = 'swatch swatch-mix' + (isOwn ? ' selected' : '') + (premium ? '' : ' locked-swatch');
+  custom.title = 'Mix your own';
+  custom.style.background = `linear-gradient(135deg,${m1.value},${m2.value})`;
+  custom.innerHTML = premium ? '<span class="swatch-plus">+</span>' : `<span class="swatch-lock">${icon('shield')}</span>`;
+  const useMix = () => {
+    const bg = `linear-gradient(135deg,${m1.value.toLowerCase()},${m2.value.toLowerCase()})`;
+    clearSelected(); custom.classList.add('selected'); custom.style.background = bg;
+    wrap.dataset.chosen = bg; $('profile-banner').style.background = bg;
+  };
+  custom.onclick = () => { if (!premium) { openPremiumModal(); return; } mix.classList.remove('hidden'); useMix(); };
+  m1.oninput = m2.oninput = useMix;
+  gradWrap.appendChild(custom);
+  mix.classList.toggle('hidden', !(premium && isOwn));
+  renderNameGradientPicker();
+}
+// Premium (v4.56): your name in two colors (nameGradient), saved with the profile. Without Premium it just shows what
+// it would look like and opens the Premium page.
+function renderNameGradientPicker() {
+  const row = $('name-grad-row'), c1 = $('name-grad-1'), c2 = $('name-grad-2'), prev = $('name-grad-preview'), btn = $('name-grad-toggle');
+  if (!row || !myProfile) return;
+  const premium = isPremium(myProfile), g = Array.isArray(myProfile.nameGradient) && myProfile.nameGradient.length === 2 ? myProfile.nameGradient : null;
+  if (g && HEX6.test(g[0]) && HEX6.test(g[1])) { c1.value = g[0]; c2.value = g[1]; }
+  row.dataset.on = g ? '1' : '0';
+  $('name-grad-label').textContent = premium ? 'Name Gradient' : 'Name Gradient (Frixion Premium)';
+  prev.textContent = displayNameOf(myProfile);
+  const draw = () => {
+    prev.style.background = `linear-gradient(90deg,${c1.value},${c2.value})`;
+    btn.textContent = row.dataset.on === '1' ? 'Turn Off' : 'Use It';
+  };
+  c1.oninput = c2.oninput = () => { if (!premium) { openPremiumModal(); return; } row.dataset.on = '1'; draw(); };
+  btn.onclick = () => { if (!premium) { openPremiumModal(); return; } row.dataset.on = row.dataset.on === '1' ? '0' : '1'; draw(); };
+  draw();
 }
 
 function openGiftModal(username) {
@@ -5687,13 +5744,16 @@ $('save-profile-btn').onclick = async () => {
   const pronouns = $('edit-pronouns').value.trim();
   const bio = $('edit-bio').value.trim();
   const bannerColor = $('banner-color-swatches').dataset.chosen || myProfile.bannerColor;
+  // the name gradient, if Premium is on and it's switched on (renderNameGradientPicker())
+  const gradOn = isPremium(myProfile) && $('name-grad-row').dataset.on === '1';
+  const nameGradient = gradOn ? [$('name-grad-1').value.toLowerCase(), $('name-grad-2').value.toLowerCase()] : FieldValue.delete();
   try {
     // An empty Display Name just means "use my username" — store it as a
     // deletion rather than an empty string so displayNameOf() falls back
     // cleanly and other people don't see a blank name anywhere.
     await db.collection('users').doc(myUid).update({
       displayName: displayName || FieldValue.delete(),
-      pronouns, bio, bannerColor,
+      pronouns, bio, bannerColor, nameGradient,
     });
     toast('Profile updated.');
   } catch (e) { toast('Could not save profile.', 'error'); }
@@ -5815,11 +5875,43 @@ async function uploadFileGeneric(file, isImage, onProgress) {
 // together as one message, matching how the real Discord client stages
 // images before you hit send.
 let draftAttachments = []; // { id, file, type: 'image'|'file', previewUrl }
-function stageFile(file) {
+// Chat upload limits (v4.56): regular accounts get 5 MB a file and 50 MB a video or song; Frixion Premium, Admins and
+// Co-Owners the full 10 MB and 100 MB that Cloudinary's free plan allows; the Owner isn't checked here at all
+// (Cloudinary still stops every file at its own 10 MB / 100 MB). A picture over the limit is shrunk to fit.
+function uploadLimitMb(media) {
+  const rank = sfMode ? 0 : platformRank(myProfile);
+  if (rank >= 3) return Infinity;
+  const big = rank >= 1 || isPremium(myProfile);
+  return media ? (big ? MAX_MEDIA_MB : 50) : (big ? MAX_FILE_MB : 5);
+}
+// Redraws a picture smaller (as WebP, or JPEG where WebP can't be made) until it fits, so phone photos still send.
+// GIFs (they'd stop moving) and pictures the browser can't open are left as they are.
+async function shrinkImage(file, maxBytes) {
+  if (file.size <= maxBytes || /gif$/i.test(file.type)) return file;
+  let bmp;
+  try { bmp = await createImageBitmap(file); } catch (e) { return file; }
+  let scale = Math.min(1, 4096 / Math.max(bmp.width, bmp.height));
+  for (let i = 0; i < 8; i++) {
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(bmp.width * scale)); c.height = Math.max(1, Math.round(bmp.height * scale));
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    let blob = await new Promise(r => c.toBlob(r, 'image/webp', 0.85));
+    if (!blob || blob.type !== 'image/webp') blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+    if (blob && blob.size <= maxBytes) return new File([blob], (file.name || 'image').replace(/\.[^.]+$/, '') + (blob.type === 'image/webp' ? '.webp' : '.jpg'), { type: blob.type });
+    scale *= 0.75;
+  }
+  return file;
+}
+async function stageFile(file) {
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
   const isImage = file.type.startsWith('image/');
-  const maxMb = !isImage && isMediaFile(file) ? MAX_MEDIA_MB : MAX_FILE_MB;
-  if (file.size > maxMb * 1024 * 1024) { toast(`${file.name} is over ${maxMb}MB — not supported here.`, 'error'); return; }
+  const maxMb = uploadLimitMb(!isImage && isMediaFile(file));
+  if (isImage && file.size > maxMb * 1024 * 1024) file = await shrinkImage(file, maxMb * 1024 * 1024);
+  if (file.size > maxMb * 1024 * 1024) {
+    const more = maxMb === 5 || maxMb === 50 ? ' Frixion Premium doubles it.' : '';   // (the regular limits)
+    toast(`${file.name} is over ${maxMb} MB.${more}`, 'error');
+    return;
+  }
   draftAttachments.push({
     id: 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
     file, type: isImage ? 'image' : 'file',
@@ -8247,7 +8339,7 @@ async function renderMemberPanel(members, ownerId, server) {
     return `
     <div class="member-row" data-u="${esc(uid)}">
       ${avatarHTML(32, p.avatarColor, initials(p.username), disp, p.avatarUrl, p.equippedDecoration, uid, p.equippedMask)}
-      <span class="mname${disp !== 'offline' ? ' online-name' : ''}"${roleColor ? ` style="color:${esc(cssColor(roleColor, 'inherit'))}"` : ''}>${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}${vanishedListFor(vanishData).includes(uid) && (uid === myUid || isOwner) ? `<span class="vanish-tag" title="${uid === myUid ? 'Only you and other owners can see you here' : 'Vanished. Only owners and co-owners can see this'}">Vanished</span>` : ''}</span>
+      <span class="mname${disp !== 'offline' ? ' online-name' : ''}"${nameStyle(p, roleColor)}>${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}${vanishedListFor(vanishData).includes(uid) && (uid === myUid || isOwner) ? `<span class="vanish-tag" title="${uid === myUid ? 'Only you and other owners can see you here' : 'Vanished. Only owners and co-owners can see this'}">Vanished</span>` : ''}</span>
       ${topRole && topRole.color ? roleChipHTML(topRole) : ''}
       ${showGear ? `<span class="member-manage-btn" title="Manage Member" data-manage-uid="${esc(uid)}">${icon('gear')}</span>` : ''}
     </div>`;
@@ -8776,7 +8868,7 @@ async function renderMessages(rawMsgs) {
       const meta = document.createElement('div');
       meta.className = 'msg-meta';
       const roleColor = (currentView === 'channel' && currentServerData) ? roleColorFor(currentServerData, m.uid) : null;
-      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}"${roleColor ? ` style="color:${esc(cssColor(roleColor, 'inherit'))}"` : ''}>${esc((currentView === 'channel' && serverNickFor(m.uid)) || displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
+      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}"${nameStyle(p, roleColor)}>${esc((currentView === 'channel' && serverNickFor(m.uid)) || displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
       body.appendChild(meta);
       body.appendChild(buildMessageLineEl(m, canDelete));
       groupEl.innerHTML = avatarHTML(40, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration, undefined, p.equippedMask);
@@ -9685,7 +9777,7 @@ const COMPOSER_COUNT_SHOW_AT = 100; // only surface it once you're within 100 ch
 const MESSAGE_SIZE_CAP = 900000;
 function myMessageLimit() {
   const rank = sfMode ? 0 : platformRank(myProfile);
-  return rank >= 3 ? Infinity : rank === 2 ? 5000 : COMPOSER_MAX_LENGTH;
+  return rank >= 3 ? Infinity : rank === 2 ? 5000 : isPremium(myProfile) ? 4000 : COMPOSER_MAX_LENGTH;   // Premium: 4,000 (v4.56)
 }
 // null when the text is fine to send, otherwise what to tell the person
 function messageTooLong(text) {
@@ -11670,15 +11762,17 @@ function populateSettings() {
   renderQuests();
 }
 
+// Premium's end date for people, or '' when it's set so far ahead that no date can show it ("Invalid Date" before v4.56).
+function premiumUntilText(ms, opts) { return Number.isFinite(ms) && ms < 8.64e15 ? new Date(ms).toLocaleDateString(undefined, opts) : ''; }
 function buildPremiumActionHTML() {
   const active = isPremium(myProfile);
   const balance = myProfile.orbs || 0;
   const days = Math.round(PREMIUM_DURATION_MS / 86400000);
   if (active) {
-    const until = new Date(myProfile.premiumUntil).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+    const until = premiumUntilText(myProfile.premiumUntil, { month: 'long', day: 'numeric', year: 'numeric' });
     return `
       <span class="premium-active-badge">${icon('star')} Frixion Premium Active</span>
-      <p class="desc" style="margin-top:12px;">Active until ${until}. Renewing early adds another ${days} days on top of your current expiry.</p>
+      <p class="desc" style="margin-top:12px;">${until ? `Active until ${until}.` : 'Active forever.'} Renewing early adds another ${days} days on top of your current expiry.</p>
       <button class="btn-accent-inline" style="width:100%;" data-premium-action="renew">Renew Now — ${PREMIUM_COST_ORBS} Orbs</button>`;
   }
   const canAfford = balance >= PREMIUM_COST_ORBS;
@@ -14118,7 +14212,7 @@ async function renderAdminActions() {
       </div>
     </div>
     <div class="admin-block">
-      <div class="ab-title">Frixion Premium — ${isPremium(u) ? ('Active until ' + new Date(u.premiumUntil).toLocaleDateString()) : 'Not active'}</div>
+      <div class="ab-title">Frixion Premium — ${isPremium(u) ? (premiumUntilText(u.premiumUntil) ? 'Active until ' + premiumUntilText(u.premiumUntil) : 'Active forever') : 'Not active'}</div>
       <div class="ab-row">
         <input id="admin-premium-days" type="number" min="1" placeholder="Days" class="fld-input">
         <button class="btn-accent-inline slim" id="admin-premium-grant">Grant</button>
@@ -16898,7 +16992,7 @@ function setGameApi() {
 function openOcrng() {
   if (!myUid || !myProfile) return;
   setGameApi();
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=14');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=15');
   // the shared lobby needs the sign-in's claims first (ensureClaims()); if they can't be had, the game plays solo
   const claimed = Promise.race([ensureClaims(), new Promise(r => setTimeout(r, 6000))]);
   Promise.all([ocrngModule, claimed]).then(([m]) => m.open()).catch(err => {

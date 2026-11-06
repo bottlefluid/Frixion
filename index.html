@@ -20,7 +20,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=100">
+<link rel="stylesheet" href="style.css?v=101">
 </head>
 <body>
 
@@ -846,6 +846,11 @@
           <div class="field">
             <label id="banner-gradient-label">Gradient Banners</label>
             <div class="color-swatches" id="banner-gradient-swatches"></div>
+            <div class="grad-mix hidden" id="banner-mix"><input type="color" id="banner-mix-1" value="#5865f2" aria-label="First banner color"><input type="color" id="banner-mix-2" value="#eb459e" aria-label="Second banner color"><span class="grad-mix-note">Mix your own</span></div>
+          </div>
+          <div class="field">
+            <label id="name-grad-label">Name Gradient</label>
+            <div class="grad-mix" id="name-grad-row"><input type="color" id="name-grad-1" value="#5865f2" aria-label="First name color"><input type="color" id="name-grad-2" value="#eb459e" aria-label="Second name color"><span class="grad-name-preview" id="name-grad-preview">Your Name</span><button type="button" class="btn-secondary slim" id="name-grad-toggle">Use It</button></div>
           </div>
           <button class="btn-accent-inline" id="save-profile-btn">Save Profile</button>
         </div>
@@ -999,12 +1004,17 @@
         </div>
         <div class="premium-hero">
           <h2>Frixion Premium</h2>
-          <p>Unlock exclusive themes and a badge next to your name. Renews monthly with Orbs.</p>
+          <p>Unlock themes, a gradient name, bigger uploads and more. Renews monthly with Orbs.</p>
         </div>
         <div class="perk-list">
           <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="7" cy="12" r="3" fill="#5865f2"/><circle cx="12" cy="7" r="3" fill="#eb459e"/><circle cx="17" cy="12" r="3" fill="#f0b232"/></svg></span><div><div class="t">Exclusive Themes</div><div class="d">Unlocks the Ash and Onyx appearance themes</div></div></div>
           <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2.5l2.95 6.4 7 .63-5.3 4.66 1.6 6.86-6.25-3.78-6.25 3.78 1.6-6.86-5.3-4.66 7-.63z"/></svg></span><div><div class="t">Premium Badge</div><div class="d">A star badge next to your name everywhere</div></div></div>
-          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5l7-7a3.5 3.5 0 0 1 5 5l-8.5 8.5a5 5 0 0 1-7-7l7.5-7.5"/></svg></span><div><div class="t">Bigger Uploads</div><div class="d">Higher attachment size limit (coming soon)</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5l7-7a3.5 3.5 0 0 1 5 5l-8.5 8.5a5 5 0 0 1-7-7l7.5-7.5"/></svg></span><div><div class="t">Bigger Uploads</div><div class="d">10 MB files and 100 MB videos (5 MB and 50 MB without Premium)</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20"><defs><linearGradient id="pkName" x1="0" x2="1"><stop offset="0" stop-color="#5865f2"/><stop offset="1" stop-color="#eb459e"/></linearGradient></defs><path d="M4 20L10.5 4h3L20 20h-3.2l-1.5-4H8.7l-1.5 4zm5.8-7h4.4L12 7.3z" fill="url(#pkName)"/></svg></span><div><div class="t">Gradient Name</div><div class="d">Your name in two colors you pick, on messages and member lists</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20"><defs><linearGradient id="pkBan" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#43e97b"/><stop offset="1" stop-color="#4facfe"/></linearGradient></defs><rect x="3" y="6" width="18" height="12" rx="3" fill="url(#pkBan)"/></svg></span><div><div class="t">Custom Gradient Banners</div><div class="d">Mix your own two-color profile banner</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span><div><div class="t">Longer Messages</div><div class="d">Up to 4,000 characters per message (1,000 without Premium)</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2l1.8 5.6L19.5 9l-5.7 1.5L12 16l-1.8-5.5L4.5 9l5.7-1.4zM18.5 14l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9z"/></svg></span><div><div class="t">Overcontrol RNG Perks</div><div class="d">1.25x luck, auto-roll and the premium pass</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg></span><div><div class="t">Top-Speed Messages</div><div class="d">Your messages load and send instantly</div></div></div>
         </div>
         <div id="premium-action-area"></div>
       </div>
@@ -1108,12 +1118,17 @@
     </div>
     <div class="premium-hero">
       <h2>Frixion Premium</h2>
-      <p>Unlock exclusive themes and a badge next to your name. Renews monthly with Orbs.</p>
+      <p>Unlock themes, a gradient name, bigger uploads and more. Renews monthly with Orbs.</p>
     </div>
     <div class="perk-list">
       <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="7" cy="12" r="3" fill="#5865f2"/><circle cx="12" cy="7" r="3" fill="#eb459e"/><circle cx="17" cy="12" r="3" fill="#f0b232"/></svg></span><div><div class="t">Exclusive Themes</div><div class="d">Unlocks the Ash and Onyx appearance themes</div></div></div>
       <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2.5l2.95 6.4 7 .63-5.3 4.66 1.6 6.86-6.25-3.78-6.25 3.78 1.6-6.86-5.3-4.66 7-.63z"/></svg></span><div><div class="t">Premium Badge</div><div class="d">A star badge next to your name everywhere</div></div></div>
-      <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5l7-7a3.5 3.5 0 0 1 5 5l-8.5 8.5a5 5 0 0 1-7-7l7.5-7.5"/></svg></span><div><div class="t">Bigger Uploads</div><div class="d">Higher attachment size limit (coming soon)</div></div></div>
+      <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5l7-7a3.5 3.5 0 0 1 5 5l-8.5 8.5a5 5 0 0 1-7-7l7.5-7.5"/></svg></span><div><div class="t">Bigger Uploads</div><div class="d">10 MB files and 100 MB videos (5 MB and 50 MB without Premium)</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20"><defs><linearGradient id="pkName" x1="0" x2="1"><stop offset="0" stop-color="#5865f2"/><stop offset="1" stop-color="#eb459e"/></linearGradient></defs><path d="M4 20L10.5 4h3L20 20h-3.2l-1.5-4H8.7l-1.5 4zm5.8-7h4.4L12 7.3z" fill="url(#pkName)"/></svg></span><div><div class="t">Gradient Name</div><div class="d">Your name in two colors you pick, on messages and member lists</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20"><defs><linearGradient id="pkBan" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#43e97b"/><stop offset="1" stop-color="#4facfe"/></linearGradient></defs><rect x="3" y="6" width="18" height="12" rx="3" fill="url(#pkBan)"/></svg></span><div><div class="t">Custom Gradient Banners</div><div class="d">Mix your own two-color profile banner</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span><div><div class="t">Longer Messages</div><div class="d">Up to 4,000 characters per message (1,000 without Premium)</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2l1.8 5.6L19.5 9l-5.7 1.5L12 16l-1.8-5.5L4.5 9l5.7-1.4zM18.5 14l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9z"/></svg></span><div><div class="t">Overcontrol RNG Perks</div><div class="d">1.25x luck, auto-roll and the premium pass</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg></span><div><div class="t">Top-Speed Messages</div><div class="d">Your messages load and send instantly</div></div></div>
     </div>
     <div id="premium-modal-action-area"></div>
   </div>
@@ -1700,6 +1715,6 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=135"></script>
+<script defer src="script.js?v=136"></script>
 </body>
 </html>
