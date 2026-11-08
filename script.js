@@ -482,6 +482,13 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.58', date: '2026-11-07', title: 'Copy that',
+    notes: [
+      'Copy Image: in the picture viewer, by right-clicking a picture in the computer app, or by holding a message with a picture on a phone.',
+      'When someone changes their display name, picture or profile, everyone sees it right away. No refresh needed.',
+      'Refreshing the page no longer flashes you offline for everyone: Frixion waits a few seconds before showing someone offline.',
+      'Editing a message: the box is as wide as the chat, grows with your text (up to half the window), and stays steady when you resize the window or go fullscreen.',
+    ] },
   { v: '4.57', date: '2026-11-06', title: 'Orbs you can trust',
     notes: [
       'Orbs, Premium and Shop items can\'t be cheated any more: nobody can give themselves Orbs, Premium time or items from their browser. Frixion\'s own server adds them, and it decides the amounts.',
@@ -2091,6 +2098,9 @@ async function getProfile(uid) {
     const snap = await db.collection('users').doc(uid).get();
     const data = snap.exists ? snap.data() : { username: uid, avatarColor: '#5865f2', status: 'offline', premiumUntil: null };
     profileCache[uid] = data;
+    profileFetchedAt[uid] = Date.now();
+    // their presence also says when their look changes, so a profile loaded once stays up to date (v4.58)
+    if (snap.exists && uid !== myUid && !presenceListeners[uid]) subscribePresence(uid);
     return data;
   } catch (e) {
     return { username: uid, avatarColor: '#5865f2', status: 'offline', premiumUntil: null };
@@ -2112,6 +2122,45 @@ let mobileCache = {};         // uid -> true when that person's active session i
 let appCache = {};            // uid -> true when that person is active in the Frixion computer app
 let activityCache = {};       // uid -> that person's current activity (Rich Presence), or null
 let activityCacheSig = {};
+// Someone's profile is loaded once and kept (one read). When what others see of them changes (their name, picture,
+// colors, items, Premium...), their own app puts a new time in presence/<them>/rev (noteMyLook()), and every screen
+// listening to their presence loads their profile again and redraws (v4.58: before, it took a refresh).
+const OFFLINE_GRACE_MS = 15000;
+let offlineTimers = {};       // uid -> timer before showing them offline (subscribePresence())
+let profileRev = {};          // uid -> the rev last seen in their presence
+let profileFetchedAt = {};    // uid -> when their profile was loaded here
+let profileReloads = {};      // uid -> timer (several changes at once are one reload)
+function reloadProfile(uid) {
+  if (profileReloads[uid]) return;
+  profileReloads[uid] = setTimeout(async () => {
+    delete profileReloads[uid];
+    if (!myUid) return;
+    try {
+      const snap = await db.collection('users').doc(uid).get();
+      if (!snap.exists || !myUid) return;
+      profileCache[uid] = snap.data();
+      profileFetchedAt[uid] = Date.now();
+      renderCurrentView();
+      if (uid === currentDMOtherUid) renderChatHeaderAvatar();
+      renderHomeActivity();
+      if (currentView === 'friends') renderFriendsView();
+    } catch (e) {}
+  }, 600);
+}
+const LOOK_FIELDS = ['displayName', 'avatarUrl', 'avatarColor', 'bannerColor', 'bio', 'pronouns', 'discordTag', 'nameGradient', 'premiumUntil',
+  'equippedDecoration', 'equippedMask', 'equippedNameplate', 'equippedProfileEffect', 'equippedProfileFrame', 'equippedBanner', 'equippedMusic',
+  'owner', 'coowner', 'op'];
+let myLookSig = null;
+function noteMyLook(p) {
+  const sig = JSON.stringify(LOOK_FIELDS.map(f => (p[f] === undefined ? null : p[f])));
+  if (myLookSig !== null && sig !== myLookSig && rtdb && myPresenceKey()) {
+    // once the change has reached the database, so their reload gets the new one
+    const key = myPresenceKey();
+    db.waitForPendingWrites().catch(() => {})
+      .then(() => rtdb.ref('presence/' + key + '/rev').set(firebase.database.ServerValue.TIMESTAMP)).catch(() => {});
+  }
+  myLookSig = sig;
+}
 // Real device detection (not just "is the window narrow"): UA Client Hints
 // where available, a UA sniff as the fallback, plus a touch-capable check
 // so a small desktop window is never mistaken for a phone.
@@ -2199,6 +2248,9 @@ function clearPresenceListeners() {
   mobileCache = {};
   appCache = {};
   activityCache = {}; activityCacheSig = {};
+  Object.values(offlineTimers).forEach(clearTimeout); offlineTimers = {};
+  Object.values(profileReloads).forEach(clearTimeout); profileReloads = {};
+  profileRev = {};
 }
 function subscribePresence(uid) {
   if (!rtdb || presenceListeners[uid]) return;
@@ -2219,6 +2271,14 @@ function subscribePresence(uid) {
     const ref = rtdb.ref('presence/' + key);
     const cb = (snap) => {
       const val = snap.val();
+      // their look changed since their profile was loaded here: load it again (see profileRev)
+      const rev = val && typeof val.rev === 'number' ? val.rev : 0;
+      if (rev && rev !== profileRev[uid] && uid !== myUid) {
+        const seen = profileRev[uid] !== undefined;
+        profileRev[uid] = rev;
+        // (the first time, only if it changed around or after the load: clocks can be a little apart)
+        if (seen || rev > (profileFetchedAt[uid] || 0) - 120000) reloadProfile(uid);
+      }
       const conns = val && val.connections ? Object.values(val.connections).filter(c => c && typeof c === 'object') : [];
       let online, idle, mobile, onApp;
       if (conns.length) {
@@ -2234,18 +2294,28 @@ function subscribePresence(uid) {
       }
       const act = cleanActivity(val && val.activity);
       const actSig = JSON.stringify(act);
-      if (presenceCache[uid] === online && idleCache[uid] === idle && mobileCache[uid] === mobile && appCache[uid] === onApp && activityCacheSig[uid] === actSig) return;
-      presenceCache[uid] = online;
-      idleCache[uid] = idle;
-      mobileCache[uid] = mobile;
-      appCache[uid] = onApp;
-      activityCache[uid] = act; activityCacheSig[uid] = actSig;
-      renderCurrentView();
-      renderDMRows();
-      if (uid === currentDMOtherUid) renderChatHeaderAvatar();
-      renderSelfPanel();
-      renderHomeActivity();
-      if (currentView === 'friends') renderFriendsView();
+      const apply = () => {
+        if (presenceCache[uid] === online && idleCache[uid] === idle && mobileCache[uid] === mobile && appCache[uid] === onApp && activityCacheSig[uid] === actSig) return;
+        presenceCache[uid] = online;
+        idleCache[uid] = idle;
+        mobileCache[uid] = mobile;
+        appCache[uid] = onApp;
+        activityCache[uid] = act; activityCacheSig[uid] = actSig;
+        renderCurrentView();
+        renderDMRows();
+        if (uid === currentDMOtherUid) renderChatHeaderAvatar();
+        renderSelfPanel();
+        renderHomeActivity();
+        if (currentView === 'friends') renderFriendsView();
+      };
+      // Someone who was online and just disconnected (a page refresh, a short drop) is only shown offline if they're
+      // still gone OFFLINE_GRACE_MS later, so a refresh doesn't flash them offline and back (v4.58).
+      if (!online && presenceCache[uid] === true && uid !== myUid) {
+        if (!offlineTimers[uid]) offlineTimers[uid] = setTimeout(() => { delete offlineTimers[uid]; if (presenceListeners[uid] && presenceListeners[uid].cb === cb) apply(); }, OFFLINE_GRACE_MS);
+        return;
+      }
+      if (offlineTimers[uid]) { clearTimeout(offlineTimers[uid]); delete offlineTimers[uid]; }
+      apply();
     };
     // cut off (signed out, or no longer allowed): forget it, so the next screen that needs it listens again
     ref.on('value', cb, () => { if (presenceListeners[uid] && presenceListeners[uid].cb === cb) { delete presenceListeners[uid]; delete presenceCache[uid]; } });
@@ -3591,7 +3661,7 @@ $('logout-btn').onclick = async () => {
   setSession(null);
   await auth.signOut().catch(() => {});
   stopGameEngines();
-  myUid = null; myProfile = null; profileCache = {}; isAdmin = false; isOwner = false; sfMode = false; ephemeralMsgs = []; seedBotProfiles();
+  myUid = null; myProfile = null; profileCache = {}; profileFetchedAt = {}; myLookSig = null; isAdmin = false; isOwner = false; sfMode = false; ephemeralMsgs = []; seedBotProfiles();
   clearPresenceListeners();   // the ones screens started while signing out (see clearPresenceListeners())
   applyAdminVisibility();
   currentServerId = null; currentServerData = null; currentChannelId = null; currentThreadId = null; currentThreadData = null;
@@ -3840,6 +3910,7 @@ function initAppForUser() {
       return;
     }
     if (terminationActive) return;
+    noteMyLook(myProfile);   // tells everyone else's screens when what they show of you changed
     if (myProfile.terminated) {
       const tm = myProfile.terminated;
       if (tm.mode === 'fake' && tm.at && Date.now() - tm.at > TERM_FAKE_MAX_AGE) {
@@ -5996,6 +6067,7 @@ function openImageViewer(url, name) {
   const web = /^https?:\/\//i.test(url || '');      // only real web addresses get an "Open original" link
   if (open) open.href = web ? url : '#';
   if (open) open.style.display = web ? '' : 'none';
+  $('image-preview-copy').onclick = () => copyImage(url);
   openModal('image-preview-modal');
   requestAnimationFrame(() => requestAnimationFrame(() => box.classList.remove('no-anim')));
 }
@@ -6010,6 +6082,76 @@ $('image-preview-img').addEventListener('click', e => {
 $('image-preview-modal').addEventListener('click', e => {
   if (e.target === $('image-preview-modal')) closeModal('image-preview-modal');
 });
+
+// ---------- copying pictures (v4.58) ----------
+// The clipboard only takes pictures as PNG, so the picture is drawn onto a canvas and copied from there (the places
+// Frixion's pictures come from, Cloudinary, Discord and Tenor, all allow that). The copy starts right away, inside the
+// click, with the picture following once it's ready, which Safari needs. A GIF copies as a still picture. If a picture
+// can't be copied, its link is copied instead.
+function imagePng(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    if (/^https?:/i.test(url)) img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        c.getContext('2d').drawImage(img, 0, 0);
+        c.toBlob(b => (b ? resolve(b) : reject(new Error('empty'))), 'image/png');
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => reject(new Error('load'));
+    img.src = url;
+  });
+}
+function copyImageLink(url, why) {
+  navigator.clipboard.writeText(url).then(() => toast(why || 'Link copied.'), () => toast('Could not copy. Your browser blocked it.', 'error'));
+}
+function copyImage(url) {
+  if (!url || !/^(https?:|data:image\/|blob:)/i.test(url)) return;
+  const web = /^https?:/i.test(url);
+  const fallback = () => (web ? copyImageLink(url, 'That picture can\'t be copied, so its link was copied instead.') : toast('Could not copy that picture.', 'error'));
+  if (!window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) { fallback(); return; }
+  try {
+    navigator.clipboard.write([new ClipboardItem({ 'image/png': imagePng(url) })]).then(() => toast('Image copied.'), fallback);
+  } catch (e) { fallback(); }
+}
+// The computer app has no right-click menu of its own, so right-clicking a picture there shows this one (a browser
+// already offers Copy Image in its own menu).
+let imgMenu = null;
+function closeImageMenu() { if (imgMenu) { imgMenu.remove(); imgMenu = null; } }
+function showImageMenu(x, y, url) {
+  closeImageMenu();
+  const web = /^https?:/i.test(url);
+  imgMenu = document.createElement('div');
+  imgMenu.className = 'img-menu';
+  imgMenu.innerHTML = '<button type="button" data-a="copy">Copy Image</button>'
+    + (web ? '<button type="button" data-a="link">Copy Image Link</button><button type="button" data-a="open">Open Original</button>' : '');
+  document.body.appendChild(imgMenu);
+  const w = imgMenu.offsetWidth, h = imgMenu.offsetHeight;
+  imgMenu.style.left = Math.max(4, Math.min(x, innerWidth - w - 4)) + 'px';
+  imgMenu.style.top = Math.max(4, Math.min(y, innerHeight - h - 4)) + 'px';
+  imgMenu.onclick = e => {
+    const a = e.target.closest('button') && e.target.closest('button').dataset.a;
+    if (!a) return;
+    closeImageMenu();
+    if (a === 'copy') copyImage(url);
+    else if (a === 'link') copyImageLink(url);
+    else if (a === 'open') window.open(url, '_blank', 'noopener');
+  };
+}
+document.addEventListener('contextmenu', e => {
+  closeImageMenu();
+  if (!DESKTOP) return;
+  const img = e.target.closest && e.target.closest('.msg-attachment img, #image-preview-img');
+  if (!img || img.classList.contains('custom-emoji')) return;
+  e.preventDefault();
+  showImageMenu(e.clientX, e.clientY, img.currentSrc || img.src);
+});
+document.addEventListener('mousedown', e => { if (imgMenu && !imgMenu.contains(e.target)) closeImageMenu(); }, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeImageMenu(); });
+window.addEventListener('blur', closeImageMenu);
+window.addEventListener('resize', closeImageMenu);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('image-preview-modal').classList.contains('hidden')) closeModal('image-preview-modal');
 });
@@ -8114,8 +8256,11 @@ function closeActionSheet() {
   openActionSheet = null;
   document.body.classList.remove('action-sheet-open');
 }
-function openMessageActionSheet(msgId) {
+function openMessageActionSheet(msgId, heldImg) {
   const m = lastRawMessages.find(x => x.id === msgId);
+  // Copy Image: the picture that was held down on, or else the message's first one
+  const firstImg = !heldImg && document.querySelector(`.msg-line[data-mid="${CSS.escape(msgId)}"] .msg-attachment img:not(.custom-emoji)`);
+  const imgUrl = heldImg || (firstImg ? (firstImg.currentSrc || firstImg.src) : null);
   if (!m) return;
   closeActionSheet();
   closeReactPopover();
@@ -8138,6 +8283,7 @@ function openMessageActionSheet(msgId) {
         <button type="button" class="as-item" data-act="reply">${icon('reply')}<span>Reply</span></button>
         ${threadAct ? `<button type="button" class="as-item" data-act="thread">${THREAD_ICON}<span>${threadAct}</span></button>` : ''}
         ${m.text ? `<button type="button" class="as-item" data-act="copy">${icon('copy')}<span>Copy Text</span></button>` : ''}
+        ${imgUrl ? `<button type="button" class="as-item" data-act="copyimg">${icon('copy')}<span>Copy Image</span></button>` : ''}
         ${pinnable ? `<button type="button" class="as-item" data-act="pin">${icon('pin')}<span>${m.pinned ? 'Unpin Message' : 'Pin Message'}</span></button>` : ''}
         ${canDel ? `<button type="button" class="as-item as-danger" data-act="delete">${icon('trash')}<span>Delete Message</span></button>` : ''}
       </div>
@@ -8162,6 +8308,7 @@ function openMessageActionSheet(msgId) {
       else if (act === 'reply') setReplyTarget(msgId);
       else if (act === 'thread') openCreateThread(msgId);
       else if (act === 'copy') copyMessageText(m);
+      else if (act === 'copyimg') copyImage(imgUrl);
       else if (act === 'pin') togglePin(msgId);
       else if (act === 'delete') deleteMessage(msgId);
     };
@@ -8174,7 +8321,7 @@ function openMessageActionSheet(msgId) {
 // so it doesn't fire while scrolling.
 (function setupMessageLongPress() {
   const wrap = $('messages');
-  let timer = null, startX = 0, startY = 0, targetId = null;
+  let timer = null, startX = 0, startY = 0, targetId = null, targetImg = null;
   const HOLD_MS = 450, MOVE_TOLERANCE = 10;
   const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } targetId = null; };
   wrap.addEventListener('touchstart', (e) => {
@@ -8182,11 +8329,14 @@ function openMessageActionSheet(msgId) {
     const line = e.target.closest('.msg-line');
     if (!line || !line.dataset.mid) return;
     targetId = line.dataset.mid;
+    // the picture held down on, if any, is the one Copy Image copies
+    const img = e.target.closest('.msg-attachment img');
+    targetImg = img && !img.classList.contains('custom-emoji') ? (img.currentSrc || img.src) : null;
     startX = e.touches[0].clientX; startY = e.touches[0].clientY;
     timer = setTimeout(() => {
       timer = null;
       if (navigator.vibrate) navigator.vibrate(10);
-      openMessageActionSheet(targetId);
+      openMessageActionSheet(targetId, targetImg);
     }, HOLD_MS);
   }, { passive: true });
   wrap.addEventListener('touchmove', (e) => {
@@ -9025,6 +9175,13 @@ async function deleteMessageAttachment(id, idx) {
 // ---------- editing (own messages only) ----------
 let editingMessageId = null; // message currently being edited, if any
 let editingDraft = '';       // its in-progress text — survives a re-render triggered by unrelated activity (a new message, a reaction, a poll vote) arriving while the user is mid-edit
+let editBoxObserver = null;
+// The edit box grows with its text, up to half the window (at least 200px), then scrolls (v4.58).
+function sizeEditBox(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight + 2, Math.max(200, Math.round(innerHeight * 0.5))) + 'px';
+}
+window.addEventListener('resize', () => { document.querySelectorAll('.msg-edit-input').forEach(sizeEditBox); });
 function buildEditBoxInto(rowWrap, m) {
   const textSpan = rowWrap.querySelector('.msg-text');
   const editedTag = rowWrap.querySelector('.edited-tag');
@@ -9034,11 +9191,24 @@ function buildEditBoxInto(rowWrap, m) {
     <div class="msg-edit-hint">escape to <a class="med-cancel">cancel</a> &bull; enter to <a class="med-save">save</a></div>`;
   if (textSpan) textSpan.replaceWith(box); else rowWrap.insertBefore(box, rowWrap.firstChild);
   if (editedTag) editedTag.remove();
+  rowWrap.classList.add('is-editing');
 
   const ta = box.querySelector('.msg-edit-input');
   ta.value = editingDraft;
-  autoResize(ta);
-  ta.addEventListener('input', () => { editingDraft = ta.value; autoResize(ta); });
+  sizeEditBox(ta);
+  ta.addEventListener('input', () => { editingDraft = ta.value; sizeEditBox(ta); });
+  // a wider or narrower chat (resizing the window, fullscreen, the member list opening) rewraps the text, so refit then
+  if (editBoxObserver) editBoxObserver.disconnect();
+  if (window.ResizeObserver) {
+    let lastW = 0;
+    editBoxObserver = new ResizeObserver(entries => {
+      const w = Math.round(entries[0].contentRect.width);
+      if (w === lastW) return;
+      lastW = w;
+      sizeEditBox(ta);
+    });
+    editBoxObserver.observe(box);
+  }
 
   const finish = async (save) => {
     if (save) {

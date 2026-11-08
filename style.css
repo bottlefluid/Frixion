@@ -488,9 +488,12 @@ a { color: var(--text-link); text-decoration: none; }
 .msg-reply-ref:hover .mrr-user { text-decoration: underline; }
 .msg-reply-ref .mrr-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .8; min-width: 0; }
 .msg-reply-ref:hover .mrr-text { opacity: 1; }
-.msg-edit-box { width: 100%; }
+/* While editing, the row takes the whole width of the chat (the rows normally shrink to fit their content, which left the
+   edit box only as wide as the old text, and made it jump around while the window was resized). v4.58 */
+.msg-row-wrap.is-editing { display: flex; width: 100%; }
+.msg-edit-box { width: 100%; flex: 1 1 100%; min-width: 0; }
 .msg-edit-input {
-  display: block; width: 100%; background: var(--bg-input); border: 1px solid var(--accent);
+  box-sizing: border-box; display: block; width: 100%; background: var(--bg-input); border: 1px solid var(--accent);
   border-radius: 6px; color: var(--text-normal); font-size: 15px; line-height: 1.4;
   padding: 8px 10px; resize: none; outline: none; font-family: inherit;
 }
@@ -1887,6 +1890,14 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 .image-preview-close:hover { color: var(--text-muted); }
 .image-preview-open { margin-top: 8px; color: #fff; opacity: .7; font-size: 13px; text-decoration: none; }
 .image-preview-open:hover { opacity: 1; text-decoration: underline; }
+.image-preview-links { display: flex; gap: 16px; align-items: center; }
+button.image-preview-open { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; cursor: pointer; }
+/* right-clicking a picture in the computer app (copyImage()) */
+.img-menu { position: fixed; z-index: 400; min-width: 168px; padding: 6px; background: var(--bg-floating); border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35); display: flex; flex-direction: column; }
+.img-menu button { background: none; border: 0; text-align: left; padding: 7px 8px; border-radius: 3px; color: var(--text-normal);
+  font: inherit; font-size: 14px; cursor: pointer; }
+.img-menu button:hover { background: var(--accent); color: #fff; }
 .msg-attachment img:not(.custom-emoji) { cursor: zoom-in; }
 
 /* ============ STICKERS ============ */

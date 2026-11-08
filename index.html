@@ -20,7 +20,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=101">
+<link rel="stylesheet" href="style.css?v=102">
 </head>
 <body>
 
@@ -1674,7 +1674,10 @@
     <div class="image-preview-scroller" id="image-preview-scroller">
       <img id="image-preview-img" src="" alt="Preview" draggable="false">
     </div>
-    <a class="image-preview-open" id="image-preview-open" href="#" target="_blank" rel="noopener">Open original</a>
+    <div class="image-preview-links">
+      <button type="button" class="image-preview-open" id="image-preview-copy">Copy image</button>
+      <a class="image-preview-open" id="image-preview-open" href="#" target="_blank" rel="noopener">Open original</a>
+    </div>
   </div>
 </div>
 
@@ -1715,6 +1718,6 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=137"></script>
+<script defer src="script.js?v=138"></script>
 </body>
 </html>

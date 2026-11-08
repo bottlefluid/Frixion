@@ -116,6 +116,7 @@ const decFields = f => Object.fromEntries(Object.entries(f || {}).map(([k, v]) =
 async function fsGet(env, path) {
   const r = await fetch(`${fsBase(env)}/${path.split('/').map(encodeURIComponent).join('/')}`, { headers: { Authorization: 'Bearer ' + await googleToken(env) } });
   if (r.status === 404) return null;
+  if (r.status === 429) fail(503, 'Frixion reached its database limit for today. Try again later.');
   if (!r.ok) fail(502, 'Could not read Frixion.');
   return decFields((await r.json()).fields);
 }
@@ -311,12 +312,16 @@ const EARN_CAP = 20000;   // Orbs a day from games, per account
 const utcDay = () => new Date().toISOString().slice(0, 10);
 const nextUtcDay = () => { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1); };
 const own = (o, k) => !!o && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k);
+// Google's free plan allows so many database reads and writes a day; past that it answers 429 until it starts over
+// (midnight Pacific time)
+const OUT_OF_READS = 'Frixion reached its database limit for today. Try again later.';
 
 // several documents in one read: { data, updateTime } for each path (null if it isn't there), in the same order
 async function fsGetMany(env, paths) {
   const names = paths.map(p => docName(env, p));
   const r = await fetch(`${fsBase(env)}:batchGet`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await googleToken(env) },
     body: JSON.stringify({ documents: names }) });
+  if (r.status === 429) fail(503, OUT_OF_READS);
   if (!r.ok) fail(502, 'Could not read Frixion.');
   const got = new Map();
   for (const x of await r.json()) if (x.found) got.set(x.found.name, { data: decFields(x.found.fields), updateTime: x.found.updateTime });
@@ -329,6 +334,7 @@ async function fsCommit(env, writes) {
   if (r.ok) return r.json();
   const j = await r.json().catch(() => ({})), status = String((j.error && j.error.status) || '');
   if (/^(FAILED_PRECONDITION|NOT_FOUND|ALREADY_EXISTS|ABORTED)$/.test(status)) return null;
+  if (r.status === 429 || status === 'RESOURCE_EXHAUSTED') fail(503, OUT_OF_READS);
   console.error('commit refused', r.status, status, j.error && j.error.message);
   fail(502, 'Could not save that.');
 }
