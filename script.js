@@ -487,6 +487,7 @@ const UPDATES = [
       'The Owner panel has a new Purge Perms tab, for the Owner only: anyone on it can use /purge in any chat they\'re in (servers, DMs and groups), like Frixion staff.',
       'Only the Owner can add or remove people there. Nobody can give it to themselves, and Co-Owners can\'t hand it out either.',
       '/sfmode now hides your staff tag on everyone\'s screen right away, not just on yours.',
+      'The Owner panel\'s tabs go onto a second row when they don\'t fit, so none of them hide past the edge any more.',
     ] },
   { v: '4.58', date: '2026-11-07', title: 'Copy that',
     notes: [

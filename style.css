@@ -2235,8 +2235,9 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .channel-row, .dm-row, .home-nav-item, .friends-tab, .shop-tab, .admin-tab, .shop-mgr-tab, .explore-server-row { transition: background .12s ease, color .12s ease, box-shadow .15s ease; }
 .explore-server-row:hover { background: var(--bg-tertiary); }
 .toast { border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.35); animation: frxSlideUp .2s ease; }
-.admin-tabs { overflow-x: auto; scrollbar-width: none; }
-.admin-tabs::-webkit-scrollbar { display: none; }
+/* The tabs wrap onto another row when they don't all fit, so every tab stays in sight. They used to scroll sideways
+   with no scrollbar showing, which hid the last ones past the edge (Purge Perms, v4.59). */
+.admin-tabs { flex-wrap: wrap; row-gap: 2px; }
 .admin-tab { white-space: nowrap; flex-shrink: 0; }
 .admin-block, .admin-block:last-child {
   background: var(--bg-secondary); border: 1px solid var(--divider); border-radius: 8px;
