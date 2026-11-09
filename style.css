@@ -1380,6 +1380,12 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 .admin-row:hover { background: var(--bg-modifier-hover); }
 .admin-row.on { background: var(--bg-modifier-selected); }
 .admin-row .ar-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Owner panel > Purge Perms (v4.59) */
+.purgeperm-pane { max-width: 560px; }
+.purgeperm-note { color: var(--text-muted); font-size: 14px; margin: 0 0 12px; }
+.purgeperm-add { display: flex; gap: 8px; margin-bottom: 12px; }
+.purgeperm-add .fld-input { flex: 1; min-width: 0; }
+.purgeperm-pane .admin-row { cursor: default; }
 .admin-right { flex: 1; overflow-y: auto; border-left: 1px solid var(--divider); padding-left: 20px; }
 .empty { color: var(--text-faint); font-size: 14px; padding: 10px 0; }
 .admin-right .empty { color: var(--text-faint); font-size: 14px; padding-top: 10px; }

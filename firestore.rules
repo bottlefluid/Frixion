@@ -50,6 +50,9 @@ service cloud.firestore {
       return !(m.u.get('banned', false) == true && (bannedUntil == null || bannedUntil > now))
         && (mutedUntil == null || mutedUntil <= now);
     }
+    // Purge perms (v4.59): the Owner gave this person /purge, which deletes other people's messages in any chat they're
+    // in (a server channel they can see, a DM or a group), the way Frixion staff can. Set only by the Owner (staffEdit()).
+    function purgeOk(m) { return m.u.get('purgePerm', false) == true; }
     // Not banned from Frixion right now: a banned account sees nothing but its own profile (the ban screen).
     function active(m) {
       let until = m.u.get('bannedUntil', null);
@@ -87,7 +90,7 @@ service cloud.firestore {
       allow create: if signedIn() && !exists(acctPath())
         && request.resource.data.get('username', '') == username
         && request.resource.data.get('authUid', '') == request.auth.uid
-        && !request.resource.data.keys().hasAny(['password', 'owner', 'coowner', 'terminated', 'redirectUrl', 'redirectNonce', 'mutedUntil', 'muteReason'])
+        && !request.resource.data.keys().hasAny(['password', 'owner', 'coowner', 'terminated', 'redirectUrl', 'redirectNonce', 'mutedUntil', 'muteReason', 'purgePerm'])
         && request.resource.data.get('op', false) == false
         && request.resource.data.get('banned', false) == false
         && request.resource.data.get('premiumUntil', null) == null
@@ -124,7 +127,7 @@ service cloud.firestore {
     // Your own profile: anything except your rank, sign-in, bans and mutes. A few staff-set fields may only be cleared.
     function selfEdit(m, k, username) {
       return m.name == username
-        && !k.hasAny(['authUid', 'owner', 'coowner', 'op', 'username', 'createdAt', 'mutedUntil', 'muteReason'])
+        && !k.hasAny(['authUid', 'owner', 'coowner', 'op', 'username', 'createdAt', 'mutedUntil', 'muteReason', 'purgePerm'])
         && (!k.hasAny(['banned', 'banReason', 'bannedUntil']) || clearingExpiredBan())
         && (!k.hasAny(['redirectUrl', 'redirectNonce']) || !request.resource.data.keys().hasAny(['redirectUrl', 'redirectNonce']))
         && (!k.hasAny(['terminated']) || !('terminated' in request.resource.data))
@@ -178,6 +181,7 @@ service cloud.firestore {
         && (m.name == username || (theirs >= 2 ? m.rank > theirs : true))
         && !k.hasAny(['owner', 'username', 'createdAt', 'authUid'])
         && (!k.hasAny(['coowner']) || m.rank == 3)
+        && (!k.hasAny(['purgePerm']) || m.rank == 3)                 // purge perms: the Owner's alone (v4.59)
         && !('password' in request.resource.data)
         && (m.rank >= 2 || k.hasOnly(['premiumUntil', 'orbs', 'banned', 'banReason', 'bannedUntil', 'mutedUntil', 'muteReason']));
     }
@@ -534,7 +538,7 @@ service cloud.firestore {
       let admin = p.hasAny(['administrator']);
       let cp = admin ? [].toSet() : chanPerms(m, s, ch, p);
       return inServer(m, s) && canPost(m) && notTimedOut(m, s) && (admin || cp.hasAll(['viewChannels', 'sendMessages']))
-        && ((newAuthorIsMe(m) && (admin || (slowOk(m, ch, cp, sid, cid) && everyoneOk(cp)))) || newBotMessage(m, hasOne(p, ['manageMessages'])));
+        && ((newAuthorIsMe(m) && (admin || (slowOk(m, ch, cp, sid, cid) && everyoneOk(cp)))) || newBotMessage(m, hasOne(p, ['manageMessages']) || purgeOk(m)));
     }
     // @everyone and @here notify the whole server only from someone with Mention @everyone there; anyone else's message
     // has to carry everyoneBlocked (the app adds it), which the push function and the ping sound respect (v4.54).
@@ -562,7 +566,7 @@ service cloud.firestore {
     // auto-deletes. (A Discord user's message that is gone from Discord is deleted by the bridge, which checks Discord
     // first: removeGone() in functions/api/discord.)
     function chMsgDelete(m, s, ch) {
-      return m.ok && (isMine(m) || m.rank >= 1 || (isMember(m, s) && active(m) && ((isOld() && ch.get('autoDelete', true) != false)
+      return m.ok && (isMine(m) || m.rank >= 1 || (purgeOk(m) && seesChannel(m, s, ch)) || (isMember(m, s) && active(m) && ((isOld() && ch.get('autoDelete', true) != false)
         || hasOne(permsIn(m, s), ['manageMessages', 'manageChannels']))));
     }
     function threadCreate(m, s, ch) {
@@ -584,7 +588,7 @@ service cloud.firestore {
       let admin = p.hasAny(['administrator']);
       let cp = admin ? [].toSet() : chanPerms(m, s, ch, p);
       return inServer(m, s) && canPost(m) && notTimedOut(m, s) && (admin || cp.hasAll(['viewChannels', 'sendMessagesInThreads']))
-        && ((newAuthorIsMe(m) && (admin || everyoneOk(cp))) || newBotMessage(m, hasOne(p, ['manageMessages'])));
+        && ((newAuthorIsMe(m) && (admin || everyoneOk(cp))) || newBotMessage(m, hasOne(p, ['manageMessages']) || purgeOk(m)));
     }
     function threadMsgUpdate(m, s, ch) {
       let k = changed();
@@ -592,7 +596,7 @@ service cloud.firestore {
       return inServer(m, s) && canInChannel(m, s, ch, p, ['viewChannels']) && (ownEdit(m, k) || serverOthersEdit(m, k, p));
     }
     function threadMsgDelete(m, s) {
-      return m.ok && (isMine(m) || m.rank >= 1 || (isMember(m, s) && active(m) && hasOne(permsIn(m, s), ['manageMessages', 'manageChannels'])));
+      return m.ok && (isMine(m) || m.rank >= 1 || (isMember(m, s) && active(m) && (purgeOk(m) || hasOne(permsIn(m, s), ['manageMessages', 'manageChannels']))));
     }
     // (a typing note shows the name of whoever it belongs to, nobody else's)
     function typingWrite(m, s, ch, name) { return m.name == name && typingName(name) && seesChannel(m, s, ch); }
@@ -673,9 +677,9 @@ service cloud.firestore {
     function convGet(m) { return active(m) && (resource == null || m.name in resource.data.get('participants', []) || m.rank >= 1); }
     function convList(m) { return active(m) && (m.name in resource.data.get('participants', []) || m.rank >= 1); }
     // (Sapphire's purge cards here only for Frixion staff, the only ones who can purge a DM or group.)
-    function convMsgCreate(m, c) { return inConv(m, c) && canPost(m) && (newAuthorIsMe(m) || newBotMessage(m, m.rank >= 1)); }
+    function convMsgCreate(m, c) { return inConv(m, c) && canPost(m) && (newAuthorIsMe(m) || newBotMessage(m, m.rank >= 1 || purgeOk(m))); }
     function convMsgUpdate(m, c) { let k = changed(); return inConv(m, c) && (ownEdit(m, k) || dmOthersEdit(m, k)); }
-    function convMsgDelete(m, c) { return inConv(m, c) && (isMine(m) || m.rank >= 1 || (isOld() && c.get('autoDelete', true) != false)); }
+    function convMsgDelete(m, c) { return inConv(m, c) && (isMine(m) || m.rank >= 1 || purgeOk(m) || (isOld() && c.get('autoDelete', true) != false)); }
     function convTyping(m, c, name) { return inConv(m, c) && m.name == name && typingName(name); }
 
     // A DM's id is its two usernames, sorted and joined with "_" (dmIdFor() in script.js).

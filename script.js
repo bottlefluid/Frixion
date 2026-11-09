@@ -482,6 +482,12 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.59', date: '2026-11-09', title: 'Purge Perms',
+    notes: [
+      'The Owner panel has a new Purge Perms tab, for the Owner only: anyone on it can use /purge in any chat they\'re in (servers, DMs and groups), like Frixion staff.',
+      'Only the Owner can add or remove people there. Nobody can give it to themselves, and Co-Owners can\'t hand it out either.',
+      '/sfmode now hides your staff tag on everyone\'s screen right away, not just on yours.',
+    ] },
   { v: '4.58', date: '2026-11-07', title: 'Copy that',
     notes: [
       'Copy Image: in the picture viewer, by right-clicking a picture in the computer app, or by holding a message with a picture on a phone.',
@@ -2150,7 +2156,7 @@ function reloadProfile(uid) {
 }
 const LOOK_FIELDS = ['displayName', 'avatarUrl', 'avatarColor', 'bannerColor', 'bio', 'pronouns', 'discordTag', 'nameGradient', 'premiumUntil',
   'equippedDecoration', 'equippedMask', 'equippedNameplate', 'equippedProfileEffect', 'equippedProfileFrame', 'equippedBanner', 'equippedMusic',
-  'owner', 'coowner', 'op'];
+  'owner', 'coowner', 'op', 'sfMode'];   // (sfMode: /sfmode hides your staff tag on everyone's screen, not just yours)
 let myLookSig = null;
 function noteMyLook(p) {
   const sig = JSON.stringify(LOOK_FIELDS.map(f => (p[f] === undefined ? null : p[f])));
@@ -10126,8 +10132,9 @@ function appInstalledHere(appId) {
 // command only touches that server.
 const SAPPHIRE_SERVER_PERM = { purge: 'manageMessages', mute: 'timeoutMembers', unmute: 'timeoutMembers', ban: 'banMembers', unban: 'banMembers', kick: 'kickMembers' };
 function sapphireModeFor(action) {
-  // /purge works anywhere for Frixion staff. Mute, ban and kick only make sense inside a server.
-  if (action === 'purge' && isFrixionStaff()) return 'platform';
+  // /purge works anywhere for Frixion staff, and for anyone the Owner gave purge perms (v4.59). Mute, ban and kick
+  // only make sense inside a server.
+  if (action === 'purge' && (isFrixionStaff() || hasPurgePerm())) return 'platform';
   if (currentView !== 'channel' || !currentServerData) return null;
   if (isFrixionStaff()) return 'server';   // staff can moderate any server they are in
   if (serverHasApp(currentServerData, 'sapphire') && hasServerPerm(currentServerData, myUid, SAPPHIRE_SERVER_PERM[action])) return 'server';
@@ -12782,6 +12789,7 @@ function openAdminPanel() {
   $('admin-tab-systemhub').classList.toggle('hidden', !isOwner);
   $('admin-tab-devices').classList.toggle('hidden', !isOwner);
   $('admin-tab-ips').classList.toggle('hidden', !isOwner);
+  $('admin-tab-purgeperms').classList.toggle('hidden', !realOwner());   // the Owner only, not Co-Owners
   adminSelectedDevice = null; adminSelectedIp = null;
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('on'));
   document.querySelectorAll('.admin-pane').forEach(p => p.classList.add('hidden'));
@@ -12792,6 +12800,46 @@ function openAdminPanel() {
   adminSelectedUser = null;
   renderAdminList();
 }
+// ---------- Purge Perms (v4.59): the Owner's alone ----------
+// Anyone on this list can use /purge in any chat they're in (servers, DMs and groups), the way Frixion staff can. It's
+// purgePerm on their profile, which only the Owner can change (firestore.rules: nobody can give it to themselves, and
+// Co-Owners can't hand it out either).
+function realOwner() { return !sfMode && !!(myProfile && myProfile.owner === true); }
+function hasPurgePerm() { return !!(myProfile && myProfile.purgePerm === true); }
+async function renderPurgePerms() {
+  const list = $('purgeperm-list');
+  if (!realOwner()) { list.innerHTML = '<div class="empty">Only the Owner can manage purge perms.</div>'; return; }
+  list.innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    const snap = await db.collection('users').where('purgePerm', '==', true).get();
+    const people = snap.docs.map(d => d.data()).sort((a, b) => displayNameOf(a).localeCompare(displayNameOf(b)));
+    list.innerHTML = people.length ? people.map(p => `<div class="admin-row">
+        ${avatarHTML(28, p.avatarColor, initials(p.username), null, p.avatarUrl)}
+        <span class="ar-name">${esc(displayNameOf(p))}<small class="dev-sub">@${esc(p.username)}</small></span>
+        <button type="button" class="btn-secondary slim" data-unpurge="${esc(p.username)}">Remove</button>
+      </div>`).join('') : '<div class="empty">Nobody has purge perms yet.</div>';
+    list.querySelectorAll('[data-unpurge]').forEach(b => { b.onclick = () => setPurgePerm(b.dataset.unpurge, false); });
+  } catch (e) { list.innerHTML = '<div class="empty">Could not load the list.</div>'; }
+}
+async function setPurgePerm(name, on) {
+  if (!realOwner() || !name) return false;
+  try {
+    const ref = db.collection('users').doc(name);
+    const snap = await ref.get();
+    if (!snap.exists) { toast('No account has that username. Usernames are case-sensitive.', 'error'); return false; }
+    if (on && snap.data().purgePerm === true) { toast(`${name} already has purge perms.`); return false; }
+    await ref.update({ purgePerm: on ? true : FieldValue.delete() });
+    toast(on ? `${name} can use /purge now.` : `${name} can't use /purge any more.`);
+    renderPurgePerms();
+    return true;
+  } catch (e) { toast('Could not change purge perms.', 'error'); return false; }
+}
+$('purgeperm-give').onclick = async () => {
+  const name = ($('purgeperm-name').value || '').trim().replace(/^@/, '');
+  if (!name) { toast('Type a username first.'); return; }
+  if (await setPurgePerm(name, true)) $('purgeperm-name').value = '';
+};
+$('purgeperm-name').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('purgeperm-give').click(); } });
 $('admin-search').addEventListener('input', renderAdminList);
 if ($('system-hub-search')) $('system-hub-search').addEventListener('input', renderAdminList);
 if ($('devices-search')) $('devices-search').addEventListener('input', renderDevicesPane);
@@ -12806,6 +12854,7 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
     $('admin-pane-' + tab.dataset.adminTab).classList.remove('hidden');
     if (tab.dataset.adminTab === 'devices') renderDevicesPane();
     if (tab.dataset.adminTab === 'ips') renderIpsPane();
+    if (tab.dataset.adminTab === 'purgeperms') renderPurgePerms();
     if (tab.dataset.adminTab === 'emojis') renderAdminEmojiList();
     if (tab.dataset.adminTab === 'stickers') renderAdminStickerList();
     if (tab.dataset.adminTab === 'filter') renderAdminFilterList();
