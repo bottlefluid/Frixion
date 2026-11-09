@@ -488,6 +488,7 @@ const UPDATES = [
       'When someone changes their display name, picture or profile, everyone sees it right away. No refresh needed.',
       'Refreshing the page no longer flashes you offline for everyone: Frixion waits a few seconds before showing someone offline.',
       'Editing a message: the box is as wide as the chat, grows with your text (up to half the window), and stays steady when you resize the window or go fullscreen.',
+      'Overcontrol RNG: joining a game someone is already playing no longer says they "joined". Only people who come in after you are announced.',
     ] },
   { v: '4.57', date: '2026-11-06', title: 'Orbs you can trust',
     notes: [
@@ -17280,7 +17281,7 @@ function setGameApi() {
 function openOcrng() {
   if (!myUid || !myProfile) return;
   setGameApi();
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=15');
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=16');
   // the shared lobby needs the sign-in's claims first (ensureClaims()); if they can't be had, the game plays solo
   const claimed = Promise.race([ensureClaims(), new Promise(r => setTimeout(r, 6000))]);
   Promise.all([ocrngModule, claimed]).then(([m]) => m.open()).catch(err => {

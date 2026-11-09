@@ -526,7 +526,8 @@ function play() {
   G.chat = createChat({ host: $q('.oc-hud'), rtdb: api.rtdb, uid: G.me.uid, name: G.me.name, onMessage: (uid, name, text) => showBubble(uid, text), onCommand: chatCommand });
   G.chat.system('Welcome to Overcontrol RNG. Press / to chat, and type /help for commands.', '#bdbdbd');
   G.net = createNet(api.rtdb, api.firebase, G.me.uid, {
-    joined: (uid, d) => { addOther(uid, d); G.chat.system(`${d.name || uid} joined the game.`, '#bdbdbd'); },
+    // (people who were already here when you came in aren't announced: net.js says so with `already`)
+    joined: (uid, d, already) => { addOther(uid, d); if (!already) G.chat.system(`${d.name || uid} joined the game.`, '#bdbdbd'); },
     changed: (uid, d) => updateOther(uid, d),
     left: uid => { const o = G.others.get(uid); if (o) G.chat.system(`${(o.data && o.data.name) || uid} left the game.`, '#bdbdbd'); removeOther(uid); },
     pos: (uid, p) => { const o = G.others.get(uid); if (o) { o.target.set(p.x, p.y, p.z); o.targetYaw = p.r; o.anim = p.a; o.hp = p.hp; o.bm = p.bm || null; o.bt = p.bt || null; o.gl = p.gl || 0; if (!o.placed) { o.pos.copy(o.target); o.placed = true; } o.seen = now(); } },

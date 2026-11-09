@@ -49,7 +49,11 @@ export function createNet(rtdb, firebase, uid, on) {
       // Refused means the database rules don't have the ocrng section yet: the game then plays solo.
       myRoster.set({ ...info, t: firebase.database.ServerValue.TIMESTAMP }).catch(err => { if (on.denied) on.denied(err); });
       const rr = ref('roster');
-      listen(rr, 'child_added', s => { roster[s.key] = s.val(); if (s.key !== uid) on.joined(s.key, s.val()); checkStreaming(); });
+      // The first batch is everyone already in the lobby when you come in: they get added quietly (already = true),
+      // so your chat doesn't say they "joined". The database sends a ref's value event after its first child events.
+      let settled = false;
+      listen(rr, 'child_added', s => { roster[s.key] = s.val(); if (s.key !== uid) on.joined(s.key, s.val(), !settled); checkStreaming(); });
+      rr.once('value', () => { settled = true; }).catch(() => { settled = true; });
       listen(rr, 'child_changed', s => { roster[s.key] = s.val(); if (s.key !== uid) on.changed(s.key, s.val()); });
       listen(rr, 'child_removed', s => { delete roster[s.key]; if (s.key !== uid) on.left(s.key); checkStreaming(); });
       listen(ref('hits/' + uid), 'child_added', s => { const h = s.val(); s.ref.remove().catch(() => {}); if (h && Date.now() - (h.t || 0) < 5000) on.hit(h); });
