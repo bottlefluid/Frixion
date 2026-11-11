@@ -791,5 +791,65 @@ service cloud.firestore {
       allow read: if signedIn();
       allow write: if isWho(who(), id) || isOwnerLevel(who());
     }
+
+    // ---------- Gavinperri (another site on this Firebase project: bottlefluid/gavinperri) ----------
+    // That site shows one document, which Frixion's Admins (and Co-Owners and the Owner) edit there. Everything of its
+    // own starts with site_gavinperri_, and nothing here gives that site, or anyone, anything in Frixion's collections.
+    // - The live document (site_gavinperri_doc/main) is a public page, so anyone may fetch it by that one name. Nobody
+    //   can list anything, and no other name can be read or made.
+    // - A save is the next revision number, from an Admin who isn't banned, and it has to file the very same thing in
+    //   history/{revision} in the same write; a history entry can't be made any other way. Nothing here is ever
+    //   deleted or rewritten, by anyone, so every version that was published stays on record.
+    // - The live document doesn't say who saved it; only its history does, and only Admins read that.
+    // - Pictures (site_gavinperri_images) are data kept under the SHA-256 of that data, and can't be changed once
+    //   made. Readers get a picture only while the live document lists it (imgs); Admins get any of them.
+    function gpMain() { return /databases/$(database)/documents/site_gavinperri_doc/main; }
+    function gpHistory(rev) { return /databases/$(database)/documents/site_gavinperri_doc/main/history/$(rev); }
+    function gpEditor(m) { return isStaff(m) && active(m); }
+    function gpShape(d) {
+      return d.rev is int && d.rev >= 1
+        && d.body is string && d.body.size() <= 200000
+        && d.imgs is list && d.imgs.size() <= 24
+        && d.at == request.time;
+    }
+    function gpSave(m, rev) {
+      let d = request.resource.data;
+      let filed = getAfter(gpHistory(string(rev))).data;
+      return gpEditor(m) && d.keys().hasOnly(['rev', 'body', 'imgs', 'at']) && gpShape(d) && d.rev == rev
+        && filed.rev == d.rev && filed.body == d.body && filed.imgs == d.imgs && filed.at == d.at;
+    }
+    function gpFile(m, rev) {
+      let d = request.resource.data;
+      let live = getAfter(gpMain()).data;
+      return gpEditor(m) && d.keys().hasOnly(['rev', 'body', 'imgs', 'by', 'at']) && gpShape(d)
+        && rev == string(d.rev) && d.by == m.name
+        && live.rev == d.rev && live.body == d.body && live.imgs == d.imgs;
+    }
+    function gpPicture(m, id) {
+      let d = request.resource.data;
+      return gpEditor(m) && id.matches('[0-9a-f]{64}')
+        && d.keys().hasOnly(['data', 'w', 'h', 'at'])
+        && d.data is string && d.data.size() <= 950000
+        && d.data.matches('data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}')
+        && d.w is int && d.w >= 1 && d.w <= 4096 && d.h is int && d.h >= 1 && d.h <= 4096
+        && d.at == request.time;
+    }
+    match /site_gavinperri_doc/{id} {
+      allow get: if id == 'main';
+      allow create: if id == 'main' && gpSave(who(), 1);
+      allow update: if id == 'main' && gpSave(who(), resource.data.rev + 1);
+      allow list, delete: if false;
+
+      match /history/{rev} {
+        allow read: if gpEditor(who());
+        allow create: if id == 'main' && gpFile(who(), rev);
+        allow update, delete: if false;
+      }
+    }
+    match /site_gavinperri_images/{id} {
+      allow get: if id in get(gpMain()).data.imgs || gpEditor(who());
+      allow create: if gpPicture(who(), id);
+      allow list, update, delete: if false;
+    }
   }
 }
