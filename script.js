@@ -492,6 +492,7 @@ const UPDATES = [
       'Do Not Disturb, in Settings > Activity Status: no ping sound, no pop-ups and no notifications on your phone or computer, and everyone sees a red Do Not Disturb icon on your picture.',
       '/raw sends your text exactly as typed, so *Hi* stays *Hi* instead of turning italic. Anyone can use it.',
       '/purge is now only for the Owner and the people on the Purge Perms list. Co-Owners, Admins and server owners need to be on it too.',
+      'Frixion uses far less of its free daily database allowance: Cookie Clicker used to save every 20 seconds for everyone signed in, even with the game closed. It now saves only when something changed.',
     ] },
   { v: '4.59', date: '2026-11-09', title: 'Purge Perms',
     notes: [
@@ -15188,23 +15189,35 @@ function cookieMomentum(){
 const cookieMult=()=>cookieMomentum();
 function cookieBaked(){ if(UC.cookiesRun==null) UC.cookiesRun=UC.cookies||0; return UC.cookiesRun; }
 function ckNum(n){ return n<1 ? n.toFixed(2) : n<10 ? n.toFixed(1) : fmtNum(n); }
-let cookieEngine=null, _cookieSaveAt=0;
+let cookieEngine=null, _cookieSaveAt=0, _cookieSavedSig='';
+// What a save would change (not the run timer, which ticks by itself): when it's the same, nothing is written.
+function cookieSig(){ return JSON.stringify([Math.floor(UC.cookies||0), Math.floor(UC.cookiesAllTime||0), UC.cookieBuildings||{}, UC.cookieUpgrades||[]]); }
+// Cookie Clicker bakes in the background for everyone signed in. It used to save every 20 seconds, game open or not,
+// which made every open Frixion write (and read back) its profile around the clock and used up most of Firebase's
+// free daily writes and reads. Now it saves once a minute while the game is open, every 10 minutes when it isn't,
+// when you leave the page, and only when something changed (v4.60). Buying something still saves right away.
+const COOKIE_SAVE_OPEN_MS=60000, COOKIE_SAVE_BACKGROUND_MS=600000;
 function startCookieEngine(){
   if(!UC) return;
   // No offline earnings: cookies only accrue while Toblox is open.
   UC.cookieLastSave=Date.now();
+  _cookieSavedSig=cookieSig(); _cookieSaveAt=Date.now();   // just loaded: nothing to save yet
   ccStartContent();
   if(cookieEngine) clearInterval(cookieEngine);
   cookieEngine=setInterval(()=>{
     const cps=cookieCPS(); if(cps>0){ const add=cps*0.2*cookieMult(); UC.cookies=(UC.cookies||0)+add; UC.cookiesAllTime=(UC.cookiesAllTime||0)+add; UC.cookiesRun=cookieBaked()+add; }
     UC.cookieRunSecs=(UC.cookieRunSecs||0)+0.2;
     if(currentGameId==='cookie') updateCookieView();
-    if(Date.now()-_cookieSaveAt>20000) saveCookies();
+    if(Date.now()-_cookieSaveAt>(currentGameId==='cookie'?COOKIE_SAVE_OPEN_MS:COOKIE_SAVE_BACKGROUND_MS)) saveCookies();
   }, 200);
 }
 function stopCookieEngine(){ if(cookieEngine){ clearInterval(cookieEngine); cookieEngine=null; } ccStopContent(); }
+// leaving the page (or switching away) keeps what was baked, if anything was
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && cookieEngine && Date.now() - _cookieSaveAt > 15000) saveCookies(); });
 async function saveCookies(){
-  if(!UC) return; _cookieSaveAt=Date.now(); UC.cookieLastSave=Date.now();
+  if(!UC) return; _cookieSaveAt=Date.now();
+  const sig=cookieSig(); if(sig===_cookieSavedSig) return;   // nothing new: no write
+  _cookieSavedSig=sig; UC.cookieLastSave=Date.now();
   try{ await dbUpdateUser(getU(), {cookies:UC.cookies, cookiesAllTime:UC.cookiesAllTime, cookiesRun:cookieBaked(), cookieRunSecs:UC.cookieRunSecs||0, cookieBuildings:UC.cookieBuildings, cookieUpgrades:UC.cookieUpgrades||[], cookieLastSave:UC.cookieLastSave}); }catch(e){}
 }
 function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
@@ -15317,6 +15330,7 @@ function cashOutCookies(){
       UC.cookies=0; UC.cookiesRun=0; UC.cookieRunSecs=0; UC.cookieBuildings={}; UC.cookieUpgrades=[];
       UC.coins=(UC.coins||0)+paid;
       await dbUpdateUser(getU(), {coins:UC.coins, cookies:0, cookiesRun:0, cookieRunSecs:0, cookieBuildings:{}, cookieUpgrades:[]});
+      _cookieSavedSig=cookieSig();   // (that was the save)
       refreshCaps();
       if(currentGameId==='cookie'){ renderCookieShop(); updateCookieView(); }
       showToast('Cashed out '+fmtOrbs(paid)+' Orbs. Fresh run started.');
