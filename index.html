@@ -20,7 +20,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=104">
+<link rel="stylesheet" href="style.css?v=105">
 </head>
 <body>
 
@@ -925,6 +925,13 @@
         <p class="desc">Frixion shows your friends what you're doing, all on its own. It appears on your profile, in the Friends list and on the phone Home screen, and it goes away when you leave Frixion.</p>
         <div class="setting-row">
           <div class="setting-row-text">
+            <div class="setting-row-title">Do Not Disturb</div>
+            <div class="setting-row-desc">No Frixion notifications at all: no ping sound, no pop-ups, and nothing on your phone or computer. Everyone sees a red Do Not Disturb icon on your picture.</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="dnd-toggle"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="setting-row">
+          <div class="setting-row-text">
             <div class="setting-row-title">Share my activity</div>
             <div class="setting-row-desc">Turn this off and nothing about what you're doing is shown to anyone.</div>
           </div>
@@ -1613,7 +1620,7 @@
     </div>
     <div class="admin-pane hidden" id="admin-pane-purgeperms">
       <div class="purgeperm-pane">
-        <p class="purgeperm-note">People on this list can use <b>/purge</b> in any chat they're in (servers, DMs and groups), like Frixion staff. Only you can change it.</p>
+        <p class="purgeperm-note">Only you and the people on this list can use <b>/purge</b>, in any chat they're in (servers, DMs and groups). Co-Owners, Admins and server owners need to be on it too. Only you can change it.</p>
         <div class="purgeperm-add">
           <input class="fld-input" id="purgeperm-name" placeholder="Username" autocomplete="off" maxlength="40">
           <button class="btn-accent-inline slim" id="purgeperm-give">Give Purge Perms</button>
@@ -1729,6 +1736,6 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=139"></script>
+<script defer src="script.js?v=140"></script>
 </body>
 </html>

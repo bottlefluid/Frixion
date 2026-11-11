@@ -122,6 +122,19 @@ async function claim(env, path) {
   const j = await r.json().catch(() => null), v = j && j.writeResults && j.writeResults[0] && (j.writeResults[0].transformResults || [])[0];
   return v ? Number(v.integerValue ?? v.doubleValue) : null;
 }
+// These people, less anyone with Do Not Disturb on (dnd: true on their profile, Settings > Activity Status). One read
+// for all of them; if it fails, nobody is left out.
+async function notDisturbing(env, uids) {
+  const names = uids.map(u => fsName(env, `users/${u}`));
+  const r = await dbFetch(env, `${fsBase(env)}:batchGet`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ documents: names, mask: { fieldPaths: ['dnd'] } }) }).catch(() => null);
+  if (!r || !r.ok) return uids;
+  const quiet = new Set();
+  for (const x of (await r.json().catch(() => [])) || []) {
+    if (x.found && x.found.fields && x.found.fields.dnd && x.found.fields.dnd.booleanValue === true) quiet.add(x.found.name.split('/').pop());
+  }
+  return uids.filter(u => !quiet.has(u));
+}
 // The devices of these people that turned notifications on (30 people per question, Firestore's most for "in")
 async function subsOf(env, uids) {
   const out = [];
@@ -182,7 +195,8 @@ async function send(env, { kind, id, sid, cid, tid, mid, uid }, origin) {
       tid ? fsGet(env, `servers/${sid}/threads/${tid}`, ['name']) : null,
     ]);
     if (!server || !channel || !(server.members || []).includes(uid)) return { ok: true, skipped: 'not in it' };
-    const members = new Set(server.members), targets = new Set(), raw = String(m.text || '');
+    // (a message sent with /raw mentions nobody: its text is shown exactly as typed)
+    const members = new Set(server.members), targets = new Set(), raw = m.raw === true ? '' : String(m.text || '');
     let x;
     while ((x = MENTION.exec(raw))) if (members.has(x[2])) targets.add(x[2]);
     if (m.replyTo && members.has(m.replyTo.uid)) targets.add(m.replyTo.uid);
@@ -198,6 +212,9 @@ async function send(env, { kind, id, sid, cid, tid, mid, uid }, origin) {
     note = { title: `${nick || nameOf(sender, uid)} (${where}, ${server.name || 'server'})`, body, icon, tag: `msg:${mid}`, open: { type: 'ch', sid, cid, tid: tid || null } };
   }
   if (!to.length) return { ok: true, sent: 0 };
+  // Do Not Disturb (v4.60): nobody who turned it on gets a push
+  to = await notDisturbing(env, to);
+  if (!to.length) return { ok: true, sent: 0, dnd: true };
 
   const subs = (await subsOf(env, to)).filter(s => s.endpoint && s.p256dh && s.auth && !(s.muted || []).includes(mute));
   const payload = JSON.stringify(note);

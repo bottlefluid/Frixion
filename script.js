@@ -152,6 +152,7 @@ const PING_SOUND_URL = 'data:audio/mpeg;base64,SUQzBAAAAAE7VlRQRTEAAAAIAAADYWNjZ
 // Created the first time it's needed, so decoding the sound doesn't slow down startup.
 let pingAudioEl = null;
 function playPingSound() {
+  if (dndOn()) return;   // Do Not Disturb
   try { if (!pingAudioEl) pingAudioEl = new Audio(PING_SOUND_URL); pingAudioEl.currentTime = 0; pingAudioEl.play().catch(() => {}); } catch (e) {}
 }
 
@@ -183,8 +184,12 @@ const THEMES = [
 const STATUSES = [
   { key: 'online', label: 'Online' },
   { key: 'idle', label: 'Idle' },
+  { key: 'dnd', label: 'Do Not Disturb' },
   { key: 'offline', label: 'Offline' },
 ];
+// Do Not Disturb (Settings > Activity Status, v4.60): no ping sound, no pop-ups and no phone or computer notifications
+// (functions/api/push skips you too), and everyone sees a red Do Not Disturb icon instead of online or idle.
+function dndOn() { return !!(myProfile && myProfile.dnd === true); }
 
 // ---------- Frixion Premium economy ----------
 const STARTING_ORBS = 50;
@@ -482,6 +487,12 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.60', date: '2026-11-10', title: 'Do Not Disturb',
+    notes: [
+      'Do Not Disturb, in Settings > Activity Status: no ping sound, no pop-ups and no notifications on your phone or computer, and everyone sees a red Do Not Disturb icon on your picture.',
+      '/raw sends your text exactly as typed, so *Hi* stays *Hi* instead of turning italic. Anyone can use it.',
+      '/purge is now only for the Owner and the people on the Purge Perms list. Co-Owners, Admins and server owners need to be on it too.',
+    ] },
   { v: '4.59', date: '2026-11-09', title: 'Purge Perms',
     notes: [
       'The Owner panel has a new Purge Perms tab, for the Owner only: anyone on it can use /purge in any chat they\'re in (servers, DMs and groups), like Frixion staff.',
@@ -1459,6 +1470,8 @@ document.addEventListener('keydown', e => {
   if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('md-spoiler')) { e.preventDefault(); e.target.classList.add('revealed'); }
 });
 
+// A message's text as it shows: formatted, or exactly as typed when it was sent with /raw (v4.60).
+function msgTextHTML(m) { return m && m.raw ? esc(String(m.text || '')) : renderMessageText(m.text); }
 function renderMessageText(rawText) {
   const codes = [];
   const src = String(rawText).replace(MD_CODE_RE, (_, lang, block, inline) => {
@@ -1803,12 +1816,12 @@ function avatarHTML(size, color, letter, status, avatarUrl, decorationId, uid, m
       hole = { r: Math.round(ry), center };
       const grad = `radial-gradient(ellipse ${rx}px ${ry}px at calc(100% - ${center}px) calc(100% - ${cy}px), transparent 96%, #000 100%)`;
       maskStyle = `-webkit-mask-image:${grad};mask-image:${grad};`;
-      dotHTML = `<span class="status-dot ${status} mobile" title="${status === 'idle' ? 'Idle' : 'Online'} on mobile" style="width:${pw}px;height:${ph}px;right:${center - pw / 2}px;bottom:${cy - ph / 2}px;">${mobileStatusSVG(status, pw, ph)}</span>`;
+      dotHTML = `<span class="status-dot ${status} mobile" title="${status === 'idle' ? 'Idle' : status === 'dnd' ? 'Do Not Disturb' : 'Online'} on mobile" style="width:${pw}px;height:${ph}px;right:${center - pw / 2}px;bottom:${cy - ph / 2}px;">${mobileStatusSVG(status, pw, ph)}</span>`;
     } else {
       hole = { r: holeR, center };
       const grad = `radial-gradient(circle ${holeR}px at calc(100% - ${center}px) calc(100% - ${center}px), transparent ${holeR - 1}px, #000 ${holeR}px)`;
       maskStyle = `-webkit-mask-image:${grad};mask-image:${grad};`;
-      const label = status === 'idle' ? 'Idle' : status === 'offline' ? 'Offline' : 'Online';
+      const label = status === 'idle' ? 'Idle' : status === 'dnd' ? 'Do Not Disturb' : status === 'offline' ? 'Offline' : 'Online';
       const where = status !== 'offline' && uid && isOnApp(uid) ? ' on the Frixion app' : '';
       dotHTML = `<span class="status-dot ${status}" title="${label}${where}" style="width:${dotD}px;height:${dotD}px;right:${dotOffset}px;bottom:${dotOffset}px;"></span>`;
     }
@@ -2157,7 +2170,7 @@ function reloadProfile(uid) {
 }
 const LOOK_FIELDS = ['displayName', 'avatarUrl', 'avatarColor', 'bannerColor', 'bio', 'pronouns', 'discordTag', 'nameGradient', 'premiumUntil',
   'equippedDecoration', 'equippedMask', 'equippedNameplate', 'equippedProfileEffect', 'equippedProfileFrame', 'equippedBanner', 'equippedMusic',
-  'owner', 'coowner', 'op', 'sfMode'];   // (sfMode: /sfmode hides your staff tag on everyone's screen, not just yours)
+  'owner', 'coowner', 'op', 'sfMode', 'dnd'];   // (sfMode: /sfmode hides your staff tag on everyone's screen, not just yours)
 let myLookSig = null;
 function noteMyLook(p) {
   const sig = JSON.stringify(LOOK_FIELDS.map(f => (p[f] === undefined ? null : p[f])));
@@ -2335,6 +2348,9 @@ function computeDisplayStatus(uid) {
   if (!rtdb) return 'online';
   if (presenceCache[uid] === undefined) { subscribePresence(uid); return 'offline'; }
   if (presenceCache[uid] === false) return 'offline';
+  // Do Not Disturb (on their profile) shows instead of online or idle
+  const p = uid === myUid ? myProfile : profileCache[uid];
+  if (p && p.dnd === true) return 'dnd';
   return idleCache[uid] ? 'idle' : 'online';
 }
 
@@ -2507,6 +2523,7 @@ function renderRpcPreview() {
 }
 function populateRpc() {
   if (!$('rpc-share-toggle') || !myProfile) return;
+  if ($('dnd-toggle')) $('dnd-toggle').checked = dndOn();
   $('rpc-share-toggle').checked = rpcEnabled();
   if ($('rpc-detect-row')) {
     $('rpc-detect-row').classList.toggle('hidden', !DESKTOP);
@@ -2518,6 +2535,13 @@ function populateRpc() {
 if ($('rpc-detect-toggle')) $('rpc-detect-toggle').onchange = async (e) => {
   try { await db.collection('users').doc(myUid).update({ 'rpc.detectGames': e.target.checked }); }
   catch (err) { e.target.checked = !e.target.checked; toast('Could not save that.', 'error'); }
+};
+if ($('dnd-toggle')) $('dnd-toggle').onchange = async (e) => {
+  const on = e.target.checked;
+  try {
+    await db.collection('users').doc(myUid).update({ dnd: on ? true : FieldValue.delete() });
+    toast(on ? 'Do Not Disturb is on. Frixion won\'t notify you.' : 'Do Not Disturb is off.');
+  } catch (err) { e.target.checked = !on; toast('Could not save that.', 'error'); }
 };
 if ($('rpc-share-toggle')) $('rpc-share-toggle').onchange = async (e) => {
   try { await db.collection('users').doc(myUid).update({ 'rpc.enabled': e.target.checked, 'rpc.showMusic': FieldValue.delete() }); }
@@ -4885,7 +4909,7 @@ function noteChannelMessage(sid, cid, payload, ref, tid, channelName) {
   const server = sid === currentServerId ? currentServerData : serverById(sid);
   const channel = (serverChannels[sid] || {})[cid] || lastChannelsList.find(c => c.id === cid) || {};
   const text = previewForMessage(payload).slice(0, 200);
-  const raw = payload.text || '';
+  const raw = payload.raw ? '' : (payload.text || '');   // (/raw text mentions nobody)
   const everyone = /(^|[\s(>])@(everyone|here)\b/i.test(raw) && payload.everyoneBlocked !== true;
   if (!tid) db.collection('servers').doc(sid).collection('channels').doc(cid).update({ lastMessageAt: FieldValue.serverTimestamp(), lastMessage: { uid: myUid, text, everyone, mid: ref.id } }).catch(() => {});
   const members = new Set((server && server.members) || []);
@@ -5101,7 +5125,7 @@ const appNotifies = () => desktopNotifies() || !!ANDROID_APP;
 const lookingAtFrixion = () => document.visibilityState === 'visible' && document.hasFocus();
 const notifiedKeys = new Set();       // a message mentioning you and @everyone notifies once
 function notifyMessage(n, force) {
-  if (OVERLAY_WINDOW || !n || (!force && (!notifyOn() || lookingAtFrixion()))) return;
+  if (OVERLAY_WINDOW || !n || (!force && (!notifyOn() || dndOn() || lookingAtFrixion()))) return;
   if (!force && n.pushed && pushOn()) return;   // this device gets it as a push notification instead (see PUSH NOTIFICATIONS)
   if (n.key) { if (notifiedKeys.has(n.key)) return; notifiedKeys.add(n.key); }
   const body = String(n.body || '').slice(0, 180), title = String(n.title || 'Frixion').slice(0, 100);
@@ -5346,7 +5370,8 @@ function pushOut(o) {
   if (!myUid || !o || !o.mid) return;
   fetch(`${PUSH_API}/send`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ ...o, uid: myUid }) }).catch(() => {});
 }
-const mayNotify = p => !!(p && (p.replyTo || /(^|[\s(>])@([A-Za-z0-9_]{3,24}|everyone|here)\b/i.test(p.text || '')));
+// (/raw text mentions nobody: a reply still reaches who it replies to)
+const mayNotify = p => !!(p && (p.replyTo || (!p.raw && /(^|[\s(>])@([A-Za-z0-9_]{3,24}|everyone|here)\b/i.test(p.text || ''))));
 function renderDMRows() {
   const wrap = $('dm-rows');
   wrap.innerHTML = '';
@@ -7943,7 +7968,7 @@ function channelSnapHandler(channelId) {
         // Only brand-new messages ping. An older one can re-enter the window when a newer one is deleted.
         const sentAt = m.createdAt && m.createdAt.toMillis ? m.createdAt.toMillis() : Date.now();
         if (Date.now() - sentAt > 60000) return;
-        if (messageTextMentionsMe(m.text || '', m.everyoneBlocked !== true)) playPingSound();
+        if (!m.raw && messageTextMentionsMe(m.text || '', m.everyoneBlocked !== true)) playPingSound();
         if (m.tts && m.text && 'speechSynthesis' in window) {
           try { speechSynthesis.speak(new SpeechSynthesisUtterance(`${m.username || 'Someone'} said ${m.text.slice(0, 300)}`)); } catch (e) {}
         }
@@ -8096,7 +8121,7 @@ function renderPinnedList(pinned) {
       ${avatarHTML(34, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration, undefined, p.equippedMask)}
       <div class="pr-body">
         <div class="pr-head"><span class="pr-author">${esc(p.username)}</span><span class="pr-time">${timeStr(m.createdAt)}</span></div>
-        <div class="pr-text">${m.poll ? `📊 ${esc(m.poll.question)}` : renderMessageText(m.text)}</div>
+        <div class="pr-text">${m.poll ? `📊 ${esc(m.poll.question)}` : msgTextHTML(m)}</div>
       </div>
       ${canPin() ? `<span class="pr-unpin" title="Unpin">${icon('trash')}</span>` : ''}
     </div>`;
@@ -8884,7 +8909,7 @@ function buildMessageLineEl(m, canDelete) {
     ? purgeResultHTML(m)
     : m.wordle
     ? wordleCardHTML(m)
-    : (m.text ? `<span class="msg-text">${renderMessageText(m.text)}</span>${m.edited ? `<span class="edited-tag">(edited)</span>` : ''}` : '') +
+    : (m.text ? `<span class="msg-text">${msgTextHTML(m)}</span>${m.edited ? `<span class="edited-tag">(edited)</span>` : ''}` : '') +
       attachmentHTML(m, canDelete));
 
   rowWrap.innerHTML = bodyHTML +
@@ -9820,10 +9845,13 @@ async function sendMessage() {
     toast('You do not have permission to use commands in this channel.', 'error');
     return;
   }
+  // "/raw *Hi*" sends *Hi* exactly as typed: no formatting, no mentions, and never taken for another command (v4.60).
+  let rawFlag = false;
+  if (/^\/raw\s+\S/i.test(raw)) { raw = raw.replace(/^\/raw\s+/i, ''); rawFlag = true; }
   // "/tts hello" speaks the message aloud for everyone viewing the channel.
-  if (/^\/spoiler\s+\S/i.test(raw)) raw = spoilerText(raw.replace(/^\/spoiler\s+/i, ''));   // /spoiler typed out in full
+  if (!rawFlag && /^\/spoiler\s+\S/i.test(raw)) raw = spoilerText(raw.replace(/^\/spoiler\s+/i, ''));   // /spoiler typed out in full
   let ttsFlag = false;
-  if (/^\/tts\s+\S/i.test(raw)) {
+  if (!rawFlag && /^\/tts\s+\S/i.test(raw)) {
     raw = raw.replace(/^\/tts\s+/i, '');
     if (canHere('sendTTS')) ttsFlag = true;
     else toast('You cannot send text-to-speech here — sent as a normal message.');
@@ -9836,7 +9864,7 @@ async function sendMessage() {
   // of sending it as a message — same trigger word, but it now behaves
   // like every other slash command (acts on send, not on keystroke), and
   // the "/poll" text is cleared the same way any other sent text would be.
-  if (!pendingAttachments.length && raw.toLowerCase() === '/poll') {
+  if (!rawFlag && !pendingAttachments.length && raw.toLowerCase() === '/poll') {
     input.value = '';
     autoResize(input);
     updateComposerCharCount();
@@ -9847,7 +9875,7 @@ async function sendMessage() {
   }
   // /vanish, /unvanish and /sfmode. They are handled here and never posted as text, even when the
   // person is not allowed to use them (they get a "no permission" toast instead).
-  const selfCmd = !pendingAttachments.length ? /^\/(vanish|unvanish|sfmode)(?:\s+(\S+))?\s*$/i.exec(raw) : null;
+  const selfCmd = !rawFlag && !pendingAttachments.length ? /^\/(vanish|unvanish|sfmode)(?:\s+(\S+))?\s*$/i.exec(raw) : null;
   if (selfCmd) {
     input.value = '';
     autoResize(input);
@@ -9861,7 +9889,7 @@ async function sendMessage() {
   }
   // "/purge <n>" — admin-only, deletes the last n messages in the current
   // conversation and has Sapphire post a confirmation card.
-  const purgeMatch = !pendingAttachments.length ? /^\/purge(?:\s+(\d+))?$/i.exec(raw) : null;
+  const purgeMatch = !rawFlag && !pendingAttachments.length ? /^\/purge(?:\s+(\d+))?$/i.exec(raw) : null;
   if (purgeMatch) {
     input.value = '';
     autoResize(input);
@@ -9872,7 +9900,7 @@ async function sendMessage() {
     return;
   }
   // "/wordle" starts a Wordle game card (the app has to be added to the server first).
-  if (!pendingAttachments.length && /^\/wordle$/i.test(raw)) {
+  if (!rawFlag && !pendingAttachments.length && /^\/wordle$/i.test(raw)) {
     input.value = '';
     autoResize(input);
     updateComposerCharCount();
@@ -9883,7 +9911,7 @@ async function sendMessage() {
   }
   // "/mute <user> [reason]", "/ban <user> [reason]", "/unmute <user>", "/unban <user>" — admin
   // only. No duration: mutes and bans last until they are undone.
-  const modMatch = !pendingAttachments.length ? /^\/(mute|unmute|ban|unban|kick)(?:\s+@?(\S+)(?:\s+([\s\S]+))?)?$/i.exec(raw) : null;
+  const modMatch = !rawFlag && !pendingAttachments.length ? /^\/(mute|unmute|ban|unban|kick)(?:\s+@?(\S+)(?:\s+([\s\S]+))?)?$/i.exec(raw) : null;
   if (modMatch) {
     input.value = '';
     autoResize(input);
@@ -9910,7 +9938,8 @@ async function sendMessage() {
   const text = raw ? applyMessageFilter(raw) : '';
   const payload = { text, uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp() };
   if (ttsFlag) payload.tts = true;
-  if (text && /(^|[\s(>])@(everyone|here)\b/i.test(text) && !canHere('mentionEveryone')) payload.everyoneBlocked = true;
+  if (rawFlag) payload.raw = true;
+  if (text && !rawFlag && /(^|[\s(>])@(everyone|here)\b/i.test(text) && !canHere('mentionEveryone')) payload.everyoneBlocked = true;
   if (replyTarget) payload.replyTo = { id: replyTarget.id, uid: replyTarget.uid, username: replyTarget.username, text: replyTarget.text };
   try {
     if (pendingAttachments.length) {
@@ -10133,9 +10162,10 @@ function appInstalledHere(appId) {
 // command only touches that server.
 const SAPPHIRE_SERVER_PERM = { purge: 'manageMessages', mute: 'timeoutMembers', unmute: 'timeoutMembers', ban: 'banMembers', unban: 'banMembers', kick: 'kickMembers' };
 function sapphireModeFor(action) {
-  // /purge works anywhere for Frixion staff, and for anyone the Owner gave purge perms (v4.59). Mute, ban and kick
-  // only make sense inside a server.
-  if (action === 'purge' && (isFrixionStaff() || hasPurgePerm())) return 'platform';
+  // /purge is the Owner's, and anyone's the Owner gave purge perms (Purge Perms tab), in any chat. Nobody else has it,
+  // whatever their rank or role: not Co-Owners, Admins, or a server's own owner or mods (v4.60). Mute, ban and kick only
+  // make sense inside a server.
+  if (action === 'purge') return realOwner() || hasPurgePerm() ? 'platform' : null;
   if (currentView !== 'channel' || !currentServerData) return null;
   if (isFrixionStaff()) return 'server';   // staff can moderate any server they are in
   if (serverHasApp(currentServerData, 'sapphire') && hasServerPerm(currentServerData, myUid, SAPPHIRE_SERVER_PERM[action])) return 'server';
@@ -10414,6 +10444,10 @@ const SLASH_COMMANDS = [
   { name: 'spoiler', desc: 'Send a message hidden behind a spoiler until someone clicks it', options: [
     { name: 'message', desc: 'What to hide', required: true },
   ] },
+  // /raw (v4.60): the text exactly as typed, so *stars* and the like stay as they are instead of formatting it
+  { name: 'raw', desc: 'Send your text exactly as typed, with no formatting (*Hi* stays *Hi*)', options: [
+    { name: 'message', desc: 'What to send as it is', required: true },
+  ] },
   // Staff commands, run by Sapphire. They are listed only for the people who can use them. In sfmode the
   // owner ones disappear, because sfmode turns the effective staff flags off.
   { name: 'vanish', desc: 'Owner: hide yourself here and post a "left" message. Run it again to come back', ownerOnly: true, places: ['channel', 'groupdm'], group: 'sapphire', options: [] },
@@ -10444,6 +10478,7 @@ const SLASH_IMAGES = {
   unvanish:  slashTile('#14b8a6', '<path d="M10 32s8-14 22-14 22 14 22 14-8 14-22 14-22-14-22-14z"/><circle cx="32" cy="32" r="6"/>'),
   sfmode:    slashTile('#5865f2', '<path d="M32 13l16 5.5v12.5c0 9.5-6.5 15.5-16 19.5-9.5-4-16-10-16-19.5V18.5z"/><path d="M24 32h16"/>'),
   spoiler:   slashTile('#4e5058', '<path d="M12 32s7-12 20-12 20 12 20 12-7 12-20 12-20-12-20-12z"/><circle cx="32" cy="32" r="5"/><path d="M15 15l34 34"/>'),
+  raw:       slashTile('#0ea5a4', '<path d="M24 20l-10 12 10 12M40 20l10 12-10 12"/>'),
   tts:       slashTile('#f59e0b', '<path d="M15 26h8l10-8v28l-10-8h-8z" fill="#fff"/><path d="M41 26a9 9 0 0 1 0 12M46 20a17 17 0 0 1 0 24"/>'),
 };
 // Sapphire's commands all show Sapphire's own picture, like a bot's commands do in Discord.
@@ -10660,6 +10695,7 @@ function finishCommandMode() {
     text = v ? `/sfmode ${v}` : '/sfmode';
   } else if (cmd.name === 'tts') text = `/tts ${vals[0]}`;
   else if (cmd.name === 'spoiler') text = spoilerText(vals[0]);
+  else if (cmd.name === 'raw') text = `/raw ${cmdMode.values[0].replace(/^\s+|\s+$/g, '')}`;
   else text = `/${cmd.name}`;
   exitCommandMode(false);
   return text;
@@ -17964,7 +18000,7 @@ function ovCloseChat(chat, forget) {
 }
 
 function ovMsgBody(m) {
-  let h = m.text ? `<div class="ov-text">${renderMessageText(m.text)}</div>` : '';
+  let h = m.text ? `<div class="ov-text">${msgTextHTML(m)}</div>` : '';
   const atts = m.attachments || (m.attachment ? [m.attachment] : []);
   atts.forEach(a => {
     const url = ovSafeUrl(a.url);

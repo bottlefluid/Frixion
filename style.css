@@ -405,6 +405,9 @@ a { color: var(--text-link); text-decoration: none; }
 .status-dot.online { background: var(--online); }
 .status-dot.idle { background: var(--idle); }
 .status-dot.dnd { background: var(--dnd); }
+/* Do Not Disturb (v4.60): the red dot gets its white bar across the middle */
+.status-dot.dnd:not(.mobile)::after { content: ''; position: absolute; left: 22%; right: 22%; top: 50%; height: 26%; min-height: 2px;
+  transform: translateY(-50%); background: #fff; border-radius: 2px; }
 .status-dot.offline { background: var(--offline); }
 .avatar-decoration {
   /* Sized/positioned inline per-avatar (see decorationOverlayHTML in

@@ -294,10 +294,13 @@ async function verify(env, { sid, cid, channel, code }) {
 // a webhook's name: 1 to 80 characters, and Discord refuses ones containing "discord" or "clyde"
 const hookName = s => (String(s || '').replace(/\s+/g, ' ').trim().replace(/discord/gi, w => w.replace(/o/i, 'ο')).replace(/clyde/gi, w => w.replace(/y/i, 'у')).slice(0, 80) || 'Frixion user').replace(/^(everyone|here)$/i, '$1 (Frixion)');
 const oneLine = s => String(s || '').replace(/\s+/g, ' ').trim();
+// A message sent with /raw (v4.60) shows exactly as typed in Discord too: its formatting marks get Discord's backslash,
+// and so do the ones that only count at the start of a line (quotes, headings, lists).
+const discordLiteral = s => String(s).replace(/([\\*_~`|])/g, '\\$1').replace(/^(\s*)([>#-])/gm, '$1\\$2');
 function discordText(m) {
   const out = [];
   if (m.replyTo && m.replyTo.username) out.push(`> **${oneLine(m.replyTo.username).replace(/[*_`~|]/g, '')}**: ${oneLine(m.replyTo.text).slice(0, 140) || '(a message)'}`);
-  if (m.text) out.push(String(m.text));
+  if (m.text) out.push(m.raw === true ? discordLiteral(m.text) : String(m.text));
   if (m.poll && m.poll.question) out.push(`**Poll:** ${m.poll.question}\n` + (m.poll.answers || []).map(a => `- ${a.emoji && !/^:/.test(a.emoji) ? a.emoji + ' ' : ''}${a.text}`).join('\n'));
   if (m.sticker) out.push(`*[sticker: ${oneLine(m.sticker.name) || 'sticker'}]*`);
   if (m.gifUrl && /^https:\/\//.test(m.gifUrl)) out.push(m.gifUrl);

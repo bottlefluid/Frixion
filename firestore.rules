@@ -53,6 +53,9 @@ service cloud.firestore {
     // Purge perms (v4.59): the Owner gave this person /purge, which deletes other people's messages in any chat they're
     // in (a server channel they can see, a DM or a group), the way Frixion staff can. Set only by the Owner (staffEdit()).
     function purgeOk(m) { return m.u.get('purgePerm', false) == true; }
+    // Who may use /purge at all (v4.60): the Owner, and whoever has purge perms, whatever their rank or server role.
+    // (Staff and server mods still delete single messages; only purging needs purge perms.)
+    function purger(m) { return m.rank == 3 || purgeOk(m); }
     // Not banned from Frixion right now: a banned account sees nothing but its own profile (the ban screen).
     function active(m) {
       let until = m.u.get('bannedUntil', null);
@@ -538,7 +541,7 @@ service cloud.firestore {
       let admin = p.hasAny(['administrator']);
       let cp = admin ? [].toSet() : chanPerms(m, s, ch, p);
       return inServer(m, s) && canPost(m) && notTimedOut(m, s) && (admin || cp.hasAll(['viewChannels', 'sendMessages']))
-        && ((newAuthorIsMe(m) && (admin || (slowOk(m, ch, cp, sid, cid) && everyoneOk(cp)))) || newBotMessage(m, hasOne(p, ['manageMessages']) || purgeOk(m)));
+        && ((newAuthorIsMe(m) && (admin || (slowOk(m, ch, cp, sid, cid) && everyoneOk(cp)))) || newBotMessage(m, purger(m)));
     }
     // @everyone and @here notify the whole server only from someone with Mention @everyone there; anyone else's message
     // has to carry everyoneBlocked (the app adds it), which the push function and the ping sound respect (v4.54).
@@ -588,7 +591,7 @@ service cloud.firestore {
       let admin = p.hasAny(['administrator']);
       let cp = admin ? [].toSet() : chanPerms(m, s, ch, p);
       return inServer(m, s) && canPost(m) && notTimedOut(m, s) && (admin || cp.hasAll(['viewChannels', 'sendMessagesInThreads']))
-        && ((newAuthorIsMe(m) && (admin || everyoneOk(cp))) || newBotMessage(m, hasOne(p, ['manageMessages']) || purgeOk(m)));
+        && ((newAuthorIsMe(m) && (admin || everyoneOk(cp))) || newBotMessage(m, purger(m)));
     }
     function threadMsgUpdate(m, s, ch) {
       let k = changed();
@@ -677,7 +680,7 @@ service cloud.firestore {
     function convGet(m) { return active(m) && (resource == null || m.name in resource.data.get('participants', []) || m.rank >= 1); }
     function convList(m) { return active(m) && (m.name in resource.data.get('participants', []) || m.rank >= 1); }
     // (Sapphire's purge cards here only for Frixion staff, the only ones who can purge a DM or group.)
-    function convMsgCreate(m, c) { return inConv(m, c) && canPost(m) && (newAuthorIsMe(m) || newBotMessage(m, m.rank >= 1 || purgeOk(m))); }
+    function convMsgCreate(m, c) { return inConv(m, c) && canPost(m) && (newAuthorIsMe(m) || newBotMessage(m, purger(m))); }
     function convMsgUpdate(m, c) { let k = changed(); return inConv(m, c) && (ownEdit(m, k) || dmOthersEdit(m, k)); }
     function convMsgDelete(m, c) { return inConv(m, c) && (isMine(m) || m.rank >= 1 || purgeOk(m) || (isOld() && c.get('autoDelete', true) != false)); }
     function convTyping(m, c, name) { return inConv(m, c) && m.name == name && typingName(name); }
