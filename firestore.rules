@@ -811,6 +811,8 @@ service cloud.firestore {
     //   has to file the very same thing in history/{revision} in the same write; a history entry can't be made any
     //   other way. Nothing here is ever deleted or rewritten, by anyone, so every version that was published stays on
     //   record. A document taken off the library's list is hidden from readers, not removed.
+    // - An Admin can give a revision in a history a name (or change or clear it). The name, who gave it and when are all
+    //   that can change there; what was published stays exactly as it was.
     // - A live document doesn't say who saved it; only its history does, and only Admins read that.
     // - Pictures (site_gavinperri_images) are data kept under the SHA-256 of that data, and can't be changed once
     //   made. Readers get a picture only while the library lists it; Admins get any of them.
@@ -840,6 +842,11 @@ service cloud.firestore {
         && rev == string(d.rev) && d.by == m.name
         && live.rev == d.rev && live.body == d.body && live.imgs == d.imgs && live.get('ids', []) == d.get('ids', []);
     }
+    function gpLabel(m) {
+      let d = request.resource.data;
+      return gpEditor(m) && d.diff(resource.data).affectedKeys().hasOnly(['name', 'namedBy', 'namedAt'])
+        && d.name is string && d.name.size() <= 60 && d.namedBy == m.name && d.namedAt == request.time;
+    }
     // The cover pictures the list shows are copies of pictures already kept below, so they have no history. (The page
     // only ever draws one that is plain picture data.)
     function gpCovers(m) {
@@ -864,7 +871,8 @@ service cloud.firestore {
       match /history/{rev} {
         allow read: if gpEditor(who());
         allow create: if gpFile(who(), id, rev);
-        allow update, delete: if false;
+        allow update: if gpLabel(who());
+        allow delete: if false;
       }
     }
     match /site_gavinperri_images/{id} {
