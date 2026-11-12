@@ -796,37 +796,55 @@ service cloud.firestore {
     }
 
     // ---------- Gavinperri (another site on this Firebase project: bottlefluid/gavinperri) ----------
-    // That site shows one document, which Frixion's Admins (and Co-Owners and the Owner) edit there. Everything of its
-    // own starts with site_gavinperri_, and nothing here gives that site, or anyone, anything in Frixion's collections.
-    // - The live document (site_gavinperri_doc/main) is a public page, so anyone may fetch it by that one name. Nobody
-    //   can list anything, and no other name can be read or made.
-    // - A save is the next revision number, from an Admin who isn't banned, and it has to file the very same thing in
-    //   history/{revision} in the same write; a history entry can't be made any other way. Nothing here is ever
-    //   deleted or rewritten, by anyone, so every version that was published stays on record.
-    // - The live document doesn't say who saved it; only its history does, and only Admins read that.
+    // That site is a library of documents, which Frixion's Admins (and Co-Owners and the Owner) write there and anyone
+    // reads. Everything of its own starts with site_gavinperri_, and nothing here gives that site, or anyone, anything
+    // in Frixion's collections. Who may write is decided here, from the same records as everything above (accounts/
+    // and the profile's rank): nothing a page sends can make someone an Admin.
+    // - site_gavinperri_doc/library is the list of documents (body), and says which documents (ids) and pictures
+    //   (imgs) are public. Anyone may fetch it by that name. site_gavinperri_doc/covers holds the small cover
+    //   pictures the list shows, so the whole list costs a reader two reads at most.
+    // - site_gavinperri_doc/shelf is the same list with the hidden documents still on it, for Admins only: the library
+    //   can never list it (or itself, or the covers).
+    // - Every other name there is one document. Readers get a document only while the library lists it, and nobody
+    //   can list anything.
+    // - A save (of a document or of the library) is the next revision number, from an Admin who isn't banned, and it
+    //   has to file the very same thing in history/{revision} in the same write; a history entry can't be made any
+    //   other way. Nothing here is ever deleted or rewritten, by anyone, so every version that was published stays on
+    //   record. A document taken off the library's list is hidden from readers, not removed.
+    // - A live document doesn't say who saved it; only its history does, and only Admins read that.
     // - Pictures (site_gavinperri_images) are data kept under the SHA-256 of that data, and can't be changed once
-    //   made. Readers get a picture only while the live document lists it (imgs); Admins get any of them.
-    function gpMain() { return /databases/$(database)/documents/site_gavinperri_doc/main; }
-    function gpHistory(rev) { return /databases/$(database)/documents/site_gavinperri_doc/main/history/$(rev); }
+    //   made. Readers get a picture only while the library lists it; Admins get any of them.
+    function gpDoc(id) { return /databases/$(database)/documents/site_gavinperri_doc/$(id); }
+    function gpHistory(id, rev) { return /databases/$(database)/documents/site_gavinperri_doc/$(id)/history/$(rev); }
+    function gpShown() { return get(gpDoc('library')).data; }
     function gpEditor(m) { return isStaff(m) && active(m); }
-    function gpShape(d) {
+    function gpName(id) { return id.matches('[a-z0-9]{4,24}') && id != 'covers'; }
+    function gpShape(d, id) {
       return d.rev is int && d.rev >= 1
         && d.body is string && d.body.size() <= 200000
-        && d.imgs is list && d.imgs.size() <= 24
+        && d.imgs is list && d.imgs.size() <= (id == 'library' ? 1000 : 24)
+        && (id == 'library' ? (d.ids is list && d.ids.size() <= 100 && !d.ids.hasAny(['library', 'covers', 'shelf'])) : !('ids' in d))
         && d.at == request.time;
     }
-    function gpSave(m, rev) {
+    function gpSave(m, id, rev) {
       let d = request.resource.data;
-      let filed = getAfter(gpHistory(string(rev))).data;
-      return gpEditor(m) && d.keys().hasOnly(['rev', 'body', 'imgs', 'at']) && gpShape(d) && d.rev == rev
-        && filed.rev == d.rev && filed.body == d.body && filed.imgs == d.imgs && filed.at == d.at;
+      let filed = getAfter(gpHistory(id, string(rev))).data;
+      return gpEditor(m) && gpName(id) && d.keys().hasOnly(['rev', 'body', 'imgs', 'ids', 'at']) && gpShape(d, id) && d.rev == rev
+        && filed.rev == d.rev && filed.body == d.body && filed.imgs == d.imgs && filed.get('ids', []) == d.get('ids', [])
+        && filed.at == d.at;
     }
-    function gpFile(m, rev) {
+    function gpFile(m, id, rev) {
       let d = request.resource.data;
-      let live = getAfter(gpMain()).data;
-      return gpEditor(m) && d.keys().hasOnly(['rev', 'body', 'imgs', 'by', 'at']) && gpShape(d)
+      let live = getAfter(gpDoc(id)).data;
+      return gpEditor(m) && gpName(id) && d.keys().hasOnly(['rev', 'body', 'imgs', 'ids', 'by', 'at']) && gpShape(d, id)
         && rev == string(d.rev) && d.by == m.name
-        && live.rev == d.rev && live.body == d.body && live.imgs == d.imgs;
+        && live.rev == d.rev && live.body == d.body && live.imgs == d.imgs && live.get('ids', []) == d.get('ids', []);
+    }
+    // The cover pictures the list shows are copies of pictures already kept below, so they have no history. (The page
+    // only ever draws one that is plain picture data.)
+    function gpCovers(m) {
+      let d = request.resource.data;
+      return gpEditor(m) && d.keys().hasOnly(['covers', 'at']) && d.covers is map && d.covers.size() <= 100 && d.at == request.time;
     }
     function gpPicture(m, id) {
       let d = request.resource.data;
@@ -838,19 +856,19 @@ service cloud.firestore {
         && d.at == request.time;
     }
     match /site_gavinperri_doc/{id} {
-      allow get: if id == 'main';
-      allow create: if id == 'main' && gpSave(who(), 1);
-      allow update: if id == 'main' && gpSave(who(), resource.data.rev + 1);
+      allow get: if id == 'library' || id == 'covers' || id in gpShown().ids || gpEditor(who());
+      allow create: if id == 'covers' ? gpCovers(who()) : gpSave(who(), id, 1);
+      allow update: if id == 'covers' ? gpCovers(who()) : gpSave(who(), id, resource.data.rev + 1);
       allow list, delete: if false;
 
       match /history/{rev} {
         allow read: if gpEditor(who());
-        allow create: if id == 'main' && gpFile(who(), rev);
+        allow create: if gpFile(who(), id, rev);
         allow update, delete: if false;
       }
     }
     match /site_gavinperri_images/{id} {
-      allow get: if id in get(gpMain()).data.imgs || gpEditor(who());
+      allow get: if id in gpShown().imgs || gpEditor(who());
       allow create: if gpPicture(who(), id);
       allow list, update, delete: if false;
     }
