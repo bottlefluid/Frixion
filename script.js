@@ -493,6 +493,7 @@ const UPDATES = [
       'Nothing a blocked person sends pings or notifies you, on any device. They aren\'t told.',
       'You can only block people who aren\'t ranked above you: players can\'t block staff, Admins can\'t block Co-Owners, and nobody can block the Owner.',
       'Friends has a new Blocked tab, where you can unblock people.',
+      'The Owner panel\'s IP tab gives each network a short tag like #A3F2, so networks that start the same are easy to tell apart. Addresses are still never kept whole.',
     ] },
   { v: '4.60', date: '2026-11-10', title: 'Do Not Disturb',
     notes: [
@@ -3108,6 +3109,16 @@ const hwBannable = d => !!d.hw && ['Windows PC', 'Linux PC', 'Chromebook', 'Mac'
 let adminSelectedIp = null, ipsCache = [];
 const NET_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>';
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+// Each network's own short tag, like #A3F2 (v4.61), made from its id (a scrambled code, so the tag says nothing about the
+// address either). It tells networks apart whose labels look the same, like two different "73.12.x.x". Six characters
+// where four would be the same for two networks.
+function tagNetworks(list) {
+  const code = (x, n) => String(x.id).replace(/^ip_/, '').slice(0, n).toUpperCase();
+  const seen = {};
+  list.forEach(x => { const t = code(x, 4); seen[t] = (seen[t] || 0) + 1; });
+  list.forEach(x => { x.tag = '#' + (seen[code(x, 4)] > 1 ? code(x, 6) : code(x, 4)); });
+}
+const netTagHTML = x => (x.tag ? ` <span class="net-tag">${esc(x.tag)}</span>` : '');
 async function renderIpsPane() {
   if (!isOwner) return;
   const list = $('ips-list');
@@ -3122,11 +3133,12 @@ async function renderIpsPane() {
   } catch (e) { list.innerHTML = '<div class="empty">Could not load networks.</div>'; return; }
   for (const [id, b] of Object.entries(bans)) if (!ips.some(x => x.id === id)) ips.push({ id, label: b.label || id });
   ips.forEach(x => { x.ban = bans[x.id] || null; x.seen = x.lastSeen && x.lastSeen.toMillis ? x.lastSeen.toMillis() : 0; x.accounts = x.accounts || []; x.devices = x.devices || []; });
+  tagNetworks(ips);
   ipsCache = ips;
-  const shown = ips.filter(x => !q || [x.label, x.id, ...x.accounts].join(' ').toLowerCase().includes(q)).sort((a, b) => b.seen - a.seen);
+  const shown = ips.filter(x => !q || [x.label, x.id, x.tag, ...x.accounts].join(' ').toLowerCase().includes(q)).sort((a, b) => b.seen - a.seen);
   list.innerHTML = shown.map(x => `<div class="admin-row ${x.id === adminSelectedIp ? 'on' : ''}" data-ip="${esc(x.id)}">
       <span class="dev-ico">${NET_ICON}</span>
-      <span class="ar-name">${esc(x.label || 'Unknown')}<small class="dev-sub">${plural(x.accounts.length, 'account')} · ${plural(x.devices.length, 'device')}${x.id === myIpId ? ' · yours' : ''}</small></span>
+      <span class="ar-name">${esc(x.label || 'Unknown')}${netTagHTML(x)}<small class="dev-sub">${plural(x.accounts.length, 'account')} · ${plural(x.devices.length, 'device')}${x.id === myIpId ? ' · yours' : ''}</small></span>
       ${x.ban ? '<span class="ban-tag">Banned</span>' : ''}
     </div>`).join('') || '<div class="empty">No networks yet. One shows up here after someone signs in on it.</div>';
   list.querySelectorAll('.admin-row').forEach(row => { row.onclick = () => { adminSelectedIp = row.dataset.ip; renderIpsPane(); }; });
@@ -3143,12 +3155,13 @@ async function renderIpDetail(x) {
   const devices = devs.map(d => `<button type="button" class="dev-chip" data-dev="${esc(d.id)}">${esc(d.name || 'Unknown device')}${d.browser ? ', ' + esc(d.browser) : ''}${d.banned ? '<span class="ban-tag">Banned</span>' : ''}</button>`).join('') || '<span class="ab-note">None recorded.</span>';
   wrap.innerHTML = `
     <div class="admin-sel-head"><span class="dev-ico big">${NET_ICON}</span><div>
-      <div class="as-name">${esc(x.label || 'Unknown')}${mine ? ' <span class="ban-tag mute-tag">Your network</span>' : ''}</div>
+      <div class="as-name">${esc(x.label || 'Unknown')}${netTagHTML(x)}${mine ? ' <span class="ban-tag mute-tag">Your network</span>' : ''}</div>
       <div class="as-sub">${x.ban ? 'Banned: ' + esc(x.ban.reason || 'No reason given') : 'Not banned'}</div></div></div>
     <div class="admin-block">
       <div class="ab-title">Network</div>
       <dl class="dev-facts">
         <dt>Address</dt><dd>${esc(x.label || 'Unknown')} (only the start is kept, never the whole address)</dd>
+        <dt>Tag</dt><dd>${esc(x.tag || '')} (this network's own code, to tell it apart from others that look the same)</dd>
         <dt>Last seen</dt><dd>${esc(x.seen ? fmtDeviceTime(x.seen) : 'Unknown')}</dd>
         <dt>ID</dt><dd>${esc(x.id)}</dd>
       </dl>
@@ -3170,7 +3183,7 @@ function adminBanIp(x) {
   if (x.id === myIpId) { toast('You can\'t ban the network you\'re on.', 'error'); return; }
   confirmAction({
     title: 'Ban Network',
-    body: `Ban ${x.label || 'this network'}? Nobody on it can use Frixion, with any device or account${x.accounts.length ? '. Accounts seen on it: ' + x.accounts.join(', ') : ''}. Everyone sharing it is banned too, like a whole school or home, and most home networks get a new address now and then.`,
+    body: `Ban ${x.label || 'this network'}${x.tag ? ' ' + x.tag : ''}? Nobody on it can use Frixion, with any device or account${x.accounts.length ? '. Accounts seen on it: ' + x.accounts.join(', ') : ''}. Everyone sharing it is banned too, like a whole school or home, and most home networks get a new address now and then.`,
     confirmLabel: 'Ban Network', input: { placeholder: 'Reason (optional)', maxLength: 120 },
     onConfirm: async typed => {
       try { await db.collection('bannedIps').doc(x.id).set({ reason: typed || 'No reason given', by: myUid, at: Date.now(), label: x.label || '' }); toast('Network banned.'); }

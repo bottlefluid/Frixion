@@ -4695,3 +4695,6 @@ body.is-mobile .blocked-msgs { margin-left: 16px; }
   border-radius: 8px; background: var(--bg-secondary); color: var(--text-muted); font-size: 14px; }
 .blocked-bar.hidden { display: none; }
 .profile-block-btn { color: var(--dnd); }
+/* Owner panel > IP: each network's short tag (tagNetworks(), v4.61) */
+.net-tag { font-family: ui-monospace, Consolas, monospace; font-size: 11px; font-weight: 600; color: var(--text-muted);
+  background: var(--bg-tertiary); padding: 1px 5px; border-radius: 4px; margin-left: 4px; vertical-align: 1px; }
