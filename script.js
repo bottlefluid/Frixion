@@ -487,6 +487,13 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.61', date: '2026-11-12', title: 'Blocking',
+    notes: [
+      'You can block people, like on Discord: Block is on their profile. They can\'t message you or send you friend requests, you stop being friends, and their messages are hidden behind a "blocked message" bar you can open.',
+      'Nothing a blocked person sends pings or notifies you, on any device. They aren\'t told.',
+      'You can only block people who aren\'t ranked above you: players can\'t block staff, Admins can\'t block Co-Owners, and nobody can block the Owner.',
+      'Friends has a new Blocked tab, where you can unblock people.',
+    ] },
   { v: '4.60', date: '2026-11-10', title: 'Do Not Disturb',
     notes: [
       'Do Not Disturb, in Settings > Activity Status: no ping sound, no pop-ups and no notifications on your phone or computer, and everyone sees a red Do Not Disturb icon on your picture.',
@@ -3717,6 +3724,8 @@ function cleanupAllListeners() {
   if (unsub.typing) unsub.typing();
   if (unsub.mentions) unsub.mentions();
   if (unsub.threads) unsub.threads();
+  if (unsub.blocks) unsub.blocks();
+  myBlocks = []; revealedBlocked.clear();
   stopServerChannelListeners();
   catalogUnsubs.forEach(u => { try { u(); } catch (e) {} });
   catalogUnsubs = [];
@@ -3929,6 +3938,7 @@ async function startTermination(info) {
 // ============================================================
 function initAppForUser() {
   initPresence();
+  if (!OVERLAY_WINDOW) subscribeBlocks();
   unsub.self = db.collection('users').doc(myUid).onSnapshot(snap => {
     if (!snap.exists) return;
     myProfile = snap.data();
@@ -4607,7 +4617,7 @@ function maybePingForConversationSnapshot(snap, isFirstSync, kind) {
     conversationLastNotifiedAt[d.id] = millis;
     // Establish the baseline on first sync without retroactively pinging
     // for every DM/group that already existed when the app loaded.
-    if (!isFirstSync && !isConversationMuted(kind, d.id)) { playPingSound(); notifyConversation(kind, d.id, data); }
+    if (!isFirstSync && !isConversationMuted(kind, d.id) && !isBlocked(lm.username)) { playPingSound(); notifyConversation(kind, d.id, data); }
   });
 }
 function subscribeDMList() {
@@ -4883,7 +4893,7 @@ function subscribeMentions() {
   if (unsub.mentions) unsub.mentions();
   let first = true;
   unsub.mentions = db.collection('users').doc(myUid).collection('mentions').orderBy('at', 'desc').limit(100).onSnapshot(snap => {
-    myMentions = snap.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }));
+    myMentions = snap.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) })).filter(m => !isBlocked(m.from));   // (not from anyone you blocked)
     if (!first) snap.docChanges().forEach(ch => { if (ch.type === 'added') onNewMention({ id: ch.doc.id, ...ch.doc.data({ serverTimestamps: 'estimate' }) }); });
     first = false;
     refreshUnread();
@@ -5153,6 +5163,7 @@ function notifyConversation(kind, id, data) {
 }
 function onNewMention(m) {
   if (!freshMessage(timeValue(m.at))) return;          // an old note coming back into view, not a new message
+  if (isBlocked(m.from)) return;                        // someone you blocked (v4.61)
   const open = m.tid ? currentView === 'channel' && currentThreadId === m.tid : lookingAtChannel(m.sid, m.cid);
   if (open) clearMentions(x => x.id === m.id);
   if (isConversationMuted('ch', m.cid)) return;
@@ -5163,7 +5174,7 @@ function onNewMention(m) {
 }
 function maybeNotifyEveryone(sid, c, prev) {
   const lm = c.lastMessage, at = timeValue(c.lastMessageAt);
-  if (!lm || !lm.everyone || lm.uid === myUid || !freshMessage(at) || (prev && timeValue(prev.lastMessageAt) >= at)) return;
+  if (!lm || !lm.everyone || lm.uid === myUid || isBlocked(lm.uid) || !freshMessage(at) || (prev && timeValue(prev.lastMessageAt) >= at)) return;
   const server = serverById(sid);
   if (!server || !canViewChannel(c, server, myUid) || isConversationMuted('ch', c.id)) return;
   if (!lookingAtChannel(sid, c.id)) playPingSound();
@@ -5450,7 +5461,9 @@ async function startDMWith(uname) {
   const ref = db.collection('dms').doc(id);
   const dsnap = await ref.get();
   if (!dsnap.exists) {
-    await ref.set({ participants: [myUid, uname], autoDelete: true, createdAt: FieldValue.serverTimestamp() });
+    // refused when they blocked you (v4.61); like Discord, it doesn't say so
+    try { await ref.set({ participants: [myUid, uname], autoDelete: true, createdAt: FieldValue.serverTimestamp() }); }
+    catch (e) { toast('You can\'t message this person.', 'error'); return; }
     db.collection('users').doc(myUid).update({ 'stats.dmsStarted': FieldValue.increment(1) }).catch(() => {});
   }
   selectDM(id, uname);
@@ -5824,16 +5837,24 @@ async function openProfileModal(username) {
     const isFriend = (myProfile.friends || []).includes(username);
     const outgoing = (myProfile.outgoingRequests || []).includes(username);
     const incoming = (myProfile.incomingRequests || []).includes(username);
+    const blocked = myBlocks.includes(username);
     let friendBtn;
-    if (isFriend) friendBtn = `<span class="quest-claimed">Friends</span>`;
+    if (blocked) friendBtn = '';   // (no friends with someone you blocked)
+    else if (isFriend) friendBtn = `<span class="quest-claimed">Friends</span>`;
     else if (outgoing) friendBtn = `<button class="btn-secondary slim" id="profile-cancel-req">Cancel Request</button>`;
     else if (incoming) friendBtn = `<button class="btn-accent-inline slim" id="profile-accept-req">Accept Request</button>`;
     else friendBtn = `<button class="btn-accent-inline slim" id="profile-add-friend">Add Friend</button>`;
+    // Block (v4.61): only someone who isn't ranked above you
+    const blockBtn = blocked ? `<button class="btn-secondary slim" id="profile-unblock">Unblock</button>`
+      : canBlock(p) ? `<button class="btn-secondary slim profile-block-btn" id="profile-block">Block</button>` : '';
     $('profile-actions').innerHTML = `<div class="profile-action-row">
       <button class="btn-accent-inline slim" id="profile-message-btn">Message</button>
       ${friendBtn}
       <button class="btn-secondary slim" id="profile-gift-btn">Gift Premium</button>
+      ${blockBtn}
     </div>`;
+    if ($('profile-block')) $('profile-block').onclick = () => blockUser(username);
+    if ($('profile-unblock')) $('profile-unblock').onclick = () => unblockUser(username);
     $('profile-message-btn').onclick = () => { closeModal('profile-modal'); startDMWith(username); };
     if ($('profile-add-friend')) $('profile-add-friend').onclick = async () => {
       try { await sendFriendRequest(username); } catch (e) { toast('Could not send the request.', 'error'); }
@@ -6421,6 +6442,8 @@ function friendRowHTML(username, kind) {
     actions = `<button class="btn-secondary slim" data-msg="${esc(username)}" aria-label="Message"><svg class="fr-msg-ico" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M12 2.5c5.5 0 10 3.8 10 8.6s-4.5 8.6-10 8.6c-1.3 0-2.6-.2-3.7-.6L3.6 21a.6.6 0 0 1-.8-.7l1.1-3.9C2.7 15 2 13.1 2 11.1 2 6.3 6.5 2.5 12 2.5Z"/></svg><span class="fr-msg-label">Message</span></button><span class="hover-icon-btn" data-remove="${esc(username)}" title="Remove Friend">${icon('trash')}</span>`;
   } else if (kind === 'incoming') {
     actions = `<button class="btn-accent-inline slim" data-accept="${esc(username)}">Accept</button><button class="btn-secondary slim" data-decline="${esc(username)}">Decline</button>`;
+  } else if (kind === 'blocked') {
+    actions = `<button class="btn-secondary slim" data-unblock="${esc(username)}">Unblock</button>`;
   } else {
     actions = `<span class="quest-locked">Pending</span><button class="btn-secondary slim" data-cancel="${esc(username)}">Cancel</button>`;
   }
@@ -6436,6 +6459,7 @@ function wireFriendRowButtons() {
   document.querySelectorAll('[data-accept]').forEach(b => b.onclick = () => respondFriendRequest(b.dataset.accept, true));
   document.querySelectorAll('[data-decline]').forEach(b => b.onclick = () => respondFriendRequest(b.dataset.decline, false));
   document.querySelectorAll('[data-cancel]').forEach(b => b.onclick = () => cancelFriendRequest(b.dataset.cancel));
+  document.querySelectorAll('[data-unblock]').forEach(b => b.onclick = () => unblockUser(b.dataset.unblock));
   document.querySelectorAll('[data-openprofile]').forEach(b => b.onclick = () => openProfileModal(b.dataset.openprofile));
 }
 
@@ -6455,6 +6479,11 @@ async function renderFriendsView(mode) {
     if (incoming.length) html += `<div class="side-section-label">Incoming — ${incoming.length}</div>` + incoming.map(u => friendRowHTML(u, 'incoming')).join('');
     if (outgoing.length) html += `<div class="side-section-label">Outgoing — ${outgoing.length}</div>` + outgoing.map(u => friendRowHTML(u, 'outgoing')).join('');
     wrap.innerHTML = html || '<div class="empty">No pending requests.</div>';
+  } else if (mode === 'blocked') {
+    await Promise.all(myBlocks.map(u => getProfile(u)));
+    wrap.innerHTML = myBlocks.length
+      ? `<div class="side-section-label">Blocked — ${myBlocks.length}</div>` + myBlocks.map(u => friendRowHTML(u, 'blocked')).join('')
+      : '<div class="empty">You haven\'t blocked anyone. You can block someone from their profile.</div>';
   } else {
     const friends = myProfile.friends || [];
     await Promise.all(friends.map(u => getProfile(u)));
@@ -6511,6 +6540,93 @@ async function removeFriend(username) {
       try { await friendBatch({ friends: FieldValue.arrayRemove(username) }, { friends: FieldValue.arrayRemove(myUid) }, username); } catch (e) {}
     },
   });
+}
+
+// ---------- Blocking (v4.61), like Discord's ----------
+// Someone you block: their messages are hidden behind a "blocked message" bar (you can still show them), they can't
+// DM you or send you friend requests (firestore.rules checks both), you stop being friends, and nothing they send
+// pings or notifies you. They aren't told. You can only block someone who isn't ranked above you: players can't block
+// staff, Admins can't block Co-Owners, and nobody can block the Owner. If someone you blocked is later ranked above
+// you, the block stops counting (and is taken off). Your list is users/<you>/meta/blocks, which only you can read.
+let myBlocks = [];
+const revealedBlocked = new Set();   // blocked messages you chose to show, this visit
+const blocksRef = () => db.collection('users').doc(myUid).collection('meta').doc('blocks');
+function canBlock(p) {
+  const name = String((p && p.username) || '');
+  return !!name && name !== myUid && !p.bot && !p.discord && !/^(bot-|discord:)/.test(name) && platformRank(p) <= platformRank(myProfile);
+}
+function isBlocked(uid) {
+  if (!uid || !myBlocks.includes(uid)) return false;
+  const p = profileCache[uid];
+  return !p || platformRank(p) <= platformRank(myProfile);
+}
+function subscribeBlocks() {
+  if (unsub.blocks) unsub.blocks();
+  unsub.blocks = blocksRef().onSnapshot(s => {
+    myBlocks = s.exists && Array.isArray(s.data().list) ? s.data().list : [];
+    renderCurrentView();
+    if (currentView === 'friends') renderFriendsView();
+    refreshChannelComposerState();
+    pruneBlocks();
+  }, () => {});
+}
+// Blocks on people who have since been ranked above you come off, here and in your DM with them.
+let pruningBlocks = false;
+async function pruneBlocks() {
+  if (pruningBlocks || !myBlocks.length) return;
+  pruningBlocks = true;
+  try {
+    await Promise.all(myBlocks.map(u => getProfile(u)));
+    for (const u of myBlocks.filter(u => profileCache[u] && platformRank(profileCache[u]) > platformRank(myProfile))) await setBlocked(u, false).catch(() => {});
+  } finally { pruningBlocks = false; }
+}
+async function setBlocked(username, on) {
+  const dmRef = db.collection('dms').doc(dmIdFor(myUid, username));
+  const dm = await dmRef.get().catch(() => null);
+  const batch = db.batch();
+  batch.set(blocksRef(), { list: on ? FieldValue.arrayUnion(username) : FieldValue.arrayRemove(username) }, { merge: true });
+  if (on) {
+    // no longer friends, and no friend requests either way
+    batch.update(db.collection('users').doc(myUid), { friends: FieldValue.arrayRemove(username), incomingRequests: FieldValue.arrayRemove(username), outgoingRequests: FieldValue.arrayRemove(username) });
+    batch.update(db.collection('users').doc(username), { friends: FieldValue.arrayRemove(myUid), incomingRequests: FieldValue.arrayRemove(myUid), outgoingRequests: FieldValue.arrayRemove(myUid) });
+  }
+  // a DM you two already have records it, so the database refuses their messages there (with no DM yet, it checks
+  // your list when they try to start one)
+  if (dm && dm.exists) batch.update(dmRef, { blockedBy: on ? FieldValue.arrayUnion(myUid) : FieldValue.arrayRemove(myUid) });
+  await batch.commit();
+}
+function blockUser(username) {
+  const p = profileCache[username] || { username };
+  if (!canBlock(p)) { toast('You can\'t block someone ranked above you.', 'error'); return; }
+  confirmAction({
+    title: `Block ${displayNameOf(p)}?`,
+    body: 'They won\'t be able to message you or send you friend requests, and you\'ll stop being friends. Their messages will be hidden from you. They aren\'t told.',
+    confirmLabel: 'Block',
+    onConfirm: async () => {
+      try { await setBlocked(username, true); toast(`Blocked ${displayNameOf(p)}.`); }
+      catch (e) { toast('Could not block them.', 'error'); }
+      if (!$('profile-modal').classList.contains('hidden')) openProfileModal(username);
+    },
+  });
+}
+async function unblockUser(username) {
+  try { await setBlocked(username, false); toast(`Unblocked ${displayNameOf(profileCache[username] || { username })}.`); }
+  catch (e) { toast('Could not unblock them.', 'error'); }
+  if (!$('profile-modal').classList.contains('hidden')) openProfileModal(username);
+}
+// A DM with someone you blocked: no message box, just a note with Unblock (Discord does the same).
+function renderBlockedBar(username) {
+  let bar = $('blocked-bar');
+  if (!username) { if (bar) bar.classList.add('hidden'); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'blocked-bar';
+    bar.className = 'blocked-bar';
+    $('composer').parentNode.insertBefore(bar, $('composer'));
+  }
+  bar.innerHTML = `<span>You can't send messages to someone you blocked.</span><button type="button" class="btn-secondary slim">Unblock</button>`;
+  bar.querySelector('button').onclick = () => unblockUser(username);
+  bar.classList.remove('hidden');
 }
 
 // ============================================================
@@ -7674,6 +7790,10 @@ function renderSlowmodeIndicator() {
 }
 function refreshChannelComposerState() {
   const input = $('composer-input');
+  // a DM with someone you blocked has no message box, just Unblock (v4.61)
+  const blockedDm = currentView === 'dm' && isBlocked(currentDMOtherUid) ? currentDMOtherUid : null;
+  renderBlockedBar(blockedDm);
+  $('composer').classList.toggle('hidden', !!blockedDm);
   if (currentView !== 'channel') {
     input.disabled = false;
     $('attach-btn').classList.remove('hidden');
@@ -7969,7 +8089,7 @@ function channelSnapHandler(channelId) {
         // Only brand-new messages ping. An older one can re-enter the window when a newer one is deleted.
         const sentAt = m.createdAt && m.createdAt.toMillis ? m.createdAt.toMillis() : Date.now();
         if (Date.now() - sentAt > 60000) return;
-        if (!m.raw && messageTextMentionsMe(m.text || '', m.everyoneBlocked !== true)) playPingSound();
+        if (!m.raw && !isBlocked(m.uid) && messageTextMentionsMe(m.text || '', m.everyoneBlocked !== true)) playPingSound();
         if (m.tts && m.text && 'speechSynthesis' in window) {
           try { speechSynthesis.speak(new SpeechSynthesisUtterance(`${m.username || 'Someone'} said ${m.text.slice(0, 300)}`)); } catch (e) {}
         }
@@ -9018,7 +9138,7 @@ async function renderMessages(rawMsgs) {
     return;
   }
 
-  let lastUid = null, lastMillis = 0, lastDay = null, groupEl = null;
+  let lastUid = null, lastMillis = 0, lastDay = null, groupEl = null, blockedRun = null;
 
   msgs.forEach(m => {
     const millis = m.createdAt && m.createdAt.toMillis ? m.createdAt.toMillis() : Date.now();
@@ -9034,8 +9154,23 @@ async function renderMessages(rawMsgs) {
       div.className = 'day-divider';
       div.textContent = day;
       wrap.appendChild(div);
-      lastDay = day; lastUid = null;
+      lastDay = day; lastUid = null; blockedRun = null;
     }
+    // Blocked (v4.61): someone you blocked writes messages that fold, in a row, into one bar you can open
+    if (!m.system && isBlocked(m.uid) && !revealedBlocked.has(m.id)) {
+      if (!blockedRun) {
+        blockedRun = { ids: [], el: document.createElement('div') };
+        blockedRun.el.className = 'blocked-msgs';
+        wrap.appendChild(blockedRun.el);
+      }
+      blockedRun.ids.push(m.id);
+      const ids = blockedRun.ids.slice(), n = ids.length;
+      blockedRun.el.innerHTML = `<span class="blocked-msgs-text">${n} blocked message${n === 1 ? '' : 's'}</span><button type="button" class="blocked-msgs-show">Show message${n === 1 ? '' : 's'}</button>`;
+      blockedRun.el.querySelector('button').onclick = () => { ids.forEach(id => revealedBlocked.add(id)); renderMessages(lastRawMessages); };
+      lastUid = null; groupEl = null;
+      return;
+    }
+    blockedRun = null;
     if (m.system) {
       wrap.appendChild(buildSystemMessageEl(m));
       lastUid = null; groupEl = null;
@@ -9965,7 +10100,9 @@ async function sendMessage() {
     clearReplyTarget();
   } catch (e) {
     $('upload-progress').classList.add('hidden');
-    toast(e.message || 'Failed to send message.', 'error');
+    // a DM the database refuses: usually the other person blocked you (Discord doesn't say so either)
+    if (currentView === 'dm' && /permission/i.test(String(e.code || e.message))) toast('Your message could not be delivered.', 'error');
+    else toast(e.message || 'Failed to send message.', 'error');
   }
 }
 // No explicit Send button — matches Discord's real composer (Enter to send).
@@ -10098,6 +10235,7 @@ function subscribeTyping() {
       const data = d.data();
       const ts = data.updatedAt && data.updatedAt.toMillis ? data.updatedAt.toMillis() : 0;
       if (ts && now - ts > TYPING_STALE_MS) return;
+      if (isBlocked(d.id)) return;   // someone you blocked (v4.61)
       names.push(data.username || d.id);
     });
     renderTypingIndicator(names);

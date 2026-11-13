@@ -4682,3 +4682,16 @@ body.is-mobile .thread-curve { top: -14px; height: 32px; }
 .cs-dc-code code { padding: 6px 10px; border-radius: 6px; background: rgba(0,0,0,.3); font-size: 14px; user-select: all; overflow-wrap: anywhere; }
 .cs-dc-msg:empty { display: none; }
 .cs-dc-msg { color: #f0b232; }
+
+/* ---- Blocking (v4.61) ---- */
+/* someone you blocked: their messages in a row fold into one bar you can open */
+.blocked-msgs { display: flex; align-items: center; gap: 10px; margin: 6px 16px 6px 72px; padding: 6px 10px; border-radius: 6px;
+  background: var(--bg-secondary); color: var(--text-muted); font-size: 13px; }
+.blocked-msgs-show { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; }
+.blocked-msgs-show:hover { text-decoration: underline; }
+body.is-mobile .blocked-msgs { margin-left: 16px; }
+/* a DM with someone you blocked: this note instead of the message box */
+.blocked-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 16px 16px; padding: 12px 14px;
+  border-radius: 8px; background: var(--bg-secondary); color: var(--text-muted); font-size: 14px; }
+.blocked-bar.hidden { display: none; }
+.profile-block-btn { color: var(--dnd); }

@@ -121,7 +121,7 @@ service cloud.firestore {
     }
     function profileUpdate(m, username) {
       let k = changed();
-      return m.ok && (selfEdit(m, k, username) || staffEdit(m, k, username) || friendEdit(m, k));
+      return m.ok && (selfEdit(m, k, username) || staffEdit(m, k, username) || friendEdit(m, k, username));
     }
     // Delete Account: the owner flags the account and its own app removes it at the end of the sequence.
     function profileDelete(m, username) {
@@ -190,9 +190,9 @@ service cloud.firestore {
     }
     // Friend requests change both accounts. On the other person's account you may only add or remove yourself, and you
     // may only add yourself to their friends while their request to you is still there (script.js sends these together).
-    function friendEdit(m, k) {
+    function friendEdit(m, k, username) {
       return k.hasOnly(['incomingRequests', 'outgoingRequests', 'friends'])
-        && (!k.hasAny(['incomingRequests']) || onlyAdded('incomingRequests', m.name) || onlyTakenOut('incomingRequests', m.name))
+        && (!k.hasAny(['incomingRequests']) || (onlyAdded('incomingRequests', m.name) && !blocksMe(m, username)) || onlyTakenOut('incomingRequests', m.name))
         && (!k.hasAny(['outgoingRequests']) || onlyTakenOut('outgoingRequests', m.name))
         && (!k.hasAny(['friends']) || onlyTakenOut('friends', m.name)
             || (onlyAdded('friends', m.name) && m.name in resource.data.get('outgoingRequests', [])));
@@ -680,7 +680,7 @@ service cloud.firestore {
     function convGet(m) { return active(m) && (resource == null || m.name in resource.data.get('participants', []) || m.rank >= 1); }
     function convList(m) { return active(m) && (m.name in resource.data.get('participants', []) || m.rank >= 1); }
     // (Sapphire's purge cards here only for Frixion staff, the only ones who can purge a DM or group.)
-    function convMsgCreate(m, c) { return inConv(m, c) && canPost(m) && (newAuthorIsMe(m) || newBotMessage(m, purger(m))); }
+    function convMsgCreate(m, c) { return inConv(m, c) && canPost(m) && c.get('blockedBy', []).removeAll([m.name]).size() == 0 && (newAuthorIsMe(m) || newBotMessage(m, purger(m))); }
     function convMsgUpdate(m, c) { let k = changed(); return inConv(m, c) && (ownEdit(m, k) || dmOthersEdit(m, k)); }
     function convMsgDelete(m, c) { return inConv(m, c) && (isMine(m) || m.rank >= 1 || purgeOk(m) || (isOld() && c.get('autoDelete', true) != false)); }
     function convTyping(m, c, name) { return inConv(m, c) && m.name == name && typingName(name); }
@@ -688,13 +688,30 @@ service cloud.firestore {
     // A DM's id is its two usernames, sorted and joined with "_" (dmIdFor() in script.js).
     function dmCreate(m, did) {
       let p = request.resource.data.get('participants', null);
-      return m.ok && p is list && p.size() == 2 && m.name in p && (did == p[0] + '_' + p[1] || did == p[1] + '_' + p[0]);
+      return m.ok && p is list && p.size() == 2 && m.name in p && (did == p[0] + '_' + p[1] || did == p[1] + '_' + p[0])
+        && !request.resource.data.keys().hasAny(['blockedBy']) && !blocksMe(m, p[0] == m.name ? p[1] : p[0]);
+    }
+    // Blocking (v4.61), like Discord's. Your list is users/<you>/meta/blocks, which only you read and write. Someone on it
+    // can't start a DM with you or send you a friend request, and a DM you two already have carries blockedBy, so they
+    // can't post in it either. Nobody's block stops someone ranked above them: a player can't block an Admin, an Admin
+    // can't block a Co-Owner, and nobody can block the Owner.
+    function blocksPath(name) { return /databases/$(database)/documents/users/$(name)/meta/blocks; }
+    function blocksMe(m, name) {
+      return exists(blocksPath(name)) && m.name in get(blocksPath(name)).data.get('list', [])
+        && rankOf(get(profilePath(name)).data) >= m.rank;
+    }
+    // A DM's blockedBy: you may only add or take out yourself, and only add yourself while the other person isn't
+    // ranked above you.
+    function blockedByOk(m) {
+      let ps = resource.data.get('participants', []);
+      return !changed().hasAny(['blockedBy']) || (m.name in ps && (onlyTakenOut('blockedBy', m.name)
+        || (onlyAdded('blockedBy', m.name) && rankOf(get(profilePath(ps[0] == m.name ? ps[1] : ps[0])).data) <= m.rank)));
     }
     // The preview of a conversation's last message carries the sender's own name, or a bot's (postBotMessage()).
     function previewOk(m) {
       return !changed().hasAny(['lastMessage']) || request.resource.data.get('lastMessage', {}).get('username', '') in [m.name, 'Sapphire', 'Wordle'];
     }
-    function dmUpdate(m) { return active(m) && previewOk(m) && same('participants') && (m.name in resource.data.get('participants', []) || m.rank >= 1); }
+    function dmUpdate(m) { return active(m) && previewOk(m) && same('participants') && (m.name in resource.data.get('participants', []) || m.rank >= 1) && blockedByOk(m); }
     // Only your friends can be put in a group by you.
     function onlyFriendsAdded(m, before) {
       return request.resource.data.get('participants', []).toSet().difference(before.toSet())

@@ -122,18 +122,31 @@ async function claim(env, path) {
   const j = await r.json().catch(() => null), v = j && j.writeResults && j.writeResults[0] && (j.writeResults[0].transformResults || [])[0];
   return v ? Number(v.integerValue ?? v.doubleValue) : null;
 }
-// These people, less anyone with Do Not Disturb on (dnd: true on their profile, Settings > Activity Status). One read
-// for all of them; if it fails, nobody is left out.
-async function notDisturbing(env, uids) {
-  const names = uids.map(u => fsName(env, `users/${u}`));
+// These people, less anyone with Do Not Disturb on (dnd: true on their profile, Settings > Activity Status, v4.60) and
+// anyone who blocked the sender (users/<them>/meta/blocks, v4.61; a block only counts on someone not ranked above
+// them, as in firestore.rules). One read each for their profiles and their block lists; if a read fails, nobody is
+// left out.
+const rankOf = u => (u.owner === true ? 3 : u.coowner === true ? 2 : u.op === true ? 1 : 0);
+async function batchRead(env, paths, fields) {
+  const names = paths.map(p => fsName(env, p));
   const r = await dbFetch(env, `${fsBase(env)}:batchGet`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ documents: names, mask: { fieldPaths: ['dnd'] } }) }).catch(() => null);
-  if (!r || !r.ok) return uids;
-  const quiet = new Set();
-  for (const x of (await r.json().catch(() => [])) || []) {
-    if (x.found && x.found.fields && x.found.fields.dnd && x.found.fields.dnd.booleanValue === true) quiet.add(x.found.name.split('/').pop());
-  }
-  return uids.filter(u => !quiet.has(u));
+    body: JSON.stringify({ documents: names, mask: { fieldPaths: fields } }) }).catch(() => null);
+  if (!r || !r.ok) return null;
+  const got = new Map();
+  for (const x of (await r.json().catch(() => [])) || []) if (x.found) got.set(x.found.name, decFields(x.found.fields));
+  return names.map(n => got.get(n) || null);
+}
+async function notDisturbing(env, uids, sender, senderRank) {
+  const [profiles, blocks] = await Promise.all([
+    batchRead(env, uids.map(u => `users/${u}`), ['dnd', 'owner', 'coowner', 'op']),
+    batchRead(env, uids.map(u => `users/${u}/meta/blocks`), ['list']),
+  ]);
+  return uids.filter((u, i) => {
+    const p = profiles && profiles[i];
+    if (p && p.dnd === true) return false;
+    const list = blocks && blocks[i] && Array.isArray(blocks[i].list) ? blocks[i].list : [];
+    return !(list.includes(sender) && rankOf(p || {}) >= senderRank);
+  });
 }
 // The devices of these people that turned notifications on (30 people per question, Firestore's most for "in")
 async function subsOf(env, uids) {
@@ -177,7 +190,7 @@ async function send(env, { kind, id, sid, cid, tid, mid, uid }, origin) {
   if (!m.createdAt || Math.abs(Date.now() - m.createdAt) > 2 * 60000) return { ok: true, skipped: 'old' };
   if ((await claim(env, path)) !== 1) return { ok: true, skipped: 'taken' };
 
-  const sender = await fsGet(env, `users/${uid}`, ['username', 'displayName', 'avatarUrl']);
+  const sender = await fsGet(env, `users/${uid}`, ['username', 'displayName', 'avatarUrl', 'owner', 'coowner', 'op']);
   const body = preview(m), icon = iconOf(sender, origin);
   let to = [], note, mute;
   if (kind === 'dm' || kind === 'gdm') {
@@ -212,9 +225,9 @@ async function send(env, { kind, id, sid, cid, tid, mid, uid }, origin) {
     note = { title: `${nick || nameOf(sender, uid)} (${where}, ${server.name || 'server'})`, body, icon, tag: `msg:${mid}`, open: { type: 'ch', sid, cid, tid: tid || null } };
   }
   if (!to.length) return { ok: true, sent: 0 };
-  // Do Not Disturb (v4.60): nobody who turned it on gets a push
-  to = await notDisturbing(env, to);
-  if (!to.length) return { ok: true, sent: 0, dnd: true };
+  // Do Not Disturb (v4.60), and blocks (v4.61): nobody who turned it on, or blocked the sender, gets a push
+  to = await notDisturbing(env, to, uid, rankOf(sender || {}));
+  if (!to.length) return { ok: true, sent: 0, quiet: true };
 
   const subs = (await subsOf(env, to)).filter(s => s.endpoint && s.p256dh && s.auth && !(s.muted || []).includes(mute));
   const payload = JSON.stringify(note);
