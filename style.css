@@ -1802,7 +1802,28 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 .egg-count { font-weight: 700; color: #ed4245; }
 .egg-sub { margin: 6px 0 10px; font-size: 13px; color: var(--text-muted); line-height: 1.45; }
 .egg-grid { display: flex; flex-wrap: wrap; gap: 5px; }
-.egg-chip { font-size: 11.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px; border: 1px dashed rgba(255,255,255,.18); color: var(--text-muted); }
+.egg-chip { font: inherit; font-size: 11.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px; border: 1px dashed rgba(255,255,255,.18); color: var(--text-muted); background: none; cursor: pointer; }
+.egg-chip:hover { border-color: rgba(255,255,255,.4); }
+.egg-hint { margin-top: 10px; min-height: 18px; font-size: 13px; color: var(--text-normal); }
+/* tiny hints around Frixion (v4.62) */
+.egg-tip { margin-top: 8px; font-size: 11.5px; color: var(--text-muted); opacity: .6; text-align: center; }
+.codes-card .egg-tip { text-align: left; margin-top: 14px; }
+.fg-window .egg-tip { color: inherit; }
+.help-row.egg-tip-row { opacity: .55; font-size: 12px; }
+/* Settings > Easter Eggs, the Owner's list */
+.eg-sum { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.45; }
+.eg-group { margin-bottom: 16px; }
+.eg-group-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--text-muted); margin-bottom: 6px; }
+.eg-row { padding: 9px 12px; border-radius: 8px; background: var(--bg-secondary); margin-bottom: 6px; }
+.eg-row.found { opacity: .65; }
+.eg-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.eg-name { font-weight: 700; color: var(--text-normal); }
+.eg-tier { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: rgba(255,255,255,.08); color: var(--text-muted); }
+.eg-tier.t-v, .eg-tier.t-l { background: rgba(237,66,69,.18); color: #f08d8f; }
+.eg-found { font-size: 11px; font-weight: 700; color: #3ba55c; }
+.eg-how { margin-top: 4px; font-size: 13px; color: var(--text-normal); line-height: 1.45; user-select: text; }
+.eg-code { margin-top: 4px; font-size: 13px; color: var(--text-muted); }
+.eg-code code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; border-radius: 4px; background: var(--bg-input); color: var(--text-normal); user-select: all; }
 .egg-chip.found { border-style: solid; color: #fff; background: rgba(237,66,69,.18); border-color: rgba(237,66,69,.55); }
 .egg-chip.t-v:not(.found), .egg-chip.t-l:not(.found) { border-color: rgba(237,66,69,.45); }
 #pane-account { position: relative; }

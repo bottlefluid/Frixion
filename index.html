@@ -20,7 +20,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=108">
+<link rel="stylesheet" href="style.css?v=109">
 </head>
 <body>
 
@@ -85,6 +85,7 @@
     <div class="help-row"><kbd>/tts text</kbd><span>Send a text-to-speech message</span></div>
     <div class="help-row"><kbd>/poll</kbd><span>Create a poll</span></div>
     <div class="help-row ov-help-row"><span class="help-kbds" id="help-overlay-kbd"></span><span>Open the overlay (friends, DMs, servers)</span></div>
+    <div class="help-row egg-tip-row"><span>There are a few shortcuts that aren't on this list.</span></div>
   </div>
   <div class="help-foot">Frixion v3.0 — see what's new in Settings → Update Log.</div>
 </div>
@@ -326,7 +327,7 @@
       </div>
       <div class="mp-body">
         <div id="friends-add-pane" class="hidden">
-          <div class="field"><label>Add Friend</label><input type="text" id="add-friend-username" placeholder="Enter a username" maxlength="24"></div>
+          <div class="field"><label>Add Friend</label><input type="text" id="add-friend-username" placeholder="Enter a username" title="Anyone's username. Even yours." maxlength="24"></div>
           <button class="btn-accent-inline" id="send-friend-req-btn">Send Friend Request</button>
           <div class="auth-error" id="add-friend-error"></div>
         </div>
@@ -351,6 +352,7 @@
           <div class="field"><label>Code</label><input type="text" id="redeem-code-input" placeholder="FRX-XXXX-XXXX" style="text-transform:uppercase;"></div>
           <button class="btn-accent-inline" id="redeem-code-btn">Redeem code</button>
           <div class="auth-error" id="redeem-code-error"></div>
+          <div class="egg-tip">Not every code comes from the Shop. Some are just remembered.</div>
         </section>
       </div>
     </div>
@@ -377,7 +379,7 @@
         <div class="shop-topbar-right">
           <input type="text" id="shop-search" class="shop-search" placeholder="Search the Shop" autocomplete="off">
           <span class="shop-icon-btn" id="shop-wishlist-btn" title="Wishlist"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.35-9.5-8.5C.7 9 2 5 5.5 4.2 8 3.6 10 5 12 7c2-2 4-3.4 6.5-2.8C22 5 23.3 9 21.5 12.5 19 16.65 12 21 12 21z"/></svg></span>
-          <span class="orb-chip shop-orb-chip"><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg><span id="shop-orb-amt">0</span></span>
+          <span class="orb-chip shop-orb-chip" title="Your Orbs. Counting them won't make more."><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg><span id="shop-orb-amt">0</span></span>
         </div>
       </div>
       <div class="shop-body">
@@ -862,7 +864,7 @@
 
         <div id="profile-edit-fields" class="hidden">
           <span class="remove-avatar-link hidden" id="remove-avatar-link">Remove custom avatar</span>
-          <div class="field"><label>Display Name</label><input type="text" id="edit-display-name" maxlength="32" placeholder="How your name appears to others"></div>
+          <div class="field"><label>Display Name</label><input type="text" id="edit-display-name" maxlength="32" placeholder="How your name appears to others" title="Some names get a reaction."></div>
           <div class="field"><label>Pronouns</label><input type="text" id="edit-pronouns" maxlength="20" placeholder="e.g. they/them"></div>
           <div class="field"><label>Bio</label><textarea id="edit-bio" maxlength="190" rows="3" placeholder="Tell people about yourself"></textarea></div>
           <div class="field">
@@ -928,6 +930,7 @@
       <div class="nav-label">App</div>
       <div class="nav-item" data-pane="pane-app">Frixion App</div>
       <div class="nav-item" data-pane="pane-updates">Update Log</div>
+      <div class="nav-item hidden" data-pane="pane-eggguide" id="egg-guide-nav">Easter Eggs</div>
       <div class="nav-label">&nbsp;</div>
       <div class="nav-item hidden" id="open-admin-panel">Admin Panel</div>
       <div class="nav-item hidden" id="open-owner-panel">Owner Panel</div>
@@ -1062,7 +1065,7 @@
 
       <div class="settings-pane hidden" id="pane-quickopen">
         <h2>Quick Open</h2>
-        <p class="desc">Give the places you use most a keyboard shortcut. Press it anywhere in Frixion, even while you're typing or playing a game, and you're there.</p>
+        <p class="desc">Make keyboard shortcuts for things you open a lot. They work anywhere in Frixion, even while you're typing or in a game.</p>
         <div class="qo-list" id="qo-list"></div>
         <div class="qo-add">
           <div class="qo-add-row">
@@ -1071,7 +1074,7 @@
           </div>
           <button type="button" class="btn-accent-inline" id="qo-add-btn">Add Shortcut</button>
         </div>
-        <p class="qo-note">A shortcut needs Ctrl or Alt (or one of F2 to F10), so it never gets in the way of typing. Your shortcuts follow your account to every computer.</p>
+        <p class="qo-note">Shortcuts need Ctrl or Alt (or F2 to F10) so they don't get in the way of typing. They're saved to your account, so they work on every computer.</p>
       </div>
 
       <div class="settings-pane hidden" id="pane-themes">
@@ -1147,12 +1150,18 @@
       <div class="settings-pane hidden" id="pane-app">
         <h2>Frixion App</h2>
         <div id="app-pane-body"></div>
-        <div class="egg-credits" id="egg-credits">Frixion. Made with care, one update at a time.</div>
+        <div class="egg-credits" id="egg-credits">Frixion</div>
       </div>
 
       <div class="settings-pane hidden" id="pane-updates">
         <h2>Update Log</h2>
         <div id="updates-list"></div>
+      </div>
+
+      <div class="settings-pane hidden" id="pane-eggguide">
+        <h2>Easter Eggs</h2>
+        <p class="desc">Only you can see this. It's every egg and exactly how to get it.</p>
+        <div id="egg-guide"></div>
       </div>
     </div>
   </div>
@@ -1798,6 +1807,6 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=144"></script>
+<script defer src="script.js?v=145"></script>
 </body>
 </html>

@@ -528,22 +528,23 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
-  { v: '4.62', date: '2026-11-14', title: 'Fifty secrets',
+  { v: '4.62', date: '2026-11-14', title: 'Easter eggs',
     notes: [
-      '50 easter eggs are hidden all over Frixion: in key presses, buttons, codes, the clock, the games, and a riddle or three. Each one pays Orbs the first time you find it, more for the hard ones, and they don\'t count toward the daily limit from games. Settings, My Account shows how many you\'ve found, and finding all 50 puts a red Cracker tag next to your name.',
-      'Group chats can have a picture: the pencil at the top of a group lets anyone in it change its picture and name.',
-      'DMs and group chats are one list now. Whichever got the newest message is on top, group or not.',
-      'When someone is typing to you, their picture in your DM list shows bouncing dots, like on Discord.',
-      'Quick Open, in Settings: give the Shop, Codes, Games, Friends, a DM, a group, a server or a game its own keyboard shortcut.',
-      'Copying is easier: a Copy Text button on every message, more text you can select (names, replies, profiles, Settings), and in the computer app a right-click menu with Cut, Copy, Paste and Select All.',
-      'Grow a Garden has weather: drizzle, heatwaves, cold snaps, thunderstorms, starfall and the rare Null Eclipse give growing crops mutations worth up to 50 times more. Seeds and sprinklers come in limited stock that restocks every 5 minutes, and there are three new garden quests every day.',
-      'Cookie Clicker: upgrades for every building and for clicking, Lucky Crumbs that pop up with boosts, 23 achievements that each add 1% production for good, and buying 10, 100 or as many buildings as you can afford at once.',
-      'All five themes from Settings (Dark, Light, Sync with Computer, Ash and Onyx) are free for everyone in the Shop\'s Themes tab now.',
-      'The Shop\'s Avatar Decorations, Avatar Masks and Themes are sorted into sections, and themes no longer say "Animated".',
-      'Profile frames look like their names: Rainbow cycles through every color, Neon and Plasma pulse, Thorns has thorns, Rosevine has roses and Ice has icicles.',
-      'Avatar masks and decorations sit exactly on your picture on your profile again.',
-      'Grow a Garden saves only when something changed, so Frixion uses less of its daily database allowance.',
-      'Staff: Grow a Garden pets can have up to 4 abilities, custom seeds, sprinklers and pets can be edited, staff can start a weather event for everyone, and Shop items can be put in a section.',
+      '50 easter eggs are hidden around Frixion. You get Orbs the first time you find each one (more for harder ones), and they don\'t count toward the daily limit from games. Find all 50 to get a red Cracker tag next to your name.',
+      'See how many you\'ve found in Settings, My Account. Click a ??? there for a small hint, and keep an eye out for hints around the site. Typing ones work in text boxes too.',
+      'Group chats can have a picture now. Anyone in a group can change its picture or name with the pencil button at the top.',
+      'DMs and group chats are one list now, sorted by the newest message.',
+      'When someone is typing to you, little dots show up on their picture in your DM list, like on Discord.',
+      'New Quick Open section in Settings. Make keyboard shortcuts that open the Shop, Codes, Games, Friends, a DM, a group, a server or a game.',
+      'Every message has a Copy Text button now, and you can select more text, like names and replies. The computer app also has a right-click menu with Cut, Copy, Paste and Select All.',
+      'Grow a Garden has weather now. Drizzle, heatwaves, cold snaps, thunderstorms, starfall and the rare Null Eclipse can give your crops mutations worth up to 50x. Seeds and sprinklers have limited stock that restocks every 5 minutes, and there are 3 new garden quests every day.',
+      'Cookie Clicker got upgrades for every building and for clicking, Lucky Crumbs that pop up with boosts, 23 achievements that each give +1% production for good, and buttons to buy 10, 100 or as many buildings as you can afford.',
+      'The 5 Settings themes (Dark, Light, Sync with Computer, Ash and Onyx) are free in the Shop under Themes now.',
+      'Avatar Decorations, Avatar Masks and Themes in the Shop are split into sections, and themes don\'t say "Animated" anymore.',
+      'Profile frames actually look like their names now. Rainbow changes color, Neon and Plasma pulse, Thorns has thorns, Rosevine has roses and Ice has icicles.',
+      'Avatar masks and decorations line up with your picture on your profile again.',
+      'Grow a Garden only saves when something changes, so it uses less of Frixion\'s daily database limit.',
+      'For staff: Grow a Garden pets can have up to 4 abilities, custom seeds, sprinklers and pets can be edited, you can start weather for everyone, and Shop items can go in sections.',
     ] },
   { v: '4.61', date: '2026-11-12', title: 'Blocking',
     notes: [
@@ -1237,7 +1238,7 @@ function renderUpdates() {
       <div class="ue-head">
         <span class="ue-ver">v${esc(u.v)}</span>
         <span class="ue-title">${esc(u.title)}</span>
-        ${i === 0 ? '<span class="ue-latest">Latest</span>' : ''}
+        ${i === 0 ? '<span class="ue-latest" title="Is it, though?">Latest</span>' : ''}
         <span class="ue-date">${esc(u.date)}</span>
       </div>
       <ul class="ue-notes">${u.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
@@ -8469,7 +8470,7 @@ $('pins-toggle').onclick = () => {
 };
 function renderPinnedList(pinned) {
   const wrap = $('pinned-list');
-  if (!pinned.length) { wrap.innerHTML = '<div class="empty">No pinned messages yet — hover a message and pin it.</div>'; return; }
+  if (!pinned.length) { wrap.innerHTML = '<div class="empty">No pinned messages yet. Hover a message and click the pin to pin it.</div>'; return; }
   wrap.innerHTML = pinned.map(m => {
     const p = profileCache[m.uid] || { username: m.username || 'Unknown User', avatarColor: '#5865f2' };
     return `<div class="pinned-row" data-mid="${esc(m.id)}">
@@ -10552,6 +10553,7 @@ function typingDotsChanged() {
 function renderTypingIndicator(names) {
   const el = $('typing-indicator');
   if (!el) return;
+  el.title = names.length ? 'Shh, they\'re typing.' : '';   // (a hint for an easter egg)
   if (!names.length) { el.innerHTML = ''; return; }
   let text;
   if (names.length === 1) text = `${names[0]} is typing...`;
@@ -12430,6 +12432,7 @@ document.querySelectorAll('#settings-nav .nav-item[data-pane]').forEach(item => 
     $(item.dataset.pane).classList.remove('hidden');
     if (item.dataset.pane === 'pane-updates') renderUpdates();
     if (item.dataset.pane === 'pane-quickopen') renderQuickOpen();
+    if (item.dataset.pane === 'pane-eggguide') renderEggGuide();
     if (item.dataset.pane === 'pane-activity') populateRpc();
     if (item.dataset.pane === 'pane-app') populateAppPane();
     try { item.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); } catch (e) {}   // keeps the chosen tab in view in the phone's swipeable row
@@ -12449,6 +12452,9 @@ function populateSettings() {
   renderQuickTextList();
   renderQuickOpen();
   renderEggSettings();
+  $('egg-guide-nav').classList.toggle('hidden', !realOwner());   // the Owner's list of every egg
+  if (!$('pane-eggguide').classList.contains('hidden')) renderEggGuide();
+  $('egg-credits').textContent = 'Frixion v' + UPDATES[0].v;   // (click it three times...)
   populateRpc();
   populateNotifySettings();
 
@@ -15973,6 +15979,7 @@ function renderCookie(){
       <div class="ck-buffs" id="ck-buffs"></div>
       <button class="ck-cashout" id="ck-cashout" onclick="cashOutCookies()">Cash out</button>
       <div class="ck-note">Cashing out pays Orbs for everything baked this run, then resets your cookies, buildings, upgrades and momentum. Achievements stay.</div>
+      <div class="egg-tip">A Lucky Crumb during a Rush is extra lucky.</div>
       <div class="ck-stats" id="ck-stats"></div>
     </div>
     <div class="ck-shop" id="ck-shop"></div>`;
@@ -16444,6 +16451,7 @@ function renderGardenAll(){
         <div class="gg-plots" id="gg-plots"></div>
         <div class="gg-pets-layer" id="gg-pets-layer"></div>
         <div class="gg-hint" id="gg-hint">Pick a seed and tap a plot to plant. Crops regrow after every harvest, so harvest into your basket and sell, or dig a plant up with the shovel. Weather gives growing crops mutations that make them worth more.</div>
+        <div class="egg-tip">Twelve plots of the same seed? Someone should try that.</div>
       </div>
       <div class="gg-shop">
         <div class="gg-shoptabs">
@@ -16526,7 +16534,7 @@ function renderGGShop(){
       <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)} ${ggStockTag(s,'seeds')}</span><span class="gg-seed-meta">${priceStr} · ${ggGrowLabel(s.grow)} · sells ${SHK} ${fmtNum(s.sell)}${ggSeedFnText(s)?' · '+ggSeedFnText(s):''}</span></span>
       ${sel?'<span class="gg-seed-sel">✓</span>':''}</div>`;
   }).join('');
-  body.innerHTML=`<div class="gg-spr-note gg-restock-note"><b id="gg-restock">Restocks in ${ggClock(GG_RESTOCK_MS-(Date.now()%GG_RESTOCK_MS))}</b> &middot; Every seed comes back in new numbers for everyone. Rare seeds don't always show up.</div><div class="gg-seedlist">${rows}</div>`;
+  body.innerHTML=`<div class="gg-spr-note gg-restock-note"><b id="gg-restock">Restocks in ${ggClock(GG_RESTOCK_MS-(Date.now()%GG_RESTOCK_MS))}</b> &middot; The shop restocks for everyone at the same time. Rare seeds don't always come back.</div><div class="gg-seedlist">${rows}</div>`;
 }
 function ggSeedFnText(s){
   const v=s.fnVal||0;
@@ -17024,6 +17032,7 @@ function renderSnake(){
     <div class="sn-overlay" id="sn-overlay"><div class="sn-card">
       <div class="sn-title">Snake</div>
       <div class="sn-sub">Arrow keys, WASD or swipe to steer. Eat the Orbs to grow. Do not hit the walls or yourself.</div>
+      <div class="egg-tip">Ever made it to 67?</div>
       <button class="sn-btn" onclick="snakeStart()">Play</button>
     </div></div>
   </div>`;
@@ -17154,6 +17163,7 @@ function renderMerge(){
     <div class="mg-hud"><span>Score <b id="mg-score">0</b></span><span>Best tile <b id="mg-best">${UC.mergeBest||0}</b></span></div>
     <div class="mg-board" id="mg-board"></div>
     <div class="mg-foot">Arrow keys, WASD or swipe. Reach a new high tile to earn Orbs.<button class="mg-restart" onclick="mergeStart()">Restart</button></div>
+    <div class="egg-tip">Nobody's made 2048 yet. Probably.</div>
     <div class="mg-over" id="mg-over" style="display:none"></div>
   </div>`;
   mergeInit();
@@ -17254,7 +17264,7 @@ function renderTyping(){
     <div class="ts-hud"><span>Cleared <b id="ts-cleared">0</b></span><span id="ts-lives"></span><span>Best <b id="ts-best">${UC.typingBest||0}</b></span></div>
     <div class="ts-field" id="ts-field"></div>
     <div class="ts-foot"><input class="ts-input" id="ts-input" placeholder="Type a word and press Enter" autocomplete="off" autocapitalize="off" spellcheck="false" onkeydown="if(event.key==='Enter')tsSubmit()"></div>
-    <div class="ts-overlay" id="ts-overlay"><div class="ts-card"><div class="ts-title">Typing Sprint</div><div class="ts-sub">Words fly in from the right. Type each one and press Enter before it escapes. Three misses ends the run.</div><button class="ts-btn" onclick="tsStart()">Play</button></div></div>
+    <div class="ts-overlay" id="ts-overlay"><div class="ts-card"><div class="ts-title">Typing Sprint</div><div class="ts-sub">Words fly in from the right. Type each one and press Enter before it escapes. Three misses ends the run.</div><div class="egg-tip">Not every word worth typing is on the screen.</div><button class="ts-btn" onclick="tsStart()">Play</button></div></div>
   </div>`;
   tsState={ field:document.getElementById('ts-field'), words:[], lives:3, cleared:0, speed:1.1, spawnT:30, running:false, raf:0 };
 }
@@ -18056,6 +18066,7 @@ function renderSimon(){
     <div class="sm-hud"><span>Round <b id="sm-round">0</b></span><span>Best <b id="sm-best">${UC.simonBest||0}</b></span></div>
     <div class="sm-pads">${SM_PADS.map(p=>`<button class="sm-pad" data-pad="${p.id}" style="background:${p.color}" onclick="smPress(${p.id})"></button>`).join('')}</div>
     <div class="sm-msg" id="sm-msg">Watch the sequence, then repeat it.</div>
+    <div class="egg-tip">Round 15 is where Simon starts paying attention.</div>
     <div style="text-align:center"><button class="ts-btn" id="sm-startbtn" onclick="smStart()">Start</button></div>
   </div>`;
   smState={ seq:[], step:0, round:0, showing:false, accepting:false, over:false };
@@ -18392,57 +18403,60 @@ function openSac() {
 //  - Anything an egg does that moves the whole screen checks shakeAllowed(), and nothing here flashes (Epilepsy mode).
 // ============================================================
 const EGG_TIERS = { e: { name: 'Easy', orbs: 100 }, m: { name: 'Medium', orbs: 250 }, h: { name: 'Hard', orbs: 500 }, v: { name: 'Very Hard', orbs: 1000 }, l: { name: 'Legendary', orbs: 2500 } };
+// how: exactly how to get it (shown to you once you've found it, and to the Owner in Settings > Easter Eggs).
+// hint: the small clue Settings shows for one you haven't found. code: what the Owner's list says to type, for the
+// secret ones (ans is what Frixion's server checks it against).
 const EGGS = [
-  { id: 'oldcode', t: 'm', name: 'The Old Code', how: 'Up, up, down, down, left, right, left, right, B, A.' },
-  { id: 'frixion', t: 'e', name: 'Say My Name', how: 'Type "frixion" while no text box is selected.' },
-  { id: 'hello', t: 'e', name: 'Hello There', how: 'Type "hello" while no text box is selected.' },
-  { id: 'esrever', t: 'm', name: 'Esrever', how: 'Type "esrever" while no text box is selected.' },
-  { id: 'gravity', t: 'm', name: 'What Goes Up', how: 'Type "gravity" while no text box is selected.' },
-  { id: 'letitsnow', t: 'e', name: 'Snow Day', how: 'Type "letitsnow" while no text box is selected.' },
-  { id: 'party', t: 'e', name: 'Party Time', how: 'Type "party" while no text box is selected.' },
-  { id: 'greencode', t: 'm', name: 'Green Code', how: 'Type "greencode" while no text box is selected.' },
-  { id: 'shift10', t: 'e', name: 'Sticky Keys', how: 'Press Shift 10 times in a row, fast.' },
-  { id: 'ctrlalto', t: 'm', name: 'Calling the Owner', how: 'Press Ctrl + Alt + O.' },
-  { id: 'spin', t: 'm', name: 'Round and Round', how: 'Left, up, right, down, twice.' },
-  { id: 'pi', t: 'h', name: 'Slice of Pi', how: 'Type 314159 while no text box is selected.' },
-  { id: 'logo10', t: 'e', name: 'Home Sweet Home', how: 'Click the Home button 10 times, fast.' },
-  { id: 'avatar7', t: 'm', name: 'Spin Me Right Round', how: 'Click your own picture on your profile 7 times.' },
-  { id: 'version5', t: 'e', name: 'Up to Date', how: 'Click "Latest" in the Update Log 5 times.' },
-  { id: 'orbchip', t: 'm', name: 'Counting Orbs', how: 'Click your Orbs in the Shop 15 times, fast.' },
-  { id: 'settings10', t: 'm', name: 'Indecisive', how: 'Open Settings 10 times in one minute.' },
-  { id: 'typingclick', t: 'h', name: 'Shh', how: 'Click someone\'s "is typing..." while they type.' },
-  { id: 'hiddendot', t: 'h', name: 'The Dot', how: 'Click the faint dot in Settings, My Account.' },
-  { id: 'credits', t: 'h', name: 'Roll Credits', how: 'Click the last line of Settings, Frixion App 3 times.' },
-  { id: 'emptypins', t: 'e', name: 'Nothing Pinned', how: 'Open Pinned Messages where nothing is pinned, 3 times.' },
-  { id: 'xyzzy', t: 'm', name: 'A Magic Word', how: 'Send /xyzzy in a chat.', ans: '7d76c6d11ed06a3e671afa826c4f88f4e8227fdef446cbd576a3428967e45af9' },
-  { id: 'eggmsg', t: 'e', name: 'Egg', how: 'Send a message that just says "egg".' },
-  { id: 'codeb1', t: 'e', name: 'In Memory of B1', how: 'Redeem the code B1.', ans: '4f3cd88dc035fd4d04dda074fd7ced1722751824644c1a27a700dfd5d06ba19e' },
-  { id: 'codeb2', t: 'e', name: 'In Memory of B2', how: 'Redeem the code B2.', ans: 'c886bb737cc711b2dfcb069ea8179dc430661db13a38113ddf718b9098f653c7' },
-  { id: 'codecracker', t: 'm', name: 'Not Yet', how: 'Redeem the code CRACKER.', ans: '9272bb2cd0bf657e4d7fa917a2677e687e6f7c70df391b3c1ec399bdc8f407db' },
-  { id: 'freeorbs', t: 'e', name: 'Worth a Try', how: 'Redeem the code FREEORBS.', ans: 'adb07b3f3ea4d065e0dba64721a9d7cba035856b4c7acd071322245a919cb619' },
-  { id: 'riddle1', t: 'h', name: 'Riddle One', how: 'Answer the riddle at the end of the credits, in Codes.', ans: '45da9aba60eb46f8346b9b3dfe89d2861ce4b509b9640c95d43909aae9b0dbae' },
-  { id: 'riddle2', t: 'v', name: 'Riddle Two', how: 'Answer the second riddle, in Codes.', ans: 'b9565c29fb4549d0c32b53de11180eabe4d22f4aca067e5aa132f397b7363d82' },
-  { id: 'riddle3', t: 'l', name: 'Riddle Three', how: 'Answer the third riddle, in Codes.', ans: '78be81c5a939aa73a905369bd86a8616a912917ac1612936a08c310482a53e7d' },
-  { id: 'threeam', t: 'h', name: 'Night Owl', how: 'Be on Frixion between 3:00 and 3:15 in the morning.' },
-  { id: 'eleveneleven', t: 'm', name: 'Make a Wish', how: 'Be on Frixion at 11:11.' },
-  { id: 'midnight', t: 'h', name: 'A New Day', how: 'Be on Frixion right at midnight.' },
-  { id: 'hashegg', t: 'm', name: 'Address Unknown', how: 'Open Frixion with #egg at the end of its address.' },
-  { id: 'console', t: 'h', name: 'Hacker Voice', how: 'Run frixion.egg() in the browser console.' },
-  { id: 'idle10', t: 'm', name: 'Screensaver', how: 'Leave Frixion open without touching it for 10 minutes.' },
-  { id: 'dnd5', t: 'm', name: 'Disturbed', how: 'Turn Do Not Disturb on and off 5 times in 30 seconds.' },
-  { id: 'themehop', t: 'm', name: 'Can\'t Decide', how: 'Switch between the free themes 5 times in a minute.' },
-  { id: 'lightmode', t: 'e', name: 'My Eyes', how: 'Switch to the Light theme.' },
-  { id: 'quickopen', t: 'e', name: 'Speedrunner', how: 'Use a Quick Open shortcut.' },
-  { id: 'selfadd', t: 'e', name: 'Best Friend', how: 'Send yourself a friend request.' },
-  { id: 'displayegg', t: 'm', name: 'Egg-cellent', how: 'Set your display name to Egg.' },
-  { id: 'snake67', t: 'm', name: 'Long Boi', how: 'Grow to length 67 in Snake.' },
-  { id: 'merge2048', t: 'v', name: 'The Big One', how: 'Make a 2048 tile in Blox Merge.' },
-  { id: 'typingegg', t: 'e', name: 'Typed Egg', how: 'Type "egg" in Typing Sprint.' },
-  { id: 'simon15', t: 'h', name: 'Simon Says', how: 'Reach round 15 in Color Simon.' },
-  { id: 'luckyrush', t: 'h', name: 'Double Lucky', how: 'Catch a Lucky Crumb during a Rush in Cookie Clicker.' },
-  { id: 'voidcrop', t: 'v', name: 'Touched by the Void', how: 'Harvest a Voidtouched crop in Grow a Garden.' },
-  { id: 'samegarden', t: 'h', name: 'Monoculture', how: 'Grow the same seed in all 12 plots of Grow a Garden.' },
-  { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Find the other 49.' },
+  { id: 'oldcode', t: 'm', name: 'The Old Code', how: 'Press up, up, down, down, left, right, left, right, B, A.', hint: 'An old cheat code still works here.' },
+  { id: 'frixion', t: 'e', name: 'Name Drop', how: 'Type "frixion" anywhere.', hint: 'Type the name of this place.' },
+  { id: 'hello', t: 'e', name: 'Hello There', how: 'Type "hello" anywhere.', hint: 'Say hi to Frixion.' },
+  { id: 'esrever', t: 'm', name: 'Esrever', how: 'Type "esrever" anywhere. The screen flips (not with Reduce screen shake on).', hint: 'Some words work better backwards.' },
+  { id: 'gravity', t: 'm', name: 'What Goes Up', how: 'Type "gravity" anywhere. Messages fall (not with Reduce screen shake on).', hint: 'Type the thing that keeps you on the ground.' },
+  { id: 'letitsnow', t: 'e', name: 'Snow Day', how: 'Type "letitsnow" anywhere.', hint: 'Let it what? Three words, no spaces.' },
+  { id: 'party', t: 'e', name: 'Party Time', how: 'Type "party" anywhere.', hint: 'Type what you throw on a birthday.' },
+  { id: 'greencode', t: 'm', name: 'Green Code', how: 'Type "greencode" anywhere.', hint: 'Green code, falling down the screen. Type it.' },
+  { id: 'shift10', t: 'e', name: 'Sticky Keys', how: 'Press Shift 10 times within 3 seconds.', hint: 'One key, ten times, fast.' },
+  { id: 'ctrlalto', t: 'm', name: 'Calling the Owner', how: 'Press Ctrl + Alt + O.', hint: 'Ctrl, Alt, and the Owner\'s first letter.' },
+  { id: 'spin', t: 'm', name: 'Round and Round', how: 'Press left, up, right, down, twice.', hint: 'Arrow keys, all the way around, twice.' },
+  { id: 'pi', t: 'h', name: 'Slice of Pi', how: 'Type 314159 anywhere.', hint: 'The first six digits of a famous number.' },
+  { id: 'logo10', t: 'e', name: 'Home Sweet Home', how: 'Click the Home button (top left) 10 times within 5 seconds.', hint: 'Go home. Then again. And again.' },
+  { id: 'avatar7', t: 'm', name: 'Dizzy', how: 'Open your own profile and click your picture 7 times within 5 seconds.', hint: 'Your own picture, seven clicks.' },
+  { id: 'version5', t: 'e', name: 'Up to Date', how: 'Settings > Update Log: click "Latest" 5 times within 5 seconds.', hint: 'Does "Latest" really mean latest?' },
+  { id: 'orbchip', t: 'm', name: 'Counting Orbs', how: 'In the Shop, click your Orbs balance 15 times within 6 seconds.', hint: 'Count your Orbs, one click at a time.' },
+  { id: 'settings10', t: 'm', name: 'Indecisive', how: 'Open Settings 10 times in one minute.', hint: 'Open, close, open, close...' },
+  { id: 'typingclick', t: 'h', name: 'Shh', how: 'Click the "is typing..." line while someone is typing.', hint: 'Interrupt someone who\'s typing.' },
+  { id: 'hiddendot', t: 'h', name: 'The Dot', how: 'Settings > My Account: click the faint dot in the bottom right corner.', hint: 'My Account has a speck on it.' },
+  { id: 'credits', t: 'h', name: 'Roll Credits', how: 'Settings > Frixion App: click the version at the bottom 3 times.', hint: 'Version numbers like being clicked.' },
+  { id: 'emptypins', t: 'e', name: 'Nothing Pinned', how: 'Open Pinned Messages in a chat with nothing pinned, 3 times.', hint: 'Check the pins where there aren\'t any.' },
+  { id: 'xyzzy', t: 'm', name: 'A Magic Word', how: 'Send /xyzzy in any chat. It isn\'t posted.', code: '/xyzzy', hint: 'A really old magic word, sent like a command.', ans: '7d76c6d11ed06a3e671afa826c4f88f4e8227fdef446cbd576a3428967e45af9' },
+  { id: 'eggmsg', t: 'e', name: 'Egg', how: 'Send a message that just says "egg".', hint: 'Just say it.' },
+  { id: 'codeb1', t: 'e', name: 'RIP B1', how: 'Redeem the code B1 in Codes.', code: 'B1', hint: 'Codes remember B1.', ans: '4f3cd88dc035fd4d04dda074fd7ced1722751824644c1a27a700dfd5d06ba19e' },
+  { id: 'codeb2', t: 'e', name: 'RIP B2', how: 'Redeem the code B2 in Codes.', code: 'B2', hint: 'B1 wasn\'t the only one.', ans: 'c886bb737cc711b2dfcb069ea8179dc430661db13a38113ddf718b9098f653c7' },
+  { id: 'codecracker', t: 'm', name: 'Not Yet', how: 'Redeem the code CRACKER in Codes.', code: 'CRACKER', hint: 'The name of the tag, as a code.', ans: '9272bb2cd0bf657e4d7fa917a2677e687e6f7c70df391b3c1ec399bdc8f407db' },
+  { id: 'freeorbs', t: 'e', name: 'Worth a Try', how: 'Redeem the code FREEORBS in Codes.', code: 'FREEORBS', hint: 'The code everyone tries first.', ans: 'adb07b3f3ea4d065e0dba64721a9d7cba035856b4c7acd071322245a919cb619' },
+  { id: 'riddle1', t: 'h', name: 'Riddle One', how: 'Redeem KEYBOARD in Codes (the riddle at the end of the credits).', code: 'KEYBOARD', hint: 'The credits end with a riddle.', ans: '45da9aba60eb46f8346b9b3dfe89d2861ce4b509b9640c95d43909aae9b0dbae' },
+  { id: 'riddle2', t: 'v', name: 'Riddle Two', how: 'After Riddle One: redeem VOIDTOUCHED in Codes.', code: 'VOIDTOUCHED', hint: 'Solving one riddle gives you the next.', ans: 'b9565c29fb4549d0c32b53de11180eabe4d22f4aca067e5aa132f397b7363d82' },
+  { id: 'riddle3', t: 'l', name: 'Riddle Three', how: 'After Riddle Two: redeem STCRC in Codes (first letters of "Servers, text channels, real-time chat" from v1.0).', code: 'STCRC', hint: 'The last riddle is about the very beginning.', ans: '78be81c5a939aa73a905369bd86a8616a912917ac1612936a08c310482a53e7d' },
+  { id: 'threeam', t: 'h', name: 'Night Owl', how: 'Have Frixion open between 3:00 and 3:14 AM.', hint: 'Be up when you really shouldn\'t be.' },
+  { id: 'eleveneleven', t: 'm', name: 'Make a Wish', how: 'Have Frixion open at 11:11 (AM or PM).', hint: 'Make a wish at the right minute.' },
+  { id: 'midnight', t: 'h', name: 'A New Day', how: 'Have Frixion open at 12:00 or 12:01 AM.', hint: 'Stay up for the new day.' },
+  { id: 'hashegg', t: 'm', name: 'Address Unknown', how: 'Open frixionbeta.pages.dev/#egg (#egg at the end of the address).', hint: 'Even the address bar can hold an egg.' },
+  { id: 'console', t: 'h', name: 'Hacker Voice', how: 'Press F12, open the Console and run frixion.egg()', hint: 'Developers have their own place to look. F12.' },
+  { id: 'idle10', t: 'm', name: 'Screensaver', how: 'Leave Frixion open without touching it for 10 minutes.', hint: 'Do nothing for a while.' },
+  { id: 'dnd5', t: 'm', name: 'Disturbed', how: 'Settings > Activity Status: turn Do Not Disturb on and off 5 times within 30 seconds.', hint: 'Keep disturbing Do Not Disturb.' },
+  { id: 'themehop', t: 'm', name: 'Can\'t Decide', how: 'Switch between the free themes in the Shop 5 times within a minute.', hint: 'Can\'t pick a theme? Keep switching.' },
+  { id: 'lightmode', t: 'e', name: 'My Eyes', how: 'Use the free Light theme in the Shop.', hint: 'Try the brightest theme.' },
+  { id: 'quickopen', t: 'e', name: 'Speedrunner', how: 'Make a Quick Open shortcut in Settings and use it.', hint: 'Make a shortcut, then use it.' },
+  { id: 'selfadd', t: 'e', name: 'Best Friend', how: 'Friends > Add Friend: send a request to your own username.', hint: 'Who\'s your best friend?' },
+  { id: 'displayegg', t: 'm', name: 'Egg-cellent', how: 'Set your display name to Egg and save.', hint: 'Name yourself after what you\'re hunting.' },
+  { id: 'snake67', t: 'm', name: 'Long Boi', how: 'Reach length 67 in Snake.', hint: 'A snake of a certain famous length.' },
+  { id: 'merge2048', t: 'v', name: 'The Big One', how: 'Make a 2048 tile in Blox Merge.', hint: 'The classic number in Blox Merge.' },
+  { id: 'typingegg', t: 'e', name: 'Typed Egg', how: 'Type "egg" and press Enter in Typing Sprint.', hint: 'Type a word that isn\'t flying by.' },
+  { id: 'simon15', t: 'h', name: 'Simon Says', how: 'Reach round 15 in Color Simon.', hint: 'Simon says fifteen.' },
+  { id: 'luckyrush', t: 'h', name: 'Double Lucky', how: 'In Cookie Clicker, catch a Lucky Crumb while a Rush is going.', hint: 'Get lucky while you\'re already rushing.' },
+  { id: 'voidcrop', t: 'v', name: 'Touched by the Void', how: 'Harvest a Voidtouched crop in Grow a Garden (Null Eclipse weather; the Owner panel can start one).', hint: 'The rarest weather leaves a mark.' },
+  { id: 'samegarden', t: 'h', name: 'Monoculture', how: 'Unlock all 12 garden plots and plant the same seed in every one.', hint: 'Twelve plots, one kind of seed.' },
+  { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found the other 49. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
 let eggFoundSet = new Set(), eggsLoaded = false;
@@ -18473,7 +18487,7 @@ async function eggFind(id, answer) {
   const r = claim && await claim;
   if (!r) return;
   if (!r.already) eggToast('Easter egg found: ' + egg.name, `+${fmtOrbs(r.orbs || EGG_TIERS[egg.t].orbs)} Orbs · ${eggFoundSet.size} of ${EGGS.length} found`);
-  if (r.cracker) setTimeout(() => eggCutscene(['All 50.', 'Every last egg, cracked.', 'Look next to your name.'], { title: 'CRACKER', cls: 'egg-cut-red' }), 2500);
+  if (r.cracker) setTimeout(() => eggCutscene(['You found all 50 eggs.', 'Check next to your name.'], { title: 'CRACKER', cls: 'egg-cut-red' }), 2500);
   else if (eggFoundSet.size === EGGS.length - 1 && !eggFoundSet.has('lastegg')) setTimeout(() => eggFind('lastegg'), 4500);
 }
 async function eggClaim(egg, answer) {
@@ -18497,6 +18511,9 @@ function eggToast(title, sub) {
   const el = document.createElement('div');
   el.className = 'egg-toast';
   el.innerHTML = `<div class="egg-toast-t">${esc(title)}</div>${sub ? `<div class="egg-toast-s">${esc(sub)}</div>` : ''}`;
+  // (two at once, like an egg's own note and then "Easter egg found", stack instead of covering each other)
+  const below = [...document.querySelectorAll('.egg-toast:not(.out)')].reduce((y, t) => Math.max(y, t.getBoundingClientRect().bottom), 0);
+  if (below) el.style.top = Math.round(below + 8) + 'px';
   document.body.appendChild(el);
   setTimeout(() => el.classList.add('out'), 4200);
   setTimeout(() => el.remove(), 4800);
@@ -18554,9 +18571,10 @@ function eggParticles(kind, ms) {
   };
   requestAnimationFrame(draw);
 }
-// A class on <html> for a few seconds (mirroring, spinning, falling); skipped when screen shake is turned off.
-function eggMotion(cls, ms, fallback) {
-  if (!shakeAllowed()) { if (fallback) eggToast(fallback); return; }
+// A class on <html> for a few seconds (mirroring, spinning, falling). With Reduce screen shake (or Epilepsy mode) on,
+// the screen stays still and a note says why, so it doesn't look broken. The egg still counts.
+function eggMotion(cls, ms, what) {
+  if (!shakeAllowed()) { eggToast(what, 'Reduce screen shake is on, so the screen stays still.'); return; }
   const root = document.documentElement;
   root.classList.add(cls);
   setTimeout(() => root.classList.remove(cls), ms);
@@ -18591,61 +18609,61 @@ function eggScreensaver() {
   setTimeout(() => ['mousemove', 'keydown', 'pointerdown', 'wheel', 'touchstart'].forEach(t => window.addEventListener(t, stop, true)), 400);
   raf = requestAnimationFrame(step);
 }
-const RIDDLE_ONE = ['One more thing. A riddle:', 'I have keys, but open no locks.', 'I have space, but no room.', 'You can enter, but you can\'t go inside.', 'What am I? Type the answer in Codes.'];
-const RIDDLE_TWO = ['Riddle two:', 'In Grow a Garden, the rarest weather leaves crops with one word on them.', 'Type that word in Codes.'];
-const RIDDLE_THREE = ['Riddle three, the last:', 'Find Frixion\'s very first update in the Update Log.', 'Take the first letter of each of its first five words.', 'Type them in Codes.'];
+const RIDDLE_ONE = ['One more thing, a riddle for you:', 'I have keys but no locks, and space but no room. You can enter, but you can\'t go inside. What am I?', 'Put your answer in Codes.'];
+const RIDDLE_TWO = ['Riddle two:', 'In Grow a Garden, the rarest weather leaves a word on your crops. What is it?', 'Answer in Codes again.'];
+const RIDDLE_THREE = ['Last one:', 'Go to Frixion\'s very first update in the Update Log and take the first letter of each of its first five words.', 'That\'s your answer. Codes, like before.'];
 function eggEffect(id, first) {
   switch (id) {
-    case 'oldcode': return eggCutscene(['Up, up, down, down, left, right, left, right, B, A.', 'Thirty extra lives!', 'Frixion doesn\'t have lives, though.', first ? 'Have some Orbs instead.' : 'You already got the Orbs.'], { title: 'THE OLD CODE' });
+    case 'oldcode': return eggCutscene(['You know the code!', 'No extra lives in Frixion though, sorry.'], { title: 'OLD CODE' });
     case 'frixion': eggBigWord('FRIXION'); return;
-    case 'hello': eggToast('Hello to you too.'); return;
-    case 'esrever': eggMotion('egg-mirror', 6000, '.esrever'); return;
-    case 'gravity': eggMotion('egg-gravity', 2600, 'Gravity is off today.'); return;
+    case 'hello': eggToast('Hey!'); return;
+    case 'esrever': eggMotion('egg-mirror', 6000, 'The screen would flip right now'); return;
+    case 'gravity': eggMotion('egg-gravity', 2600, 'Everything would fall right now'); return;
     case 'letitsnow': eggParticles('snow', 15000); return;
     case 'party': eggParticles('confetti', 6000); return;
     case 'greencode': eggParticles('code', 9000); return;
-    case 'shift10': eggToast('Sticky keys? No. Sticky eggs.'); return;
-    case 'ctrlalto': return eggCutscene(['Calling the Owner...', '...', '...', 'They\'re busy. Leave a message after the egg.'], { title: 'CTRL + ALT + O' });
-    case 'spin': eggMotion('egg-spin', 1300, 'You spun around. The screen didn\'t.'); return;
-    case 'pi': eggToast('3.14159...', 'and so on, forever.'); return;
-    case 'logo10': eggToast('This is the Home button.', 'It takes you home. That\'s it. That\'s the secret.'); return;
-    case 'avatar7': { const av = document.querySelector('#profile-avatar'); if (av && shakeAllowed()) { av.classList.remove('egg-avspin'); void av.offsetWidth; av.classList.add('egg-avspin'); } eggToast('Wheee.'); return; }
-    case 'version5': eggToast('You\'re on the newest Frixion.', 'Probably.'); return;
-    case 'orbchip': eggToast('Counting them won\'t make more.'); return;
-    case 'settings10': eggToast('Make up your mind.'); return;
-    case 'typingclick': eggToast('Shh.', 'They\'re thinking.'); return;
-    case 'hiddendot': return eggCutscene(['You found the dot.', 'It doesn\'t do anything else.', 'Except this.'], { title: '.' });
-    case 'credits': return eggCutscene(['FRIXION', 'Made by its Owner', 'with ideas from everyone who uses it', 'and a lot of late nights.', 'Thanks for being here.', ...RIDDLE_ONE], { title: 'CREDITS', step: 1700, hold: 6000 });
-    case 'emptypins': eggToast('Still nothing pinned.', 'You can stop checking.'); return;
-    case 'xyzzy': return;   // (its reply is the "Nothing happens." from Sapphire)
-    case 'eggmsg': eggToast('Egg.'); return;
-    case 'codeb1': return eggCutscene(['B1.', 'Gone, but never forgotten.'], { title: 'IN MEMORY' });
-    case 'codeb2': return eggCutscene(['B2.', 'Still here in spirit.'], { title: 'IN MEMORY' });
-    case 'codecracker': eggToast('Not yet.', 'Find them all first.'); return;
-    case 'freeorbs': eggToast('Fine.', 'Here are a few.'); return;
-    case 'riddle1': return eggCutscene(['A keyboard. Correct.', ...RIDDLE_TWO], { title: 'RIDDLE ONE', hold: 6000 });
-    case 'riddle2': return eggCutscene(['Voidtouched. Correct.', ...RIDDLE_THREE], { title: 'RIDDLE TWO', hold: 6000 });
-    case 'riddle3': return eggCutscene(['Correct.', 'You read the very first update.', 'Not many people do.', 'The riddler bows.'], { title: 'RIDDLE THREE' });
-    case 'threeam': return eggCutscene(['It\'s past 3 in the morning.', 'Go to sleep.', 'Frixion will still be here.'], { title: '3 AM' });
-    case 'eleveneleven': eggToast('11:11.', 'Make a wish.'); return;
-    case 'midnight': eggToast('Midnight.', 'A brand new day.'); return;
-    case 'hashegg': eggToast('The address bar is a place too.'); return;
+    case 'shift10': eggToast('That\'s a lot of Shift.'); return;
+    case 'ctrlalto': return eggCutscene(['Calling the Owner...', 'No answer. They\'re probably fixing something.'], { title: 'CALLING' });
+    case 'spin': eggMotion('egg-spin', 1300, 'The screen would spin right now'); return;
+    case 'pi': eggToast('3.14159', 'Pi, if you didn\'t know.'); return;
+    case 'logo10': eggToast('Yep, that\'s the Home button.'); return;
+    case 'avatar7': { const av = document.querySelector('#profile-avatar'); if (av && shakeAllowed()) { av.classList.remove('egg-avspin'); void av.offsetWidth; av.classList.add('egg-avspin'); } eggToast('Feeling dizzy?'); return; }
+    case 'version5': eggToast('Yes, it\'s the latest one.'); return;
+    case 'orbchip': eggToast('Still the same number of Orbs.'); return;
+    case 'settings10': eggToast('Make up your mind!'); return;
+    case 'typingclick': eggToast('Let them finish typing!'); return;
+    case 'hiddendot': eggToast('You found the dot.', 'That\'s all it is, a dot.'); return;
+    case 'credits': return eggCutscene(['Frixion', 'Made by the Owner', 'Tested (and broken) by everyone else', 'Thanks for hanging out here.', ...RIDDLE_ONE], { title: 'CREDITS', step: 1700, hold: 6500 });
+    case 'emptypins': eggToast('Still nothing pinned.'); return;
+    case 'xyzzy': return;   // (Sapphire answers "Nothing happens." in the chat)
+    case 'eggmsg': eggToast('egg'); return;
+    case 'codeb1': return eggCutscene(['B1', 'Gone but not forgotten.'], { title: 'RIP' });
+    case 'codeb2': return eggCutscene(['B2', 'Also gone, also not forgotten.'], { title: 'RIP' });
+    case 'codecracker': eggToast('Not yet!', 'Find all the eggs first.'); return;
+    case 'freeorbs': eggToast('Fine, here\'s a few.'); return;
+    case 'riddle1': return eggCutscene(['Keyboard. You got it!', ...RIDDLE_TWO], { title: 'RIDDLE ONE', hold: 6500 });
+    case 'riddle2': return eggCutscene(['Voidtouched. Right again!', ...RIDDLE_THREE], { title: 'RIDDLE TWO', hold: 6500 });
+    case 'riddle3': return eggCutscene(['That\'s all three riddles.', 'Not many people get this far.'], { title: 'SOLVED' });
+    case 'threeam': eggToast('It\'s 3 AM.', 'Go to sleep!'); return;
+    case 'eleveneleven': eggToast('11:11', 'Make a wish.'); return;
+    case 'midnight': eggToast('It\'s midnight.', 'New day!'); return;
+    case 'hashegg': eggToast('You found the egg in the address bar.'); return;
     case 'console': return;   // (it answers in the console itself)
     case 'idle10': eggScreensaver(); return;
-    case 'dnd5': eggToast('Disturbed yet?'); return;
-    case 'themehop': eggToast('Can\'t decide?', 'Same.'); return;
+    case 'dnd5': eggToast('Disturbed or not?', 'Pick one!'); return;
+    case 'themehop': eggToast('Just pick one!'); return;
     case 'lightmode': eggToast('My eyes!'); return;
-    case 'quickopen': if (first) eggToast('Speedrunner.'); return;
-    case 'selfadd': eggToast('You\'re already your own best friend.'); return;
-    case 'displayegg': eggToast('Egg-cellent name.'); return;
-    case 'snake67': eggToast('67.', 'That\'s a long snake.'); return;
-    case 'merge2048': eggParticles('confetti', 6000); eggToast('2048!', 'You made the big one.'); return;
-    case 'typingegg': eggToast('egg', 'That wasn\'t one of the words.'); return;
-    case 'simon15': eggToast('Simon says: well done.'); return;
+    case 'quickopen': if (first) eggToast('Speedy.'); return;
+    case 'selfadd': eggToast('You can\'t friend yourself.', 'Nice try though.'); return;
+    case 'displayegg': eggToast('Hi, Egg.'); return;
+    case 'snake67': eggToast('67!'); return;
+    case 'merge2048': eggParticles('confetti', 6000); eggToast('2048!'); return;
+    case 'typingegg': eggToast('That word wasn\'t on the screen.'); return;
+    case 'simon15': eggToast('Simon is impressed.'); return;
     case 'luckyrush': eggToast('Double lucky!'); return;
-    case 'voidcrop': return eggCutscene(['The void touched your crop.', 'It\'s worth fifty times as much now.', 'Don\'t look at it too long.'], { title: 'VOIDTOUCHED', cls: 'egg-cut-red' });
-    case 'samegarden': eggToast('Monoculture.', 'Twelve of the same. Bold.'); return;
-    case 'lastegg': return eggCutscene(['That\'s 49.', 'This one is free.', 'You found them all.'], { title: 'THE LAST EGG', cls: 'egg-cut-red' });
+    case 'voidcrop': return eggCutscene(['That crop got touched by the void.', 'It\'s worth 50 times more now.'], { title: 'VOIDTOUCHED', cls: 'egg-cut-red' });
+    case 'samegarden': eggToast('Twelve of the same seed.', 'Bold choice.'); return;
+    case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
 // ---- the triggers that live here (the rest are in the code they belong to: search for eggFind) ----
@@ -18663,18 +18681,35 @@ function eggCount(id, need, ms) {
   eggTimes[id] = arr;
   if (arr.length >= need) { eggTimes[id] = []; eggFind(id); }
 }
+// The key eggs work everywhere, text boxes included. Outside a text box the keys pressed are followed; inside one, what
+// was just typed is checked instead (that also works with phone keyboards, which don't say which key was pressed).
+// Inside a text box an egg you've already found stays quiet, so a message that says "hello" or "party" isn't a surprise
+// every time. Password boxes are never looked at.
+const eggTextBox = el => !!el && !el.disabled && (el.isContentEditable || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && /^(text|search|)$/i.test(el.type || '')));
 document.addEventListener('keydown', e => {
   if (!myUid || e.repeat) return;
   if (e.ctrlKey && e.altKey && !e.shiftKey && e.code === 'KeyO') { eggFind('ctrlalto'); return; }
-  if (isTypingTarget(document.activeElement)) return;
   if (e.key === 'Shift') { const now = Date.now(); eggShifts = eggShifts.filter(t => now - t < 3000).concat(now); if (eggShifts.length >= 10) { eggShifts = []; eggFind('shift10'); } return; }
   eggCodeBuf = eggCodeBuf.concat(e.code).slice(-12);
   for (const [id, seq] of Object.entries(EGG_SEQS)) if (eggCodeBuf.slice(-seq.length).join() === seq.join()) { eggCodeBuf = []; eggFind(id); return; }
+  const at = document.activeElement;
+  if (eggTextBox(at) || (at && at.type === 'password')) return;   // (words typed in a text box: see 'input' below)
   if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
     eggKeyBuf = (eggKeyBuf + e.key.toLowerCase()).slice(-12);
     for (const [id, w] of Object.entries(EGG_WORDS)) if (eggKeyBuf.endsWith(w)) { eggKeyBuf = ''; eggFind(id); return; }
   }
 });
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (!myUid || !eggTextBox(el)) return;
+  const text = el.isContentEditable ? (el.textContent || '') : String(el.value || '').slice(0, el.selectionStart != null ? el.selectionStart : undefined);
+  const tail = text.slice(-12).toLowerCase();
+  for (const [id, w] of Object.entries(EGG_WORDS)) {
+    if (!tail.endsWith(w)) continue;
+    if (!eggFoundSet.has(id)) eggFind(id);
+    return;
+  }
+}, true);
 document.addEventListener('click', e => {
   if (!myUid || !e.target || !e.target.closest) return;
   const t = e.target;
@@ -18701,7 +18736,8 @@ function eggHashCheck() {
 }
 window.addEventListener('hashchange', eggHashCheck);
 // The browser console.
-try { window.frixion = Object.freeze({ egg() { if (!myUid) return 'Log in first.'; eggFind('console'); return 'You found the console egg. Hello, hacker.'; } }); } catch (e) {}
+try { window.frixion = Object.freeze({ egg() { if (!myUid) return 'Log in first.'; eggFind('console'); return 'You found the console egg. Hi, hacker.'; } }); } catch (e) {}
+try { console.log('%cFrixion', 'font: 700 16px sans-serif; color: #5865f2', '\nPoking around? Try frixion.egg() in here. Some people also put #egg at the end of the address.'); } catch (e) {}
 // The clock (3 AM, 11:11, midnight) and the screensaver, checked every 20 seconds while Frixion is showing.
 let eggLastInput = Date.now();
 ['mousemove', 'keydown', 'pointerdown', 'wheel', 'touchstart'].forEach(t => window.addEventListener(t, () => { eggLastInput = Date.now(); }, { capture: true, passive: true }));
@@ -18713,16 +18749,45 @@ setInterval(() => {
   if (h === 0 && m < 2) eggFindOnce('midnight');
   if (Date.now() - eggLastInput > 10 * 60000 && !eggSaverOn && !document.querySelector('.egg-cut')) eggFind('idle10');
 }, 20000);
-// Settings, My Account: how many you've found.
+// Settings, My Account: how many you've found. Clicking (or tapping) one shows how you got it, or a small hint.
 function renderEggSettings() {
   const el = $('egg-block');
   if (!el || !myProfile) return;
   const found = EGGS.filter(e => eggFoundSet.has(e.id));
   el.innerHTML = `<div class="egg-head"><span class="egg-title">Easter Eggs</span><span class="egg-count">${found.length} of ${EGGS.length} found</span></div>
-    <div class="egg-sub">${myProfile.cracker ? 'You found every one. That red Cracker tag next to your name is yours.' : `They're hidden all over Frixion. Each pays Orbs the first time you find it (more for harder ones), and finding all ${EGGS.length} puts a red Cracker tag next to your name.`}</div>
+    <div class="egg-sub">${myProfile.cracker ? 'You found all of them. The red Cracker tag is yours.' : `They're hidden around Frixion. Each one gives Orbs the first time you find it, and harder ones give more. Find all ${EGGS.length} for a red Cracker tag next to your name.`}</div>
     <div class="egg-grid">${EGGS.map(e => eggFoundSet.has(e.id)
-      ? `<span class="egg-chip found t-${e.t}" title="${esc(e.how)}">${esc(e.name)}</span>`
-      : `<span class="egg-chip t-${e.t}" title="${esc(EGG_TIERS[e.t].name)}: ${EGG_TIERS[e.t].orbs} Orbs">???</span>`).join('')}</div>`;
+      ? `<button type="button" class="egg-chip found t-${e.t}" data-egg="${e.id}">${esc(e.name)}</button>`
+      : `<button type="button" class="egg-chip t-${e.t}" data-egg="${e.id}">???</button>`).join('')}</div>
+    <div class="egg-hint" id="egg-hint">Click a ??? for a hint.</div>`;
+  el.querySelectorAll('.egg-chip[data-egg]').forEach(b => {
+    b.onclick = () => {
+      const e = EGG_BY_ID[b.dataset.egg], got = eggFoundSet.has(e.id), tier = EGG_TIERS[e.t];
+      $('egg-hint').textContent = got ? `${e.name}: ${e.how}` : `Hint: ${e.hint} (${tier.name}, ${tier.orbs} Orbs)`;
+    };
+  });
+}
+// Settings > Easter Eggs, for the Owner only: every egg, exactly how to get it, and the codes.
+const EGG_GROUPS = [
+  ['Keys (in a text box or not)', ['oldcode', 'frixion', 'hello', 'esrever', 'gravity', 'letitsnow', 'party', 'greencode', 'pi', 'shift10', 'spin', 'ctrlalto']],
+  ['Clicking', ['logo10', 'avatar7', 'version5', 'orbchip', 'settings10', 'typingclick', 'hiddendot', 'credits', 'emptypins']],
+  ['Chat', ['xyzzy', 'eggmsg']],
+  ['Codes (in Codes, then Redeem)', ['codeb1', 'codeb2', 'codecracker', 'freeorbs', 'riddle1', 'riddle2', 'riddle3']],
+  ['The clock (your own time)', ['threeam', 'eleveneleven', 'midnight']],
+  ['Everywhere else', ['hashegg', 'console', 'idle10', 'dnd5', 'themehop', 'lightmode', 'quickopen', 'selfadd', 'displayegg']],
+  ['Games', ['snake67', 'merge2048', 'typingegg', 'simon15', 'luckyrush', 'voidcrop', 'samegarden']],
+  ['Last', ['lastegg']],
+];
+function renderEggGuide() {
+  const el = $('egg-guide');
+  if (!el || !realOwner()) return;
+  const total = EGGS.reduce((a, e) => a + EGG_TIERS[e.t].orbs, 0);
+  el.innerHTML = `<div class="eg-sum">You've found ${EGGS.filter(e => eggFoundSet.has(e.id)).length} of ${EGGS.length}. All of them together pay ${total.toLocaleString()} Orbs. Players get a small hint for each one in Settings, My Account.</div>`
+    + EGG_GROUPS.map(([title, ids]) => `<div class="eg-group"><div class="eg-group-title">${esc(title)}</div>${ids.map(id => {
+      const e = EGG_BY_ID[id], tier = EGG_TIERS[e.t];
+      return `<div class="eg-row${eggFoundSet.has(id) ? ' found' : ''}"><div class="eg-top"><span class="eg-name">${esc(e.name)}</span><span class="eg-tier t-${e.t}">${tier.name}, ${tier.orbs} Orbs</span>${eggFoundSet.has(id) ? '<span class="eg-found">Found</span>' : ''}</div>`
+        + `<div class="eg-how">${esc(e.how)}</div>${e.code ? `<div class="eg-code">Code: <code>${esc(e.code)}</code></div>` : ''}</div>`;
+    }).join('')}</div>`).join('');
 }
 
 // ============================================================
