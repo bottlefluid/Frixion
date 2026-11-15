@@ -189,7 +189,7 @@ const STATUSES = [
   { key: 'dnd', label: 'Do Not Disturb' },
   { key: 'offline', label: 'Offline' },
 ];
-// Do Not Disturb (Settings > Activity Status, v4.60): no ping sound, no pop-ups and no phone or computer notifications
+// Do Not Disturb (Settings > Notifications since v4.63, Activity Status before): no ping sound, no pop-ups and no phone or computer notifications
 // (functions/api/push skips you too), and everyone sees a red Do Not Disturb icon instead of online or idle.
 function dndOn() { return !!(myProfile && myProfile.dnd === true); }
 
@@ -528,6 +528,18 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.63', date: '2026-11-15', title: 'The Casino',
+    notes: [
+      'There\'s a Casino now, right under Shop. 17 games: Crash, Mines, Towers, Crossing, Hi-Lo, Blackjack, Roulette, Dice, Limbo, Coinflip, Rock Paper Scissors, Upgrader, Plinko, Slots, Keno, Cases and the Mega Ticket.',
+      'Frixion\'s server picks every result, so nobody can change the odds. Most games pay back 97% of what\'s bet over time, so you\'ll slowly lose more than you win. Only bet what you\'re fine losing.',
+      'Bets are 10 to 10,000 Orbs, you can play 200 games a day, and one game can pay up to 1,000,000 Orbs. Casino wins don\'t count toward the 20,000 a day from other games.',
+      'Roulette is a real single-zero wheel now, with a full table: numbers, red and black, odd and even, halves, dozens and columns. Undo, Same again and Double are there too.',
+      'Crash can bust right at 1.00x (about 1 round in 25) and never goes past 1000x. You can set it to cash out on its own.',
+      'Mines, Towers, Crossing, Hi-Lo and Blackjack pick up where you left off if you reload.',
+      'Co-Owners now see a Co-Owner Panel. Devices, IP, Purge Perms and one-time passwords are only in the Owner\'s.',
+      'Do Not Disturb moved to Settings, Notifications.',
+      '5 new easter eggs, all to do with the Casino. That makes 55.',
+    ] },
   { v: '4.62', date: '2026-11-14', title: 'Easter eggs',
     notes: [
       '50 easter eggs are hidden around Frixion. You get Orbs the first time you find each one (more for harder ones), and they don\'t count toward the daily limit from games. Find all 50 to get a red Cracker tag next to your name.',
@@ -1677,10 +1689,13 @@ function staffFlagsFromProfile(p) {
 function applyAdminVisibility() {
   const adminEl = $('open-admin-panel');
   const ownerEl = $('open-owner-panel');
-  // The owner sees only "Owner Panel" (it's a strict superset), never both.
+  // The owner sees only "Owner Panel" (it's a strict superset), never both. A Co-Owner's says Co-Owner Panel (v4.63).
   if (adminEl) adminEl.classList.toggle('hidden', !isAdmin || isOwner);
-  if (ownerEl) ownerEl.classList.toggle('hidden', !isOwner);
+  if (ownerEl) { ownerEl.classList.toggle('hidden', !isOwner); ownerEl.textContent = ownerPanelName(); }
 }
+// "Owner Panel" for the Owner, "Co-Owner Panel" for a Co-Owner (who sees the same panel minus the Owner's own tabs:
+// Devices, IP, Purge Perms and one-time passwords).
+function ownerPanelName() { return myProfile && myProfile.owner === true ? 'Owner Panel' : 'Co-Owner Panel'; }
 let profileCache = {};
 let currentServerId = null;
 let currentServerData = null;
@@ -1923,7 +1938,7 @@ function platformRank(profile) {
   if (profile.op) return 1;
   return 0;
 }
-// The red Cracker tag (v4.62): found all 50 easter eggs. cracker: true is set only by functions/api/admin/egg.
+// The red Cracker tag (v4.62): found every easter egg (50 until v4.63, 55 since). cracker: true is set only by functions/api/admin/egg.
 function crackerTag(profile) { return profile && profile.cracker === true ? '<span class="cracker-tag" title="Found every easter egg">Cracker</span>' : ''; }
 function roleTag(profile) {
   const hidden = profile && (profile.sfMode || (profile.username === myUid && sfMode));   // sfmode hides the staff tag for everyone
@@ -3197,7 +3212,7 @@ function tagNetworks(list) {
 }
 const netTagHTML = x => (x.tag ? ` <span class="net-tag">${esc(x.tag)}</span>` : '');
 async function renderIpsPane() {
-  if (!isOwner) return;
+  if (!realOwner()) return;
   const list = $('ips-list');
   if (!list) return;
   const q = ($('ips-search').value || '').toLowerCase().trim();
@@ -3256,7 +3271,7 @@ async function renderIpDetail(x) {
   if ($('ip-unban-btn')) $('ip-unban-btn').onclick = () => adminUnbanIp(x);
 }
 function adminBanIp(x) {
-  if (!isOwner) { toast('Only the owner can ban networks.', 'error'); return; }
+  if (!realOwner()) { toast('Only the owner can ban networks.', 'error'); return; }
   if (x.id === myIpId) { toast('You can\'t ban the network you\'re on.', 'error'); return; }
   confirmAction({
     title: 'Ban Network',
@@ -3270,7 +3285,7 @@ function adminBanIp(x) {
   });
 }
 async function adminUnbanIp(x) {
-  if (!isOwner) { toast('Only the owner can unban networks.', 'error'); return; }
+  if (!realOwner()) { toast('Only the owner can unban networks.', 'error'); return; }
   try { await db.collection('bannedIps').doc(x.id).delete(); toast('Network unbanned.'); } catch (e) { toast(e.message || 'Could not unban it.', 'error'); }
   renderIpsPane();
 }
@@ -3283,7 +3298,7 @@ const browsersLabel = g => g.browsers.length > 2 ? g.browsers.slice(0, 2).join('
 let deviceGroupsCache = [];
 
 async function renderDevicesPane() {
-  if (!isOwner) return;
+  if (!realOwner()) return;
   const list = $('devices-list');
   if (!list) return;
   const q = ($('devices-search').value || '').toLowerCase().trim();
@@ -3375,7 +3390,7 @@ async function renderDeviceDetail(g, bannedAccounts) {
 }
 
 function adminBanDevice(g, profiles) {
-  if (!isOwner) { toast('Only the owner can ban devices.', 'error'); return; }
+  if (!realOwner()) { toast('Only the owner can ban devices.', 'error'); return; }
   if (g.members.some(m => m.id === myDeviceId || (myHw && m.hw === myHw && hwBannable(m)))) { toast("You can't ban the computer you're using.", 'error'); return; }
   if ((profiles || []).some(p => p && !canManagePlatformUser(p))) { toast("An account on this device outranks you, so it can't be banned.", 'error'); return; }
   const todo = g.members.filter(m => !m.banned), whole = g.members.some(hwBannable);
@@ -3399,7 +3414,7 @@ function adminBanDevice(g, profiles) {
   });
 }
 async function adminUnbanDevice(g) {
-  if (!isOwner) { toast('Only the owner can unban devices.', 'error'); return; }
+  if (!realOwner()) { toast('Only the owner can unban devices.', 'error'); return; }
   try {
     // a virtual machine stays let in (vmAllowed), or it would be banned again the next time it opens Frixion
     await Promise.all(g.members.filter(m => m.banned || (m.vm && !m.vmAllowed)).map(m => db.collection('devices').doc(m.id).update({ banned: false, banReason: '', autoBanned: false, unbannedBy: myUid, unbannedAt: Date.now(), ...(m.vm ? { vmAllowed: true } : {}) })));
@@ -3409,7 +3424,7 @@ async function adminUnbanDevice(g) {
   renderDevicesPane();
 }
 function adminRemoveDeviceEntry(m) {
-  if (!isOwner) { toast('Only the owner can remove devices.', 'error'); return; }
+  if (!realOwner()) { toast('Only the owner can remove devices.', 'error'); return; }
   if (!m) return;
   if (m.banned) { toast('Unban the device before removing its entry.', 'error'); return; }
   if (m.id === myDeviceId) { toast("That's the browser you're using.", 'error'); return; }
@@ -3426,7 +3441,7 @@ function adminRemoveDeviceEntry(m) {
 // Exact duplicates (same browser, same system, same accounts) can only come from one browser having been counted
 // twice, so they are safe to drop. The newest entry is kept, and a banned one is never dropped.
 function adminCleanUpDevices() {
-  if (!isOwner) { toast('Only the owner can clean up devices.', 'error'); return; }
+  if (!realOwner()) { toast('Only the owner can clean up devices.', 'error'); return; }
   const byKey = new Map();
   deviceGroupsCache.forEach(g => g.members.forEach(m => {
     const k = devFp(m) + '|' + [...(m.accounts || [])].sort().join(',');
@@ -4051,6 +4066,7 @@ function initAppForUser() {
       } else { startTermination(tm); return; }
     }
     syncGameState(myProfile);
+    if (typeof casinoProfileChanged === 'function') casinoProfileChanged();   // the Casino's balance and games left (casino.js)
     maybeShowAppPrompt();
     refreshPushSub();
     maybeAskPush();
@@ -4629,6 +4645,8 @@ function hideMainPageViews() {
   $('quests-view').classList.add('hidden');
   $('codes-view').classList.add('hidden');
   $('shop-view').classList.add('hidden');
+  $('casino-view').classList.add('hidden');
+  if (typeof casinoLeave === 'function') casinoLeave();   // the Casino (casino.js) stops its timers
 }
 
 function showHomeView() {
@@ -4687,6 +4705,7 @@ function openHomeMainView(which) {
   else if (which === 'quests') { currentView = 'quests'; $('chat-header-title').textContent = 'Games'; $('quests-view').classList.remove('hidden'); renderQuests(); }
   else if (which === 'codes') { currentView = 'codes'; $('chat-header-title').textContent = 'Codes'; $('codes-view').classList.remove('hidden'); }
   else if (which === 'shop') { currentView = 'shop'; $('chat-header-title').textContent = 'Shop'; $('shop-view').classList.remove('hidden'); openShop(); }
+  else if (which === 'casino') { currentView = 'casino'; $('chat-header-title').textContent = 'Casino'; $('casino-view').classList.remove('hidden'); if (typeof openCasino === 'function') openCasino(); }
   setMobilePane('chat');
   renderDMRows();
 }
@@ -12339,6 +12358,7 @@ const YOU_ICONS = {
   friends: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="8" r="3.600"/><path d="M2.500 20c0-3.700 2.900-6.300 6.500-6.300s6.500 2.600 6.500 6.300H2.500Z"/><circle cx="17.200" cy="9" r="2.700"/><path d="M16.800 13.800c2.800.2 4.700 2.600 4.700 6.200h-4.300c0-2.400-.8-4.500-2.200-5.800.5-.3 1.200-.4 1.800-.4Z"/></svg>',
   shop: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.500 7V6a3.500 3.500 0 0 1 7 0v1H19a1 1 0 0 1 1 1l-1 12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1L4 8a1 1 0 0 1 1-1h3.500Zm2 0h3V6a1.500 1.500 0 0 0-3 0v1Z"/></svg>',
   codes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.500 5.500l-3 13"/></svg>',
+  casino: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 3h10a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4Zm1.500 4a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3Zm7 0a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3ZM12 10.500a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3ZM8.500 14a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3Zm7 0a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3Z"/></svg>',
 };
 function renderMobileYou() {
   const box = $('mobile-you-page');
@@ -12349,7 +12369,7 @@ function renderMobileYou() {
   const sub = myAct ? activityLine(myAct) : (st ? st.label : 'Online');
   const row = (pane, label, icon) => `<button type="button" class="myou-row" data-ypane="${pane}"><span class="myou-ico">${YOU_ICONS[icon]}</span><span class="myou-label">${label}</span><svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>`;
   const staff = [];
-  if (!$('open-owner-panel').classList.contains('hidden')) staff.push(`<button type="button" class="myou-row" data-ystaff="owner"><span class="myou-ico">${YOU_ICONS.shield}</span><span class="myou-label">Owner Panel</span><svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>`);
+  if (!$('open-owner-panel').classList.contains('hidden')) staff.push(`<button type="button" class="myou-row" data-ystaff="owner"><span class="myou-ico">${YOU_ICONS.shield}</span><span class="myou-label">${ownerPanelName()}</span><svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>`);
   else if (!$('open-admin-panel').classList.contains('hidden')) staff.push(`<button type="button" class="myou-row" data-ystaff="admin"><span class="myou-ico">${YOU_ICONS.shield}</span><span class="myou-label">Admin Panel</span><svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>`);
   // Friends, the Shop, Quests and Codes sit here on a phone, the way Discord keeps its extras out of the Messages screen.
   const reqs = (p.incomingRequests || []).length;
@@ -12361,7 +12381,7 @@ function renderMobileYou() {
       <svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
     </button>
     <div class="mpage-label">Frixion</div>
-    <div class="myou-group">${page('friends', 'Friends', 'friends', reqs)}${page('shop', 'Shop', 'shop')}${page('quests', 'Games', 'activity')}${page('codes', 'Codes', 'codes')}</div>
+    <div class="myou-group">${page('friends', 'Friends', 'friends', reqs)}${page('shop', 'Shop', 'shop')}${page('casino', 'Casino', 'casino')}${page('quests', 'Games', 'activity')}${page('codes', 'Codes', 'codes')}</div>
     <div class="mpage-label">Settings</div>
     <div class="myou-group">${row('pane-account', 'My Account', 'account')}${row('pane-activity', 'Activity Status', 'activity')}${row('pane-premium', 'Frixion Premium', 'premium')}${row('pane-themes', 'Themes', 'themes')}${row('pane-accessibility', 'Accessibility', 'access')}${row('pane-notifications', 'Notifications', 'notify')}${row('pane-keyboard', 'Keyboard', 'keyboard')}</div>
     <div class="mpage-label">App</div>
@@ -13333,15 +13353,16 @@ function openAdminEntry() {
 
 let adminSelectedUser = null;
 function openAdminPanel() {
-  $('admin-panel-title').textContent = isOwner ? 'Owner Panel' : 'Admin Panel';
+  $('admin-panel-title').textContent = isOwner ? ownerPanelName() : 'Admin Panel';
   // Players and System Hub are two faces of the same panel — the owner sees
   // System Hub in Players' place (it does everything Players did, plus the
   // owner-only actions), never both at once.
   $('admin-tab-players').classList.toggle('hidden', isOwner);
   $('admin-tab-systemhub').classList.toggle('hidden', !isOwner);
-  $('admin-tab-devices').classList.toggle('hidden', !isOwner);
-  $('admin-tab-ips').classList.toggle('hidden', !isOwner);
-  $('admin-tab-purgeperms').classList.toggle('hidden', !realOwner());   // the Owner only, not Co-Owners
+  // Devices, IP and Purge Perms are the Owner's alone (v4.63: Co-Owners don't see them, and the rules refuse them too)
+  $('admin-tab-devices').classList.toggle('hidden', !realOwner());
+  $('admin-tab-ips').classList.toggle('hidden', !realOwner());
+  $('admin-tab-purgeperms').classList.toggle('hidden', !realOwner());
   adminSelectedDevice = null; adminSelectedIp = null;
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('on'));
   document.querySelectorAll('.admin-pane').forEach(p => p.classList.add('hidden'));
@@ -15163,7 +15184,7 @@ async function renderAdminActions() {
         <button class="btn-accent-inline slim" id="admin-redirect-btn">Redirect</button>
       </div>
     </div>
-    <div class="admin-block">
+    ${realOwner() ? `<div class="admin-block">
       <div class="ab-title">Password</div>
       <div class="ab-note" id="admin-pass-note" style="opacity:.7;font-size:12px"></div>
       <div class="ab-row" style="margin-top:8px">
@@ -15171,9 +15192,9 @@ async function renderAdminActions() {
       </div>
       <div id="admin-pass-out"></div>
       <div id="admin-pass-codes"></div>
-    </div>
+    </div>` : ''}
     ${adminItemsBlockHTML(u)}
-    <div id="admin-user-devices"></div>
+    ${realOwner() ? '<div id="admin-user-devices"></div>' : ''}
     <div class="admin-block">
       <div class="ab-title">Danger Zone</div>
       <button class="btn-danger" id="admin-delete-btn">Delete Account</button>
@@ -15193,7 +15214,7 @@ async function renderAdminActions() {
     if (u.op) $('admin-deop-btn').onclick = () => adminSetOp(u.username, false);
     else $('admin-op-btn').onclick = () => adminSetOp(u.username, true);
     $('admin-redirect-btn').onclick = () => adminRedirect(u.username);
-    showPasswordHelp(u.username);
+    if (realOwner()) showPasswordHelp(u.username);
     $('admin-delete-btn').onclick = adminDelete;
     $('admin-fake-delete-btn').onclick = adminFakeDelete;
     wrap.querySelectorAll('[data-rm-item]').forEach(b => { b.onclick = () => adminRemoveItem(u.username, b.dataset.field, b.dataset.id); });
@@ -15204,7 +15225,7 @@ async function renderAdminActions() {
       wrap.querySelectorAll('.admin-item-row').forEach(r => { const hit = !q || r.textContent.toLowerCase().includes(q); r.hidden = !hit; if (hit) shown++; });
       wrap.querySelector('.admin-items-none').hidden = shown > 0;
     };
-    loadUserDevicesBlock(u.username);
+    if (realOwner()) loadUserDevicesBlock(u.username);
   }
 }
 
@@ -15343,7 +15364,7 @@ function refreshClaimsFor(username) {
 function showPasswordHelp(username) {
   const note = $('admin-pass-note'), btn = $('admin-pass-btn');
   if (!note || !btn) return;
-  if (!isOwner) { note.textContent = 'Only the Owner can help with passwords.'; return; }
+  if (!realOwner()) { note.textContent = 'Only the Owner can help with passwords.'; return; }
   note.textContent = 'Makes a code they type in the password box. It logs them in once, then it\'s used up. Their own password doesn\'t change.';
   btn.disabled = false;
   btn.onclick = () => confirmAction({
@@ -18443,7 +18464,7 @@ const EGGS = [
   { id: 'hashegg', t: 'm', name: 'Address Unknown', how: 'Open frixionbeta.pages.dev/#egg (#egg at the end of the address).', hint: 'Even the address bar can hold an egg.' },
   { id: 'console', t: 'h', name: 'Hacker Voice', how: 'Press F12, open the Console and run frixion.egg()', hint: 'Developers have their own place to look. F12.' },
   { id: 'idle10', t: 'm', name: 'Screensaver', how: 'Leave Frixion open without touching it for 10 minutes.', hint: 'Do nothing for a while.' },
-  { id: 'dnd5', t: 'm', name: 'Disturbed', how: 'Settings > Activity Status: turn Do Not Disturb on and off 5 times within 30 seconds.', hint: 'Keep disturbing Do Not Disturb.' },
+  { id: 'dnd5', t: 'm', name: 'Disturbed', how: 'Settings > Notifications: turn Do Not Disturb on and off 5 times within 30 seconds.', hint: 'Keep disturbing Do Not Disturb.' },
   { id: 'themehop', t: 'm', name: 'Can\'t Decide', how: 'Switch between the free themes in the Shop 5 times within a minute.', hint: 'Can\'t pick a theme? Keep switching.' },
   { id: 'lightmode', t: 'e', name: 'My Eyes', how: 'Use the free Light theme in the Shop.', hint: 'Try the brightest theme.' },
   { id: 'quickopen', t: 'e', name: 'Speedrunner', how: 'Make a Quick Open shortcut in Settings and use it.', hint: 'Make a shortcut, then use it.' },
@@ -18456,7 +18477,13 @@ const EGGS = [
   { id: 'luckyrush', t: 'h', name: 'Double Lucky', how: 'In Cookie Clicker, catch a Lucky Crumb while a Rush is going.', hint: 'Get lucky while you\'re already rushing.' },
   { id: 'voidcrop', t: 'v', name: 'Touched by the Void', how: 'Harvest a Voidtouched crop in Grow a Garden (Null Eclipse weather; the Owner panel can start one).', hint: 'The rarest weather leaves a mark.' },
   { id: 'samegarden', t: 'h', name: 'Monoculture', how: 'Unlock all 12 garden plots and plant the same seed in every one.', hint: 'Twelve plots, one kind of seed.' },
-  { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found the other 49. Gives the Cracker tag.', hint: 'Find all the others.' },
+  // v4.63: the Casino
+  { id: 'zerohero', t: 'm', name: 'Zero Hero', how: 'In Roulette, have a chip on 0 when the ball lands on 0.', hint: 'In Roulette, nothing can pay 36 to 1.' },
+  { id: 'onepointoh', t: 'e', name: 'Grounded', how: 'Have a bet in when Crash busts right at 1.00x (about 1 round in 25).', hint: 'Some Crash rounds never leave the ground.' },
+  { id: 'triple', t: 'm', name: 'Triple', how: 'Line up three of a kind in Slots.', hint: 'Three of anything in a row.' },
+  { id: 'tenx', t: 'h', name: 'Ten Times Over', how: 'Win 10 times your bet or more in one Casino game.', hint: 'Walk out of the Casino with ten times what you put in.' },
+  { id: 'jackpot', t: 'e', name: 'Jackpot', how: 'Type "jackpot" anywhere, text boxes too.', hint: 'Say the word every gambler wants to hear.' },
+  { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
 let eggFoundSet = new Set(), eggsLoaded = false;
@@ -18487,7 +18514,7 @@ async function eggFind(id, answer) {
   const r = claim && await claim;
   if (!r) return;
   if (!r.already) eggToast('Easter egg found: ' + egg.name, `+${fmtOrbs(r.orbs || EGG_TIERS[egg.t].orbs)} Orbs · ${eggFoundSet.size} of ${EGGS.length} found`);
-  if (r.cracker) setTimeout(() => eggCutscene(['You found all 50 eggs.', 'Check next to your name.'], { title: 'CRACKER', cls: 'egg-cut-red' }), 2500);
+  if (r.cracker) setTimeout(() => eggCutscene([`You found all ${EGGS.length} eggs.`, 'Check next to your name.'], { title: 'CRACKER', cls: 'egg-cut-red' }), 2500);
   else if (eggFoundSet.size === EGGS.length - 1 && !eggFoundSet.has('lastegg')) setTimeout(() => eggFind('lastegg'), 4500);
 }
 async function eggClaim(egg, answer) {
@@ -18663,11 +18690,16 @@ function eggEffect(id, first) {
     case 'luckyrush': eggToast('Double lucky!'); return;
     case 'voidcrop': return eggCutscene(['That crop got touched by the void.', 'It\'s worth 50 times more now.'], { title: 'VOIDTOUCHED', cls: 'egg-cut-red' });
     case 'samegarden': eggToast('Twelve of the same seed.', 'Bold choice.'); return;
+    case 'zerohero': eggToast('Zero!', 'Nobody bets on zero. You did.'); return;
+    case 'onepointoh': eggToast('That one never took off.'); return;
+    case 'triple': eggToast('Three in a row.'); return;
+    case 'tenx': eggParticles('confetti', 5000); eggToast('Ten times over!'); return;
+    case 'jackpot': eggBigWord('JACKPOT'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
 // ---- the triggers that live here (the rest are in the code they belong to: search for eggFind) ----
-const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159' };
+const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot' };
 const EGG_SEQS = {
   oldcode: ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'KeyB', 'KeyA'],
   spin: ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'],
@@ -18776,6 +18808,7 @@ const EGG_GROUPS = [
   ['The clock (your own time)', ['threeam', 'eleveneleven', 'midnight']],
   ['Everywhere else', ['hashegg', 'console', 'idle10', 'dnd5', 'themehop', 'lightmode', 'quickopen', 'selfadd', 'displayegg']],
   ['Games', ['snake67', 'merge2048', 'typingegg', 'simon15', 'luckyrush', 'voidcrop', 'samegarden']],
+  ['Casino (v4.63)', ['zerohero', 'onepointoh', 'triple', 'tenx', 'jackpot']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {
@@ -18799,7 +18832,7 @@ function renderEggGuide() {
 // ============================================================
 const QO_MAX = 30;
 const QO_KINDS = [
-  { k: 'friends', label: 'Friends' }, { k: 'shop', label: 'Shop' }, { k: 'codes', label: 'Codes' },
+  { k: 'friends', label: 'Friends' }, { k: 'shop', label: 'Shop' }, { k: 'casino', label: 'Casino' }, { k: 'codes', label: 'Codes' },
   { k: 'games', label: 'Games' }, { k: 'settings', label: 'Settings' },
   { k: 'dm', label: 'A DM', pick: true }, { k: 'gdm', label: 'A group chat', pick: true },
   { k: 'server', label: 'A server', pick: true }, { k: 'game', label: 'A game', pick: true },
@@ -18910,7 +18943,7 @@ function qoOpen(x) {
   if (x.t !== 'settings') closeModal('settings-modal');
   const gone = () => toast('That isn\'t there any more. Change the shortcut in Settings > Quick Open.', 'error');
   if (x.t === 'settings') { openSettings(); return; }
-  if (['friends', 'shop', 'codes', 'games'].includes(x.t)) { goHomePage(x.t === 'games' ? 'quests' : x.t); return; }
+  if (['friends', 'shop', 'casino', 'codes', 'games'].includes(x.t)) { goHomePage(x.t === 'games' ? 'quests' : x.t); return; }
   if (x.t === 'dm') {
     const d = (window.__myDMs || []).find(c => c.id === x.id);
     if (!d) { gone(); return; }

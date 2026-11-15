@@ -21,6 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="style.css?v=109">
+<link rel="stylesheet" href="casino.css?v=1">
 </head>
 <body>
 
@@ -227,6 +228,10 @@
           <span class="hn-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l-1 12H7L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg></span>
           <span>Shop</span>
         </div>
+        <div class="home-nav-item" data-home-view="casino">
+          <span class="hn-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="15.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="8.5" cy="15.5" r="1.2" fill="currentColor"/></svg></span>
+          <span>Casino</span>
+        </div>
       </div>
       <div class="side-section-label">
         <span>Direct Messages</span>
@@ -394,6 +399,8 @@
         <div class="shop-pane hidden" id="shop-pane-profile_frames"></div>
       </div>
     </div>
+
+    <div id="casino-view" class="hidden main-page-view"><div id="casino-root"></div></div>
 
     <div id="chat-view" class="hidden" style="display:contents;">
       <div id="messages"></div>
@@ -957,13 +964,6 @@
         <p class="desc">Frixion shows your friends what you're doing, all on its own. It appears on your profile, in the Friends list and on the phone Home screen, and it goes away when you leave Frixion.</p>
         <div class="setting-row">
           <div class="setting-row-text">
-            <div class="setting-row-title">Do Not Disturb</div>
-            <div class="setting-row-desc">No Frixion notifications at all: no ping sound, no pop-ups, and nothing on your phone or computer. Everyone sees a red Do Not Disturb icon on your picture.</div>
-          </div>
-          <label class="toggle-switch"><input type="checkbox" id="dnd-toggle"><span class="toggle-slider"></span></label>
-        </div>
-        <div class="setting-row">
-          <div class="setting-row-text">
             <div class="setting-row-title">Share my activity</div>
             <div class="setting-row-desc">Turn this off and nothing about what you're doing is shown to anyone.</div>
           </div>
@@ -1124,6 +1124,13 @@
       <div class="settings-pane hidden" id="pane-notifications">
         <h2>Notifications</h2>
         <p class="desc">Like Discord, Frixion tells you about direct messages, group messages and messages that mention you (or @everyone) while you aren't looking at it. Muted chats stay quiet.</p>
+        <div class="setting-row">
+          <div class="setting-row-text">
+            <div class="setting-row-title">Do Not Disturb</div>
+            <div class="setting-row-desc">No Frixion notifications at all: no ping sound, no pop-ups, and nothing on your phone or computer. Everyone sees a red Do Not Disturb icon on your picture.</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="dnd-toggle"><span class="toggle-slider"></span></label>
+        </div>
         <div class="setting-row">
           <div class="setting-row-text">
             <div class="setting-row-title">Show notifications</div>
@@ -1807,6 +1814,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=145"></script>
+<script defer src="script.js?v=146"></script>
+<script defer src="casino.js?v=1"></script>
 </body>
 </html>
