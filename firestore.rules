@@ -42,6 +42,8 @@ service cloud.firestore {
     function isWho(m, name) { return m.ok && m.name == name; }
     function isStaff(m) { return m.ok && m.rank >= 1; }
     function isOwnerLevel(m) { return m.ok && m.rank >= 2; }
+    // The Owner alone, not Co-Owners (v4.63): devices, networks and one-time passwords.
+    function isTheOwner(m) { return m.ok && m.rank == 3; }
     // Banned and muted accounts can still read, but can't post.
     function canPost(m) {
       let now = request.time.toMillis();
@@ -93,7 +95,7 @@ service cloud.firestore {
       allow create: if signedIn() && !exists(acctPath())
         && request.resource.data.get('username', '') == username
         && request.resource.data.get('authUid', '') == request.auth.uid
-        && !request.resource.data.keys().hasAny(['password', 'owner', 'coowner', 'terminated', 'redirectUrl', 'redirectNonce', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker'])
+        && !request.resource.data.keys().hasAny(['password', 'owner', 'coowner', 'terminated', 'redirectUrl', 'redirectNonce', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker', 'casino'])
         && request.resource.data.get('op', false) == false
         && request.resource.data.get('banned', false) == false
         && request.resource.data.get('premiumUntil', null) == null
@@ -129,9 +131,10 @@ service cloud.firestore {
     }
     // Your own profile: anything except your rank, sign-in, bans and mutes. A few staff-set fields may only be cleared.
     // cracker (v4.62) is the Cracker tag for finding every easter egg: only functions/api/admin/egg (or Co-Owners) set it.
+    // casino (v4.63) is the Casino's record (games today, the game going on, totals): only functions/api/admin/casino.
     function selfEdit(m, k, username) {
       return m.name == username
-        && !k.hasAny(['authUid', 'owner', 'coowner', 'op', 'username', 'createdAt', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker'])
+        && !k.hasAny(['authUid', 'owner', 'coowner', 'op', 'username', 'createdAt', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker', 'casino'])
         && (!k.hasAny(['banned', 'banReason', 'bannedUntil']) || clearingExpiredBan())
         && (!k.hasAny(['redirectUrl', 'redirectNonce']) || !request.resource.data.keys().hasAny(['redirectUrl', 'redirectNonce']))
         && (!k.hasAny(['terminated']) || !('terminated' in request.resource.data))
@@ -277,10 +280,10 @@ service cloud.firestore {
 
     // ---------- whole-computer bans ----------
     // A banned computer's hardware fingerprint (adminBanDevice()). Every browser and app on that computer checks it before
-    // anyone signs in, so it can be read by its exact id (a hash, which nobody can list); only the Owner and Co-Owners set it.
+    // anyone signs in, so it can be read by its exact id (a hash, which nobody can list); only the Owner sets it (Co-Owners could until v4.63).
     match /bannedHw/{hw} {
       allow get: if true;
-      allow list, write: if isOwnerLevel(who());
+      allow list, write: if isTheOwner(who());
     }
 
     // ---------- device bans ----------
@@ -289,9 +292,9 @@ service cloud.firestore {
       allow list: if deviceList(who());
       allow create: if deviceCreate(who(), id);
       allow update: if deviceUpdate(who());
-      allow delete: if isOwnerLevel(who());
+      allow delete: if isTheOwner(who());
     }
-    function deviceList(m) { return m.ok && (m.rank >= 2 || m.name in resource.data.get('accounts', [])); }
+    function deviceList(m) { return m.ok && (m.rank == 3 || m.name in resource.data.get('accounts', [])); }
     function deviceCreate(m, id) {
       return m.ok && request.resource.data.get('id', '') == id
         && request.resource.data.get('banned', false) == false
@@ -299,8 +302,8 @@ service cloud.firestore {
         && request.resource.data.get('accounts', []) == [m.name];
     }
     // Anyone may record their own visit or ban their own device (the ban-evasion and virtual machine checks ban
-    // themselves). The Owner and Co-Owners only ban, unban and let a virtual machine in (vmAllowed) on others' devices
-    // (v4.55): they can't add anyone to a device or rewrite what it says about itself.
+    // themselves). The Owner only bans, unbans and lets a virtual machine in (vmAllowed) on others' devices (v4.55;
+    // Co-Owners could too until v4.63): never adding anyone to a device or rewriting what it says about itself.
     function deviceUpdate(m) {
       let k = changed();
       return m.ok
@@ -311,7 +314,7 @@ service cloud.firestore {
           && (!k.hasAny(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned', 'unbannedBy', 'unbannedAt'])
               || (resource.data.get('banned', false) == false && request.resource.data.get('banned', false) == true
                   && k.hasOnly(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned']))))
-          || (m.rank >= 2 && k.hasOnly(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned', 'unbannedBy', 'unbannedAt', 'vmAllowed'])));
+          || (m.rank == 3 && k.hasOnly(['banned', 'banReason', 'bannedBy', 'bannedAt', 'autoBanned', 'unbannedBy', 'unbannedAt', 'vmAllowed'])));
     }
 
     // ---------- one-time passwords (v4.55) ----------
@@ -319,18 +322,19 @@ service cloud.firestore {
     // (functions/api/admin/redeem). Only a code's SHA-256 is kept (the id), never the code. The Owner panel counts and
     // cancels unused ones; nothing makes them from a page.
     match /loginCodes/{id} {
-      allow read, delete: if isOwnerLevel(who());
+      allow read, delete: if isTheOwner(who());
     }
 
     // ---------- network addresses (v4.55) ----------
     // Which accounts and devices used each address (ips/<id>, written by functions/api/admin/seen), and banned ones
     // (bannedIps/<id>, which functions/api/admin/ip checks before anyone signs in). Ids, never the addresses.
+    // The Owner's alone since v4.63 (Co-Owners don't have the IP tab).
     match /ips/{id} {
-      allow read: if isOwnerLevel(who());
+      allow read: if isTheOwner(who());
     }
     match /bannedIps/{id} {
-      allow read, delete: if isOwnerLevel(who());
-      allow create, update: if isOwnerLevel(who()) && request.resource.data.keys().hasOnly(['reason', 'by', 'at', 'label'])
+      allow read, delete: if isTheOwner(who());
+      allow create, update: if isTheOwner(who()) && request.resource.data.keys().hasOnly(['reason', 'by', 'at', 'label'])
         && request.resource.data.get('reason', '') is string && request.resource.data.get('reason', '').size() <= 200;
     }
 
