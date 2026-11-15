@@ -93,7 +93,7 @@ service cloud.firestore {
       allow create: if signedIn() && !exists(acctPath())
         && request.resource.data.get('username', '') == username
         && request.resource.data.get('authUid', '') == request.auth.uid
-        && !request.resource.data.keys().hasAny(['password', 'owner', 'coowner', 'terminated', 'redirectUrl', 'redirectNonce', 'mutedUntil', 'muteReason', 'purgePerm'])
+        && !request.resource.data.keys().hasAny(['password', 'owner', 'coowner', 'terminated', 'redirectUrl', 'redirectNonce', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker'])
         && request.resource.data.get('op', false) == false
         && request.resource.data.get('banned', false) == false
         && request.resource.data.get('premiumUntil', null) == null
@@ -128,9 +128,10 @@ service cloud.firestore {
       return m.ok && ((m.name == username && resource.data.get('terminated', {}).get('mode', '') == 'real') || m.rank >= 2);
     }
     // Your own profile: anything except your rank, sign-in, bans and mutes. A few staff-set fields may only be cleared.
+    // cracker (v4.62) is the Cracker tag for finding every easter egg: only functions/api/admin/egg (or Co-Owners) set it.
     function selfEdit(m, k, username) {
       return m.name == username
-        && !k.hasAny(['authUid', 'owner', 'coowner', 'op', 'username', 'createdAt', 'mutedUntil', 'muteReason', 'purgePerm'])
+        && !k.hasAny(['authUid', 'owner', 'coowner', 'op', 'username', 'createdAt', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker'])
         && (!k.hasAny(['banned', 'banReason', 'bannedUntil']) || clearingExpiredBan())
         && (!k.hasAny(['redirectUrl', 'redirectNonce']) || !request.resource.data.keys().hasAny(['redirectUrl', 'redirectNonce']))
         && (!k.hasAny(['terminated']) || !('terminated' in request.resource.data))
@@ -260,6 +261,13 @@ service cloud.firestore {
       allow write: if false;
     }
     function seesOrbDay(m, name) { return m.ok && (m.name == name || m.rank >= 1); }
+    // The easter eggs each account has found (v4.62): functions/api/admin/egg pays each one's Orbs once and writes it
+    // here; nothing else writes it. You (and staff) can read your own, for the count in Settings.
+    match /eggs/{name} {
+      allow get: if seesOrbDay(who(), name);
+      allow list: if isStaff(who());
+      allow write: if false;
+    }
     // The prices of the Shop items built into script.js, which functions/api/admin/buy charges (syncShopPrices() keeps
     // them in step from the Owner's and Co-Owners' apps).
     match /shopPrices/{id} {

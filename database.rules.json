@@ -6,6 +6,19 @@
         ".write": "auth != null && auth.uid === $uid"
       }
     },
+    "typingTo": {
+      "$to": {
+        ".read": "auth != null && auth.uid === $to",
+        "$from": {
+          ".write": "auth != null && auth.uid === $from && auth.token.n != null",
+          ".validate": "newData.hasChildren(['c', 'n', 'at'])",
+          "c": { ".validate": "newData.isString() && newData.val().matches(/^(dm|gdm):[A-Za-z0-9_-]{1,100}$/)" },
+          "n": { ".validate": "newData.val() === auth.token.n" },
+          "at": { ".validate": "newData.val() === now" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
     "ocrng": {
       ".read": "auth != null",
       "roster": {

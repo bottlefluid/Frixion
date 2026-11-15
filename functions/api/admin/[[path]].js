@@ -28,6 +28,12 @@
 //                                 shopPrices/builtin for the ones built into script.js, which the Owner's and Co-Owners'
 //                                 apps keep in step with it (syncShopPrices()).
 //   POST /api/admin/code          { token, code }: redeems an Orbs or Premium code (redeemCodes/<code>).
+//   POST /api/admin/egg           { token, egg, answer? }: an easter egg was found (v4.62). Each of the 50 pays its Orbs once
+//                                 per account, on top of the 20,000 a day from games (the Owner's choice). What each one
+//                                 pays is set here, not in the page. Eggs found by typing a secret (a code or a riddle's
+//                                 answer) also send what was typed, and only the right answer pays (only its SHA-256 is
+//                                 written anywhere). Found eggs are kept in eggs/<username> { found, at }, which only this
+//                                 writes (firestore.rules); the 50th puts cracker: true on the profile (the Cracker tag).
 //
 // SETUP, once: the service account the other functions use (frixion-functions) also needs the role "Firebase
 // Authentication Admin": Google Cloud > IAM & Admin > IAM > the pencil next to frixion-functions > Add another role.
@@ -57,6 +63,7 @@ export async function onRequest({ request, env, params }) {
     if (route === 'earn' && request.method === 'POST') return json(await earn(env, await request.json().catch(() => ({}))));
     if (route === 'buy' && request.method === 'POST') return json(await buy(env, await request.json().catch(() => ({}))));
     if (route === 'code' && request.method === 'POST') return json(await redeemCode(env, await request.json().catch(() => ({}))));
+    if (route === 'egg' && request.method === 'POST') return json(await findEgg(env, await request.json().catch(() => ({}))));
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
     if (e instanceof Fail) return json({ error: e.message }, e.status);
@@ -434,6 +441,61 @@ async function buy(env, { token, cat, id }) {
       currentDocument: { updateTime: prof.updateTime },
     }]);
     if (done) return { ok: true, price, orbs: orbsAfter(done, 0) };
+  }
+  fail(409, 'Frixion is busy. Try again.');
+}
+
+// Easter eggs (v4.62): the 50, and how hard each is to find (e easy, m medium, h hard, v very hard, l legendary), which
+// sets its Orbs. [tier, hash] for the ones found by typing a secret: the SHA-256 of "frixion-egg:" + the answer in capitals
+// with only letters and digits kept (eggHash). The same list, with names and how each is found, is EGGS in script.js.
+const EGG_ORBS = { e: 100, m: 250, h: 500, v: 1000, l: 2500 };
+const EGGS = {
+  oldcode: 'm', frixion: 'e', hello: 'e', esrever: 'm', gravity: 'm', letitsnow: 'e', party: 'e', greencode: 'm', shift10: 'e',
+  ctrlalto: 'm', spin: 'm', pi: 'h', logo10: 'e', avatar7: 'm', version5: 'e', orbchip: 'm', settings10: 'm', typingclick: 'h',
+  hiddendot: 'h', credits: 'h', emptypins: 'e', eggmsg: 'e', threeam: 'h', eleveneleven: 'm', midnight: 'h', hashegg: 'm',
+  console: 'h', idle10: 'm', dnd5: 'm', themehop: 'm', lightmode: 'e', quickopen: 'e', selfadd: 'e', displayegg: 'm',
+  snake67: 'm', merge2048: 'v', typingegg: 'e', simon15: 'h', luckyrush: 'h', voidcrop: 'v', samegarden: 'h', lastegg: 'l',
+  xyzzy: ['m', '7d76c6d11ed06a3e671afa826c4f88f4e8227fdef446cbd576a3428967e45af9'],
+  codeb1: ['e', '4f3cd88dc035fd4d04dda074fd7ced1722751824644c1a27a700dfd5d06ba19e'],
+  codeb2: ['e', 'c886bb737cc711b2dfcb069ea8179dc430661db13a38113ddf718b9098f653c7'],
+  codecracker: ['m', '9272bb2cd0bf657e4d7fa917a2677e687e6f7c70df391b3c1ec399bdc8f407db'],
+  freeorbs: ['e', 'adb07b3f3ea4d065e0dba64721a9d7cba035856b4c7acd071322245a919cb619'],
+  riddle1: ['h', '45da9aba60eb46f8346b9b3dfe89d2861ce4b509b9640c95d43909aae9b0dbae'],
+  riddle2: ['v', 'b9565c29fb4549d0c32b53de11180eabe4d22f4aca067e5aa132f397b7363d82'],
+  riddle3: ['l', '78be81c5a939aa73a905369bd86a8616a912917ac1612936a08c310482a53e7d'],
+};
+const EGG_COUNT = Object.keys(EGGS).length;
+async function eggHash(answer) {
+  const a = String(answer == null ? '' : answer).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 64);
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('frixion-egg:' + a));
+  return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function findEgg(env, { token, egg: id, answer }) {
+  const me = await caller(env, token);
+  const def = typeof id === 'string' && own(EGGS, id) ? [].concat(EGGS[id]) : null;
+  if (!def) fail(404, 'That isn\'t an egg.');
+  slowDown('egg:' + me.name, 30);
+  if (def[1] && await eggHash(answer) !== def[1]) fail(403, 'That isn\'t it.');
+  const orbs = EGG_ORBS[def[0]];
+  for (let i = 0; i < 6; i++) {
+    const [prof, rec] = await fsGetMany(env, [`users/${me.name}`, `eggs/${me.name}`]);
+    mine(prof, me);
+    const found = rec && Array.isArray(rec.data.found) ? rec.data.found.filter(x => typeof x === 'string' && own(EGGS, x)) : [];
+    if (found.includes(id)) return { ok: true, already: true, found, total: EGG_COUNT };
+    if (id === 'riddle2' && !found.includes('riddle1')) fail(403, 'Solve the first riddle first.');
+    if (id === 'riddle3' && !found.includes('riddle2')) fail(403, 'Solve the second riddle first.');
+    if (id === 'lastegg' && found.length < EGG_COUNT - 1) fail(403, 'Not yet.');
+    const now = [...new Set([...found, id])], all = now.length >= EGG_COUNT;
+    // paid once: only if the list is still what was read (or still missing)
+    const done = await fsCommit(env, [
+      { update: { name: docName(env, `eggs/${me.name}`), fields: { found: enc(now), at: enc(new Date()) } },
+        currentDocument: rec ? { updateTime: rec.updateTime } : { exists: false } },
+      all
+        ? { update: { name: docName(env, `users/${me.name}`), fields: { cracker: enc(true) } }, updateMask: { fieldPaths: ['cracker'] },
+            updateTransforms: [{ fieldPath: 'orbs', increment: enc(orbs) }], currentDocument: { exists: true } }
+        : { transform: { document: docName(env, `users/${me.name}`), fieldTransforms: [{ fieldPath: 'orbs', increment: enc(orbs) }] }, currentDocument: { exists: true } },
+    ]);
+    if (done) return { ok: true, orbs, found: now, total: EGG_COUNT, cracker: all, balance: orbsAfter(done, 1) };
   }
   fail(409, 'Frixion is busy. Try again.');
 }

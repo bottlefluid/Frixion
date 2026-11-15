@@ -171,13 +171,15 @@ const BANNER_GRADIENTS = [
   'linear-gradient(135deg,#5865f2,#eb459e)',
 ];
 
-// Exact Discord appearance theme names. Dark/Light/Sync are free; Ash/Onyx are Premium-exclusive.
+// Exact Discord appearance theme names. Since v4.62 all five are free for everyone (Ash and Onyx used to be Premium's)
+// and they live in the Shop's Themes tab, in its Free section, instead of Settings. Using one sets the profile's `theme`
+// and takes off any bought Shop theme (see freeThemeCardHTML). bg is the Shop card's preview (Sync draws half and half).
 const THEMES = [
-  { key: 'dark',   name: 'Dark',              premium: false },
-  { key: 'light',  name: 'Light',             premium: false },
-  { key: 'sync',   name: 'Sync with Computer', premium: false },
-  { key: 'ash',    name: 'Ash',               premium: true },
-  { key: 'onyx',   name: 'Onyx',              premium: true },
+  { key: 'dark',   name: 'Dark',               desc: 'Frixion\'s classic dark look.', bg: ['#1e1f22', '#2b2d31', '#313338'] },
+  { key: 'light',  name: 'Light',              desc: 'Bright and clean.', bg: ['#c9cdd2', '#f2f3f5', '#ffffff'] },
+  { key: 'sync',   name: 'Sync with Computer', desc: 'Light or dark, whichever your device is using.', bg: null },
+  { key: 'ash',    name: 'Ash',                desc: 'Soft mid grey.', bg: ['#3a3c42', '#44474e', '#54575f'] },
+  { key: 'onyx',   name: 'Onyx',               desc: 'Pure black.', bg: ['#000000', '#0a0a0b', '#232326'] },
 ];
 // Status is fully automatic now (see computeDisplayStatus) — this is just
 // a label/color lookup, not a user-editable list anymore.
@@ -319,7 +321,7 @@ function profileFrameById(id) { return PROFILE_FRAMES.find(d => d.id === id) || 
 // the only approach that scales without hand-writing a CSS class per theme.
 const SHOP_THEMES = [
   { id: 'plasma', name: 'Plasma', desc: 'Electric violet — a rare, high-value theme.', price: 2500, bg: ['#0a0018', '#160a32', '#271152'], accent: '#b06bff', accent2: '#e3c9ff' },
-  { id: 'disco', name: 'Disco', desc: 'Full rainbow color cycling.', price: 200, bg: ['#0a001a', '#00001a', '#11052b'], accent: '#ff00ff', accent2: '#00ffff', anim: 'hue', featured: true },
+  { id: 'disco', name: 'Disco', desc: 'Hot pink and cyan on deep purple.', price: 200, bg: ['#0a001a', '#00001a', '#11052b'], accent: '#ff00ff', accent2: '#00ffff', anim: 'hue', featured: true },
   { id: 'ocean', name: 'Ocean Deep', desc: 'Deep blue underwater vibes.', price: 150, bg: ['#000e1a', '#001a33', '#06314f'], accent: '#00aaff', accent2: '#33ccff' },
   { id: 'synthwave', name: 'Synthwave', desc: 'Retro purple neon nights.', price: 200, bg: ['#0d0020', '#1a0030', '#27094a'], accent: '#ff00cc', accent2: '#cc00ff' },
   { id: 'midnight', name: 'Midnight Blue', desc: 'Dark navy with soft purple.', price: 150, bg: ['#05050f', '#080820', '#12123a'], accent: '#6666ff', accent2: '#8888ff' },
@@ -361,7 +363,7 @@ const SHOP_THEMES = [
   { id: 'solar', name: 'Solar', desc: 'Brilliant solar gold.', price: 225, bg: ['#0d0900', '#1a1200', '#352706'], accent: '#ffcc00', accent2: '#ffdd33' },
   { id: 'terminal', name: 'Terminal', desc: 'Old school CRT green.', price: 175, bg: ['#000800', '#000d00', '#063306'], accent: '#00bb00', accent2: '#00dd00' },
   { id: 'purplerain', name: 'Purple Rain', desc: 'Deep purple rainstorm.', price: 225, bg: ['#050010', '#0a0020', '#1e063a'], accent: '#7700cc', accent2: '#9922ee' },
-  { id: 'holographic', name: 'Holographic', desc: 'Shifting rainbow holo. ✨', price: 400, bg: ['#050508', '#08080d', '#16161e'], accent: '#ff66ff', accent2: '#66ffff', anim: 'holo', featured: true },
+  { id: 'holographic', name: 'Holographic', desc: 'Pink and cyan holo shine.', price: 400, bg: ['#050508', '#08080d', '#16161e'], accent: '#ff66ff', accent2: '#66ffff', anim: 'holo', featured: true },
   { id: 'obsidian', name: 'Obsidian', desc: 'Black volcanic glass.', price: 200, bg: ['#000000', '#050508', '#16161e'], accent: '#6644ff', accent2: '#8866ff' },
   { id: 'aurora', name: 'Aurora', desc: 'Northern lights green glow.', price: 300, bg: ['#000d0a', '#001810', '#063530'], accent: '#00ffaa', accent2: '#33ffbb', anim: 'aurora', featured: true },
   { id: 'candy', name: 'Candy', desc: 'Sweet neon candy pink.', price: 200, bg: ['#0d0010', '#150018', '#310539'], accent: '#ff44cc', accent2: '#ff66dd' },
@@ -370,6 +372,44 @@ const SHOP_THEMES = [
 let customThemes = [];
 let customThemesLoaded = false;
 function shopThemeById(id) { return SHOP_THEMES.find(t => t.id === id) || customThemes.find(t => t.id === id) || null; }
+
+// ---------- Shop sections (v4.62) ----------
+// Avatar Decorations, Avatar Masks and Themes are sorted into sections in the Shop, instead of one "Animated / Not
+// Animated" split that left half the page empty. Staff pick an item's section in the Owner panel, when publishing it or
+// later in its editor (a built-in item's section is saved as an override, like its price). Built-in items start in the
+// sections below, and anything without one goes in "More".
+const SHOP_SECTIONED = ['decorations', 'masks', 'themes'];
+const SHOP_SECTION_ORDER = {
+  decorations: ['Hats & Crowns', 'Ears & Horns', 'All Around'],
+  masks: ['Masks'],
+  themes: ['Neon', 'Warm', 'Cool', 'Nature', 'Dark & Space'],
+};
+const shopSectionMap = groups => Object.fromEntries(Object.entries(groups).flatMap(([sec, ids]) => ids.map(id => [id, sec])));
+const SHOP_SECTION_DEFAULTS = {
+  decorations: shopSectionMap({
+    'Hats & Crowns': ['halo', 'crown', 'party-hat', 'flower-crown', 'bow'],
+    'Ears & Horns': ['cat-ears', 'devil-horns'],
+    'All Around': ['sparkle-ring', 'angel-wings', 'headphones'],
+  }),
+  themes: shopSectionMap({
+    Neon: ['disco', 'synthwave', 'toxic', 'neonpink', 'neonblue', 'neonorange', 'cyber', 'holographic', 'candy', 'infrared', 'matrix', 'terminal'],
+    Warm: ['sunset', 'blood', 'lava', 'gold', 'copper', 'amber', 'wine', 'coffee', 'fire', 'rust', 'coral', 'bloodmoon', 'solar'],
+    Cool: ['ocean', 'arctic', 'ice', 'storm', 'steel', 'aqua', 'deepsea', 'midnight'],
+    Nature: ['forest', 'emerald', 'mint', 'aurora', 'cherry', 'rose', 'sakura'],
+    'Dark & Space': ['plasma', 'galaxy', 'void', 'obsidian', 'purplerain', 'violet', 'lavender', 'ash'],
+  }),
+};
+const cleanSectionName = s => (typeof s === 'string' ? s.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 30) : '');
+function shopSectionOf(key, item) {
+  return cleanSectionName(item && item.section) || (SHOP_SECTION_DEFAULTS[key] || {})[item && item.id] || (key === 'masks' ? 'Masks' : 'More');
+}
+// The sections a list of items is in: the built-in order first, then any staff-made ones A to Z, and "More" last.
+function shopSectionsFor(key, items) {
+  const order = SHOP_SECTION_ORDER[key] || [];
+  const used = [...new Set(items.map(i => shopSectionOf(key, i)))];
+  const extra = used.filter(s => !order.includes(s)).sort((a, b) => (a === 'More') - (b === 'More') || a.localeCompare(b));
+  return [...order.filter(s => used.includes(s)), ...extra];
+}
 
 function hexToRgbTuple(hex) {
   let h = hex.replace('#', '');
@@ -454,7 +494,8 @@ const SHOP_CATEGORY_DEFS = {
   nameplates: { label: 'Nameplates', get catalog() { return [...NAMEPLATES, ...customNameplates]; }, ownedField: 'ownedNameplates', equipField: 'equippedNameplate' },
   profile_effects: { label: 'Profile Effects', get catalog() { return [...PROFILE_EFFECTS, ...customProfileEffects]; }, ownedField: 'ownedProfileEffects', equipField: 'equippedProfileEffect' },
   profile_frames: { label: 'Profile Frames', get catalog() { return [...PROFILE_FRAMES, ...customProfileFrames]; }, ownedField: 'ownedProfileFrames', equipField: 'equippedProfileFrame' },
-  themes: { label: 'Themes', get catalog() { return [...SHOP_THEMES, ...customThemes].map(t => ({ ...t, animated: !!t.anim })); }, ownedField: 'ownedThemes', equipField: 'equippedTheme' },
+  // (no "Animated" tag on themes since v4.62: the three with a moving background barely showed it, so the Owner had it removed)
+  themes: { label: 'Themes', get catalog() { return [...SHOP_THEMES, ...customThemes]; }, ownedField: 'ownedThemes', equipField: 'equippedTheme' },
   banners: { label: 'Banners', get catalog() { return customBanners; }, ownedField: 'ownedBanners', equipField: 'equippedBanner' },
   music: { label: 'Music', get catalog() { return allMusicTracks(); }, ownedField: 'ownedMusic', equipField: 'equippedMusic' },
 };
@@ -487,6 +528,23 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.62', date: '2026-11-14', title: 'Fifty secrets',
+    notes: [
+      '50 easter eggs are hidden all over Frixion: in key presses, buttons, codes, the clock, the games, and a riddle or three. Each one pays Orbs the first time you find it, more for the hard ones, and they don\'t count toward the daily limit from games. Settings, My Account shows how many you\'ve found, and finding all 50 puts a red Cracker tag next to your name.',
+      'Group chats can have a picture: the pencil at the top of a group lets anyone in it change its picture and name.',
+      'DMs and group chats are one list now. Whichever got the newest message is on top, group or not.',
+      'When someone is typing to you, their picture in your DM list shows bouncing dots, like on Discord.',
+      'Quick Open, in Settings: give the Shop, Codes, Games, Friends, a DM, a group, a server or a game its own keyboard shortcut.',
+      'Copying is easier: a Copy Text button on every message, more text you can select (names, replies, profiles, Settings), and in the computer app a right-click menu with Cut, Copy, Paste and Select All.',
+      'Grow a Garden has weather: drizzle, heatwaves, cold snaps, thunderstorms, starfall and the rare Null Eclipse give growing crops mutations worth up to 50 times more. Seeds and sprinklers come in limited stock that restocks every 5 minutes, and there are three new garden quests every day.',
+      'Cookie Clicker: upgrades for every building and for clicking, Lucky Crumbs that pop up with boosts, 23 achievements that each add 1% production for good, and buying 10, 100 or as many buildings as you can afford at once.',
+      'All five themes from Settings (Dark, Light, Sync with Computer, Ash and Onyx) are free for everyone in the Shop\'s Themes tab now.',
+      'The Shop\'s Avatar Decorations, Avatar Masks and Themes are sorted into sections, and themes no longer say "Animated".',
+      'Profile frames look like their names: Rainbow cycles through every color, Neon and Plasma pulse, Thorns has thorns, Rosevine has roses and Ice has icicles.',
+      'Avatar masks and decorations sit exactly on your picture on your profile again.',
+      'Grow a Garden saves only when something changed, so Frixion uses less of its daily database allowance.',
+      'Staff: Grow a Garden pets can have up to 4 abilities, custom seeds, sprinklers and pets can be edited, staff can start a weather event for everyone, and Shop items can be put in a section.',
+    ] },
   { v: '4.61', date: '2026-11-12', title: 'Blocking',
     notes: [
       'You can block people, like on Discord: Block is on their profile. They can\'t message you or send you friend requests, you stop being friends, and their messages are hidden behind a "blocked message" bar you can open.',
@@ -1797,11 +1855,24 @@ function decorationBoxHTML(deco, size, hole) {
 function mobileStatusSVG(status, w, h) {
   return `<svg class="status-phone" viewBox="0 0 12 18" width="${w}" height="${h}" aria-hidden="true"><path class="phone-body" fill-rule="evenodd" d="M2.6 0h6.8A2.6 2.6 0 0 1 12 2.6v12.8A2.6 2.6 0 0 1 9.4 18H2.6A2.6 2.6 0 0 1 0 15.4V2.6A2.6 2.6 0 0 1 2.6 0zM2 2.4h8v10.4H2zM6 14.3a1 1 0 1 0 0 2a1 1 0 1 0 0-2z"/></svg>`;
 }
-function avatarHTML(size, color, letter, status, avatarUrl, decorationId, uid, maskId) {
+function avatarHTML(size, color, letter, status, avatarUrl, decorationId, uid, maskId, typing) {
   let maskStyle = '';
   let dotHTML = '';
   let hole = null;
-  if (status) {
+  if (status && typing) {
+    // Typing (v4.62), like Discord's DM list: the status dot stretches into a little pill of three bouncing dots,
+    // in the person's status color, with the same kind of cut-out notch around it.
+    const dotD = Math.max(9, Math.round(size * 0.315));
+    const center = Math.round(dotD / 2 + Math.max(1, Math.round(size * 0.02)));
+    const dotOffset = center - dotD / 2;
+    const pw = Math.round(dotD * 2.1), gap = Math.max(2, Math.round(size * 0.07));
+    const cx = dotOffset + pw / 2, rx = pw / 2 + gap, ry = dotD / 2 + gap;
+    hole = { r: Math.round(ry), center };
+    const grad = `radial-gradient(ellipse ${rx}px ${ry}px at calc(100% - ${cx}px) calc(100% - ${center}px), transparent 96%, #000 100%)`;
+    maskStyle = `-webkit-mask-image:${grad};mask-image:${grad};`;
+    const shown = status === 'offline' ? 'online' : status;
+    dotHTML = `<span class="status-dot typing ${shown}" title="Typing" style="width:${pw}px;height:${dotD}px;right:${dotOffset}px;bottom:${dotOffset}px;"><i></i><i></i><i></i></span>`;
+  } else if (status) {
     // Discord-style status indicator: a real cutout via CSS mask instead of a
     // border colored to guess whatever's behind the avatar. That guess was
     // wrong on half the screens in the app (avatars sit on several different
@@ -1851,10 +1922,12 @@ function platformRank(profile) {
   if (profile.op) return 1;
   return 0;
 }
+// The red Cracker tag (v4.62): found all 50 easter eggs. cracker: true is set only by functions/api/admin/egg.
+function crackerTag(profile) { return profile && profile.cracker === true ? '<span class="cracker-tag" title="Found every easter egg">Cracker</span>' : ''; }
 function roleTag(profile) {
-  if (profile && (profile.sfMode || (profile.username === myUid && sfMode))) return '';   // sfmode hides the staff tag for everyone
+  const hidden = profile && (profile.sfMode || (profile.username === myUid && sfMode));   // sfmode hides the staff tag for everyone
   const r = platformRank(profile);
-  return r === 3 ? ownerTag(profile) : r === 2 ? coOwnerTag(profile) : opTag(profile);
+  return (hidden ? '' : r === 3 ? ownerTag(profile) : r === 2 ? coOwnerTag(profile) : opTag(profile)) + crackerTag(profile);
 }
 // You can manage yourself, or anyone strictly below you. Admins can still
 // manage other admins (unchanged), but nobody can touch an equal-or-higher
@@ -2251,6 +2324,7 @@ function initPresence() {
     };
     rtdb.ref('.info/connected').on('value', presenceConnectedCb);
   } catch (e) { console.warn('Presence init failed', e); }
+  startTypingToMe();   // typing dots in the DM list (v4.62)
 }
 document.addEventListener('visibilitychange', () => {
   resumeMusicLoop();
@@ -2264,6 +2338,7 @@ function teardownPresence() {
     if (myPresenceConnRef) { myPresenceConnRef.onDisconnect().cancel(); myPresenceConnRef.remove(); }
     myPresenceConnRef = null;
   } catch (e) {}
+  clearTypingTo(); stopTypingToMe();
   clearPresenceListeners();
   myActivityPublished = null; rpcMedia = null;
 }
@@ -2550,6 +2625,7 @@ if ($('dnd-toggle')) $('dnd-toggle').onchange = async (e) => {
   try {
     await db.collection('users').doc(myUid).update({ dnd: on ? true : FieldValue.delete() });
     toast(on ? 'Do Not Disturb is on. Frixion won\'t notify you.' : 'Do Not Disturb is off.');
+    eggCount('dnd5', 5, 30000);   // (an easter egg, v4.62)
   } catch (err) { e.target.checked = !on; toast('Could not save that.', 'error'); }
 };
 if ($('rpc-share-toggle')) $('rpc-share-toggle').onchange = async (e) => {
@@ -3951,7 +4027,7 @@ async function startTermination(info) {
 // ============================================================
 function initAppForUser() {
   initPresence();
-  if (!OVERLAY_WINDOW) subscribeBlocks();
+  if (!OVERLAY_WINDOW) { subscribeBlocks(); loadEggs(); }   // (easter eggs you've found: one read, v4.62)
   unsub.self = db.collection('users').doc(myUid).onSnapshot(snap => {
     if (!snap.exists) return;
     myProfile = snap.data();
@@ -5397,29 +5473,40 @@ function pushOut(o) {
 }
 // (/raw text mentions nobody: a reply still reaches who it replies to)
 const mayNotify = p => !!(p && (p.replyTo || (!p.raw && /(^|[\s(>])@([A-Za-z0-9_]{3,24}|everyone|here)\b/i.test(p.text || ''))));
+// A group's picture (v4.62: anyone in the group can set one), or the people icon. `typing` adds the typing dots.
+function groupIconHTML(g, size, typing) {
+  const url = g && safeUrl(g.iconUrl, 'image');
+  const dots = typing ? `<span class="status-dot typing online group-typing" title="Typing"><i></i><i></i><i></i></span>` : '';
+  return url
+    ? `<div class="avatar group-avatar has-image" style="width:${size}px;height:${size}px;"><img src="${esc(url)}" alt="" loading="lazy">${dots}</div>`
+    : `<div class="avatar group-avatar" style="width:${size}px;height:${size}px;">${icon('people')}${dots}</div>`;
+}
+// DMs and groups are one list (v4.62), newest message first, like Discord: a group with a new message goes above every
+// DM too, not just above the other groups.
+const convTime = c => timeValue(c.updatedAt) || timeValue((c.lastMessage || {}).createdAt) || timeValue(c.createdAt);
 function renderDMRows() {
   const wrap = $('dm-rows');
   wrap.innerHTML = '';
-  const dms = [...(window.__myDMs || [])].sort((a, b) => timeValue(b.updatedAt) - timeValue(a.updatedAt));
-  dms.forEach(dm => {
-    const otherUid = dm.participants.find(p => p !== myUid);
-    const p = profileCache[otherUid] || { username: otherUid, avatarColor: '#5865f2', status: 'offline' };
+  const convs = [...(window.__myDMs || []).map(c => ({ kind: 'dm', c })), ...(window.__myGroupDMs || []).map(c => ({ kind: 'gdm', c }))]
+    .sort((a, b) => convTime(b.c) - convTime(a.c));
+  convs.forEach(({ kind, c }) => {
     const row = document.createElement('div');
-    const nameplate = nameplateById(p.equippedNameplate);
-    row.className = 'dm-row' + (currentDMId === dm.id ? ' active' : '') + (isConversationUnread(dm) ? ' unread' : '') + (nameplate ? ' has-nameplate' : '');
-    row.innerHTML = nameplateBgHTML(nameplate) +
-      avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(otherUid), p.avatarUrl, p.equippedDecoration, otherUid, p.equippedMask) +
-      `<div class="dm-copy"><span class="dm-name">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div><span class="dm-time">${esc(shortAgo(timeValue(dm.updatedAt) || timeValue((dm.lastMessage || {}).createdAt)))}</span>`;
-    row.onclick = () => selectDM(dm.id, otherUid);
-    wrap.appendChild(row);
-  });
-  const groups = [...(window.__myGroupDMs || [])].sort((a, b) => timeValue(b.updatedAt) - timeValue(a.updatedAt));
-  groups.forEach(g => {
-    const name = groupDMDisplayName(g);
-    const row = document.createElement('div');
-    row.className = 'dm-row' + (currentGroupDMId === g.id ? ' active' : '') + (isConversationUnread(g) ? ' unread' : '');
-    row.innerHTML = `<div class="avatar group-avatar" style="width:32px;height:32px;">${icon('people')}</div><div class="dm-copy"><span class="dm-name">${esc(name)}</span><span class="dm-preview">${esc(previewForMessage(g.lastMessage || conversationPreviewCache.get(`groupDMs:${g.id}`), true))}</span></div><span class="dm-time">${esc(shortAgo(timeValue(g.updatedAt)))}</span>`;
-    row.onclick = () => selectGroupDM(g.id);
+    if (kind === 'dm') {
+      const dm = c;
+      const otherUid = dm.participants.find(p => p !== myUid);
+      const p = profileCache[otherUid] || { username: otherUid, avatarColor: '#5865f2', status: 'offline' };
+      const nameplate = nameplateById(p.equippedNameplate);
+      row.className = 'dm-row' + (currentDMId === dm.id ? ' active' : '') + (isConversationUnread(dm) ? ' unread' : '') + (nameplate ? ' has-nameplate' : '');
+      row.innerHTML = nameplateBgHTML(nameplate) +
+        avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(otherUid), p.avatarUrl, p.equippedDecoration, otherUid, p.equippedMask, typersIn('dm', dm).includes(otherUid)) +
+        `<div class="dm-copy"><span class="dm-name">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div><span class="dm-time">${esc(shortAgo(timeValue(dm.updatedAt) || timeValue((dm.lastMessage || {}).createdAt)))}</span>`;
+      row.onclick = () => selectDM(dm.id, otherUid);
+    } else {
+      const g = c;
+      row.className = 'dm-row' + (currentGroupDMId === g.id ? ' active' : '') + (isConversationUnread(g) ? ' unread' : '');
+      row.innerHTML = groupIconHTML(g, 32, typersIn('gdm', g).length > 0) + `<div class="dm-copy"><span class="dm-name">${esc(groupDMDisplayName(g))}</span><span class="dm-preview">${esc(previewForMessage(g.lastMessage || conversationPreviewCache.get(`groupDMs:${g.id}`), true))}</span></div><span class="dm-time">${esc(shortAgo(timeValue(g.updatedAt)))}</span>`;
+      row.onclick = () => selectGroupDM(g.id);
+    }
     wrap.appendChild(row);
   });
   applyDmFilter();
@@ -5517,7 +5604,7 @@ function renderChatHeaderAvatar() {
 // this sheet, like Discord's channel details. Each row presses the matching header button, so they behave the same.
 function openConversationSheet(kind) {
   closeActionSheet();
-  const rows = [['members-toggle', 'Members'], ['add-member-toggle', 'Add Friends'], ['pins-toggle', 'Pinned Messages'],
+  const rows = [['members-toggle', 'Members'], ['edit-group-toggle', 'Edit Group'], ['add-member-toggle', 'Add Friends'], ['pins-toggle', 'Pinned Messages'],
     ['mute-toggle', isMuted() ? 'Unmute' : 'Mute'], ['search-toggle', 'Search'], ['leave-group-toggle', 'Leave Group']]
     .filter(([id]) => !$(id).classList.contains('hidden'));
   const title = (kind === 'channel' ? '#' : '') + $('chat-header-title').textContent;
@@ -5625,6 +5712,56 @@ $('new-group-dm-btn').onclick = () => {
   $('new-group-dm-name').value = '';
   openModal('new-group-dm-modal');
 };
+// ---------- Edit Group: its picture and name (v4.62) ----------
+// Like Discord, anyone in a group can change these. The rules already let any member change a group's other fields
+// (groupUpdate in firestore.rules), so nothing new is needed there. The picture goes to Cloudinary like a server icon.
+function renderEditGroupPic(g) {
+  $('edit-group-pic').innerHTML = groupIconHTML(g, 72);
+  $('edit-group-remove').classList.toggle('hidden', !(g && g.iconUrl));
+}
+$('edit-group-toggle').onclick = () => {
+  const g = groupById(currentGroupDMId);
+  if (!g) return;
+  $('edit-group-name').value = g.name || '';
+  renderEditGroupPic(g);
+  openModal('edit-group-modal');
+};
+$('edit-group-upload').onclick = () => $('edit-group-file').click();
+$('edit-group-file').onchange = async e => {
+  let file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  const g = groupById(currentGroupDMId);
+  if (!file || !g) return;
+  if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) { toast('Pick a PNG, JPG, GIF or WebP picture.', 'error'); return; }
+  file = await shrinkImage(file, 2 * 1024 * 1024);
+  if (file.size > 8 * 1024 * 1024) { toast('That picture is too big. Pick one under 8 MB.', 'error'); return; }
+  const btn = $('edit-group-upload');
+  btn.disabled = true; btn.textContent = 'Uploading…';
+  try {
+    const url = await uploadImageToCloudinary(file);
+    await db.collection('groupDMs').doc(g.id).update({ iconUrl: url });
+    renderEditGroupPic({ ...g, iconUrl: url });
+    toast('Group picture updated.');
+  } catch (err) { toast(err.message || 'Could not upload that picture.', 'error'); }
+  finally { btn.disabled = false; btn.textContent = 'Upload Picture'; }
+};
+$('edit-group-remove').onclick = async () => {
+  const g = groupById(currentGroupDMId);
+  if (!g) return;
+  try { await db.collection('groupDMs').doc(g.id).update({ iconUrl: null }); renderEditGroupPic({ ...g, iconUrl: null }); toast('Group picture removed.'); }
+  catch (err) { toast(err.message || 'Could not remove the picture.', 'error'); }
+};
+$('edit-group-save').onclick = async () => {
+  const g = groupById(currentGroupDMId);
+  if (!g) return;
+  const name = $('edit-group-name').value.replace(/\s+/g, ' ').trim().slice(0, 40);
+  try {
+    await db.collection('groupDMs').doc(g.id).update({ name: name || null });
+    closeModal('edit-group-modal');
+    toast(name ? 'Group renamed.' : 'Group name cleared.');
+  } catch (err) { toast(err.message || 'Could not rename the group.', 'error'); }
+};
+
 $('add-member-toggle').onclick = () => {
   if (!currentGroupDMId) return;
   const g = (window.__myGroupDMs || []).find(x => x.id === currentGroupDMId);
@@ -5797,7 +5934,10 @@ async function openProfileModal(username) {
   $('profile-banner').classList.toggle('banner-anim', !!(shopBanner && shopBanner.animated));
   $('profile-avatar').style.background = 'transparent';
   $('profile-avatar').classList.add('has-image');
-  $('profile-avatar').innerHTML = `<img src="${esc(p.avatarUrl || DEFAULT_AVATAR_URL)}" alt="">` + decorationOverlayHTML(p.equippedDecoration, 80, null, p.equippedMask);
+  // The picture here is 80px with a 6px ring around it (.profile-avatar), so the picture itself is 68px and starts
+  // inside the ring. Masks and decorations are sized and placed from that 68px circle; sizing them from the outer
+  // 80px put them 6px down and to the right, and made masks bigger than the picture they cover.
+  $('profile-avatar').innerHTML = `<img src="${esc(p.avatarUrl || DEFAULT_AVATAR_URL)}" alt="">` + decorationOverlayHTML(p.equippedDecoration, 68, null, p.equippedMask);
   // Nameplate, profile effect, and profile frame are three independent
   // cosmetic slots. Built-in ones (none currently — the whole shop catalog
   // is user-generated now) use a cssClass; admin-created ones carry their
@@ -5813,10 +5953,12 @@ async function openProfileModal(username) {
   effectOverlay.style.setProperty('--custom-particle-color', (effect && effect.color) || '');
   effectOverlay.innerHTML = effect ? PROFILE_EFFECT_PARTICLES_HTML : '';
   const frame = profileFrameById(p.equippedProfileFrame);
-  const modalBox = $('profile-modal-box');
-  modalBox.className = 'modal-box profile-box' + (frame && frame.cssClass ? ' ' + frame.cssClass : '') + (frame && frame.glow ? ' frame-custom-glow' : '');
-  modalBox.style.border = (frame && frame.color) ? `3px solid ${frame.color}` : '';
-  modalBox.style.setProperty('--custom-frame-color', (frame && frame.color) || '');
+  // The frame goes on its own layer over the card (v4.62). On the card itself, the card's pop-in animation replaced
+  // the frame's animation, so moving frames like Rainbow stood still.
+  const frameLayer = $('profile-frame-layer');
+  frameLayer.className = 'profile-frame-layer' + (frame && frame.cssClass ? ' ' + frame.cssClass : '') + (frame && frame.glow ? ' frame-custom-glow' : '') + (frame ? '' : ' hidden');
+  frameLayer.style.border = (frame && frame.color) ? `3px solid ${frame.color}` : '';
+  frameLayer.style.setProperty('--custom-frame-color', (frame && frame.color) || '');
   $('profile-username').innerHTML = esc(displayNameOf(p)) + premiumStar(p) + roleTag(p) + botTag(p);
   const showHandle = p.displayName && p.displayName !== p.username;
   $('profile-handle').textContent = showHandle ? '@' + p.username : '';
@@ -5908,6 +6050,7 @@ $('save-profile-btn').onclick = async () => {
       pronouns, bio, bannerColor, nameGradient,
     });
     toast('Profile updated.');
+    if (/^egg$/i.test(displayName)) eggFind('displayegg');   // (an easter egg)
   } catch (e) { toast('Could not save profile.', 'error'); }
 };
 
@@ -6212,10 +6355,85 @@ document.addEventListener('contextmenu', e => {
   closeImageMenu();
   if (!DESKTOP) return;
   const img = e.target.closest && e.target.closest('.msg-attachment img, #image-preview-img');
-  if (!img || img.classList.contains('custom-emoji')) return;
+  if (img && !img.classList.contains('custom-emoji')) { e.preventDefault(); showImageMenu(e.clientX, e.clientY, img.currentSrc || img.src); return; }
+  const items = textMenuItems(e.target);
+  if (!items.length) return;
   e.preventDefault();
-  showImageMenu(e.clientX, e.clientY, img.currentSrc || img.src);
+  showTextMenu(e.clientX, e.clientY, items);
 });
+// ---------- right-click menu for text in the computer app (v4.62) ----------
+// The computer app has no right-click menu of its own (a browser has its own, so this only runs in the app): in a text
+// box you get Cut, Copy, Paste and Select All; on selected text, Copy; on a message, Copy Text; on a link, Copy Link and
+// Open Link. Pasting reads the clipboard (the app allows it); if it can't, the menu says to press Ctrl+V.
+const isTextBox = el => el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && /^(text|search|url|email|tel|number|password|)$/i.test(el.type || '')));
+function textMenuItems(target) {
+  if (!target || !target.closest) return [];
+  const box = target.closest('input, textarea, [contenteditable="true"]');
+  const selText = String((window.getSelection && window.getSelection()) || '');
+  if (box && (isTextBox(box) || box.isContentEditable)) {
+    const ro = !!(box.readOnly || box.disabled);
+    const hasSel = isTextBox(box) ? box.selectionStart !== box.selectionEnd : !!selText;
+    return [
+      ...(ro ? [] : [{ label: 'Cut', act: 'cut', off: !hasSel }]),
+      { label: 'Copy', act: 'copy', off: !hasSel },
+      ...(ro ? [] : [{ label: 'Paste', act: 'paste' }]),
+      { label: 'Select All', act: 'all' },
+    ].map(i => ({ ...i, box }));
+  }
+  const items = [];
+  if (selText.trim()) items.push({ label: 'Copy', act: 'copysel', text: selText });
+  const line = target.closest('.msg-line[data-mid]');
+  const m = line && lastRawMessages.find(x => x.id === line.dataset.mid);
+  if (m && m.text) items.push({ label: 'Copy Text', act: 'copytext', text: m.text });
+  const a = target.closest('a[href]');
+  const href = a && /^https?:\/\//i.test(a.href) ? a.href : '';
+  if (href) items.push({ label: 'Copy Link', act: 'copytext', text: href }, { label: 'Open Link', act: 'open', text: href });
+  return items;
+}
+function showTextMenu(x, y, items) {
+  closeImageMenu();
+  imgMenu = document.createElement('div');
+  imgMenu.className = 'img-menu text-menu';
+  imgMenu.innerHTML = items.map((it, i) => `<button type="button" data-i="${i}"${it.off ? ' disabled' : ''}>${esc(it.label)}</button>`).join('');
+  document.body.appendChild(imgMenu);
+  const w = imgMenu.offsetWidth, h = imgMenu.offsetHeight;
+  imgMenu.style.left = Math.max(4, Math.min(x, innerWidth - w - 4)) + 'px';
+  imgMenu.style.top = Math.max(4, Math.min(y, innerHeight - h - 4)) + 'px';
+  imgMenu.addEventListener('mousedown', e => e.preventDefault());   // keep the text box focused and its selection where it is
+  imgMenu.onclick = e => {
+    const b = e.target.closest('button[data-i]');
+    if (!b || b.disabled) return;
+    const it = items[+b.dataset.i];
+    closeImageMenu();
+    runTextMenuItem(it);
+  };
+}
+async function runTextMenuItem(it) {
+  const box = it.box;
+  if (it.act === 'copysel' || it.act === 'copytext') { copyText(it.text, it.act === 'copytext' && /^https?:/i.test(it.text) ? 'Link copied.' : 'Copied.'); return; }
+  if (it.act === 'open') { window.open(it.text, '_blank', 'noopener'); return; }
+  if (!box) return;
+  box.focus();
+  if (it.act === 'all') { if (isTextBox(box)) box.select(); else document.execCommand('selectAll'); return; }
+  if (it.act === 'copy' || it.act === 'cut') {
+    const text = isTextBox(box) ? box.value.slice(box.selectionStart, box.selectionEnd) : String(window.getSelection());
+    if (!text) return;
+    try { await navigator.clipboard.writeText(text); } catch (e) { document.execCommand('copy'); }
+    if (it.act === 'cut') {
+      if (isTextBox(box)) { box.setRangeText('', box.selectionStart, box.selectionEnd, 'end'); box.dispatchEvent(new Event('input', { bubbles: true })); }
+      else document.execCommand('delete');
+    }
+    return;
+  }
+  if (it.act === 'paste') {
+    let text = null;
+    try { text = await navigator.clipboard.readText(); } catch (e) {}
+    if (text == null) { if (!document.execCommand('paste')) toast('Press Ctrl+V to paste here.'); return; }
+    if (!text) return;
+    if (isTextBox(box)) { box.setRangeText(text, box.selectionStart, box.selectionEnd, 'end'); box.dispatchEvent(new Event('input', { bubbles: true })); }
+    else document.execCommand('insertText', false, text);
+  }
+}
 document.addEventListener('mousedown', e => { if (imgMenu && !imgMenu.contains(e.target)) closeImageMenu(); }, true);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeImageMenu(); });
 window.addEventListener('blur', closeImageMenu);
@@ -6511,7 +6729,7 @@ $('send-friend-req-btn').onclick = async () => {
   const uname = ($('add-friend-username').value || '').trim();
   $('add-friend-error').textContent = '';
   if (!uname) { $('add-friend-error').textContent = 'Enter a username.'; return; }
-  if (uname === myUid) { $('add-friend-error').textContent = "That's you!"; return; }
+  if (uname === myUid) { $('add-friend-error').textContent = "That's you!"; eggFind('selfadd'); return; }
   try {
     const snap = await db.collection('users').doc(uname).get();
     if (!snap.exists) { $('add-friend-error').textContent = 'No user found with that username.'; return; }
@@ -8244,7 +8462,10 @@ function canPin() {
 $('pins-toggle').onclick = () => {
   renderPinnedList(lastRawMessages.filter(m => m.pinned));
   openModal('pinned-modal');
-  refreshPinnedList();
+  const where = msgCollectionRef() && msgCollectionRef().path;
+  refreshPinnedList().then(() => {   // (an easter egg: checking an empty pin list three times)
+    if (where && msgCollectionRef() && msgCollectionRef().path === where && !document.querySelector('#pinned-list .pinned-row')) eggCount('emptypins', 3, 600000);
+  });
 };
 function renderPinnedList(pinned) {
   const wrap = $('pinned-list');
@@ -8326,6 +8547,7 @@ function showHeaderActions() {
   $('pins-toggle').classList.remove('hidden');
   $('search-toggle').classList.remove('hidden');
   $('add-member-toggle').classList.toggle('hidden', currentView !== 'groupdm');
+  $('edit-group-toggle').classList.toggle('hidden', currentView !== 'groupdm');
   $('leave-group-toggle').classList.toggle('hidden', currentView !== 'groupdm');
   updateMuteIcon();
   searchActive = false;
@@ -8337,6 +8559,7 @@ function hideHeaderActions() {
   $('pins-toggle').classList.add('hidden');
   $('search-toggle').classList.add('hidden');
   $('add-member-toggle').classList.add('hidden');
+  $('edit-group-toggle').classList.add('hidden');
   $('leave-group-toggle').classList.add('hidden');
   $('gift-btn').classList.add('hidden');
   $('search-bar').classList.add('hidden');
@@ -9050,6 +9273,7 @@ function buildMessageLineEl(m, canDelete) {
     `<span class="msg-hover-actions">` +
     `<span class="hover-icon-btn react-btn" title="Add Reaction">${icon('smiley')}</span>` +
     `<span class="hover-icon-btn reply-msg" title="Reply">${icon('reply')}</span>` +
+    (m.text ? `<span class="hover-icon-btn copy-msg" title="Copy Text">${icon('copy')}</span>` : '') +
     (canThread ? `<span class="hover-icon-btn thread-msg" title="Create Thread">${THREAD_ICON}</span>` : '') +
     (canEditThis ? `<span class="hover-icon-btn edit-msg" title="Edit">${icon('edit')}</span>` : '') +
     (pinnable ? `<span class="hover-icon-btn pin-msg${m.pinned ? ' on' : ''}" title="${m.pinned ? 'Unpin' : 'Pin Message'}">${icon('pin')}</span>` : '') +
@@ -9057,6 +9281,7 @@ function buildMessageLineEl(m, canDelete) {
     `</span>`;
   rowWrap.querySelector('.react-btn').onclick = (e) => { e.stopPropagation(); toggleReactPopover(e.currentTarget, m.id); };
   rowWrap.querySelector('.reply-msg').onclick = () => setReplyTarget(m.id);
+  if (m.text) rowWrap.querySelector('.copy-msg').onclick = () => copyText(m.text, 'Text copied.');   // v4.62, like the phone's Copy Text
   if (canThread) rowWrap.querySelector('.thread-msg').onclick = () => openCreateThread(m.id);
   if (canEditThis) rowWrap.querySelector('.edit-msg').onclick = () => startEditMessage(m.id);
   if (pinnable) rowWrap.querySelector('.pin-msg').onclick = () => togglePin(m.id);
@@ -10022,6 +10247,19 @@ async function sendMessage() {
     openPollModal();
     return;
   }
+  // Easter eggs (v4.62): /xyzzy is never sent (Sapphire answers only you), and a message that's just "egg" is sent as
+  // usual and counts as found.
+  if (!rawFlag && !pendingAttachments.length && /^\/xyzzy$/i.test(raw)) {
+    input.value = '';
+    autoResize(input);
+    updateComposerCharCount();
+    clearMyTypingDoc();
+    closeMentionPopup();
+    postEphemeral('Nothing happens.');
+    eggFind('xyzzy', raw);
+    return;
+  }
+  if (!rawFlag && /^egg$/i.test(raw)) setTimeout(() => eggFind('eggmsg'), 700);
   // /vanish, /unvanish and /sfmode. They are handled here and never posted as text, even when the
   // person is not allowed to use them (they get a "no permission" toast instead).
   const selfCmd = !rawFlag && !pendingAttachments.length ? /^\/(vanish|unvanish|sfmode)(?:\s+(\S+))?\s*$/i.exec(raw) : null;
@@ -10206,6 +10444,7 @@ function clearMyTypingDoc() {
   if (typingIdleTimer) { clearTimeout(typingIdleTimer); typingIdleTimer = null; }
   if (typingDocRef) { const ref = typingDocRef; typingDocRef = null; ref.delete().catch(() => {}); }
   lastTypingWriteAt = 0;
+  clearTypingTo();
 }
 
 function noteComposerTyping() {
@@ -10220,9 +10459,94 @@ function noteComposerTyping() {
   if (now - lastTypingWriteAt > TYPING_WRITE_INTERVAL_MS) {
     lastTypingWriteAt = now;
     ref.set({ username: myProfile.username, updatedAt: FieldValue.serverTimestamp() }).catch(() => {});
+    sendTypingTo();
   }
   if (typingIdleTimer) clearTimeout(typingIdleTimer);
-  typingIdleTimer = setTimeout(() => { if (typingDocRef) { const r = typingDocRef; typingDocRef = null; r.delete().catch(() => {}); } }, TYPING_IDLE_MS);
+  typingIdleTimer = setTimeout(() => { if (typingDocRef) { const r = typingDocRef; typingDocRef = null; r.delete().catch(() => {}); } clearTypingTo(); }, TYPING_IDLE_MS);
+}
+
+// ---------- typing dots in the DM list (v4.62) ----------
+// Like Discord: while someone types in a DM or group you're in, their picture (or the group's) in your DM list shows
+// three bouncing dots instead of their status dot. This uses the Realtime Database, so it costs none of Firestore's daily
+// reads and writes: a page that's typing in a DM or group writes typingTo/<each other member's sign-in>/<its own sign-in>
+// = { c: "dm:<id>" or "gdm:<id>", n: its username, at: server time } every few seconds, and removes it when it stops,
+// leaves or disconnects. Each page listens only to its own typingTo/<its sign-in>; nobody else can read that, and only
+// the sign-in it names can write its own entry (database.rules.json, which also checks n against the sign-in's username
+// claim). An entry only shows if the conversation it names is one of yours with that person in it.
+var typingToMe = {};   // their sign-in -> { c, n, seen } (var: the DM list can be drawn before this line has run)
+let typingToRef = null, typingToSent = new Set(), typingToTimer = null, typingDotsSig = '';
+function typingConvKey() {
+  if (currentView === 'dm' && currentDMId) return 'dm:' + currentDMId;
+  if (currentView === 'groupdm' && currentGroupDMId) return 'gdm:' + currentGroupDMId;
+  return null;
+}
+function typingRecipients() {
+  if (currentView === 'dm') return currentDMOtherUid ? [currentDMOtherUid] : [];
+  if (currentView === 'groupdm') { const g = groupById(currentGroupDMId); return g ? (g.participants || []).filter(u => u !== myUid) : []; }
+  return [];
+}
+function sendTypingTo() {
+  const c = typingConvKey(), me = myPresenceKey();
+  if (!rtdb || !c || !me || !myProfile) return;
+  const val = { c, n: myProfile.username, at: firebase.database.ServerValue.TIMESTAMP };
+  const upd = {};
+  typingRecipients().forEach(u => {
+    const k = presenceKeyOf(u);
+    if (!k || k === me) return;
+    const path = `typingTo/${k}/${me}`;
+    upd[path] = val;
+    if (!typingToSent.has(path)) { typingToSent.add(path); try { rtdb.ref(path).onDisconnect().remove(); } catch (e) {} }
+  });
+  if (Object.keys(upd).length) rtdb.ref().update(upd).catch(() => {});
+}
+function clearTypingTo() {
+  if (!rtdb || !typingToSent.size) return;
+  const upd = {};
+  typingToSent.forEach(path => { upd[path] = null; try { rtdb.ref(path).onDisconnect().cancel(); } catch (e) {} });
+  typingToSent = new Set();
+  rtdb.ref().update(upd).catch(() => {});
+}
+function startTypingToMe() {
+  stopTypingToMe();
+  const me = myPresenceKey();
+  if (!rtdb || !me || OVERLAY_WINDOW) return;
+  try {
+    typingToRef = rtdb.ref('typingTo/' + me);
+    const put = snap => {
+      const v = snap.val();
+      if (v && typeof v.c === 'string' && typeof v.n === 'string') typingToMe[snap.key] = { c: v.c, n: v.n, seen: Date.now() };
+      else delete typingToMe[snap.key];
+      typingDotsChanged();
+    };
+    const drop = snap => { delete typingToMe[snap.key]; typingDotsChanged(); };
+    typingToRef.on('child_added', put, () => {});
+    typingToRef.on('child_changed', put, () => {});
+    typingToRef.on('child_removed', drop, () => {});
+  } catch (e) {}
+}
+function stopTypingToMe() {
+  if (typingToRef) { try { typingToRef.off(); } catch (e) {} typingToRef = null; }
+  Object.keys(typingToMe).forEach(k => delete typingToMe[k]);
+  if (typingToTimer) { clearInterval(typingToTimer); typingToTimer = null; }
+  typingDotsSig = '';
+}
+// The usernames typing to you in one of your DMs (kind 'dm') or groups ('gdm') right now.
+function typersIn(kind, conv) {
+  if (!conv || !typingToMe) return [];
+  const key = kind + ':' + conv.id, now = Date.now(), members = conv.participants || [];
+  return Object.values(typingToMe)
+    .filter(t => t.c === key && now - t.seen <= TYPING_STALE_MS && t.n !== myUid && members.includes(t.n) && !isBlocked(t.n))
+    .map(t => t.n);
+}
+// Redraws the DM list only when who's typing where changed; a timer drops anyone whose page went quiet.
+function typingDotsChanged() {
+  const now = Date.now();
+  const sig = Object.values(typingToMe).filter(t => now - t.seen <= TYPING_STALE_MS).map(t => t.c + '/' + t.n).sort().join(',');
+  if (sig && !typingToTimer) typingToTimer = setInterval(typingDotsChanged, 2000);
+  if (!sig && typingToTimer) { clearInterval(typingToTimer); typingToTimer = null; }
+  if (sig === typingDotsSig) return;
+  typingDotsSig = sig;
+  if (currentView !== 'channel') renderDMRows();
 }
 
 function renderTypingIndicator(names) {
@@ -12095,15 +12419,17 @@ function updateMobileUserPill() {
 // ============================================================
 $('open-my-settings').onclick = () => openProfileModal(myUid);
 $('open-settings-gear').onclick = openSettings;
-function openSettings() { populateSettings(); openModal('settings-modal'); }
+function openSettings() { populateSettings(); openModal('settings-modal'); eggCount('settings10', 10, 60000); }
 
 document.querySelectorAll('#settings-nav .nav-item[data-pane]').forEach(item => {
   item.onclick = () => {
+    if (item.dataset.pane === 'pane-themes') { openShopThemes(); return; }   // themes live in the Shop now (v4.62)
     document.querySelectorAll('#settings-nav .nav-item[data-pane]').forEach(i => i.classList.remove('active'));
     item.classList.add('active');
     document.querySelectorAll('.settings-pane').forEach(p => p.classList.add('hidden'));
     $(item.dataset.pane).classList.remove('hidden');
     if (item.dataset.pane === 'pane-updates') renderUpdates();
+    if (item.dataset.pane === 'pane-quickopen') renderQuickOpen();
     if (item.dataset.pane === 'pane-activity') populateRpc();
     if (item.dataset.pane === 'pane-app') populateAppPane();
     try { item.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); } catch (e) {}   // keeps the chosen tab in view in the phone's swipeable row
@@ -12121,6 +12447,8 @@ function populateSettings() {
   $('custom-keyboard-toggle').checked = useCustomKeyboard();
   $('quick-buttons-toggle').checked = showQuickButtons();
   renderQuickTextList();
+  renderQuickOpen();
+  renderEggSettings();
   populateRpc();
   populateNotifySettings();
 
@@ -12138,7 +12466,6 @@ function populateSettings() {
   $('premium-action-area').innerHTML = buildPremiumActionHTML();
   wirePremiumActionButtons('premium-action-area');
 
-  renderThemeGrid();
   renderQuests();
 }
 
@@ -12280,6 +12607,8 @@ async function redeemCode() {
   if (btn.disabled) return;
   btn.disabled = true;
   try {
+    // some codes are easter eggs (v4.62): those go to the egg check instead
+    if (await eggCodeCheck(code)) { $('redeem-code-input').value = ''; return; }
     const result = await orbsCall('code', { code });
     toast(result.type === 'orbs' ? `+${result.value} Orbs redeemed!` : `Frixion Premium extended by ${result.value} days!`);
     $('redeem-code-input').value = '';
@@ -12735,10 +13064,32 @@ function shopItemPreviewHTML(key, item) {
   if (key === 'themes') return `<div class="sic-theme-preview" style="background:linear-gradient(135deg, ${item.bg[0]} 0%, ${item.bg[1]} 55%, ${item.bg[2]} 100%);">
     <div class="sic-theme-overlay">
       <span class="sic-theme-name">${esc(item.name)}</span>
-      ${item.animated ? '<span class="sic-animated-tag">Animated</span>' : ''}
     </div>
   </div>`;
   return '';
+}
+// The Themes tab's Free section: the five looks that used to be in Settings (v4.62). They aren't bought or owned, so
+// they don't go through shopItemCardHTML: Use sets your profile's theme and takes off any bought theme.
+function freeThemeCardHTML(t) {
+  const inUse = (myProfile.theme || 'dark') === t.key && !myProfile.equippedTheme;
+  const bg = t.bg ? `linear-gradient(135deg, ${t.bg[0]} 0%, ${t.bg[1]} 55%, ${t.bg[2]} 100%)` : 'linear-gradient(135deg, #ffffff 49%, #1e1f22 51%)';
+  return `<div class="shop-item-card is-theme-card" data-free-theme="${esc(t.key)}">
+    <div class="sic-preview"><div class="sic-theme-preview" style="background:${bg};"><div class="sic-theme-overlay"><span class="sic-theme-name">${esc(t.name)}</span><span class="sic-free-tag">Free</span></div></div></div>
+    <div class="sic-desc">${esc(t.desc)}</div>
+    <button class="sic-btn ${inUse ? 'is-equipped' : 'is-owned'}"${inUse ? ' disabled' : ''}>${inUse ? 'In Use' : 'Use'}</button>
+  </div>`;
+}
+function wireFreeThemeButtons(wrap) {
+  wrap.querySelectorAll('[data-free-theme] .sic-btn:not([disabled])').forEach(btn => {
+    btn.onclick = async () => {
+      const key = btn.closest('[data-free-theme]').dataset.freeTheme;
+      if (!THEMES.some(t => t.key === key)) return;
+      try {
+        await db.collection('users').doc(myUid).update({ theme: key, equippedTheme: null }); toast('Theme changed.'); refreshOpenShopPanes();
+        eggCount('themehop', 5, 60000); if (key === 'light') eggFind('lightmode');   // (easter eggs)
+      } catch (e) { toast('Could not change the theme.', 'error'); }
+    };
+  });
 }
 
 function itemCutscenes(item) { return item.cutscenes || (item.cutscene ? [{ src: item.cutscene, label: 'Cutscene' }] : []); }
@@ -12758,7 +13109,7 @@ function shopItemCardHTML(key, item) {
 }
 
 function wireShopCardButtons(wrap) {
-  wrap.querySelectorAll('.shop-item-card').forEach(card => {
+  wrap.querySelectorAll('.shop-item-card[data-cat]').forEach(card => {
     const key = card.dataset.cat;
     const id = card.dataset.item;
     const btn = card.querySelector('.sic-btn');
@@ -12800,12 +13151,21 @@ function renderShopCategoryPane(key) {
   const animated = def.catalog.filter(i => i.animated && matches(i));
   const staticOnes = def.catalog.filter(i => !i.animated && matches(i));
   const gridCls = 'shop-grid' + ((key === 'themes' || key === 'banners') ? ' theme-shop-grid' : '');
-  if (key === 'masks') {
-    const list = def.catalog.filter(matches);
-    wrap.innerHTML = `<div class="shop-section-label">Avatar Masks</div>` + (list.length
-      ? `<div class="shop-grid">${list.map(i => shopItemCardHTML(key, i)).join('')}</div>`
-      : `<div class="shop-empty-state"><b>${q ? 'No masks found' : 'No masks yet'}</b><span>${q ? 'Try a different search.' : 'Full avatar masks published by Frixion staff will show up here.'}</span></div>`);
+  // Decorations, masks and themes: one block per section (v4.62). Themes start with the free Settings looks.
+  if (SHOP_SECTIONED.includes(key)) {
+    const list = def.catalog.filter(i => !i.disabled && matches(i));
+    let html = '';
+    if (key === 'themes') {
+      const free = THEMES.filter(t => !q || t.name.toLowerCase().includes(q));
+      if (free.length) html += `<div class="shop-section-label">Free</div><div class="${gridCls}">${free.map(freeThemeCardHTML).join('')}</div>`;
+    }
+    shopSectionsFor(key, list).forEach(sec => {
+      const items = list.filter(i => shopSectionOf(key, i) === sec);
+      html += `<div class="shop-section-label">${esc(sec)}</div><div class="${gridCls}">${items.map(i => shopItemCardHTML(key, i)).join('')}</div>`;
+    });
+    wrap.innerHTML = html || `<div class="shop-empty-state"><b>${q ? 'Nothing found' : 'Nothing here yet'}</b><span>${q ? 'Try a different search.' : key === 'masks' ? 'Full avatar masks published by Frixion staff will show up here.' : 'New items will show up here.'}</span></div>`;
     wireShopCardButtons(wrap);
+    wireFreeThemeButtons(wrap);
     return;
   }
   if (key === 'music') {
@@ -12859,6 +13219,7 @@ async function buyShopItem(key, id) {
     // The server (functions/api/admin/buy) charges the database's price, adds it and equips it right away, matching how
     // Discord's own shop works (v4.57: a page can't add items or Orbs to itself).
     await orbsCall('buy', { cat: key, id });
+    if (key === 'themes' && ['light', 'sync'].includes(myProfile.theme)) db.collection('users').doc(myUid).update({ theme: 'dark' }).catch(() => {});   // (see equipShopItem)
     toast(`Purchased ${item.name}!`);
     refreshOpenShopPanes();
     if (cuts.length && !showCut) toast('Epilepsy mode is on, so the cutscenes were skipped. You can replay them from the Shop.');
@@ -12893,8 +13254,11 @@ function replayCutscene(key, id, seg) {
 async function equipShopItem(key, id) {
   const def = SHOP_CATEGORY_DEFS[key];
   if (!def) return;
+  const change = { [def.equipField]: id || null };
+  // A bought theme paints dark colors over the page, so it goes with the Dark look underneath, not Light (v4.62).
+  if (key === 'themes' && id && ['light', 'sync'].includes(myProfile.theme)) change.theme = 'dark';
   try {
-    await db.collection('users').doc(myUid).update({ [def.equipField]: id || null });
+    await db.collection('users').doc(myUid).update(change);
     toast(id ? 'Equipped.' : 'Unequipped.');
     refreshOpenShopPanes();
   } catch (e) { toast('Could not update.', 'error'); }
@@ -12933,20 +13297,13 @@ $('shop-search').addEventListener('input', () => {
   if (SHOP_CATEGORY_DEFS[key]) renderShopCategoryPane(key);
 });
 
-function renderThemeGrid() {
-  const themeGrid = $('theme-grid');
-  themeGrid.innerHTML = '';
-  THEMES.forEach(t => {
-    const locked = t.premium && !isPremium(myProfile);
-    const card = document.createElement('div');
-    card.className = `theme-card theme-swatch-${t.key}` + (locked ? ' locked' : '') + (((myProfile.theme || 'dark') === t.key) ? ' selected' : '');
-    card.innerHTML = `<span>${esc(t.name)}</span>` + (locked ? `<span class="lock-badge">${icon('shield')}</span>` : '');
-    card.onclick = async () => {
-      if (locked) { openPremiumModal(); return; }
-      await db.collection('users').doc(myUid).update({ theme: t.key });
-    };
-    themeGrid.appendChild(card);
-  });
+// Settings' Themes moved into the Shop (v4.62): Dark, Light, Sync, Ash and Onyx are the Free section of its Themes tab.
+// Settings > Themes (and the phone's You page) open that tab instead.
+function openShopThemes() {
+  closeModal('settings-modal');
+  goHomePage('shop');
+  const tab = document.querySelector('.shop-tab[data-shop-tab="themes"]');
+  if (tab) switchShopTab('themes', tab);
 }
 
 function renderQuests() { mountGameHubs(); }
@@ -13052,6 +13409,7 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
     if (tab.dataset.adminTab === 'shopmanage') {
       renderAdminDecorationList(); renderAdminMaskList(); initDecorationEditor();
       renderAdminThemeList(); initThemeEditor();
+      fillSectionList('deco-section-list', 'decorations'); fillSectionList('theme-section-list', 'themes');
       renderAdminNameplateList(); initNameplateEditor();
       renderAdminProfileEffectList(); initEffectEditor();
       renderAdminProfileFrameList(); initFrameEditor();
@@ -13074,13 +13432,114 @@ const GAG_KINDS = {
 };
 let gagAdminInit = false;
 const gagNum = (id, d = 0) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : d; };
+// Pets can have up to 4 abilities (v4.62): one row (ability + value) each in the pet form.
+const GAG_MAX_ABILITIES = 4;
+function gagAddAbilityRow(fn, val) {
+  const wrap = $('gag-pet-abilities');
+  if (wrap.children.length >= GAG_MAX_ABILITIES) return;
+  const row = document.createElement('div');
+  row.className = 'gag-ability-row';
+  row.innerHTML = `<select class="fld-input gag-ab-fn">${Object.entries(GAG_PET_FNS).map(([k, v]) => `<option value="${k}"${k === fn ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>`
+    + `<input class="fld-input gag-ab-val" type="number" min="0" step="any" placeholder="e.g. 25 (%) or 10 (×)" value="${val != null ? esc(String(val)) : ''}">`
+    + `<button type="button" class="btn-secondary slim gag-ab-rm" title="Remove this ability">&times;</button>`;
+  row.querySelector('.gag-ab-rm').onclick = () => { if (wrap.children.length > 1) row.remove(); gagSyncAbilityAdd(); };
+  wrap.append(row);
+  gagSyncAbilityAdd();
+}
+function gagSyncAbilityAdd() { $('gag-pet-add-ability').classList.toggle('hidden', $('gag-pet-abilities').children.length >= GAG_MAX_ABILITIES); }
+function gagResetAbilities(list) {
+  $('gag-pet-abilities').innerHTML = '';
+  (list && list.length ? list : [{ fn: 'sell' }]).forEach(a => gagAddAbilityRow(a.fn, a.val));
+}
+// Editing a custom seed, sprinkler or pet (v4.62): clicking it in the list loads it into the form above, and the
+// Publish button saves over it instead of making a new one.
+const gagEditing = { seeds: null, sprinklers: null, pets: null };
+const GAG_PREFIX = { seeds: 'gag-seed', sprinklers: 'gag-spr', pets: 'gag-pet' };
+const GAG_PUBLISH_LABEL = { seeds: 'Publish Seed', sprinklers: 'Publish Sprinkler', pets: 'Publish Pet' };
+function gagSetEditing(kind, id) {
+  gagEditing[kind] = id;
+  const btn = $(GAG_PREFIX[kind] + '-publish');
+  btn.textContent = id ? 'Save Changes' : GAG_PUBLISH_LABEL[kind];
+  let cancel = $(GAG_PREFIX[kind] + '-cancel-edit');
+  if (id && !cancel) {
+    cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.className = 'btn-secondary'; cancel.id = GAG_PREFIX[kind] + '-cancel-edit'; cancel.textContent = 'Cancel Editing';
+    cancel.onclick = () => gagClearForm(kind);
+    btn.after(cancel);
+  } else if (!id && cancel) cancel.remove();
+  document.querySelectorAll(`#gag-list-${kind} .gag-item`).forEach(el => el.classList.toggle('editing', !!id && el.dataset.id === id));
+}
+function gagClearForm(kind) {
+  const p = GAG_PREFIX[kind];
+  document.querySelectorAll(`[data-gag-section="${kind}"] .gag-form input`).forEach(i => { i.value = ''; });
+  if ($(p + '-rarity')) $(p + '-rarity').value = 'common';
+  if (kind === 'seeds') $('gag-seed-fn').value = 'none';
+  if (kind === 'pets') gagResetAbilities();
+  gagSetEditing(kind, null);
+}
+function gagLoadForEdit(kind, id) {
+  const it = GAG_KINDS[kind].list().find(x => x.id === id);
+  if (!it) return;
+  const p = GAG_PREFIX[kind], set = (sfx, v) => { if ($(p + sfx)) $(p + sfx).value = v == null ? '' : v; };
+  set('-name', it.name); set('-ic', it.ic); set('-rarity', ggRar(it.rarity)); set('-cost', it.cost);
+  if (kind === 'seeds') {
+    set('-grow', Math.round((it.grow || 0) / 1000)); set('-sell', it.sell); set('-weight', it.baseWeight);
+    $('gag-seed-fn').value = GAG_SEED_FNS[it.fn] ? it.fn : 'none';
+    set('-fnval', it.fn === 'multi' ? it.fnVal : Math.round((it.fnVal || 0) * 100));
+  } else if (kind === 'sprinklers') {
+    set('-speed', Math.round((it.speed || 0) * 100)); set('-weight', Math.round((it.weight || 0) * 100));
+    set('-mut', Math.round((it.mutation || 0) * 100)); set('-sell', Math.round((it.sellBoost || 0) * 100));
+  } else {
+    gagResetAbilities(ggPetAbilities(it).map(a => ({ fn: a.fn, val: a.fn === 'mult' ? a.val : Math.round(a.val * 100) })));
+  }
+  gagSetEditing(kind, id);
+  const form = document.querySelector(`[data-gag-section="${kind}"] .gag-form`);
+  if (form) form.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+// Staff weather (v4.62): config/gardenWeather = { events: [{ w, from, until, by }] }, the last 20 kept.
+async function gagStartWeather() {
+  if (!isAdmin && !isOwner) { toast('Admins only.', 'error'); return; }
+  const w = $('gag-wx-type').value, mins = Math.max(1, Math.min(60, Math.floor(gagNum('gag-wx-mins', 5))));
+  if (!GG_WEATHERS[w]) return;
+  try {
+    const ref = db.collection('config').doc('gardenWeather'), snap = await ref.get();
+    const now = Date.now(), events = ((snap.exists && snap.data().events) || []).filter(e => e && e.until > now - 86400000);
+    events.push({ w, from: now, until: now + mins * 60000, by: myUid });
+    await ref.set({ events: events.slice(-20) });
+    toast(`${GG_WEATHERS[w].name} started for ${mins} minute${mins > 1 ? 's' : ''}.`);
+    gagRenderWeatherNow();
+  } catch (e) { toast(e.message || 'Could not start the weather.', 'error'); }
+}
+async function gagStopWeather() {
+  if (!isAdmin && !isOwner) { toast('Admins only.', 'error'); return; }
+  try {
+    const ref = db.collection('config').doc('gardenWeather'), snap = await ref.get(), now = Date.now();
+    const events = ((snap.exists && snap.data().events) || []).map(e => (e && e.until > now ? { ...e, until: now } : e)).filter(Boolean);
+    await ref.set({ events: events.slice(-20) });
+    toast('Staff weather ended.');
+    gagRenderWeatherNow();
+  } catch (e) { toast(e.message || 'Could not end the weather.', 'error'); }
+}
+async function gagRenderWeatherNow() {
+  const el = $('gag-wx-now');
+  if (!el) return;
+  try {
+    const snap = await db.collection('config').doc('gardenWeather').get(), now = Date.now();
+    const on = ((snap.exists && snap.data().events) || []).filter(e => e && e.until > now && GG_WEATHERS[e.w]);
+    el.textContent = on.length ? 'On now: ' + on.map(e => `${GG_WEATHERS[e.w].name} (${ggClock(e.until - now)} left)`).join(', ') : 'No staff weather is on right now.';
+  } catch (e) { el.textContent = ''; }
+}
 function initGagAdmin() {
   if (!gagAdminInit) {
     gagAdminInit = true;
     const rarOpts = Object.keys(GG_RARITY).map(k => `<option value="${k}">${esc(GG_RARITY[k].n)}</option>`).join('');
     ['gag-seed-rarity', 'gag-spr-rarity', 'gag-pet-rarity'].forEach(id => { $(id).innerHTML = rarOpts; });
     $('gag-seed-fn').innerHTML = Object.entries(GAG_SEED_FNS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
-    $('gag-pet-fn').innerHTML = Object.entries(GAG_PET_FNS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+    gagResetAbilities();
+    $('gag-pet-add-ability').onclick = () => gagAddAbilityRow('sell');
+    $('gag-wx-type').innerHTML = Object.entries(GG_WEATHERS).map(([k, v]) => `<option value="${k}">${esc(v.name)} (${esc(GG_MUTS[v.mut].name)} x${GG_MUTS[v.mut].mult})</option>`).join('');
+    $('gag-wx-start').onclick = gagStartWeather;
+    $('gag-wx-stop').onclick = gagStopWeather;
     document.querySelectorAll('button[data-quest-section]').forEach(tab => {
       tab.onclick = () => {
         document.querySelectorAll('button[data-quest-section]').forEach(t => t.classList.toggle('on', t === tab));
@@ -13098,6 +13557,7 @@ function initGagAdmin() {
     $('gag-pet-publish').onclick = () => gagPublish('pets');
   }
   loadGardenContent().then(renderGagLists);
+  gagRenderWeatherNow();
 }
 function gagCommon(prefix) {
   const name = ($(prefix + '-name').value || '').trim();
@@ -13125,22 +13585,31 @@ async function gagPublish(kind) {
     if (!(item.speed || item.weight || item.mutation || item.sellBoost)) { toast('Give the sprinkler at least one boost.'); return; }
   } else {
     item = gagCommon('gag-pet');
-    item.fn = $('gag-pet-fn').value;
-    const v = gagNum('gag-pet-val', 0);
-    item.val = item.fn === 'mult' ? Math.max(1, v) : Math.max(0, v) / 100;
-    if (!item.val) { toast('Enter a value for the pet\'s function.'); return; }
-    if (item.fn === 'discount') item.val = Math.min(0.9, item.val);
+    // every ability row: percentages become fractions, "Sheckle multiplier" stays a multiplier (v4.62)
+    const abilities = [...document.querySelectorAll('#gag-pet-abilities .gag-ability-row')].map(r => {
+      const fn = r.querySelector('.gag-ab-fn').value, raw = parseFloat(r.querySelector('.gag-ab-val').value);
+      if (!GAG_PET_FNS[fn] || !Number.isFinite(raw) || raw <= 0) return null;
+      let val = fn === 'mult' ? Math.max(1, raw) : raw / 100;
+      if (fn === 'discount') val = Math.min(0.9, val);
+      return { fn, val };
+    }).filter(Boolean);
+    if (!abilities.length) { toast('Give the pet at least one ability with a value.'); return; }
+    item.abilities = abilities.slice(0, GAG_MAX_ABILITIES);
+    item.fn = abilities[0].fn; item.val = abilities[0].val;   // (older pages read only the first ability)
   }
   if (!item.name) { toast('Enter a name.'); return; }
   if (!item.ic) { toast('Enter an emoji.'); return; }
   const def = GAG_KINDS[kind];
-  item.id = 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-  item.createdBy = myUid;
+  const editing = gagEditing[kind] && def.list().find(x => x.id === gagEditing[kind]);
+  item.id = editing ? editing.id : 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  item.createdBy = (editing && editing.createdBy) || myUid;
+  if (editing) item.editedBy = myUid;
   try {
     await db.collection(def.coll).doc(item.id).set(item);
     await loadGardenContent();
+    if (editing) gagClearForm(kind);
     renderGagLists();
-    toast(`Published the ${item.name} ${def.label}.`);
+    toast(editing ? `Saved the ${item.name} ${def.label}.` : `Published the ${item.name} ${def.label}.`);
   } catch (e) { toast(e.message || 'Could not publish.', 'error'); }
 }
 function gagItemInfo(kind, it) {
@@ -13161,6 +13630,11 @@ function renderGagLists() {
         <span class="gag-item-del" title="Delete">${icon('trash')}</span></div>`).join('')
       : `<div class="empty">No custom ${def.label}s yet.</div>`)
       + `<div class="admin-builtin-label">Built-in</div>` + builtin[kind].map(it => `<div class="gag-item builtin"><span class="gag-item-ic">${esc(it.ic)}</span><span class="gag-item-mid"><b>${esc(it.name)}</b> ${rarBadge(it.rarity)}<small>${esc(gagItemInfo(kind, it))}${it.requiresAll ? ' · needs everything in GAG' : ''}</small></span></div>`).join('');
+    wrap.querySelectorAll('.gag-item[data-id]').forEach(row => {
+      row.title = 'Click to edit';
+      row.onclick = e => { if (!e.target.closest('.gag-item-del')) gagLoadForEdit(kind, row.dataset.id); };
+      row.classList.toggle('editing', gagEditing[kind] === row.dataset.id);
+    });
     wrap.querySelectorAll('.gag-item-del').forEach(btn => {
       btn.onclick = () => {
         const id = btn.closest('.gag-item').dataset.id;
@@ -13237,9 +13711,12 @@ function ccAdminRefresh() {
       <span class="gag-item-ic">${esc(ic)}</span>
       <span class="gag-item-mid"><b>${esc(mid)}</b><small>${esc(info)}</small></span>
       ${deletable ? `<span class="gag-item-del" title="Delete">${icon('trash')}</span>` : ''}</div>`;
-  $('cc-list-upgrades').innerHTML = ccUpgrades.length
-    ? ccUpgrades.map(u => row(u, u.ic, u.name, `${fmtNum(u.cost)} cookies · ${ccEffectText(u)}${ccReqText(u) ? ' · ' + ccReqText(u) : ''}`, true)).join('')
-    : '<div class="empty">No upgrades yet.</div>';
+  const staffUps = ccUpgrades.filter(u => !u.builtin), builtinUps = ccUpgrades.filter(u => u.builtin);   // (built-in ones since v4.62)
+  $('cc-list-upgrades').innerHTML = (staffUps.length
+    ? staffUps.map(u => row(u, u.ic, u.name, `${fmtNum(u.cost)} cookies · ${ccEffectText(u)}${ccReqText(u) ? ' · ' + ccReqText(u) : ''}`, true)).join('')
+    : '<div class="empty">No upgrades yet.</div>')
+    + `<div class="admin-builtin-label">Built-in upgrades (${builtinUps.length})</div>`
+    + builtinUps.map(u => row(u, u.ic, u.name, `${fmtNum(u.cost)} cookies · ${ccEffectText(u)}${ccReqText(u) ? ' · ' + ccReqText(u) : ''}`, false)).join('');
   $('cc-list-items').innerHTML = (ccItems.length
     ? ccItems.map(it => row(it, it.ic, it.name, `${fmtNum(it.cost)} cookies · ${ckNum(it.cps)}/s each · price +${Math.round((it.growth - 1) * 100)}% per one owned`, true)).join('')
     : '<div class="empty">No custom items yet.</div>')
@@ -13739,11 +14216,14 @@ $('deco-publish-btn').onclick = async () => {
     const payload = { name, desc, price, createdBy: myUid, createdAt: FieldValue.serverTimestamp() };
     if (emojis) { payload.emojis = emojis; payload.emoji = emojis[0].e; } else payload.imageUrl = canvas.toDataURL('image/png');
     if (decoMaskOn()) payload.mask = true;
+    const section = cleanSectionName($('deco-section-input').value);   // the Shop section it shows in (v4.62)
+    if (section) payload.section = section;
     await db.collection('shopDecorations').add(payload);
     canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
     $('deco-name-input').value = '';
     $('deco-desc-input').value = '';
     $('deco-price-input').value = '';
+    $('deco-section-input').value = '';
     updateDecorationPreview();
     toast(decoMaskOn() ? `Published "${name}" to the Avatar Masks section!` : `Published "${name}" to the shop!`);
   } catch (e) { toast(e.message || 'Failed to publish.', 'error'); }
@@ -13828,16 +14308,19 @@ $('theme-publish-btn').onclick = async () => {
   if (!desc) { toast('Enter a description.'); return; }
   if (!Number.isFinite(price) || price < 0) { toast('Enter a valid price.'); return; }
   try {
+    const section = cleanSectionName($('theme-section-input').value);   // the Shop section it shows in (v4.62)
     await db.collection('shopThemes').add({
       name, desc, price,
       bg: [$('theme-color1-input').value, $('theme-color2-input').value, $('theme-color3-input').value],
       accent: $('theme-accent-input').value,
       accent2: $('theme-accent2-input').value,
+      ...(section ? { section } : {}),
       createdBy: myUid, createdAt: FieldValue.serverTimestamp(),
     });
     $('theme-name-input').value = '';
     $('theme-desc-input').value = '';
     $('theme-price-input').value = '';
+    $('theme-section-input').value = '';
     toast(`Published "${name}" to the shop!`);
   } catch (e) { toast(e.message || 'Failed to publish.', 'error'); }
 };
@@ -14217,12 +14700,19 @@ const SHOP_EDIT_EXTRA_FIELDS = {
 const shopOverrideKey = (type, id) => `${type}__${id}`;
 const builtinShopOriginals = new Map();
 let shopOverrides = {};
+// Fills a <datalist> with the Shop sections a category already uses, so staff can pick one or type a new one (v4.62).
+function fillSectionList(listId, key) {
+  const dl = $(listId), def = SHOP_CATEGORY_DEFS[key];
+  if (!dl) return;
+  const names = [...new Set([...(SHOP_SECTION_ORDER[key] || []), ...shopSectionsFor(key, def ? def.catalog : [])])];
+  dl.innerHTML = names.map(n => `<option value="${esc(n)}"></option>`).join('');
+}
 
 function applyShopOverrides() {
   Object.entries(SHOP_EDIT_TYPES).forEach(([type, def]) => {
     def.builtins.forEach(item => {
       const key = shopOverrideKey(type, item.id);
-      if (!builtinShopOriginals.has(key)) builtinShopOriginals.set(key, { name: item.name, desc: item.desc, price: item.price, featured: !!item.featured, ...(type === 'music' ? { banner: item.banner || null, bannerPos: item.bannerPos || null, src: item.src, cutscenes: item.cutscenes || null, shake: !!item.shake, bars: item.bars || null } : {}) });
+      if (!builtinShopOriginals.has(key)) builtinShopOriginals.set(key, { name: item.name, desc: item.desc, price: item.price, featured: !!item.featured, section: item.section, ...(type === 'music' ? { banner: item.banner || null, bannerPos: item.bannerPos || null, src: item.src, cutscenes: item.cutscenes || null, shake: !!item.shake, bars: item.bars || null } : {}) });
       Object.assign(item, builtinShopOriginals.get(key), shopOverrides[key] || {});
       // The shake and the bars are timed to the original recording, so they stop if the audio file is replaced.
       if (type === 'music' && shopOverrides[key] && shopOverrides[key].src) { item.shake = false; item.bars = null; }
@@ -14232,7 +14722,7 @@ function applyShopOverrides() {
 function subscribeShopOverrides() {
   catalogUnsubs.push(db.collection('config').doc('shopOverrides').onSnapshot(doc => {
     // Only these fields may be changed on a built-in item, and they are cleaned like any staff-made item.
-    const allowed = ['name', 'desc', 'price', 'featured', 'banner', 'bannerPos', 'src', 'cutscenes', 'disabled'];
+    const allowed = ['name', 'desc', 'price', 'featured', 'banner', 'bannerPos', 'src', 'cutscenes', 'disabled', 'section'];
     shopOverrides = {};
     Object.entries((doc.exists && doc.data()) || {}).forEach(([key, v]) => {
       if (!v || typeof v !== 'object') return;
@@ -14321,6 +14811,9 @@ async function openShopItemEditor(type, id) {
   $('shop-edit-desc').value = item.desc || '';
   $('shop-edit-price').value = Number.isFinite(Number(item.price)) ? item.price : 0;
   $('shop-edit-featured').checked = !!item.featured;
+  const sectioned = SHOP_SECTIONED.includes(type);   // decorations, masks and themes sit in Shop sections (v4.62)
+  $('shop-edit-section-wrap').classList.toggle('hidden', !sectioned);
+  if (sectioned) { $('shop-edit-section').value = shopSectionOf(type, item); fillSectionList('shop-section-list', type); }
   const fields = custom ? SHOP_EDIT_EXTRA_FIELDS[type](item) : [];
   $('shop-edit-extra').innerHTML = fields.map((f, i) => {
     const val = getByPath(item, f.path);
@@ -14406,6 +14899,7 @@ $('shop-edit-save-btn').onclick = async () => {
   if (!desc) { toast('Enter a description.'); return; }
   if (!Number.isFinite(price) || price < 0) { toast('Enter a valid price.'); return; }
   const update = { name, desc, price, featured: $('shop-edit-featured').checked };
+  if (SHOP_SECTIONED.includes(type)) update.section = cleanSectionName($('shop-edit-section').value);
   try {
     if (type === 'music') {
       const f = $('shop-edit-banner-file') && $('shop-edit-banner-file').files[0];
@@ -15218,6 +15712,51 @@ const COOKIE_BUILDINGS=[
   {id:'antimatter',name:'Antimatter Condenser',base:170000000000000,cps:430000000,ic:'☢️'},
   {id:'prism',name:'Prism',base:2100000000000000,cps:2900000000,ic:'🌈'},
 ];
+// ---- More Cookie Clicker (v4.62) ----
+// Built-in upgrades: every building gets four (at 1, 5, 25 and 50 owned) that each double what it makes, clicking gets
+// four that double every click, and three raise all production. They work exactly like staff-made upgrades (bought with
+// cookies, gone after a cash-out) and sit in the same list.
+const CC_TIER_AT=[1,5,25,50], CC_TIER_COST=[10,50,500,5000], CC_TIER_NAMES=['Mk II','Mk III','Mk IV','Mk V'];
+function ccBuiltinUpgrades(){
+  const ups=[];
+  COOKIE_BUILDINGS.forEach(b=>CC_TIER_AT.forEach((n,t)=>ups.push({ id:'b_'+b.id+'_'+t, name:b.name+' '+CC_TIER_NAMES[t], ic:b.ic, cost:b.base*CC_TIER_COST[t], fn:'building', val:2, target:b.id, reqId:b.id, reqN:n, builtin:true })));
+  [[100,'Firm Taps',1],[5000,'Quick Fingers',10],[500000,'Iron Wrists',25],[50000000,'Thunder Clicks',50]].forEach(([cost,name,n],t)=>ups.push({ id:'b_click_'+t, name, ic:'+', cost, fn:'click', val:2, target:'', reqId:'cursor', reqN:n, builtin:true }));
+  [[1e6,'Better Ovens',10],[1e9,'Bakery Network',25],[1e12,'Cookie Science',50]].forEach(([cost,name,pc],t)=>ups.push({ id:'b_global_'+t, name, ic:'%', cost, fn:'global', val:pc, target:'', reqId:'', reqN:1, builtin:true }));
+  return ups;
+}
+// Achievements stay through cash-outs and add +1% to all production each (UC.cookieAch).
+const CC_ACH=[
+  {id:'bake1', name:'First Batch', desc:'Bake 1,000 cookies in total', t:s=>s.all>=1e3},
+  {id:'bake2', name:'Busy Kitchen', desc:'Bake 1 million cookies in total', t:s=>s.all>=1e6},
+  {id:'bake3', name:'Cookie Empire', desc:'Bake 1 billion cookies in total', t:s=>s.all>=1e9},
+  {id:'bake4', name:'Cookie Galaxy', desc:'Bake 1 trillion cookies in total', t:s=>s.all>=1e12},
+  {id:'bake5', name:'Endless Dough', desc:'Bake a quadrillion cookies in total', t:s=>s.all>=1e15},
+  {id:'bake6', name:'Beyond Counting', desc:'Bake a quintillion cookies in total', t:s=>s.all>=1e18},
+  {id:'click1', name:'Warm Up', desc:'Click the cookie 100 times', t:s=>s.clicks>=100},
+  {id:'click2', name:'Tireless', desc:'Click the cookie 1,000 times', t:s=>s.clicks>=1000},
+  {id:'click3', name:'Clicking Legend', desc:'Click the cookie 10,000 times', t:s=>s.clicks>=10000},
+  {id:'build1', name:'Small Business', desc:'Own 50 buildings at once', t:s=>s.blds>=50},
+  {id:'build2', name:'Big Business', desc:'Own 200 buildings at once', t:s=>s.blds>=200},
+  {id:'build3', name:'Megacorp', desc:'Own 500 buildings at once', t:s=>s.blds>=500},
+  {id:'one100', name:'Specialist', desc:'Own 100 of one building', t:s=>s.maxOne>=100},
+  {id:'lucky1', name:'Lucky Find', desc:'Catch a Lucky Crumb', t:s=>s.lucky>=1},
+  {id:'lucky2', name:'Crumb Collector', desc:'Catch 10 Lucky Crumbs', t:s=>s.lucky>=10},
+  {id:'lucky3', name:'Crumb Hoarder', desc:'Catch 50 Lucky Crumbs', t:s=>s.lucky>=50},
+  {id:'cash1', name:'Cashed In', desc:'Cash out a run', t:s=>s.cash>=1},
+  {id:'cash2', name:'Regular Customer', desc:'Cash out 10 runs', t:s=>s.cash>=10},
+  {id:'up10', name:'Upgraded', desc:'Own 10 upgrades in one run', t:s=>s.ups>=10},
+  {id:'up40', name:'Fully Loaded', desc:'Own 40 upgrades in one run', t:s=>s.ups>=40},
+  {id:'cps1', name:'Steady Flow', desc:'Bake 1,000 cookies a second', t:s=>s.cps>=1e3},
+  {id:'cps2', name:'Flood', desc:'Bake 1 million cookies a second', t:s=>s.cps>=1e6},
+  {id:'cps3', name:'Tsunami', desc:'Bake 1 billion cookies a second', t:s=>s.cps>=1e9},
+];
+function ccAchMult(){ return 1+0.01*((UC&&UC.cookieAch)||[]).length; }
+// Lucky Crumbs: while the game is open, one shows up every minute or two for 12 seconds. Catching it gives one of:
+// Rush (x3 production for 30 seconds), Windfall (10 minutes of production at once) or Click Storm (x10 clicks for 15 s).
+let ccBuff={rush:0, storm:0}, ccLuckyTimer=null, ccLuckyEl=null;
+const ccRushMult=()=>Date.now()<ccBuff.rush?3:1, ccStormMult=()=>Date.now()<ccBuff.storm?10:1;
+let ccBuyN=1;   // how many buildings one click buys: 1, 10, 100 or 'max'
+
 // Compact numbers: 1.23K, 4.56M, 7.89B, 1.20T. Past a quadrillion they are written as a
 // power of ten (3.33x10^66) so the text never turns into a wall of digits or "e+" notation.
 function fmtNum(n){
@@ -15244,7 +15783,7 @@ function fmtOrbs(n){
 const CC_DOC = () => db.collection('config').doc('cookieClicker');
 const CC_FNS = ['click', 'clickcps', 'building', 'global', 'flat'];
 const CC_MAX = { cost: 1e30, mult: 1e6, flat: 1e15, cps: 1e15 };
-let ccUpgrades = [], ccItems = [], ccUnsub = null;
+let ccUpgrades = ccBuiltinUpgrades(), ccItems = [], ccUnsub = null;
 let ccProd = COOKIE_BUILDINGS.slice();    // every producer: built-in buildings, then staff-made items
 const ccId = s => typeof s === 'string' && /^[A-Za-z0-9_]{1,40}$/.test(s);
 const ccTxt = (s, n) => String(s == null ? '' : s).slice(0, n).trim();
@@ -15270,7 +15809,7 @@ function ccCleanUpgrade(x) {
 }
 function ccApplyContent(data) {
   const clean = (map, fn) => Object.values(map || {}).map(fn).filter(Boolean).sort((a, b) => a.cost - b.cost || a.name.localeCompare(b.name));
-  ccUpgrades = clean(data.upgrades, ccCleanUpgrade);
+  ccUpgrades = ccBuiltinUpgrades().concat(clean(data.upgrades, ccCleanUpgrade)).sort((a, b) => a.cost - b.cost || a.name.localeCompare(b.name));   // built-in ones too (v4.62)
   ccItems = clean(data.items, ccCleanItem);
   ccProd = COOKIE_BUILDINGS.concat(ccItems.map(it => ({ id: it.id, name: it.name, base: it.cost, cps: it.cps, ic: it.ic, growth: it.growth, custom: true })));
   if (currentGameId === 'cookie') { renderCookieShop(); updateCookieView(); }
@@ -15293,6 +15832,7 @@ function ccFx() {
     else if (u.fn === 'flat') fx.flat += u.val;
     else if (u.fn === 'building') fx.bld[u.target] = (fx.bld[u.target] || 1) * u.val;
   });
+  fx.global *= ccAchMult();   // achievements (v4.62)
   return fx;
 }
 const ccFmt = v => String(Math.round(v * 100) / 100);
@@ -15328,7 +15868,7 @@ function cookieCPS(){
   ccProd.forEach(b=>{ const n=bld[b.id]||0; if(n) c+=b.cps*n*cookieBuildingMult(n)*(fx.bld[b.id]||1); });
   return (c+fx.flat)*fx.global;
 }
-function cookieClickPower(){ const fx=ccFx(); return (1 + cookieCPS()*(0.02+fx.clickShare)) * fx.click; }
+function cookieClickPower(){ const fx=ccFx(); return (1 + cookieCPS()*(0.02+fx.clickShare)) * fx.click * ccStormMult(); }
 // A run starts at a quarter speed, which makes the first few minutes a grind,
 // then picks up pace the longer you keep baking (slowly at first, then faster).
 // Cashing out ends the run, which resets momentum along with everything else.
@@ -15342,7 +15882,7 @@ function cookieBaked(){ if(UC.cookiesRun==null) UC.cookiesRun=UC.cookies||0; ret
 function ckNum(n){ return n<1 ? n.toFixed(2) : n<10 ? n.toFixed(1) : fmtNum(n); }
 let cookieEngine=null, _cookieSaveAt=0, _cookieSavedSig='';
 // What a save would change (not the run timer, which ticks by itself): when it's the same, nothing is written.
-function cookieSig(){ return JSON.stringify([Math.floor(UC.cookies||0), Math.floor(UC.cookiesAllTime||0), UC.cookieBuildings||{}, UC.cookieUpgrades||[]]); }
+function cookieSig(){ return JSON.stringify([Math.floor(UC.cookies||0), Math.floor(UC.cookiesAllTime||0), UC.cookieBuildings||{}, UC.cookieUpgrades||[], UC.cookieAch||[], UC.cookieClicks||0, UC.cookieLucky||0]); }
 // Cookie Clicker bakes in the background for everyone signed in. It used to save every 20 seconds, game open or not,
 // which made every open Frixion write (and read back) its profile around the clock and used up most of Firebase's
 // free daily writes and reads. Now it saves once a minute while the game is open, every 10 minutes when it isn't,
@@ -15355,10 +15895,11 @@ function startCookieEngine(){
   _cookieSavedSig=cookieSig(); _cookieSaveAt=Date.now();   // just loaded: nothing to save yet
   ccStartContent();
   if(cookieEngine) clearInterval(cookieEngine);
+  let achTick=0;
   cookieEngine=setInterval(()=>{
-    const cps=cookieCPS(); if(cps>0){ const add=cps*0.2*cookieMult(); UC.cookies=(UC.cookies||0)+add; UC.cookiesAllTime=(UC.cookiesAllTime||0)+add; UC.cookiesRun=cookieBaked()+add; }
+    const cps=cookieCPS(); if(cps>0){ const add=cps*0.2*cookieMult()*ccRushMult(); UC.cookies=(UC.cookies||0)+add; UC.cookiesAllTime=(UC.cookiesAllTime||0)+add; UC.cookiesRun=cookieBaked()+add; }
     UC.cookieRunSecs=(UC.cookieRunSecs||0)+0.2;
-    if(currentGameId==='cookie') updateCookieView();
+    if(currentGameId==='cookie'){ updateCookieView(); if(++achTick%10===0) ccCheckAch(); }
     if(Date.now()-_cookieSaveAt>(currentGameId==='cookie'?COOKIE_SAVE_OPEN_MS:COOKIE_SAVE_BACKGROUND_MS)) saveCookies();
   }, 200);
 }
@@ -15369,8 +15910,53 @@ async function saveCookies(){
   if(!UC) return; _cookieSaveAt=Date.now();
   const sig=cookieSig(); if(sig===_cookieSavedSig) return;   // nothing new: no write
   _cookieSavedSig=sig; UC.cookieLastSave=Date.now();
-  try{ await dbUpdateUser(getU(), {cookies:UC.cookies, cookiesAllTime:UC.cookiesAllTime, cookiesRun:cookieBaked(), cookieRunSecs:UC.cookieRunSecs||0, cookieBuildings:UC.cookieBuildings, cookieUpgrades:UC.cookieUpgrades||[], cookieLastSave:UC.cookieLastSave}); }catch(e){}
+  try{ await dbUpdateUser(getU(), {cookies:UC.cookies, cookiesAllTime:UC.cookiesAllTime, cookiesRun:cookieBaked(), cookieRunSecs:UC.cookieRunSecs||0, cookieBuildings:UC.cookieBuildings, cookieUpgrades:UC.cookieUpgrades||[], cookieLastSave:UC.cookieLastSave,
+    cookieAch:UC.cookieAch||[], cookieClicks:UC.cookieClicks||0, cookieLucky:UC.cookieLucky||0, cookieCashouts:UC.cookieCashouts||0, cookieBestRun:UC.cookieBestRun||0}); }catch(e){}
 }
+// Achievements (v4.62): checked every 2 seconds while the game is open, and right after a buy or a cash-out.
+function ccStats(){
+  const bld=UC.cookieBuildings||{}, counts=Object.values(bld).map(n=>+n||0);
+  return { all:UC.cookiesAllTime||0, clicks:UC.cookieClicks||0, blds:counts.reduce((a,b)=>a+b,0), maxOne:counts.length?Math.max(...counts):0,
+    lucky:UC.cookieLucky||0, cash:UC.cookieCashouts||0, ups:(UC.cookieUpgrades||[]).length, cps:cookieCPS()*cookieMult() };
+}
+function ccCheckAch(){
+  if(!UC) return;
+  const have=new Set(UC.cookieAch||[]), s=ccStats(), fresh=CC_ACH.filter(a=>!have.has(a.id)&&a.t(s));
+  if(!fresh.length) return;
+  UC.cookieAch=[...have, ...fresh.map(a=>a.id)];
+  fresh.forEach(a=>showToast('Achievement: '+a.name+'. All production +1%.'));
+  if(currentGameId==='cookie'){ renderCookieShop(); updateCookieView(); }
+}
+// Lucky Crumbs (v4.62): see ccBuff above.
+function ccScheduleLucky(){ ccStopLucky(false); ccLuckyTimer=setTimeout(ccSpawnLucky, 60000+Math.random()*90000); }
+function ccStopLucky(removeBuffs){ if(ccLuckyTimer){ clearTimeout(ccLuckyTimer); ccLuckyTimer=null; } if(ccLuckyEl){ ccLuckyEl.remove(); ccLuckyEl=null; } if(removeBuffs) ccBuff={rush:0, storm:0}; }
+function ccSpawnLucky(){
+  ccLuckyTimer=null;
+  const host=document.querySelector('#cookie-game .ck-left');
+  if(currentGameId!=='cookie'||!host) return;
+  const b=document.createElement('button');
+  b.type='button'; b.className='ck-lucky'; b.title='Lucky Crumb'; b.setAttribute('aria-label','Lucky Crumb');
+  b.style.left=(8+Math.random()*78)+'%'; b.style.top=(8+Math.random()*70)+'%';
+  b.onclick=ccCatchLucky;
+  host.appendChild(b); ccLuckyEl=b;
+  setTimeout(()=>{ if(ccLuckyEl===b){ b.remove(); ccLuckyEl=null; ccScheduleLucky(); } }, 12000);
+}
+function ccCatchLucky(){
+  if(ccLuckyEl){ ccLuckyEl.remove(); ccLuckyEl=null; }
+  UC.cookieLucky=(UC.cookieLucky||0)+1;
+  if(Date.now()<ccBuff.rush) eggFind('luckyrush');   // (an easter egg: a crumb caught during a Rush)
+  const r=Math.random();
+  if(r<0.45){ ccBuff.rush=Date.now()+30000; showToast('Lucky Crumb: Rush! Production x3 for 30 seconds.'); }
+  else if(r<0.8){ const gain=Math.max(50, cookieCPS()*cookieMult()*600); UC.cookies=(UC.cookies||0)+gain; UC.cookiesAllTime=(UC.cookiesAllTime||0)+gain; UC.cookiesRun=cookieBaked()+gain; showToast('Lucky Crumb: Windfall! +'+fmtNum(gain)+' cookies.'); }
+  else { ccBuff.storm=Date.now()+15000; showToast('Lucky Crumb: Click Storm! Clicks x10 for 15 seconds.'); }
+  ccCheckAch(); updateCookieView(); ccScheduleLucky();
+}
+function ccCleanup(){ ccStopLucky(true); }
+// Buying several buildings at once (v4.62): the price of the next n, and how many you can afford.
+function ckPriceN(b,owned,n){ const g=b.growth||1.15; return Math.floor(b.base*Math.pow(g,owned)*(Math.pow(g,n)-1)/(g-1)); }
+function ckMaxAfford(b,owned){ const g=b.growth||1.15, c=UC.cookies||0, first=b.base*Math.pow(g,owned); if(c<first) return 0; return Math.max(1, Math.floor(Math.log(1+c*(g-1)/first)/Math.log(g))); }
+function ckBuyCount(b,owned){ return ccBuyN==='max'?Math.max(1,ckMaxAfford(b,owned)):ccBuyN; }
+function ccSetBuyN(n){ ccBuyN=n; renderCookieShop(); updateCookieView(); }
 function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
 function renderCookie(){
   const v=document.getElementById('cookie-game'); if(!v||!UC) return;
@@ -15384,19 +15970,21 @@ function renderCookie(){
         <div><span>Momentum</span><b id="ck-momentum">x0.50</b></div>
         <div><span>Baked this run</span><b id="ck-baked">0</b></div>
       </div>
+      <div class="ck-buffs" id="ck-buffs"></div>
       <button class="ck-cashout" id="ck-cashout" onclick="cashOutCookies()">Cash out</button>
-      <div class="ck-note">Cashing out pays Orbs for everything baked this run, then resets your cookies, buildings, upgrades and momentum.</div>
+      <div class="ck-note">Cashing out pays Orbs for everything baked this run, then resets your cookies, buildings, upgrades and momentum. Achievements stay.</div>
+      <div class="ck-stats" id="ck-stats"></div>
     </div>
     <div class="ck-shop" id="ck-shop"></div>`;
-  renderCookieShop(); updateCookieView();
+  renderCookieShop(); updateCookieView(); ccCheckAch(); ccScheduleLucky();
 }
 function ckRow(b, bld, fx){
-  const owned=bld[b.id]||0, price=cookieBuildingPrice(b,owned), afford=(UC.cookies||0)>=price;
+  const owned=bld[b.id]||0, n=ckBuyCount(b,owned), price=ckPriceN(b,owned,n), afford=(UC.cookies||0)>=price;
   const next=COOKIE_MILESTONES.find(m=>m>owned);
   const each=b.cps*cookieBuildingMult(owned)*(fx.bld[b.id]||1)*fx.global;
   return `<button class="ck-item ${afford?'':'no'}" data-bid="${esc(b.id)}" onclick="buyCookieBuilding('${esc(b.id)}')" ${afford?'':'disabled'}>
       <span class="cki-ic">${esc(b.ic)}</span>
-      <span class="cki-mid"><span class="cki-name">${esc(b.name)}</span><span class="cki-price">🍪 ${fmtNum(price)} &middot; ${ckNum(each)}/s each${next?' &middot; x2 at '+next:''}</span></span>
+      <span class="cki-mid"><span class="cki-name">${esc(b.name)}${n>1?` <span class="cki-n">x${fmtNum(n)}</span>`:''}</span><span class="cki-price">🍪 ${fmtNum(price)} &middot; ${ckNum(each)}/s each${next?' &middot; x2 at '+next:''}</span></span>
       <span class="cki-owned">${owned}</span>
     </button>`;
 }
@@ -15418,9 +16006,14 @@ function renderCookieShop(){
     if(bought.length) html+='<div class="ck-bought"><span>Bought:</span>'+bought.map(u=>`<span class="ck-chip" title="${esc(u.name)}: ${esc(ccEffectText(u))}">${esc(u.ic)}</span>`).join('')+'</div>';
     html+='</div>';
   }
-  html+='<div class="ck-sec"><div class="ck-head">Buildings</div>'+COOKIE_BUILDINGS.map(b=>ckRow(b,bld,fx)).join('')+'</div>';
+  const buyN=`<span class="ck-buyn">${[1,10,100,'max'].map(n=>`<button type="button" class="${ccBuyN===n?'on':''}" onclick="ccSetBuyN(${n==='max'?"'max'":n})">${n==='max'?'Max':'x'+n}</button>`).join('')}</span>`;
+  html+='<div class="ck-sec"><div class="ck-head">Buildings '+buyN+'</div>'+COOKIE_BUILDINGS.map(b=>ckRow(b,bld,fx)).join('')+'</div>';
   const items=ccProd.filter(b=>b.custom);
   if(items.length) html+='<div class="ck-sec"><div class="ck-head">Items</div>'+items.map(b=>ckRow(b,bld,fx)).join('')+'</div>';
+  // achievements (v4.62)
+  const got=new Set(UC.cookieAch||[]);
+  html+=`<div class="ck-sec"><div class="ck-head">Achievements ${got.size}/${CC_ACH.length} <small>+${got.size}% production</small></div><div class="ck-ach">`
+    +CC_ACH.map(a=>`<span class="ck-ach-chip${got.has(a.id)?' got':''}" title="${esc(a.desc)}">${esc(a.name)}</span>`).join('')+'</div></div>';
   const keep=shop.querySelector('.ck-upg-list'), top=keep?keep.scrollTop:0;   // keep the upgrade list where it was scrolled
   shop.innerHTML=html;
   const again=shop.querySelector('.ck-upg-list'); if(again) again.scrollTop=top;
@@ -15428,7 +16021,12 @@ function renderCookieShop(){
 function updateCookieView(){
   const c=document.getElementById('ck-cookies'); if(c) c.textContent=fmtNum(UC.cookies||0);
   const m=cookieMult();
-  const cps=document.getElementById('ck-cps'); if(cps) cps.textContent=ckNum(cookieCPS()*m);
+  const cps=document.getElementById('ck-cps'); if(cps) cps.textContent=ckNum(cookieCPS()*m*ccRushMult());
+  const bf=document.getElementById('ck-buffs');
+  if(bf){ const now=Date.now(), parts=[]; if(now<ccBuff.rush) parts.push('Rush x3 · '+Math.ceil((ccBuff.rush-now)/1000)+'s'); if(now<ccBuff.storm) parts.push('Click Storm x10 · '+Math.ceil((ccBuff.storm-now)/1000)+'s');
+    bf.innerHTML=parts.map(t=>`<span>${t}</span>`).join(''); bf.hidden=!parts.length; }
+  const st=document.getElementById('ck-stats');
+  if(st) st.textContent='All-time '+fmtNum(UC.cookiesAllTime||0)+' · Best run '+fmtNum(UC.cookieBestRun||0)+' · Clicks '+fmtNum(UC.cookieClicks||0)+' · Lucky Crumbs '+fmtNum(UC.cookieLucky||0)+' · Cash-outs '+fmtNum(UC.cookieCashouts||0);
   const cl=document.getElementById('ck-click'); if(cl) cl.textContent=ckNum(cookieClickPower()*m);
   const mo=document.getElementById('ck-momentum'); if(mo) mo.textContent='x'+cookieMomentum().toFixed(2);
   const bk=document.getElementById('ck-baked'); if(bk) bk.textContent=fmtNum(cookieBaked());
@@ -15436,13 +16034,14 @@ function updateCookieView(){
   if(co){ const orbs=Math.floor(cookieBaked()/COOKIE_CASH_RATE); co.disabled=orbs<1; co.textContent = orbs<1 ? 'Bake '+fmtNum(COOKIE_CASH_RATE)+' cookies to cash out' : 'Cash out for '+fmtOrbs(orbs)+' Orbs'; }
   const shop=document.getElementById('ck-shop');
   if(shop){
-    shop.querySelectorAll('[data-bid]').forEach(el=>{ const b=ccProd.find(x=>x.id===el.dataset.bid); if(!b)return; const afford=(UC.cookies||0)>=cookieBuildingPrice(b,(UC.cookieBuildings||{})[b.id]||0); el.classList.toggle('no',!afford); el.disabled=!afford; });
+    shop.querySelectorAll('[data-bid]').forEach(el=>{ const b=ccProd.find(x=>x.id===el.dataset.bid); if(!b)return; const owned=(UC.cookieBuildings||{})[b.id]||0; const afford=(UC.cookies||0)>=ckPriceN(b,owned,ckBuyCount(b,owned)); el.classList.toggle('no',!afford); el.disabled=!afford; });
     shop.querySelectorAll('[data-uid]').forEach(el=>{ const u=ccUpgrades.find(x=>x.id===el.dataset.uid); if(!u)return; const afford=(UC.cookies||0)>=u.cost; el.classList.toggle('no',!afford); el.disabled=!afford; });
   }
 }
 function clickCookie(e){
   if(!UC) return;
   const p=cookieClickPower()*cookieMult(); UC.cookies=(UC.cookies||0)+p; UC.cookiesAllTime=(UC.cookiesAllTime||0)+p; UC.cookiesRun=cookieBaked()+p;
+  UC.cookieClicks=(UC.cookieClicks||0)+1;
   trackQuest('cookie',1);
   updateCookieView();
   const btn=document.getElementById('ck-cookie'); if(btn){ btn.style.transform='scale(.94)'; setTimeout(()=>btn.style.transform='',80); }
@@ -15450,10 +16049,10 @@ function clickCookie(e){
 }
 function buyCookieBuilding(id){
   const b=ccProd.find(x=>x.id===id); if(!b||!UC) return;
-  const owned=(UC.cookieBuildings||{})[id]||0, price=cookieBuildingPrice(b,owned);
+  const owned=(UC.cookieBuildings||{})[id]||0, n=ckBuyCount(b,owned), price=ckPriceN(b,owned,n);   // 1, 10, 100 or as many as you can (v4.62)
   if((UC.cookies||0)<price){ showToast('Not enough cookies.'); return; }
-  UC.cookies-=price; UC.cookieBuildings=UC.cookieBuildings||{}; UC.cookieBuildings[id]=owned+1;
-  renderCookieShop(); updateCookieView(); saveCookies();
+  UC.cookies-=price; UC.cookieBuildings=UC.cookieBuildings||{}; UC.cookieBuildings[id]=owned+n;
+  ccCheckAch(); renderCookieShop(); updateCookieView(); saveCookies();
 }
 function buyCookieUpgrade(id){
   const u=ccUpgrades.find(x=>x.id===id); if(!u||!UC) return;
@@ -15478,9 +16077,11 @@ function cashOutCookies(){
     onConfirm: async ()=>{
       const paid=Math.min(Math.floor(cookieBaked()/COOKIE_CASH_RATE), room);
       if(paid<1) return;
+      UC.cookieBestRun=Math.max(UC.cookieBestRun||0, Math.floor(cookieBaked())); UC.cookieCashouts=(UC.cookieCashouts||0)+1;   // (v4.62)
       UC.cookies=0; UC.cookiesRun=0; UC.cookieRunSecs=0; UC.cookieBuildings={}; UC.cookieUpgrades=[];
       UC.coins=(UC.coins||0)+paid;
-      await dbUpdateUser(getU(), {coins:UC.coins, cookies:0, cookiesRun:0, cookieRunSecs:0, cookieBuildings:{}, cookieUpgrades:[]});
+      ccCheckAch();
+      await dbUpdateUser(getU(), {coins:UC.coins, cookies:0, cookiesRun:0, cookieRunSecs:0, cookieBuildings:{}, cookieUpgrades:[], cookieBestRun:UC.cookieBestRun, cookieCashouts:UC.cookieCashouts, cookieAch:UC.cookieAch||[]});
       _cookieSavedSig=cookieSig();   // (that was the save)
       refreshCaps();
       if(currentGameId==='cookie'){ renderCookieShop(); updateCookieView(); }
@@ -15539,6 +16140,148 @@ const GG_BASE_PETS=[
   // Raccoon is free, but only for someone who owns everything in Grow a Garden. It multiplies every Sheckle you earn.
   {id:'raccoon',   name:'Raccoon', ic:'🦝', rarity:'null',        cost:0,        fn:'mult', val:490050, requiresAll:true},
 ];
+// ---- Weather and mutations (v4.62) ----
+// The garden's weather is the same for everyone at the same moment and comes from the clock, not the database: time is
+// cut into GG_WX_SLOT-long slots, and each slot either stays clear or has one weather for its first GG_WX_LEN. Staff can
+// also start one from the Owner panel (config/gardenWeather, read only while the garden is open). While a weather is on,
+// each plant has a chance to catch that weather's mutation, which its next harvest keeps. Mutations add up: a Dewy (x2)
+// and Charged (x8) crop is worth x9 (1 + 1 + 7), and Gold or Rainbow from the harvest roll multiply on top.
+// Whether a plant caught a weather is a fixed roll for that plant, that planting and that weather (ggRand), so it comes out
+// the same every time it's worked out, it happens while the garden is closed, and nothing extra is saved for it.
+const GG_WEATHERS={
+  drizzle:{name:'Drizzle', mut:'dewy', chance:0.5, w:34, tip:'Crops can turn Dewy'},
+  heatwave:{name:'Heatwave', mut:'sunbaked', chance:0.35, w:22, tip:'Crops can turn Sunbaked'},
+  coldsnap:{name:'Cold Snap', mut:'frosted', chance:0.35, w:22, tip:'Crops can turn Frosted'},
+  storm:{name:'Thunderstorm', mut:'charged', chance:0.25, w:14, tip:'Crops can turn Charged'},
+  starfall:{name:'Starfall', mut:'starlit', chance:0.15, w:6, tip:'Crops can turn Starlit'},
+  eclipse:{name:'Null Eclipse', mut:'voidtouched', chance:0.1, w:2, tip:'Crops can turn Voidtouched'},
+};
+const GG_MUTS={
+  dewy:{name:'Dewy', mult:2}, sunbaked:{name:'Sunbaked', mult:3}, frosted:{name:'Frosted', mult:4},
+  charged:{name:'Charged', mult:8}, starlit:{name:'Starlit', mult:15}, voidtouched:{name:'Voidtouched', mult:50},
+};
+const GG_WX_SLOT=8*60000, GG_WX_LEN=4*60000, GG_WX_CLEAR=0.5, GG_WX_LOOKBACK=24*3600000;
+let ggStaffWeather=[], ggWxUnsub=null;   // [{ w, from, until }] from config/gardenWeather
+// A number from 0 to 1 that's always the same for the same text (FNV-1a, then a mulberry32 scramble).
+function ggRand(key){
+  let h=2166136261; for(let i=0;i<key.length;i++){ h^=key.charCodeAt(i); h=Math.imul(h,16777619); }
+  let t=(h+0x6D2B79F5)|0; t=Math.imul(t^(t>>>15),t|1); t^=t+Math.imul(t^(t>>>7),t|61); return ((t^(t>>>14))>>>0)/4294967296;
+}
+function ggSlotWeather(k){
+  if(ggRand('wx:'+k)<GG_WX_CLEAR) return null;
+  const ids=Object.keys(GG_WEATHERS), total=ids.reduce((a,id)=>a+GG_WEATHERS[id].w,0);
+  let r=ggRand('wxk:'+k)*total;
+  for(const id of ids){ r-=GG_WEATHERS[id].w; if(r<0) return id; }
+  return ids[0];
+}
+// Every weather that was on at some point between a and b (milliseconds), from the clock and from staff.
+function ggWeatherWindows(a,b){
+  a=Math.max(a,b-GG_WX_LOOKBACK);
+  const out=[];
+  for(let k=Math.floor(a/GG_WX_SLOT);k*GG_WX_SLOT<=b;k++){
+    const w=ggSlotWeather(k); if(!w) continue;
+    const from=k*GG_WX_SLOT, until=from+GG_WX_LEN;
+    if(until>a&&from<=b) out.push({key:'c'+k, w, from, until});
+  }
+  ggStaffWeather.forEach(ev=>{ if(GG_WEATHERS[ev.w]&&ev.until>a&&ev.from<=b) out.push({key:'s'+ev.from, w:ev.w, from:ev.from, until:ev.until}); });
+  return out;
+}
+// The weather on right now (the rarer one if staff started one during a clock weather), or null.
+function ggWeatherNow(now=Date.now()){
+  const on=ggWeatherWindows(now-1,now).filter(x=>x.from<=now&&now<x.until);
+  on.sort((x,y)=>GG_WEATHERS[x.w].w-GG_WEATHERS[y.w].w);
+  return on[0]||null;
+}
+// When the next clock weather starts (for the forecast line).
+function ggNextWeather(now=Date.now()){
+  for(let k=Math.floor(now/GG_WX_SLOT)+1;k<Math.floor(now/GG_WX_SLOT)+400;k++){ const w=ggSlotWeather(k); if(w) return {w, from:k*GG_WX_SLOT}; }
+  return null;
+}
+// The weather mutations a plant has caught since it was planted or last harvested.
+function ggPlotMuts(p,i,now=Date.now()){
+  if(!p||!p.at) return [];
+  const bonus=ggMutBonus(p,GG_SEED_MAP[p.seed]), got=[];
+  ggWeatherWindows(p.at,now).forEach(win=>{
+    const wx=GG_WEATHERS[win.w];
+    if(got.indexOf(wx.mut)>=0) return;
+    if(ggRand('m:'+win.key+':'+i+':'+p.at)<Math.min(0.95, wx.chance*(1+bonus))) got.push(wx.mut);
+  });
+  return got;
+}
+function ggMutMult(muts){ return 1+(muts||[]).reduce((a,id)=>a+(((GG_MUTS[id]||{}).mult||1)-1),0); }
+function ggMutNames(muts){ return (muts||[]).map(id=>(GG_MUTS[id]||{}).name).filter(Boolean); }
+function ggClock(ms){ const s=Math.max(0,Math.ceil(ms/1000)), m=Math.floor(s/60); return m+':'+String(s%60).padStart(2,'0'); }
+
+// ---- Stock and restock (v4.62) ----
+// Seeds and sprinklers are in stock in limited numbers, and the shop restocks every GG_RESTOCK_MS for everyone at once.
+// How many of each are in a restock comes from the clock and the item's rarity (common seeds always come back, the rare
+// ones only sometimes), so it costs no database reads. What you've bought from the current restock is UC.ggStock.
+const GG_RESTOCK_MS=5*60000;
+const GG_STOCK_BY_RARITY={ common:[8,20,1], uncommon:[5,12,0.95], rare:[2,6,0.75], epic:[1,4,0.5], legendary:[1,2,0.3],
+  divine:[1,1,0.15], super:[1,1,0.08], prismatic:[1,1,0.05], transcendent:[1,1,0.03], null:[1,1,0.02] };
+function ggStockWindow(now=Date.now()){ return Math.floor(now/GG_RESTOCK_MS); }
+function ggStockOf(item,kind,w=ggStockWindow()){
+  const [lo,hi,p]=GG_STOCK_BY_RARITY[ggRar(item.rarity)]||[1,3,0.5];
+  if(ggRand('st:'+kind+':'+item.id+':'+w)>=p) return 0;
+  return lo+Math.floor(ggRand('sn:'+kind+':'+item.id+':'+w)*(hi-lo+1));
+}
+function ggBought(kind,id){ const s=UC&&UC.ggStock; return s&&s.w===ggStockWindow()&&s[kind]?(s[kind][id]||0):0; }
+function ggStockLeft(item,kind){ return Math.max(0, ggStockOf(item,kind)-ggBought(kind,item.id)); }
+function ggTakeStock(kind,id){
+  const w=ggStockWindow();
+  if(!UC.ggStock||UC.ggStock.w!==w) UC.ggStock={w};
+  UC.ggStock[kind]=UC.ggStock[kind]||{}; UC.ggStock[kind][id]=(UC.ggStock[kind][id]||0)+1;
+}
+function ggStockTag(item,kind){ const n=ggStockLeft(item,kind); return n?`<span class="gg-stock">${n} in stock</span>`:'<span class="gg-stock out">Sold out</span>'; }
+
+// ---- Garden quests (v4.62) ----
+// Three quests a day (the same three for everyone, picked from the date), an easy, a medium and a hard one, paying
+// Sheckles. Rewards and the Sheckle goal grow with the best seed you've planted, so they matter at every stage.
+// Progress is UC.ggQuests = { d: day, q: [{ id, n, r }], p: [progress], c: [claimed] }, saved with the garden.
+const GG_QUESTS={
+  harvest:{ev:'harvest', text:n=>`Harvest ${n} crops`, n:[20,45,90]},
+  plant:{ev:'plant', text:n=>`Plant ${n} seeds`, n:[3,6,12]},
+  sell:{ev:'sell', text:n=>`Sell ${n} crops`, n:[20,45,90]},
+  mutated:{ev:'mutated', text:n=>`Harvest ${n} crops with a mutation`, n:[2,5,12]},
+  weather:{ev:'wxharvest', text:n=>`Harvest ${n} crops while the weather is on`, n:[4,10,25]},
+  sprinkle:{ev:'sprinkle', text:n=>`Place ${n} sprinkler${n>1?'s':''}`, n:[1,2,4]},
+  earn:{ev:'earn', text:n=>`Earn ${fmtNum(n)} Sheckles by selling`, scaled:[15,40,100]},
+};
+function ggBestSell(){ let b=18; ((UC&&UC.ggOwnedSeeds)||[]).forEach(id=>{ const s=GG_SEED_MAP[id]; if(s&&s.sell>b) b=s.sell; }); return b; }
+function ggQuestDay(){ return new Date().toISOString().slice(0,10); }
+function ggQuestsToday(){
+  const d=ggQuestDay();
+  if(UC.ggQuests&&UC.ggQuests.d===d&&Array.isArray(UC.ggQuests.q)) return UC.ggQuests;
+  const ids=Object.keys(GG_QUESTS).sort((a,b)=>ggRand('gq:'+d+':'+a)-ggRand('gq:'+d+':'+b)).slice(0,3), best=ggBestSell();
+  UC.ggQuests={ d, q:ids.map((id,tier)=>{ const def=GG_QUESTS[id]; const n=def.scaled?Math.round(best*def.scaled[tier]):def.n[tier];
+    return { id, n, r:Math.max(150, Math.round(best*[4,9,20][tier])) }; }), p:[0,0,0], c:[false,false,false] };
+  return UC.ggQuests;
+}
+function ggQuestEvent(ev,amount){
+  if(!UC||!amount) return;
+  const Q=ggQuestsToday(); let done=false;
+  Q.q.forEach((q,i)=>{ const def=GG_QUESTS[q.id]; if(!def||def.ev!==ev||Q.c[i]) return; const was=Q.p[i]; Q.p[i]=Math.min(q.n,(Q.p[i]||0)+amount); if(was<q.n&&Q.p[i]>=q.n) done=true; });
+  if(done) showToast('A garden quest is done. Claim it in the Quests tab.');
+  ggQuestBadge();
+}
+function ggQuestBadge(){ const t=document.querySelector('.gg-shoptab[data-tab="quests"]'); if(!t||!UC) return; const Q=ggQuestsToday(); const n=Q.q.filter((q,i)=>!Q.c[i]&&Q.p[i]>=q.n).length; t.dataset.badge=n?String(n):''; }
+function ggQuestsHtml(){
+  const Q=ggQuestsToday(), left=86400000-(Date.now()%86400000);
+  const rows=Q.q.map((q,i)=>{ const def=GG_QUESTS[q.id]; if(!def) return ''; const p=Math.min(q.n,Q.p[i]||0), ready=p>=q.n&&!Q.c[i];
+    return `<div class="gg-quest${Q.c[i]?' claimed':''}">
+      <div class="gg-quest-top"><span class="gg-quest-name">${escapeHtml(def.text(q.n))}</span><span class="gg-quest-tier">${['Easy','Medium','Hard'][i]}</span></div>
+      <div class="gg-grow gg-quest-bar"><div class="gg-grow-bar" style="width:${Math.round(p/q.n*100)}%"></div></div>
+      <div class="gg-quest-foot"><span>${fmtNum(p)} / ${fmtNum(q.n)} &middot; pays ${SHK} ${fmtNum(q.r)}</span>${Q.c[i]?'<span class="gg-quest-done">Claimed</span>':`<button class="gg-btn gg-quest-claim" ${ready?'':'disabled'} onclick="ggClaimQuest(${i})">Claim</button>`}</div></div>`; }).join('');
+  const hrs=Math.floor(left/3600000), mins=Math.ceil((left%3600000)/60000);
+  return `<div class="gg-spr-note">Three new quests every day at midnight UTC (in ${hrs?hrs+'h ':''}${mins}m). The same three for everyone.</div><div class="gg-quest-list">${rows}</div>`;
+}
+function ggClaimQuest(i){
+  const Q=ggQuestsToday(), q=Q.q[i]; if(!q||Q.c[i]||(Q.p[i]||0)<q.n) return;
+  Q.c[i]=true; UC.ggSheckles=(UC.ggSheckles||0)+q.r; UC.ggShecklesAllTime=(UC.ggShecklesAllTime||0)+q.r;
+  renderGGShop(); updateGGBank(); ggQuestBadge(); saveGarden();
+  showToast('Quest claimed: +'+fmtNum(q.r)+' Sheckles.');
+}
+
 let GG_SEEDS=ggSortByRarity(GG_BASE_SEEDS), GG_SEED_MAP={};
 let GG_SPRINKLERS=ggSortByRarity(GG_BASE_SPRINKLERS), GG_SPRINKLER_MAP={};
 let GG_PETS=ggSortByRarity(GG_BASE_PETS), GG_PET_MAP={};
@@ -15597,20 +16340,29 @@ function ggOnProfileUpdate(){
 // Older pets only have a `sell` number, which still means a sell bonus.
 function ggPetFn(p){ return p.fn||'sell'; }
 function ggPetVal(p){ return p.fn ? (p.val||0) : (p.sell||0); }
-function ggPetBonus(fn){ let b=0; ggActivePets().forEach(id=>{ const p=GG_PET_MAP[id]; if(p&&ggPetFn(p)===fn) b+=ggPetVal(p); }); return b; }
+// A pet's abilities (v4.62: staff can give a pet up to 4 in the Owner panel): [{ fn, val }]. Older pets have a single
+// fn and val, and the oldest only a `sell` number, which is a sell bonus.
+const GG_PET_FN_IDS=['sell','mult','growth','mutation','discount'];
+function ggPetAbilities(p){
+  if(!p) return [];
+  if(Array.isArray(p.abilities)&&p.abilities.length) return p.abilities.filter(a=>a&&GG_PET_FN_IDS.indexOf(a.fn)>=0&&isFinite(+a.val)&&+a.val>0).slice(0,4).map(a=>({fn:a.fn, val:+a.val}));
+  return [{fn:ggPetFn(p), val:ggPetVal(p)}];
+}
+function ggPetBonus(fn){ let b=0; ggActivePets().forEach(id=>{ ggPetAbilities(GG_PET_MAP[id]).forEach(a=>{ if(a.fn===fn) b+=a.val; }); }); return b; }
 function ggPetSellMult(){
   let add=0, mult=1;
-  ggActivePets().forEach(id=>{ const p=GG_PET_MAP[id]; if(!p) return; const f=ggPetFn(p), v=ggPetVal(p); if(f==='sell') add+=v; else if(f==='mult') mult*=Math.max(1,v); });
+  ggActivePets().forEach(id=>{ ggPetAbilities(GG_PET_MAP[id]).forEach(a=>{ if(a.fn==='sell') add+=a.val; else if(a.fn==='mult') mult*=Math.max(1,a.val); }); });
   return (1+add)*mult;
 }
-function ggPetAbility(p){
-  const f=ggPetFn(p), v=ggPetVal(p), pc=Math.round(v*100);
+function ggAbilityText(f,v){
+  const pc=Math.round(v*100);
   if(f==='mult') return '×'+fmtNum(v)+' Sheckles';
   if(f==='growth') return '+'+pc+'% grow speed';
   if(f==='mutation') return '+'+pc+'% mutation chance';
   if(f==='discount') return '-'+pc+'% seed prices';
   return '+'+pc+'% sell value';
 }
+function ggPetAbility(p){ return ggPetAbilities(p).map(a=>ggAbilityText(a.fn,a.val)).join(' · '); }
 function ggSeedCost(s){ return Math.max(1, Math.ceil(s.cost*(1-Math.min(0.9, ggPetBonus('discount'))))); }
 function ggMutBonus(p,s){ let b=ggPetBonus('mutation'); ggPlotSprs(p).forEach(x=>b+=(x.mutation||0)); if(s&&s.fn==='gold') b+=(s.fnVal||0); return b; }
 // "Own everything": every seed and sprinkler bought at least once, every other pet adopted, and every plot unlocked.
@@ -15635,14 +16387,37 @@ function fmtWeight(kg){ return (kg<10?kg.toFixed(2):kg.toFixed(1))+' kg'; }
 function ggExpandCost(){ const extra=(UC.ggUnlocked||GG_START_PLOTS)-GG_START_PLOTS; return Math.floor(150*Math.pow(2.4, extra)); }
 function ggGrowLabel(ms){ const s=Math.round(ms/1000); if(s<60) return s+'s'; const m=Math.floor(s/60), r=s%60; return m+'m'+(r?(' '+r+'s'):''); }
 function ggRollMut(bonus){ const k=1+(bonus||0), r=Math.random(); if(r<0.02*k) return {id:'rainbow',name:'Rainbow',badge:'🌈',mult:5}; if(r<0.12*k) return {id:'gold',name:'Gold',badge:'✨',mult:2}; return null; }
-async function saveGarden(){ if(!UC) return; _ggSaveAt=Date.now(); try{ await dbUpdateUser(getU(), {ggSheckles:UC.ggSheckles, ggShecklesAllTime:UC.ggShecklesAllTime, ggPlots:UC.ggPlots, ggUnlocked:UC.ggUnlocked, ggInventory:UC.ggInventory, ggPets:UC.ggPets, ggOwnedSeeds:UC.ggOwnedSeeds||[], ggOwnedSprinklers:UC.ggOwnedSprinklers||[]}); }catch(e){} }
+// The garden is saved only when something in it changed (v4.62). It used to write the whole profile every 20 seconds
+// while the game was open, changed or not, which used up the free daily database allowance.
+let _ggSavedSig='';
+function ggSaveData(){ return {ggSheckles:UC.ggSheckles, ggShecklesAllTime:UC.ggShecklesAllTime, ggPlots:UC.ggPlots, ggUnlocked:UC.ggUnlocked, ggInventory:UC.ggInventory, ggPets:UC.ggPets, ggOwnedSeeds:UC.ggOwnedSeeds||[], ggOwnedSprinklers:UC.ggOwnedSprinklers||[], ggStock:UC.ggStock||null, ggQuests:UC.ggQuests||null}; }
+async function saveGarden(){
+  if(!UC) return; _ggSaveAt=Date.now();
+  const data=ggSaveData(), sig=JSON.stringify(data);
+  if(sig===_ggSavedSig) return;
+  _ggSavedSig=sig;
+  try{ await dbUpdateUser(getU(), data); }catch(e){ _ggSavedSig=''; }
+}
+// Staff-started weather (Owner panel): config/gardenWeather = { events: [{ w, from, until, by }] }, read only while the
+// garden is open.
+function ggWatchStaffWeather(){
+  ggStopStaffWeather();
+  try{ ggWxUnsub=db.collection('config').doc('gardenWeather').onSnapshot(s=>{
+    const ev=(s.exists&&Array.isArray(s.data().events))?s.data().events:[];
+    ggStaffWeather=ev.filter(x=>x&&GG_WEATHERS[x.w]&&isFinite(+x.from)&&isFinite(+x.until)).map(x=>({w:x.w, from:+x.from, until:+x.until})).slice(-20);
+    if(currentGameId==='growgarden'){ renderGGPlots(); ggWeatherTick(true); }
+  },()=>{}); }catch(e){}
+}
+function ggStopStaffWeather(){ if(ggWxUnsub){ try{ ggWxUnsub(); }catch(e){} ggWxUnsub=null; } }
 function renderGrowGarden(){
   const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
   ggInitState();
+  _ggSavedSig=JSON.stringify(ggSaveData());   // just loaded: nothing to save yet
   ggShovel=false; ggShopTab='seeds';
   stage.innerHTML='<div class="gg-game" id="gg-game"></div>';
   renderGardenAll();
   startGGEngine();
+  ggWatchStaffWeather();
   // pull in any admin-published custom seeds/sprinklers, then refresh the shop
   loadGardenContent().then(()=>{ if(currentGameId==='growgarden'){ renderGGShop(); updateGGBank(); } });
 }
@@ -15662,11 +16437,13 @@ function renderGardenAll(){
         
       </div>
     </div>
+    <div class="gg-weather" id="gg-weather"></div>
     <div class="gg-main">
       <div class="gg-garden">
+        <div class="gg-wx-layer" id="gg-wx-layer" aria-hidden="true"></div>
         <div class="gg-plots" id="gg-plots"></div>
         <div class="gg-pets-layer" id="gg-pets-layer"></div>
-        <div class="gg-hint" id="gg-hint">Pick a seed and tap a plot to plant. Crops regrow after every harvest, so harvest into your basket and sell, or dig a plant up with the shovel.</div>
+        <div class="gg-hint" id="gg-hint">Pick a seed and tap a plot to plant. Crops regrow after every harvest, so harvest into your basket and sell, or dig a plant up with the shovel. Weather gives growing crops mutations that make them worth more.</div>
       </div>
       <div class="gg-shop">
         <div class="gg-shoptabs">
@@ -15674,11 +16451,30 @@ function renderGardenAll(){
           <button class="gg-shoptab${ggShopTab==='sprinklers'?' on':''}" data-tab="sprinklers" onclick="ggSetShopTab('sprinklers')">💧 Sprinklers</button>
           <button class="gg-shoptab${ggShopTab==='pets'?' on':''}" data-tab="pets" onclick="ggSetShopTab('pets')">🐾 Pets</button>
           <button class="gg-shoptab${ggShopTab==='sell'?' on':''}" data-tab="sell" onclick="ggSetShopTab('sell')">🧺 Sell</button>
+          <button class="gg-shoptab${ggShopTab==='quests'?' on':''}" data-tab="quests" onclick="ggSetShopTab('quests')">Quests</button>
         </div>
         <div id="gg-shopbody"></div>
       </div>
     </div>`;
-  renderGGPlots(); renderGardenPets(); renderGGShop(); updateGGBank();
+  renderGGPlots(); renderGardenPets(); renderGGShop(); updateGGBank(); ggWeatherTick(true); ggQuestBadge();
+}
+// The weather line above the garden, and the weather drawn over it. force: redraw even if nothing changed.
+let _ggWxShown='', _ggStockShown=-1;
+function ggWeatherTick(force){
+  const now=Date.now(), cur=ggWeatherNow(now), bar=document.getElementById('gg-weather'), layer=document.getElementById('gg-wx-layer');
+  if(bar){
+    if(cur){ const wx=GG_WEATHERS[cur.w], m=GG_MUTS[wx.mut];
+      bar.innerHTML=`<span class="gg-wx-name wx-${cur.w}">${escapeHtml(wx.name)}</span><span>${escapeHtml(wx.tip)} (x${m.mult}) &middot; ${ggClock(cur.until-now)} left</span>`; }
+    else { const nx=ggNextWeather(now);
+      bar.innerHTML=`<span class="gg-wx-name wx-clear">Clear</span><span>${nx?('Forecast: '+escapeHtml(GG_WEATHERS[nx.w].name)+' in '+ggClock(nx.from-now)):'Clear skies'}</span>`; }
+  }
+  const key=cur?cur.w+cur.from:'';
+  if(layer&&(force||key!==_ggWxShown)){ layer.className='gg-wx-layer'+(cur?' wx-'+cur.w:''); if(key!==_ggWxShown&&!force) renderGGPlots(); }
+  _ggWxShown=key;
+  const w=ggStockWindow(now);
+  if(_ggStockShown!==-1&&w!==_ggStockShown&&(ggShopTab==='seeds'||ggShopTab==='sprinklers')) renderGGShop();
+  _ggStockShown=w;
+  const rs=document.getElementById('gg-restock'); if(rs) rs.textContent='Restocks in '+ggClock(GG_RESTOCK_MS-(now%GG_RESTOCK_MS));
 }
 function ggSetShopTab(t){ ggShopTab=t; document.querySelectorAll('.gg-shoptab').forEach(b=>b.classList.toggle('on', b.dataset.tab===t)); renderGGShop(); renderGGPlots(); }
 function ggToggleShovel(){ ggShovel=!ggShovel; const b=document.querySelector('.gg-shovel-btn'); if(b) b.classList.toggle('on',ggShovel); renderGGPlots(); if(ggShovel) showToast('Shovel ready. Tap a plant to dig it up.'); }
@@ -15695,12 +16491,14 @@ function renderGGPlots(){
     const p=UC.ggPlots[i];
     if(!p){ html+=`<div class="gg-plot empty${ggShovel?' dig':''}" onclick="ggPlotTap(${i})"><span class="gg-soil">+</span></div>`; continue; }
     const s=GG_SEED_MAP[p.seed], ready=ggPlotReady(p), prog=ggPlotProgress(p), pct=Math.round(prog*100), sprs=ggPlotSprs(p);
+    const muts=ggPlotMuts(p,i);   // weather mutations it has caught (v4.62)
     const canSprinkle=ggShopTab==='sprinklers'&&sprs.length<GG_SPRINKLERS.length;
-    const cls='gg-plot planted'+(ready?' ready':'')+(ggShovel?' dig':'')+(canSprinkle?' sprinklable':'');
+    const cls='gg-plot planted'+(ready?' ready':'')+(ggShovel?' dig':'')+(canSprinkle?' sprinklable':'')+(muts.length?' mutated':'');
     html+=`<div class="${cls}" data-i="${i}" onclick="ggPlotTap(${i})">
       ${sprs.length?`<span class="gg-plot-spr" title="${sprs.map(x=>escapeHtml(x.name)).join(', ')}">${sprs.map(x=>x.ic).join('')}</span>`:''}
+      ${muts.length?`<span class="gg-plot-muts" title="${escapeHtml(ggMutNames(muts).join(', '))} (x${fmtNum(ggMutMult(muts))})">${muts.map(id=>`<i class="gm-${id}"></i>`).join('')}</span>`:''}
       <span class="gg-plant" style="${ready?'':'opacity:'+(0.4+0.6*prog).toFixed(2)+';transform:scale('+(0.7+0.3*prog).toFixed(2)+')'}">${s?s.ic:'🌱'}</span>
-      ${ready?`<span class="gg-ready-tag">${fmtWeight(ggPlotWeight(p))}</span>`:`<div class="gg-grow"><div class="gg-grow-bar" style="width:${pct}%"></div></div>`}</div>`;
+      ${ready?`<span class="gg-ready-tag">${fmtWeight(ggPlotWeight(p))}${muts.length?' &middot; x'+fmtNum(ggMutMult(muts)):''}</span>`:`<div class="gg-grow"><div class="gg-grow-bar" style="width:${pct}%"></div></div>`}</div>`;
   }
   wrap.innerHTML=html;
 }
@@ -15717,16 +16515,18 @@ function renderGGShop(){
   if(ggShopTab==='sprinklers'){ body.innerHTML=ggSprinklerShopHtml(); return; }
   if(ggShopTab==='pets'){ body.innerHTML=ggPetShopHtml(); return; }
   if(ggShopTab==='sell'){ body.innerHTML=ggSellShopHtml(); return; }
+  if(ggShopTab==='quests'){ body.innerHTML=ggQuestsHtml(); return; }
     const rows=GG_SEEDS.map(s=>{
     const sel=ggSel===s.id;
-    const afford=(UC.ggSheckles||0)>=ggSeedCost(s);
+    const left=ggStockLeft(s,'seeds');
+    const afford=(UC.ggSheckles||0)>=ggSeedCost(s)&&left>0;
     const priceStr=SHK+' '+fmtNum(ggSeedCost(s));
     return `<div class="gg-seed${sel?' sel':''}${afford?'':' poor'}" onclick="ggSelect('${s.id}')">
       <span class="gg-seed-ic">${s.ic}</span>
-      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)}</span><span class="gg-seed-meta">${priceStr} · ${ggGrowLabel(s.grow)} · sells ${SHK} ${fmtNum(s.sell)}${ggSeedFnText(s)?' · '+ggSeedFnText(s):''}</span></span>
+      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)} ${ggStockTag(s,'seeds')}</span><span class="gg-seed-meta">${priceStr} · ${ggGrowLabel(s.grow)} · sells ${SHK} ${fmtNum(s.sell)}${ggSeedFnText(s)?' · '+ggSeedFnText(s):''}</span></span>
       ${sel?'<span class="gg-seed-sel">✓</span>':''}</div>`;
   }).join('');
-  body.innerHTML=`<div class="gg-seedlist">${rows}</div>`;
+  body.innerHTML=`<div class="gg-spr-note gg-restock-note"><b id="gg-restock">Restocks in ${ggClock(GG_RESTOCK_MS-(Date.now()%GG_RESTOCK_MS))}</b> &middot; Every seed comes back in new numbers for everyone. Rare seeds don't always show up.</div><div class="gg-seedlist">${rows}</div>`;
 }
 function ggSeedFnText(s){
   const v=s.fnVal||0;
@@ -15736,14 +16536,14 @@ function ggSeedFnText(s){
   return '';
 }
 function ggSprinklerShopHtml(){
-    const note=`<div class="gg-spr-note">Pick a sprinkler, then tap one of your plants to place it. You can stack several different sprinklers on the same plant and their boosts add up. They stay until you dig the plant up.</div>`;
+    const note=`<div class="gg-spr-note">Pick a sprinkler, then tap one of your plants to place it. You can stack several different sprinklers on the same plant and their boosts add up. They stay until you dig the plant up.<br><b id="gg-restock">Restocks in ${ggClock(GG_RESTOCK_MS-(Date.now()%GG_RESTOCK_MS))}</b></div>`;
   const rows=GG_SPRINKLERS.map(s=>{
     const sel=ggSprSel===s.id;
-    const afford=(UC.ggSheckles||0)>=(s.cost||0);
+    const afford=(UC.ggSheckles||0)>=(s.cost||0)&&ggStockLeft(s,'sprinklers')>0;
     const priceStr=SHK+' '+fmtNum(s.cost||0);
     return `<div class="gg-seed gg-spr${sel?' sel':''}${afford?'':' poor'}" onclick="ggSelectSpr('${s.id}')">
       <span class="gg-seed-ic">${s.ic}</span>
-      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)}</span><span class="gg-seed-meta">${priceStr} · +${Math.round((s.speed||0)*100)}% speed · +${Math.round((s.weight||0)*100)}% weight${s.mutation?(' · +'+Math.round(s.mutation*100)+'% mutation'):''}${s.sellBoost?(' · +'+Math.round(s.sellBoost*100)+'% sell'):''}</span></span>
+      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)} ${ggStockTag(s,'sprinklers')}</span><span class="gg-seed-meta">${priceStr} · +${Math.round((s.speed||0)*100)}% speed · +${Math.round((s.weight||0)*100)}% weight${s.mutation?(' · +'+Math.round(s.mutation*100)+'% mutation'):''}${s.sellBoost?(' · +'+Math.round(s.sellBoost*100)+'% sell'):''}</span></span>
       ${sel?'<span class="gg-seed-sel">✓</span>':''}</div>`;
   }).join('');
   return note+`<div class="gg-seedlist">${rows}</div>`;
@@ -15770,7 +16570,7 @@ function ggSellShopHtml(){
   const inv=(UC&&UC.ggInventory)||[];
   if(!inv.length) return `<div class="gg-spr-note">Your basket is empty. Harvest ripe crops, then sell them here for Sheckles.</div>`;
   const groups={};
-  inv.forEach(it=>{ const g=groups[it.seed]||(groups[it.seed]={seed:it.seed,count:0,value:0,heaviest:0,muts:0}); g.count++; g.value+=(it.value||0); g.heaviest=Math.max(g.heaviest,it.weight||0); if(it.mut) g.muts++; });
+  inv.forEach(it=>{ const g=groups[it.seed]||(groups[it.seed]={seed:it.seed,count:0,value:0,heaviest:0,muts:0}); g.count++; g.value+=(it.value||0); g.heaviest=Math.max(g.heaviest,it.weight||0); if(it.mut||(it.muts&&it.muts.length)) g.muts++; });
   const total=inv.reduce((a,b)=>a+(b.value||0),0);
   const rows=Object.keys(groups).map(k=>{ const g=groups[k], s=GG_SEED_MAP[g.seed];
     return `<div class="gg-seed gg-sell" onclick="ggSellType('${g.seed}')">
@@ -15790,10 +16590,14 @@ async function ggPlant(i){
   if(!UC||i>=UC.ggUnlocked||UC.ggPlots[i]) return;
   const s=GG_SEED_MAP[ggSel]; if(!s){ showToast('Pick a seed first.'); return; }
   const seedCost=ggSeedCost(s);
+  if(ggStockLeft(s,'seeds')<1){ showToast(s.name+' seeds are sold out. The shop restocks in '+ggClock(GG_RESTOCK_MS-(Date.now()%GG_RESTOCK_MS))+'.'); return; }
   if((UC.ggSheckles||0)<seedCost){ showToast('Not enough Sheckles for a '+s.name+' seed.'); return; }
   UC.ggSheckles-=seedCost;
+  ggTakeStock('seeds', s.id);
   UC.ggOwnedSeeds=UC.ggOwnedSeeds||[]; if(UC.ggOwnedSeeds.indexOf(s.id)<0) UC.ggOwnedSeeds.push(s.id);
   UC.ggPlots[i]={seed:s.id, at:Date.now(), w:ggRollW(), sprinklers:[]};
+  ggQuestEvent('plant',1);
+  if(UC.ggUnlocked>=GG_MAX_PLOTS&&UC.ggPlots.slice(0,GG_MAX_PLOTS).every(p=>p&&p.seed===s.id)) eggFind('samegarden');   // (an easter egg)
   renderGGPlots(); renderGGShop(); updateGGBank(); saveGarden();
 }
 async function ggPlaceSprinkler(i){
@@ -15801,8 +16605,11 @@ async function ggPlaceSprinkler(i){
   if(!Array.isArray(p.sprinklers)) p.sprinklers=[];
   const s=GG_SPRINKLER_MAP[ggSprSel]; if(!s){ showToast('Pick a sprinkler first.'); return; }
   if(p.sprinklers.indexOf(s.id)>=0){ showToast('This plant already has a '+s.name+'. Add a different one for more boost.'); return; }
+  if(ggStockLeft(s,'sprinklers')<1){ showToast('The '+s.name+' is sold out. The shop restocks in '+ggClock(GG_RESTOCK_MS-(Date.now()%GG_RESTOCK_MS))+'.'); return; }
   if((UC.ggSheckles||0)<(s.cost||0)){ showToast('Not enough Sheckles for '+s.name+'.'); return; }
   UC.ggSheckles-=(s.cost||0);
+  ggTakeStock('sprinklers', s.id);
+  ggQuestEvent('sprinkle',1);
   UC.ggOwnedSprinklers=UC.ggOwnedSprinklers||[]; if(UC.ggOwnedSprinklers.indexOf(s.id)<0) UC.ggOwnedSprinklers.push(s.id);
   p.sprinklers.push(s.id);
   renderGGPlots(); renderGGShop(); updateGGBank(); saveGarden();
@@ -15849,44 +16656,56 @@ function ggDig(i){
   renderGGPlots(); renderGGShop(); updateGGBank(); saveGarden();
   showToast('Dug up the '+(s?s.name:'plant')+(nspr?(' and its '+nspr+' sprinkler'+(nspr>1?'s':'')+'.'):'.'));
 }
-// One harvest of a plant: usually 1 crop, more for 'multi' seeds. Returns the basket entries and the best mutation.
-function ggDoHarvest(p,s){
+// One harvest of a plant: usually 1 crop, more for 'multi' seeds. Returns the basket entries, the best harvest-roll
+// mutation (Gold or Rainbow) and the weather mutations the plant had caught (v4.62), which every crop from it keeps.
+function ggDoHarvest(p,s,i){
   const n=1+((s.fn==='multi')?Math.max(0,Math.floor(s.fnVal||0)):0), entries=[]; let best=null, weight=0;
+  const wm=ggPlotMuts(p,i), wmult=ggMutMult(wm);
   for(let k=0;k<n;k++){
     const mut=ggRollMut(ggMutBonus(p,s)); weight=ggPlotWeight(p);
-    const value=Math.max(1, Math.floor(ggPlotValue(p)*(mut?mut.mult:1)*ggPetSellMult()));
-    entries.push({seed:s.id, weight:+weight.toFixed(3), value, mut:mut?mut.id:null});
+    const value=Math.max(1, Math.floor(ggPlotValue(p)*(mut?mut.mult:1)*wmult*ggPetSellMult()));
+    entries.push({seed:s.id, weight:+weight.toFixed(3), value, mut:mut?mut.id:null, muts:wm.length?wm:null});
     if(mut&&(!best||mut.mult>best.mult)) best=mut;
   }
-  return { entries, mut:best, weight };
+  return { entries, mut:best, weight, wm };
+}
+// Garden quests count what a harvest brought in (v4.62).
+function ggHarvestQuests(entries){
+  ggQuestEvent('harvest', entries.length);
+  ggQuestEvent('mutated', entries.filter(e=>e.mut||(e.muts&&e.muts.length)).length);
+  if(ggWeatherNow()) ggQuestEvent('wxharvest', entries.length);
+  if(entries.some(e=>e.muts&&e.muts.indexOf('voidtouched')>=0)) eggFind('voidcrop');   // (an easter egg)
 }
 function ggHarvest(i){
   if(!UC) return;
   const p=UC.ggPlots[i]; if(!p) return;
   if(!ggPlotReady(p)){ showToast('Still growing.'); return; }
   const s=GG_SEED_MAP[p.seed]; if(!s){ UC.ggPlots[i]=null; renderGGPlots(); return; }
-  const h=ggDoHarvest(p,s), mut=h.mut, weight=h.weight;
+  const h=ggDoHarvest(p,s,i), mut=h.mut, weight=h.weight, wn=ggMutNames(h.wm);
   UC.ggInventory=UC.ggInventory||[]; h.entries.forEach(e=>UC.ggInventory.push(e));
   trackQuest('harvest',1);
+  ggHarvestQuests(h.entries);
   ggFloat(i, fmtWeight(weight)+(mut?(' '+mut.badge):'')+' picked', mut);
   p.at=Date.now(); p.w=ggRollW();   // multigrow: the plant stays and regrows
   renderGGPlots(); renderGGShop(); updateGGBank(); saveGarden();
-  if(mut) showToast(mut.badge+' '+mut.name+' '+s.name+'! '+fmtWeight(weight)+' added to your basket.');
+  if(mut||wn.length) showToast((mut?mut.badge+' '+mut.name+' ':'')+(wn.length?wn.join(' ')+' ':'')+s.name+'! '+fmtWeight(weight)+' added to your basket.');
 }
 function ggHarvestAll(){
   if(!UC) return;
   UC.ggInventory=UC.ggInventory||[];
-  let count=0, best=null;
+  let count=0, best=null, all=[];
   for(let i=0;i<UC.ggPlots.length;i++){
     const p=UC.ggPlots[i]; if(!p||!ggPlotReady(p)) continue;
     const s=GG_SEED_MAP[p.seed]; if(!s) continue;
-    const h=ggDoHarvest(p,s);
+    const h=ggDoHarvest(p,s,i);
     h.entries.forEach(e=>UC.ggInventory.push(e));
-    count+=h.entries.length; if(h.mut) best=h.mut.name;
+    all=all.concat(h.entries);
+    count+=h.entries.length; if(h.mut) best=h.mut.name; else if(!best&&h.wm.length) best=ggMutNames(h.wm).join(' ')+' crop';
     p.at=Date.now(); p.w=ggRollW();
   }
   if(!count){ showToast('Nothing ready to harvest yet.'); return; }
   trackQuest('harvest',count);
+  ggHarvestQuests(all);
   renderGGPlots(); renderGGShop(); updateGGBank(); saveGarden();
   showToast('Harvested '+count+' crop'+(count>1?'s':'')+' into your basket'+(best?(' (incl. a '+best+'!)'):'')+'. Sell them in the 🧺 tab.');
 }
@@ -15896,6 +16715,7 @@ function ggSellType(seedId){
   UC.ggInventory=UC.ggInventory.filter(it=>{ if(it.seed===seedId){ gained+=(it.value||0); n++; return false; } return true; });
   if(!n) return;
   trackQuest('sell',n);
+  ggQuestEvent('sell',n); ggQuestEvent('earn',gained);
   UC.ggSheckles=(UC.ggSheckles||0)+gained; UC.ggShecklesAllTime=(UC.ggShecklesAllTime||0)+gained;
   renderGGShop(); updateGGBank(); saveGarden();
   const s=GG_SEED_MAP[seedId];
@@ -15905,6 +16725,7 @@ function ggSellAll(){
   if(!UC||!Array.isArray(UC.ggInventory)||!UC.ggInventory.length){ showToast('Your basket is empty.'); return; }
   const gained=UC.ggInventory.reduce((a,b)=>a+(b.value||0),0), n=UC.ggInventory.length;
   trackQuest('sell',n);
+  ggQuestEvent('sell',n); ggQuestEvent('earn',gained);
   UC.ggInventory=[];
   UC.ggSheckles=(UC.ggSheckles||0)+gained; UC.ggShecklesAllTime=(UC.ggShecklesAllTime||0)+gained;
   renderGGShop(); updateGGBank(); saveGarden();
@@ -15944,12 +16765,13 @@ function ggFloat(i, text, mut){
 function startGGEngine(){ stopGGEngine(); ggEngine=setInterval(()=>{
   if(currentGameId==='growgarden' && document.getElementById('gg-plots')){
     renderGGPlots();
+    ggWeatherTick();
     if(Date.now()-_ggPetStepAt>2600){ _ggPetStepAt=Date.now(); ggPetStep(); }
   }
-  if(Date.now()-_ggSaveAt>20000) saveGarden();
+  if(Date.now()-_ggSaveAt>20000) saveGarden();   // (only writes if something changed)
 }, 600); }
 function stopGGEngine(){ if(ggEngine){ clearInterval(ggEngine); ggEngine=null; } }
-function ggCleanup(){ stopGGEngine(); }
+function ggCleanup(){ stopGGEngine(); ggStopStaffWeather(); }
 
 // ============================================================
 //  LIQUID DASH  (geometry-dash: cube, ship, ball, wave, spider, swing)
@@ -16257,6 +17079,7 @@ function snakeStep(){
   s.body.unshift(head);
   if(s.food && head.x===s.food.x && head.y===s.food.y){
     s.eaten++; const e=document.getElementById('sn-eaten'); if(e){ e.textContent=s.eaten; e.classList.remove('bump'); void e.offsetWidth; e.classList.add('bump'); }
+    if(s.body.length===67) eggFind('snake67');   // (an easter egg)
     s.eatAt=performance.now(); s.fx.push({x:head.x, y:head.y, t0:s.eatAt});
     snakeSpawnFood();
     if(s.eaten%4===0){ clearInterval(snakeTimer); s.stepMs=Math.max(70, 130-Math.floor(s.eaten/4)*8); snakeTimer=setInterval(snakeStep, s.stepMs); } }
@@ -16374,6 +17197,7 @@ function mergeMove(dir){
   s.score+=gained; mergeSpawn();
   let hi=0; for(let r=0;r<4;r++)for(let c=0;c<4;c++) if(g[r][c]>hi) hi=g[r][c];
   if(hi>s.highest){ s.highest=hi;
+    if(hi===2048) eggFind('merge2048');   // (an easter egg)
     if(hi>=64 && !s.awarded[hi]){ s.awarded[hi]=1; const caps=hi/32; UC.coins=(UC.coins||0)+caps; if(hi>(UC.mergeBest||0)) UC.mergeBest=hi; try{ dbUpdateUser(getU(),{coins:UC.coins, mergeBest:UC.mergeBest}); }catch(e){} refreshCaps(); showToast('Blox Merge: reached '+hi+'! +'+caps+' Orbs'); }
     else if(hi>(UC.mergeBest||0)){ UC.mergeBest=hi; try{ dbUpdateUser(getU(),{mergeBest:UC.mergeBest}); }catch(e){} } }
   mergeDraw();
@@ -16466,6 +17290,7 @@ function tsSubmit(){
   const s=tsState; if(!s||!s.running) return;
   const inp=document.getElementById('ts-input'); const val=(inp.value||'').trim().toLowerCase(); inp.value='';
   if(!val) return;
+  if(val==='egg') eggFind('typingegg');   // (an easter egg)
   let idx=-1, minx=Infinity;
   for(let i=0;i<s.words.length;i++){ if(s.words[i].text===val && s.words[i].x<minx){ minx=s.words[i].x; idx=i; } }
   if(idx>=0){ const el=s.words[idx].el; el.classList.add('hit'); setTimeout(()=>el.remove(),120); s.words.splice(idx,1); s.cleared++; tsUpdateHud(); }
@@ -17236,7 +18061,7 @@ function renderSimon(){
   smState={ seq:[], step:0, round:0, showing:false, accepting:false, over:false };
 }
 function smStart(){ const s=smState; if(!s) return; s.seq=[]; s.round=0; s.over=false; const b=document.getElementById('sm-startbtn'); if(b) b.style.display='none'; smNext(); }
-function smNext(){ const s=smState; s.seq.push(Math.floor(Math.random()*4)); s.round=s.seq.length; const r=document.getElementById('sm-round'); if(r) r.textContent=s.round; smShow(); }
+function smNext(){ const s=smState; s.seq.push(Math.floor(Math.random()*4)); s.round=s.seq.length; const r=document.getElementById('sm-round'); if(r) r.textContent=s.round; if(s.round===15) eggFind('simon15'); smShow(); }
 function smFlash(id){ const el=document.querySelector('.sm-pad[data-pad="'+id+'"]'); if(el){ el.classList.add('lit'); setTimeout(()=>el.classList.remove('lit'),300); } }
 function smShow(){
   const s=smState; s.showing=true; s.accepting=false; s.step=0;
@@ -17432,7 +18257,7 @@ const GAME_TILES = [
 ];
 
 const GAME_CLEANUPS = () => [gdCleanup, xtraCleanup, snakeCleanup, mergeCleanup, tsCleanup, atCleanup, dwCleanup, bbCleanup,
-  suCleanup, c4Cleanup, stCleanup, mmCleanup, csCleanup, crCleanup, bkCleanup, smCleanup, ggCleanup];
+  suCleanup, c4Cleanup, stCleanup, mmCleanup, csCleanup, crCleanup, bkCleanup, smCleanup, ggCleanup, ccCleanup];
 
 let gameWin = null;
 
@@ -17553,6 +18378,501 @@ function openSac() {
   });
 }
 
+
+// ============================================================
+// EASTER EGGS (v4.62)
+// 50 secrets hidden all over Frixion: key sequences, buttons clicked too many times, secret codes (and a riddle chain
+// that starts in a credits scene), the time of day, the address bar, the browser console, and the games. Each one plays
+// a little surprise every time, and the first time it also pays Orbs through functions/api/admin/egg, which keeps the
+// list of what each account found (eggs/<username>) and pays each egg only once, outside the daily limit from games.
+// Finding all 50 puts the red Cracker tag next to your name (cracker: true, set only by that function).
+// NOTES FOR AI MODELS:
+//  - EGGS must hold the same 50 ids, with the same difficulty, as EGGS in functions/api/admin/[[path]].js.
+//  - Secret answers are never written in plain text: only SHA-256("frixion-egg:" + ANSWER), here and in the function.
+//  - Anything an egg does that moves the whole screen checks shakeAllowed(), and nothing here flashes (Epilepsy mode).
+// ============================================================
+const EGG_TIERS = { e: { name: 'Easy', orbs: 100 }, m: { name: 'Medium', orbs: 250 }, h: { name: 'Hard', orbs: 500 }, v: { name: 'Very Hard', orbs: 1000 }, l: { name: 'Legendary', orbs: 2500 } };
+const EGGS = [
+  { id: 'oldcode', t: 'm', name: 'The Old Code', how: 'Up, up, down, down, left, right, left, right, B, A.' },
+  { id: 'frixion', t: 'e', name: 'Say My Name', how: 'Type "frixion" while no text box is selected.' },
+  { id: 'hello', t: 'e', name: 'Hello There', how: 'Type "hello" while no text box is selected.' },
+  { id: 'esrever', t: 'm', name: 'Esrever', how: 'Type "esrever" while no text box is selected.' },
+  { id: 'gravity', t: 'm', name: 'What Goes Up', how: 'Type "gravity" while no text box is selected.' },
+  { id: 'letitsnow', t: 'e', name: 'Snow Day', how: 'Type "letitsnow" while no text box is selected.' },
+  { id: 'party', t: 'e', name: 'Party Time', how: 'Type "party" while no text box is selected.' },
+  { id: 'greencode', t: 'm', name: 'Green Code', how: 'Type "greencode" while no text box is selected.' },
+  { id: 'shift10', t: 'e', name: 'Sticky Keys', how: 'Press Shift 10 times in a row, fast.' },
+  { id: 'ctrlalto', t: 'm', name: 'Calling the Owner', how: 'Press Ctrl + Alt + O.' },
+  { id: 'spin', t: 'm', name: 'Round and Round', how: 'Left, up, right, down, twice.' },
+  { id: 'pi', t: 'h', name: 'Slice of Pi', how: 'Type 314159 while no text box is selected.' },
+  { id: 'logo10', t: 'e', name: 'Home Sweet Home', how: 'Click the Home button 10 times, fast.' },
+  { id: 'avatar7', t: 'm', name: 'Spin Me Right Round', how: 'Click your own picture on your profile 7 times.' },
+  { id: 'version5', t: 'e', name: 'Up to Date', how: 'Click "Latest" in the Update Log 5 times.' },
+  { id: 'orbchip', t: 'm', name: 'Counting Orbs', how: 'Click your Orbs in the Shop 15 times, fast.' },
+  { id: 'settings10', t: 'm', name: 'Indecisive', how: 'Open Settings 10 times in one minute.' },
+  { id: 'typingclick', t: 'h', name: 'Shh', how: 'Click someone\'s "is typing..." while they type.' },
+  { id: 'hiddendot', t: 'h', name: 'The Dot', how: 'Click the faint dot in Settings, My Account.' },
+  { id: 'credits', t: 'h', name: 'Roll Credits', how: 'Click the last line of Settings, Frixion App 3 times.' },
+  { id: 'emptypins', t: 'e', name: 'Nothing Pinned', how: 'Open Pinned Messages where nothing is pinned, 3 times.' },
+  { id: 'xyzzy', t: 'm', name: 'A Magic Word', how: 'Send /xyzzy in a chat.', ans: '7d76c6d11ed06a3e671afa826c4f88f4e8227fdef446cbd576a3428967e45af9' },
+  { id: 'eggmsg', t: 'e', name: 'Egg', how: 'Send a message that just says "egg".' },
+  { id: 'codeb1', t: 'e', name: 'In Memory of B1', how: 'Redeem the code B1.', ans: '4f3cd88dc035fd4d04dda074fd7ced1722751824644c1a27a700dfd5d06ba19e' },
+  { id: 'codeb2', t: 'e', name: 'In Memory of B2', how: 'Redeem the code B2.', ans: 'c886bb737cc711b2dfcb069ea8179dc430661db13a38113ddf718b9098f653c7' },
+  { id: 'codecracker', t: 'm', name: 'Not Yet', how: 'Redeem the code CRACKER.', ans: '9272bb2cd0bf657e4d7fa917a2677e687e6f7c70df391b3c1ec399bdc8f407db' },
+  { id: 'freeorbs', t: 'e', name: 'Worth a Try', how: 'Redeem the code FREEORBS.', ans: 'adb07b3f3ea4d065e0dba64721a9d7cba035856b4c7acd071322245a919cb619' },
+  { id: 'riddle1', t: 'h', name: 'Riddle One', how: 'Answer the riddle at the end of the credits, in Codes.', ans: '45da9aba60eb46f8346b9b3dfe89d2861ce4b509b9640c95d43909aae9b0dbae' },
+  { id: 'riddle2', t: 'v', name: 'Riddle Two', how: 'Answer the second riddle, in Codes.', ans: 'b9565c29fb4549d0c32b53de11180eabe4d22f4aca067e5aa132f397b7363d82' },
+  { id: 'riddle3', t: 'l', name: 'Riddle Three', how: 'Answer the third riddle, in Codes.', ans: '78be81c5a939aa73a905369bd86a8616a912917ac1612936a08c310482a53e7d' },
+  { id: 'threeam', t: 'h', name: 'Night Owl', how: 'Be on Frixion between 3:00 and 3:15 in the morning.' },
+  { id: 'eleveneleven', t: 'm', name: 'Make a Wish', how: 'Be on Frixion at 11:11.' },
+  { id: 'midnight', t: 'h', name: 'A New Day', how: 'Be on Frixion right at midnight.' },
+  { id: 'hashegg', t: 'm', name: 'Address Unknown', how: 'Open Frixion with #egg at the end of its address.' },
+  { id: 'console', t: 'h', name: 'Hacker Voice', how: 'Run frixion.egg() in the browser console.' },
+  { id: 'idle10', t: 'm', name: 'Screensaver', how: 'Leave Frixion open without touching it for 10 minutes.' },
+  { id: 'dnd5', t: 'm', name: 'Disturbed', how: 'Turn Do Not Disturb on and off 5 times in 30 seconds.' },
+  { id: 'themehop', t: 'm', name: 'Can\'t Decide', how: 'Switch between the free themes 5 times in a minute.' },
+  { id: 'lightmode', t: 'e', name: 'My Eyes', how: 'Switch to the Light theme.' },
+  { id: 'quickopen', t: 'e', name: 'Speedrunner', how: 'Use a Quick Open shortcut.' },
+  { id: 'selfadd', t: 'e', name: 'Best Friend', how: 'Send yourself a friend request.' },
+  { id: 'displayegg', t: 'm', name: 'Egg-cellent', how: 'Set your display name to Egg.' },
+  { id: 'snake67', t: 'm', name: 'Long Boi', how: 'Grow to length 67 in Snake.' },
+  { id: 'merge2048', t: 'v', name: 'The Big One', how: 'Make a 2048 tile in Blox Merge.' },
+  { id: 'typingegg', t: 'e', name: 'Typed Egg', how: 'Type "egg" in Typing Sprint.' },
+  { id: 'simon15', t: 'h', name: 'Simon Says', how: 'Reach round 15 in Color Simon.' },
+  { id: 'luckyrush', t: 'h', name: 'Double Lucky', how: 'Catch a Lucky Crumb during a Rush in Cookie Clicker.' },
+  { id: 'voidcrop', t: 'v', name: 'Touched by the Void', how: 'Harvest a Voidtouched crop in Grow a Garden.' },
+  { id: 'samegarden', t: 'h', name: 'Monoculture', how: 'Grow the same seed in all 12 plots of Grow a Garden.' },
+  { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Find the other 49.' },
+];
+const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
+let eggFoundSet = new Set(), eggsLoaded = false;
+const eggBusy = new Set();
+async function loadEggs() {
+  eggFoundSet = new Set(); eggsLoaded = false;
+  try { const s = await db.collection('eggs').doc(myUid).get(); eggFoundSet = new Set(((s.exists && s.data().found) || []).filter(id => EGG_BY_ID[id])); } catch (e) {}
+  eggsLoaded = true;
+  if (!$('settings-modal').classList.contains('hidden')) renderEggSettings();
+  if (location.hash.toLowerCase() === '#egg') eggHashCheck();
+}
+// SHA-256 of a secret answer, the same way functions/api/admin/egg works it out.
+async function eggHash(answer) {
+  const a = String(answer == null ? '' : answer).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 64);
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('frixion-egg:' + a));
+  return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+// An egg was found: its surprise plays, and the first time Frixion's server pays its Orbs (asked straight away, so
+// closing Frixion during a scene doesn't lose it).
+async function eggFind(id, answer) {
+  const egg = EGG_BY_ID[id];
+  if (!egg || !myUid || !myProfile || OVERLAY_WINDOW) return;
+  const before = { riddle2: 'riddle1', riddle3: 'riddle2' }[id];
+  if (before && !eggFoundSet.has(before)) { toast(before === 'riddle1' ? 'Right answer, wrong order. Solve the first riddle first.' : 'Right answer, wrong order. Solve the second riddle first.'); return; }
+  const first = !eggFoundSet.has(id);
+  const claim = first && !eggBusy.has(id) ? eggClaim(egg, answer) : null;
+  try { await eggEffect(id, first); } catch (e) {}
+  const r = claim && await claim;
+  if (!r) return;
+  if (!r.already) eggToast('Easter egg found: ' + egg.name, `+${fmtOrbs(r.orbs || EGG_TIERS[egg.t].orbs)} Orbs · ${eggFoundSet.size} of ${EGGS.length} found`);
+  if (r.cracker) setTimeout(() => eggCutscene(['All 50.', 'Every last egg, cracked.', 'Look next to your name.'], { title: 'CRACKER', cls: 'egg-cut-red' }), 2500);
+  else if (eggFoundSet.size === EGGS.length - 1 && !eggFoundSet.has('lastegg')) setTimeout(() => eggFind('lastegg'), 4500);
+}
+async function eggClaim(egg, answer) {
+  eggBusy.add(egg.id);
+  try {
+    const r = await orbsCall('egg', answer ? { egg: egg.id, answer } : { egg: egg.id });
+    eggFoundSet = new Set((r.found || [...eggFoundSet, egg.id]).filter(x => EGG_BY_ID[x]));
+    if (!$('settings-modal').classList.contains('hidden')) renderEggSettings();
+    return r;
+  } catch (e) {
+    if (e.status === 403 || e.status === 429) toast(e.message, 'error');
+    else if (!e.offline) console.warn('Easter egg not saved:', e.message);
+    return null;
+  } finally { eggBusy.delete(egg.id); }
+}
+// (the clock eggs only once per visit, or they'd go off every 20 seconds during their minute)
+const eggOnce = new Set();
+function eggFindOnce(id) { if (eggOnce.has(id)) return; eggOnce.add(id); eggFind(id); }
+// ---- the surprises ----
+function eggToast(title, sub) {
+  const el = document.createElement('div');
+  el.className = 'egg-toast';
+  el.innerHTML = `<div class="egg-toast-t">${esc(title)}</div>${sub ? `<div class="egg-toast-s">${esc(sub)}</div>` : ''}`;
+  document.body.appendChild(el);
+  setTimeout(() => el.classList.add('out'), 4200);
+  setTimeout(() => el.remove(), 4800);
+}
+// A full-screen scene of lines appearing one by one. A click, Enter, Space or Esc moves it on.
+function eggCutscene(lines, opts = {}) {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'egg-cut' + (opts.cls ? ' ' + opts.cls : '');
+    ov.innerHTML = `${opts.title ? `<div class="egg-cut-title">${esc(opts.title)}</div>` : ''}<div class="egg-cut-lines"></div><div class="egg-cut-skip">Click to continue</div>`;
+    document.body.appendChild(ov);
+    const box = ov.querySelector('.egg-cut-lines');
+    let i = 0, timer = null, done = false;
+    const add = () => { const p = document.createElement('div'); p.className = 'egg-cut-line'; p.textContent = lines[i++]; box.appendChild(p); };
+    const finish = () => { if (done) return; done = true; clearTimeout(timer); document.removeEventListener('keydown', onKey, true); ov.classList.add('out'); setTimeout(() => ov.remove(), 450); resolve(); };
+    const next = () => { if (i >= lines.length) { timer = setTimeout(finish, opts.hold || 3000); return; } add(); timer = setTimeout(next, opts.step || 1500); };
+    const skip = () => { clearTimeout(timer); if (i < lines.length) { while (i < lines.length) add(); timer = setTimeout(finish, opts.hold || 3000); } else finish(); };
+    const onKey = e => { if (['Escape', 'Enter', ' '].includes(e.key)) { e.preventDefault(); e.stopPropagation(); skip(); } };
+    ov.addEventListener('click', skip);
+    document.addEventListener('keydown', onKey, true);
+    next();
+  });
+}
+// Falling confetti, snow, or green letters, drawn on one canvas for a few seconds.
+function eggParticles(kind, ms) {
+  const cv = document.createElement('canvas');
+  cv.className = 'egg-canvas';
+  document.body.appendChild(cv);
+  const ctx = cv.getContext('2d'), W = cv.width = innerWidth, H = cv.height = innerHeight;
+  const colors = ['#ff5e5e', '#ffb347', '#ffe066', '#6ee7b7', '#60a5fa', '#a78bfa', '#f472b6'], letters = 'FRIXION01';
+  const n = kind === 'code' ? Math.ceil(W / 18) : kind === 'snow' ? 140 : 110;
+  const ps = Array.from({ length: n }, (_, i) => kind === 'code'
+    ? { x: i * 18 + 4, y: -Math.random() * H, v: 2.5 + Math.random() * 4, ch: Array.from({ length: 14 }, () => letters[Math.floor(Math.random() * letters.length)]) }
+    : { x: Math.random() * W, y: -Math.random() * H, v: kind === 'snow' ? 0.5 + Math.random() * 1.3 : 2 + Math.random() * 3, s: kind === 'snow' ? 1.5 + Math.random() * 2.5 : 5 + Math.random() * 5,
+        c: colors[i % colors.length], a: Math.random() * 6.3, sw: Math.random() * 2 * Math.PI });
+  const end = performance.now() + ms;
+  const draw = now => {
+    ctx.clearRect(0, 0, W, H);
+    ctx.globalAlpha = Math.max(0, Math.min(1, (end - now) / 900));
+    ps.forEach(p => {
+      p.y += p.v;
+      if (kind === 'code') {
+        ctx.font = '15px monospace';
+        p.ch.forEach((c, k) => { ctx.fillStyle = k === p.ch.length - 1 ? '#d4ffd9' : `rgba(60,255,122,${(k + 1) / p.ch.length})`; ctx.fillText(c, p.x, p.y + k * 17); });
+        if (p.y > H) p.y = -p.ch.length * 17;
+      } else if (kind === 'snow') {
+        p.sw += 0.02; ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.beginPath(); ctx.arc(p.x + Math.sin(p.sw) * 12, p.y, p.s, 0, 6.3); ctx.fill();
+        if (p.y > H + 5) p.y = -5;
+      } else {
+        p.a += 0.08; ctx.save(); ctx.translate(p.x + Math.sin(p.a) * 8, p.y); ctx.rotate(p.a); ctx.fillStyle = p.c; ctx.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); ctx.restore();
+        if (p.y > H + 10) p.y = -10;
+      }
+    });
+    if (now < end) requestAnimationFrame(draw); else cv.remove();
+  };
+  requestAnimationFrame(draw);
+}
+// A class on <html> for a few seconds (mirroring, spinning, falling); skipped when screen shake is turned off.
+function eggMotion(cls, ms, fallback) {
+  if (!shakeAllowed()) { if (fallback) eggToast(fallback); return; }
+  const root = document.documentElement;
+  root.classList.add(cls);
+  setTimeout(() => root.classList.remove(cls), ms);
+}
+function eggBigWord(text) {
+  const el = document.createElement('div');
+  el.className = 'egg-bigword';
+  el.textContent = text;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2400);
+}
+// A bouncing logo over everything until you move the mouse or press a key.
+let eggSaverOn = false;
+function eggScreensaver() {
+  if (eggSaverOn) return;
+  eggSaverOn = true;
+  const ov = document.createElement('div');
+  ov.className = 'egg-saver';
+  ov.innerHTML = '<div class="egg-saver-logo">FRIXION</div>';
+  document.body.appendChild(ov);
+  const logo = ov.firstChild, hues = ['#ff5e5e', '#60a5fa', '#6ee7b7', '#ffe066', '#a78bfa', '#f472b6'];
+  let x = 40, y = 40, dx = 2, dy = 1.6, hue = 0, raf;
+  const step = () => {
+    const w = innerWidth - logo.offsetWidth, h = innerHeight - logo.offsetHeight;
+    x += dx; y += dy;
+    if (x <= 0 || x >= w) { dx = -dx; x = Math.max(0, Math.min(w, x)); logo.style.color = hues[hue = (hue + 1) % hues.length]; }
+    if (y <= 0 || y >= h) { dy = -dy; y = Math.max(0, Math.min(h, y)); logo.style.color = hues[hue = (hue + 1) % hues.length]; }
+    logo.style.transform = `translate(${x}px, ${y}px)`;
+    raf = requestAnimationFrame(step);
+  };
+  const stop = () => { cancelAnimationFrame(raf); ov.remove(); eggSaverOn = false; ['mousemove', 'keydown', 'pointerdown', 'wheel', 'touchstart'].forEach(t => window.removeEventListener(t, stop, true)); };
+  setTimeout(() => ['mousemove', 'keydown', 'pointerdown', 'wheel', 'touchstart'].forEach(t => window.addEventListener(t, stop, true)), 400);
+  raf = requestAnimationFrame(step);
+}
+const RIDDLE_ONE = ['One more thing. A riddle:', 'I have keys, but open no locks.', 'I have space, but no room.', 'You can enter, but you can\'t go inside.', 'What am I? Type the answer in Codes.'];
+const RIDDLE_TWO = ['Riddle two:', 'In Grow a Garden, the rarest weather leaves crops with one word on them.', 'Type that word in Codes.'];
+const RIDDLE_THREE = ['Riddle three, the last:', 'Find Frixion\'s very first update in the Update Log.', 'Take the first letter of each of its first five words.', 'Type them in Codes.'];
+function eggEffect(id, first) {
+  switch (id) {
+    case 'oldcode': return eggCutscene(['Up, up, down, down, left, right, left, right, B, A.', 'Thirty extra lives!', 'Frixion doesn\'t have lives, though.', first ? 'Have some Orbs instead.' : 'You already got the Orbs.'], { title: 'THE OLD CODE' });
+    case 'frixion': eggBigWord('FRIXION'); return;
+    case 'hello': eggToast('Hello to you too.'); return;
+    case 'esrever': eggMotion('egg-mirror', 6000, '.esrever'); return;
+    case 'gravity': eggMotion('egg-gravity', 2600, 'Gravity is off today.'); return;
+    case 'letitsnow': eggParticles('snow', 15000); return;
+    case 'party': eggParticles('confetti', 6000); return;
+    case 'greencode': eggParticles('code', 9000); return;
+    case 'shift10': eggToast('Sticky keys? No. Sticky eggs.'); return;
+    case 'ctrlalto': return eggCutscene(['Calling the Owner...', '...', '...', 'They\'re busy. Leave a message after the egg.'], { title: 'CTRL + ALT + O' });
+    case 'spin': eggMotion('egg-spin', 1300, 'You spun around. The screen didn\'t.'); return;
+    case 'pi': eggToast('3.14159...', 'and so on, forever.'); return;
+    case 'logo10': eggToast('This is the Home button.', 'It takes you home. That\'s it. That\'s the secret.'); return;
+    case 'avatar7': { const av = document.querySelector('#profile-avatar'); if (av && shakeAllowed()) { av.classList.remove('egg-avspin'); void av.offsetWidth; av.classList.add('egg-avspin'); } eggToast('Wheee.'); return; }
+    case 'version5': eggToast('You\'re on the newest Frixion.', 'Probably.'); return;
+    case 'orbchip': eggToast('Counting them won\'t make more.'); return;
+    case 'settings10': eggToast('Make up your mind.'); return;
+    case 'typingclick': eggToast('Shh.', 'They\'re thinking.'); return;
+    case 'hiddendot': return eggCutscene(['You found the dot.', 'It doesn\'t do anything else.', 'Except this.'], { title: '.' });
+    case 'credits': return eggCutscene(['FRIXION', 'Made by its Owner', 'with ideas from everyone who uses it', 'and a lot of late nights.', 'Thanks for being here.', ...RIDDLE_ONE], { title: 'CREDITS', step: 1700, hold: 6000 });
+    case 'emptypins': eggToast('Still nothing pinned.', 'You can stop checking.'); return;
+    case 'xyzzy': return;   // (its reply is the "Nothing happens." from Sapphire)
+    case 'eggmsg': eggToast('Egg.'); return;
+    case 'codeb1': return eggCutscene(['B1.', 'Gone, but never forgotten.'], { title: 'IN MEMORY' });
+    case 'codeb2': return eggCutscene(['B2.', 'Still here in spirit.'], { title: 'IN MEMORY' });
+    case 'codecracker': eggToast('Not yet.', 'Find them all first.'); return;
+    case 'freeorbs': eggToast('Fine.', 'Here are a few.'); return;
+    case 'riddle1': return eggCutscene(['A keyboard. Correct.', ...RIDDLE_TWO], { title: 'RIDDLE ONE', hold: 6000 });
+    case 'riddle2': return eggCutscene(['Voidtouched. Correct.', ...RIDDLE_THREE], { title: 'RIDDLE TWO', hold: 6000 });
+    case 'riddle3': return eggCutscene(['Correct.', 'You read the very first update.', 'Not many people do.', 'The riddler bows.'], { title: 'RIDDLE THREE' });
+    case 'threeam': return eggCutscene(['It\'s past 3 in the morning.', 'Go to sleep.', 'Frixion will still be here.'], { title: '3 AM' });
+    case 'eleveneleven': eggToast('11:11.', 'Make a wish.'); return;
+    case 'midnight': eggToast('Midnight.', 'A brand new day.'); return;
+    case 'hashegg': eggToast('The address bar is a place too.'); return;
+    case 'console': return;   // (it answers in the console itself)
+    case 'idle10': eggScreensaver(); return;
+    case 'dnd5': eggToast('Disturbed yet?'); return;
+    case 'themehop': eggToast('Can\'t decide?', 'Same.'); return;
+    case 'lightmode': eggToast('My eyes!'); return;
+    case 'quickopen': if (first) eggToast('Speedrunner.'); return;
+    case 'selfadd': eggToast('You\'re already your own best friend.'); return;
+    case 'displayegg': eggToast('Egg-cellent name.'); return;
+    case 'snake67': eggToast('67.', 'That\'s a long snake.'); return;
+    case 'merge2048': eggParticles('confetti', 6000); eggToast('2048!', 'You made the big one.'); return;
+    case 'typingegg': eggToast('egg', 'That wasn\'t one of the words.'); return;
+    case 'simon15': eggToast('Simon says: well done.'); return;
+    case 'luckyrush': eggToast('Double lucky!'); return;
+    case 'voidcrop': return eggCutscene(['The void touched your crop.', 'It\'s worth fifty times as much now.', 'Don\'t look at it too long.'], { title: 'VOIDTOUCHED', cls: 'egg-cut-red' });
+    case 'samegarden': eggToast('Monoculture.', 'Twelve of the same. Bold.'); return;
+    case 'lastegg': return eggCutscene(['That\'s 49.', 'This one is free.', 'You found them all.'], { title: 'THE LAST EGG', cls: 'egg-cut-red' });
+  }
+}
+// ---- the triggers that live here (the rest are in the code they belong to: search for eggFind) ----
+const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159' };
+const EGG_SEQS = {
+  oldcode: ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'KeyB', 'KeyA'],
+  spin: ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'],
+};
+let eggKeyBuf = '', eggCodeBuf = [], eggShifts = [];
+const eggTimes = {};
+// Counts something happening, and finds the egg when it happened `need` times within `ms`.
+function eggCount(id, need, ms) {
+  const now = Date.now(), arr = (eggTimes[id] || []).filter(t => now - t < ms);
+  arr.push(now);
+  eggTimes[id] = arr;
+  if (arr.length >= need) { eggTimes[id] = []; eggFind(id); }
+}
+document.addEventListener('keydown', e => {
+  if (!myUid || e.repeat) return;
+  if (e.ctrlKey && e.altKey && !e.shiftKey && e.code === 'KeyO') { eggFind('ctrlalto'); return; }
+  if (isTypingTarget(document.activeElement)) return;
+  if (e.key === 'Shift') { const now = Date.now(); eggShifts = eggShifts.filter(t => now - t < 3000).concat(now); if (eggShifts.length >= 10) { eggShifts = []; eggFind('shift10'); } return; }
+  eggCodeBuf = eggCodeBuf.concat(e.code).slice(-12);
+  for (const [id, seq] of Object.entries(EGG_SEQS)) if (eggCodeBuf.slice(-seq.length).join() === seq.join()) { eggCodeBuf = []; eggFind(id); return; }
+  if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    eggKeyBuf = (eggKeyBuf + e.key.toLowerCase()).slice(-12);
+    for (const [id, w] of Object.entries(EGG_WORDS)) if (eggKeyBuf.endsWith(w)) { eggKeyBuf = ''; eggFind(id); return; }
+  }
+});
+document.addEventListener('click', e => {
+  if (!myUid || !e.target || !e.target.closest) return;
+  const t = e.target;
+  if (t.closest('#rail-home')) eggCount('logo10', 10, 5000);
+  if (t.closest('#profile-avatar') && $('profile-handle') && !$('change-avatar-btn').classList.contains('hidden')) eggCount('avatar7', 7, 5000);   // (your own profile)
+  if (t.closest('.ue-latest')) eggCount('version5', 5, 5000);
+  if (t.closest('.shop-orb-chip')) eggCount('orbchip', 15, 6000);
+  if (t.closest('#typing-indicator') && $('typing-indicator').textContent.trim()) eggFind('typingclick');
+  if (t.closest('#egg-dot')) eggFind('hiddendot');
+  if (t.closest('#egg-credits')) eggCount('credits', 3, 4000);
+}, true);
+// Secret codes typed in Codes: true when it was an egg (then it isn't sent to the server as a normal code).
+async function eggCodeCheck(code) {
+  const h = await eggHash(code), egg = EGGS.find(x => x.ans === h);
+  if (!egg) return false;
+  eggFind(egg.id, code);
+  return true;
+}
+// The address bar: #egg on the end.
+function eggHashCheck() {
+  if (location.hash.toLowerCase() !== '#egg' || !myUid) return;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  eggFind('hashegg');
+}
+window.addEventListener('hashchange', eggHashCheck);
+// The browser console.
+try { window.frixion = Object.freeze({ egg() { if (!myUid) return 'Log in first.'; eggFind('console'); return 'You found the console egg. Hello, hacker.'; } }); } catch (e) {}
+// The clock (3 AM, 11:11, midnight) and the screensaver, checked every 20 seconds while Frixion is showing.
+let eggLastInput = Date.now();
+['mousemove', 'keydown', 'pointerdown', 'wheel', 'touchstart'].forEach(t => window.addEventListener(t, () => { eggLastInput = Date.now(); }, { capture: true, passive: true }));
+setInterval(() => {
+  if (!myUid || !myProfile || document.hidden || OVERLAY_WINDOW) return;
+  const d = new Date(), h = d.getHours(), m = d.getMinutes();
+  if (h === 3 && m < 15) eggFindOnce('threeam');
+  if ((h === 11 || h === 23) && m === 11) eggFindOnce('eleveneleven');
+  if (h === 0 && m < 2) eggFindOnce('midnight');
+  if (Date.now() - eggLastInput > 10 * 60000 && !eggSaverOn && !document.querySelector('.egg-cut')) eggFind('idle10');
+}, 20000);
+// Settings, My Account: how many you've found.
+function renderEggSettings() {
+  const el = $('egg-block');
+  if (!el || !myProfile) return;
+  const found = EGGS.filter(e => eggFoundSet.has(e.id));
+  el.innerHTML = `<div class="egg-head"><span class="egg-title">Easter Eggs</span><span class="egg-count">${found.length} of ${EGGS.length} found</span></div>
+    <div class="egg-sub">${myProfile.cracker ? 'You found every one. That red Cracker tag next to your name is yours.' : `They're hidden all over Frixion. Each pays Orbs the first time you find it (more for harder ones), and finding all ${EGGS.length} puts a red Cracker tag next to your name.`}</div>
+    <div class="egg-grid">${EGGS.map(e => eggFoundSet.has(e.id)
+      ? `<span class="egg-chip found t-${e.t}" title="${esc(e.how)}">${esc(e.name)}</span>`
+      : `<span class="egg-chip t-${e.t}" title="${esc(EGG_TIERS[e.t].name)}: ${EGG_TIERS[e.t].orbs} Orbs">???</span>`).join('')}</div>`;
+}
+
+// ============================================================
+// QUICK OPEN (v4.62): Settings > Quick Open gives places a keyboard shortcut: the Shop, Codes, Games, Friends,
+// Settings, one DM or group, a server, or one game. The list is users/{name}.quickOpen = [{ t, id, b }] (b is a
+// shortcut in the overlay's format, see ovMatches), at most QO_MAX, so it follows the account to every computer.
+// A shortcut needs Ctrl or Alt (or F2 to F10), so it never steals a key you're typing, and the browser's own
+// shortcuts (copy, paste, new tab, developer tools...) are refused.
+// ============================================================
+const QO_MAX = 30;
+const QO_KINDS = [
+  { k: 'friends', label: 'Friends' }, { k: 'shop', label: 'Shop' }, { k: 'codes', label: 'Codes' },
+  { k: 'games', label: 'Games' }, { k: 'settings', label: 'Settings' },
+  { k: 'dm', label: 'A DM', pick: true }, { k: 'gdm', label: 'A group chat', pick: true },
+  { k: 'server', label: 'A server', pick: true }, { k: 'game', label: 'A game', pick: true },
+];
+let qoCapturing = false;
+function qoList() {
+  const l = myProfile && Array.isArray(myProfile.quickOpen) ? myProfile.quickOpen : [];
+  return l.filter(x => x && typeof x.t === 'string' && x.b && typeof x.b.code === 'string').slice(0, QO_MAX);
+}
+function qoGameChoices() { return [{ id: 'ocrng', label: 'Overcontrol RNG' }, ...GAME_TILES.map(g => ({ id: g.id, label: g.title }))]; }
+// What one kind can point at right now (your DMs, groups, servers, or the games).
+function qoTargets(k) {
+  if (k === 'dm') return (window.__myDMs || []).map(d => { const o = d.participants.find(p => p !== myUid); return { id: d.id, label: displayNameOf(profileCache[o] || { username: o }) }; });
+  if (k === 'gdm') return (window.__myGroupDMs || []).map(g => ({ id: g.id, label: groupDMDisplayName(g) }));
+  if (k === 'server') return (window.__myServers || []).map(s => ({ id: s.id, label: s.name || 'Server' }));
+  if (k === 'game') return qoGameChoices();
+  return [];
+}
+function qoLabel(x) {
+  const kind = QO_KINDS.find(q => q.k === x.t);
+  if (!kind) return 'Unknown';
+  if (!kind.pick) return kind.label;
+  const hit = qoTargets(x.t).find(o => o.id === x.id);
+  const what = x.t === 'dm' ? 'DM with ' : x.t === 'gdm' ? 'Group: ' : x.t === 'server' ? 'Server: ' : '';
+  return hit ? what + hit.label : (x.t === 'game' ? 'A game' : what.replace(/[: ]+$/, '')) + ' (not there any more)';
+}
+function renderQuickOpen() {
+  const list = $('qo-list');
+  if (!list) return;
+  const items = qoList();
+  list.innerHTML = items.length ? items.map((x, i) => `<div class="qo-row"><span class="qo-label">${esc(qoLabel(x))}</span><span class="qo-keys">${ovBindHTML(x.b)}</span><button type="button" class="btn-secondary slim qo-rm" data-i="${i}">Remove</button></div>`).join('')
+    : '<div class="empty">No shortcuts yet. Pick something below, then press Add Shortcut.</div>';
+  list.querySelectorAll('.qo-rm').forEach(b => { b.onclick = () => qoSave(qoList().filter((_, i) => i !== +b.dataset.i), 'Shortcut removed.'); });
+  const kind = $('qo-kind');
+  if (!kind.options.length) kind.innerHTML = QO_KINDS.map(q => `<option value="${q.k}">${esc(q.label)}</option>`).join('');
+  qoFillTargets();
+}
+function qoFillTargets() {
+  const k = $('qo-kind').value, def = QO_KINDS.find(q => q.k === k), sel = $('qo-target');
+  sel.classList.toggle('hidden', !(def && def.pick));
+  if (!def || !def.pick) return;
+  const prev = sel.value, opts = qoTargets(k);
+  sel.innerHTML = opts.length ? opts.map(o => `<option value="${esc(o.id)}">${esc(o.label)}</option>`).join('') : '<option value="">(none yet)</option>';
+  if (opts.some(o => o.id === prev)) sel.value = prev;
+}
+async function qoSave(list, msg) {
+  try { await db.collection('users').doc(myUid).update({ quickOpen: list.slice(0, QO_MAX) }); toast(msg); }
+  catch (e) { toast('Could not save your shortcuts.', 'error'); }
+}
+// Why a shortcut can't be used, or '' if it can.
+function qoProblem(b) {
+  const fn = /^F([2-9]|10)$/.test(b.code);
+  if (!b.ctrl && !b.alt && !fn) return 'Hold Ctrl or Alt with the key (or use F2 to F10), so it never gets in the way of typing.';
+  if (b.meta) return 'The Windows and Cmd keys belong to your computer. Use Ctrl or Alt instead.';
+  if (b.ctrl && !b.shift && !b.alt) return 'Ctrl with one key is your browser\'s (copy, paste, new tab...). Add Shift or Alt too.';
+  if (b.ctrl && b.shift && ['KeyI', 'KeyJ', 'KeyC', 'KeyN', 'KeyT', 'KeyW', 'KeyQ', 'KeyR', 'KeyB', 'KeyM', 'Delete', 'Tab', 'Escape'].includes(b.code)) return 'Your browser already uses that one. Pick another key.';
+  if (b.alt && !b.ctrl && ['KeyD', 'KeyF', 'KeyE', 'F4', 'Tab', 'ArrowLeft', 'ArrowRight', 'Home', 'Space'].includes(b.code)) return 'Your browser or computer already uses that one. Pick another key.';
+  if (/^(Arrow\w+|Tab|Enter|Backspace|Escape)$/.test(b.code)) return 'Pick a letter, number or function key.';
+  if (ovMatches({ code: b.code, shiftKey: b.shift, ctrlKey: b.ctrl, altKey: b.alt, metaKey: b.meta }, ovGetBind())) return 'That one opens the overlay. Pick another.';
+  if (qoList().some(x => ovMatches({ code: b.code, shiftKey: b.shift, ctrlKey: b.ctrl, altKey: b.alt, metaKey: b.meta }, x.b))) return 'You already use that shortcut for something else.';
+  return '';
+}
+function qoStartCapture() {
+  if (qoCapturing || !myUid) return;
+  const k = $('qo-kind').value, def = QO_KINDS.find(q => q.k === k);
+  if (!def) return;
+  const id = def.pick ? $('qo-target').value : null;
+  if (def.pick && !id) { toast('There\'s nothing to pick for that yet.', 'error'); return; }
+  if (qoList().length >= QO_MAX) { toast(`You can have up to ${QO_MAX} shortcuts.`, 'error'); return; }
+  qoCapturing = true;
+  const btn = $('qo-add-btn');
+  btn.classList.add('capturing'); btn.textContent = 'Press the keys… (Esc to cancel)';
+  const finish = () => {
+    qoCapturing = false;
+    btn.classList.remove('capturing'); btn.textContent = 'Add Shortcut';
+    window.removeEventListener('keydown', onKey, true);
+    document.removeEventListener('mousedown', onAway, true);
+  };
+  const onKey = e => {
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (/^(Shift|Control|Alt|Meta)(Left|Right)$/.test(e.code)) return;   // wait for the real key
+    if (e.code === 'Escape') { finish(); return; }
+    const b = { code: e.code, shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey, meta: e.metaKey };
+    const why = qoProblem(b);
+    if (why) { toast(why, 'error'); return; }
+    finish();
+    qoSave([...qoList(), def.pick ? { t: k, id, b } : { t: k, b }], 'Shortcut added.');
+  };
+  const onAway = e => { if (e.target !== btn) finish(); };
+  window.addEventListener('keydown', onKey, true);
+  document.addEventListener('mousedown', onAway, true);
+}
+$('qo-kind').addEventListener('change', qoFillTargets);
+$('qo-add-btn').addEventListener('click', qoStartCapture);
+// Opens one of the Home pages (friends, shop, codes, quests) the same way the Home list does, from anywhere.
+function goHomePage(view) {
+  if (isMobile()) setMobileTab('home');
+  if (currentServerId) showHomeView();
+  clearHomeNavActive();
+  const nav = document.querySelector(`.home-nav-item[data-home-view="${view}"]`);
+  if (nav) nav.classList.add('active');
+  document.querySelectorAll('#dm-rows .dm-row.active').forEach(r => r.classList.remove('active'));
+  openHomeMainView(view);
+}
+function qoOpen(x) {
+  eggFind('quickopen');   // (an easter egg)
+  if (x.t !== 'game' && gameWin && !gameWin.hidden) closeGame();
+  if (x.t !== 'settings') closeModal('settings-modal');
+  const gone = () => toast('That isn\'t there any more. Change the shortcut in Settings > Quick Open.', 'error');
+  if (x.t === 'settings') { openSettings(); return; }
+  if (['friends', 'shop', 'codes', 'games'].includes(x.t)) { goHomePage(x.t === 'games' ? 'quests' : x.t); return; }
+  if (x.t === 'dm') {
+    const d = (window.__myDMs || []).find(c => c.id === x.id);
+    if (!d) { gone(); return; }
+    if (currentServerId) showHomeView();
+    selectDM(d.id, d.participants.find(p => p !== myUid));
+  } else if (x.t === 'gdm') {
+    if (!groupById(x.id)) { gone(); return; }
+    if (currentServerId) showHomeView();
+    selectGroupDM(x.id);
+  } else if (x.t === 'server') {
+    const s = (window.__myServers || []).find(c => c.id === x.id);
+    if (!s) { gone(); return; }
+    selectServer(s);
+  } else if (x.t === 'game') {
+    if (x.id === 'ocrng') openOcrng();
+    else if (GAME_TILES.some(g => g.id === x.id)) openGame(x.id);
+    else gone();
+  }
+}
+// Capture phase on window (like the overlay's shortcut), so it works inside games and text boxes too.
+window.addEventListener('keydown', e => {
+  if (!myUid || !myProfile || qoCapturing || ovCapturing || e.repeat || OVERLAY_WINDOW) return;
+  const hit = qoList().find(x => ovMatches(e, x.b));
+  if (!hit) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  qoOpen(hit);
+}, true);
 
 // ============================================================
 // OVERLAY (desktop only — there is deliberately no mobile version)
