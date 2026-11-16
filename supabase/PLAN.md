@@ -27,8 +27,8 @@ Keep the data shaped the way Frixion already uses it, so the 336 database calls 
   (no more read, check, retry loops).
 - **Sign-in:** Supabase Auth with the same made-up emails (username in hex at u.frixionbeta.pages.dev). Old passwords
   keep working: the first login checks them against Firebase's saved hash once, then Supabase stores them. The
-  username claim (`n`) comes from a token hook. One-time passwords become server-made login links. Google sign-in is
-  set up again in Supabase.
+  username claim (`n`) comes from a token hook. One-time passwords become server-made login links. No Google sign-in:
+  Frixion removed it on 2026-11-16 (main 3cc73b8); an account that only had Google sets a password first.
 - **Realtime:** listeners become Postgres Changes subscriptions; online status becomes Realtime Presence; typing dots
   (Firestore typing docs and RTDB typingTo) become Broadcast, which writes nothing to the database; the Overcontrol
   RNG lobby (RTDB ocrng/*) becomes Broadcast channels, plus small tables for what has to survive a reload.
