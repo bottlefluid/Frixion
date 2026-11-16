@@ -66,6 +66,23 @@ $$;
 create or replace function fx.in_batch(path text) returns boolean language sql stable as $$
   select coalesce(nullif(current_setting('fx.before', true), '')::jsonb ? path, false)
 $$;
+-- the row fx_commit is writing right now (see the write step there)
+create or replace function fx.is_writing(tbl text, ids text[]) returns boolean language sql stable as $$
+  select coalesce(current_setting('fx.writing', true), '') = tbl || ':' || array_to_string(ids, '/')
+$$;
+-- A timestamp in `data` ({"$t": milliseconds}) as milliseconds, or null if it isn't one (the rules' "is timestamp").
+create or replace function fx.ts(j jsonb) returns numeric language sql immutable as $$
+  select case when jsonb_typeof(j) = 'object' and jsonb_typeof(j->'$t') = 'number' then (j->>'$t')::numeric end
+$$;
+-- Another document the way the rules' get() sees it: as it was before this batch if the batch touches it, else as it
+-- is. (getAfter() is just reading the table.) Read with the database's own rights.
+create or replace function fx.got(path text) returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare r_tbl text; r_cols text[]; r_ids text[];
+begin
+  if fx.in_batch(path) then return fx.before(path); end if;
+  select * into r_tbl, r_cols, r_ids from fx.route(path);
+  return fx.peek(r_tbl, r_cols, r_ids) -> 'data';
+end $$;
 
 -- ---------- building the new document ----------
 -- set a dotted path, making the maps on the way
@@ -163,7 +180,10 @@ begin
       for t in select * from jsonb_array_elements(coalesce(w -> 'transforms', '[]'::jsonb)) loop new := fx.transform(new, t); end loop;
     end if;
 
-    -- the write itself: the table's policies and triggers decide
+    -- The write itself: the table's policies and triggers decide. Postgres also wants an UPDATE or DELETE to be able
+    -- to read its row, which Firestore never asked (anyone may join a server they can't see yet), so the read policies
+    -- let this one row through while it's being written (fx.is_writing), and only then.
+    perform set_config('fx.writing', r_tbl || ':' || array_to_string(r_ids, '/'), true);
     if kind = 'delete' then
       if old is not null then
         execute format('delete from public.%I where %s', r_tbl, fx.key_where(r_cols)) using r_ids;
@@ -181,6 +201,7 @@ begin
       get diagnostics n = row_count;
       if n = 0 then raise exception 'permission denied' using errcode = '42501'; end if;
     end if;
+    perform set_config('fx.writing', '', true);
 
     -- preconditions come after the write, so a refused write never tells whether the document was there
     if w ? 'exists' and fx.is_true(w -> 'exists') <> (old is not null) then
@@ -190,9 +211,13 @@ begin
       raise exception 'precondition failed: %', w->>'path' using errcode = 'FX409';
     end if;
 
+    -- what comes back: the document as the person may read it now (null if they can't, or after a delete)
     after := case when kind = 'delete' then null else fx.peek(r_tbl, r_cols, r_ids) end;
-    res := res || jsonb_build_array(jsonb_build_object('path', w->>'path', 'updatedAt', after ->> 'updatedAt',
-                                                        'data', case when kind = 'delete' then null else new end));
+    v := null;
+    if kind <> 'delete' then
+      execute format('select data from public.%I where %s', r_tbl, fx.key_where(r_cols)) into v using r_ids;
+    end if;
+    res := res || jsonb_build_array(jsonb_build_object('path', w->>'path', 'updatedAt', after ->> 'updatedAt', 'data', v));
   end loop;
   return res;
 end $$;

@@ -19,6 +19,8 @@ export function enc(v) {
   return v;
 }
 
+const atPath = (o, f) => f.split('.').reduce((x, k) => (x && typeof x === 'object' && k in x ? x[k] : undefined), o);
+
 // rules2's write(path, op), op = { set, merge (field names), del, union, remove, inc, serverTime, exists, full },
 // turned into an fx_commit write. A field mask (merge) replaces each named field, or removes it if `set` doesn't
 // have it, like Firestore's REST updateMask; transforms without a mask change nothing else.
@@ -32,7 +34,8 @@ export function write(path, op) {
   const w = { path }, set = enc(op.set || {});
   if (op.merge || (t.length && !op.full)) {
     w.update = {};
-    for (const f of op.merge || []) { if (f in set) w.update[f] = set[f]; else t.unshift({ field: f, delete: true }); }
+    // (a mask path may be dotted, nicknames.Bob: its value is read from inside `set`)
+    for (const f of op.merge || []) { const v = atPath(set, f); if (v !== undefined) w.update[f] = v; else t.unshift({ field: f, delete: true }); }
     if (op.exists === undefined) w.upsert = true;
   } else w.set = set;
   if (t.length) w.transforms = t;
@@ -65,7 +68,7 @@ function fromRest(w) {
     : x.setToServerValue ? { field: x.fieldPath, serverTime: true } : (() => { throw new Error('transform ' + JSON.stringify(x)); })());
   if (w.updateMask) {
     out.update = {};
-    for (const f of w.updateMask.fieldPaths) { if (f in fields) out.update[f] = fields[f]; else t.unshift({ field: f, delete: true }); }
+    for (const f of w.updateMask.fieldPaths) { const v = atPath(fields, f); if (v !== undefined) out.update[f] = v; else t.unshift({ field: f, delete: true }); }
     if (!w.currentDocument) out.upsert = true;
   } else out.set = fields;
   if (t.length) out.transforms = t;
