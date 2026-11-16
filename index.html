@@ -20,7 +20,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=111">
+<link rel="stylesheet" href="style.css?v=112">
 <link rel="stylesheet" href="casino.css?v=1">
 </head>
 <body>
@@ -111,15 +111,16 @@
       <div class="field"><label>Username</label><input type="text" id="login-username" autocomplete="username"></div>
       <div class="field"><label>Password</label><input type="password" id="login-password" autocomplete="current-password"></div>
       <button class="btn-primary" id="login-btn">Log In</button>
-      <div class="auth-google"><div class="auth-or"><span>or</span></div><button type="button" class="btn-google" id="login-google"></button></div>
       <div class="auth-switch">Need an account? <a id="show-register">Register</a></div>
       <div class="auth-switch"><a id="show-forgot">Forgot password?</a></div>
+      <div class="auth-switch">Signed up with Google? <a id="show-forgot-google">Here's how to log in</a></div>
     </div>
 
     <!-- FORGOT PASSWORD: the Owner makes one-time passwords (Owner panel > the user > Password) -->
     <div id="forgot-view" class="hidden">
       <h1>Forgot your password?</h1>
       <p class="sub">Ask the Owner for a one-time password, then type it in the password box. It logs you in once. After that you can set a new password in Settings, My Account.</p>
+      <p class="sub">Signed up with Continue with Google? Frixion doesn't have it any more, so this is how you get back in too.</p>
       <button class="btn-primary" id="forgot-back">Back to Log In</button>
     </div>
 
@@ -131,21 +132,9 @@
       <div class="field"><label>Username</label><input type="text" id="reg-username" maxlength="24" autocomplete="username"></div>
       <div class="field"><label>Password</label><input type="password" id="reg-password" autocomplete="new-password"></div>
       <button class="btn-primary" id="register-btn">Continue</button>
-      <div class="auth-google"><div class="auth-or"><span>or</span></div><button type="button" class="btn-google" id="register-google"></button></div>
       <div class="auth-switch">Already have an account? <a id="show-login">Log In</a></div>
     </div>
 
-    <!-- AFTER "CONTINUE WITH GOOGLE", FOR SOMEONE NEW -->
-    <div id="pick-view" class="hidden">
-      <h1>Pick a username</h1>
-      <p class="sub">This is your name on Frixion. It can't be changed later.</p>
-      <div class="auth-error" id="pick-error"></div>
-      <div class="field"><label>Username</label><input type="text" id="pick-username" maxlength="24" autocomplete="username"></div>
-      <div class="field"><label>Password (for the Frixion apps)</label><input type="password" id="pick-password" autocomplete="new-password"></div>
-      <p class="auth-hint">The computer and Android apps can't use Google sign-in, so a password lets you log in there with your username. You can leave it empty and set one later in Settings, My Account.</p>
-      <button class="btn-primary" id="pick-btn">Continue</button>
-      <div class="auth-switch">Already have a Frixion account? <a id="pick-cancel">Log in to it</a>, then connect Google in Settings, My Account.</div>
-    </div>
     <p class="recaptcha-note">This site is protected by reCAPTCHA and the Google <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="https://policies.google.com/terms" target="_blank" rel="noopener">Terms of Service</a> apply.</p>
   </div>
 </div>
@@ -1874,7 +1863,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=148"></script>
+<script defer src="script.js?v=149"></script>
 <script defer src="casino.js?v=2"></script>
 </body>
 </html>
