@@ -8,7 +8,8 @@
 -- A write is { "path": "users/Alice", and one of
 --     "set": {...}                    the whole document (made if it's missing)
 --     "set": {...}, "merge": true     only these fields; maps are merged into what's there
---     "update": {"a.b": 1, ...}       these fields (a dotted path goes inside maps); the document must exist
+--     "update": {"a.b": 1, ...}       these fields (a dotted path goes inside maps); the document must exist,
+--                                     unless "upsert": true (Firestore's REST update: made from {} if missing)
 --     "create": {...}                 a new document; refused if it already exists (add())
 --     "delete": true
 --   and optionally "transforms": [{"field": "a.b", then one of "increment": n, "maximum": n, "minimum": n,
@@ -152,7 +153,7 @@ begin
     elsif kind = 'create' then new := w -> 'create';
     elsif kind = 'update' then
       if jsonb_typeof(w -> 'update') <> 'object' then raise exception 'update needs fields' using errcode = 'FX400'; end if;
-      new := old;
+      new := coalesce(old, case when fx.is_true(w -> 'upsert') then '{}'::jsonb end);
       for k, v in select * from jsonb_each(w -> 'update') loop new := fx.set_path(new, string_to_array(k, '.'), v); end loop;
     elsif fx.is_true(w -> 'merge') then new := fx.deep_merge(old, w -> 'set');
     else new := w -> 'set';
@@ -170,7 +171,7 @@ begin
         if n = 0 then raise exception 'permission denied' using errcode = '42501'; end if;
       end if;
     elsif old is null then
-      if kind = 'update' then raise exception 'no document at %', w->>'path' using errcode = 'P0002'; end if;
+      if kind = 'update' and not fx.is_true(w -> 'upsert') then raise exception 'no document at %', w->>'path' using errcode = 'P0002'; end if;
       execute format('insert into public.%I (%s, data) values (%s, $2)', r_tbl,
                      (select string_agg(quote_ident(c), ', ') from unnest(r_cols) c),
                      (select string_agg(format('$1[%s]', i), ', ') from generate_subscripts(r_cols, 1) i)) using r_ids, new;

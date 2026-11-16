@@ -13,10 +13,11 @@ create schema if not exists fx;   -- helpers; not exposed through the Data API
 grant usage on schema fx to anon, authenticated, service_role;
 alter default privileges in schema fx grant execute on functions to anon, authenticated, service_role;
 
--- The time of this request in milliseconds (Firestore's request.time.toMillis()). now() is fixed for the whole
--- transaction, so every check in one commit sees the same time, like Firestore.
-create or replace function fx.now_ms() returns bigint language sql stable as $$
-  select (extract(epoch from now()) * 1000)::bigint
+-- The time of this request in milliseconds, with the microseconds after the point (Firestore's request.time). now()
+-- is fixed for the whole transaction, so every check in one commit sees the same time, like Firestore. Keeping the
+-- microseconds means a time a person makes up (whole milliseconds, from their clock) can't pass for the server's.
+create or replace function fx.now_ms() returns numeric language sql stable as $$
+  select extract(epoch from now()) * 1000
 $$;
 
 -- ---------- tables every rule looks at ----------
