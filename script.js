@@ -133,6 +133,11 @@ if (USING_EMULATORS) {
   auth.useEmulator('http://127.0.0.1:9099', { disableWarnings: true });
   console.info('Frixion is using the local Firebase emulators.');
 }
+// (v4.64) Keep a copy on this device of what Frixion has read. Opening Frixion again within 30 minutes (a reload, coming
+// back to the app) then only pays for what changed instead of reading every Shop item, emoji, sticker, channel and DM
+// again, which is most of what used up the free daily reads. Tabs and app windows share it. Where a browser can't keep
+// one (some private windows), it just works as before.
+try { db.enablePersistence({ synchronizeTabs: true }).catch(e => console.warn('No local copy of the database here:', e.code || e.message)); } catch (e) {}
 
 // Get a free key at https://klipy.com/developers (their API is free, no billing needed) and paste it here to enable GIF search.
 const GIF_API_KEY = 'TAGiarX1tDFDJvipS3zo71rD97RUMgnAm0iKBjLVVfJdds2DaeGxJEkcCu6GQU2Z';
@@ -331,12 +336,12 @@ const SHOP_THEMES = [
   { id: 'arctic', name: 'Arctic', desc: 'Cold icy blue tones.', price: 150, bg: ['#050d14', '#0a1a24', '#143047'], accent: '#aaddff', accent2: '#cceeff' },
   { id: 'lava', name: 'Lava', desc: 'Molten orange lava flow.', price: 200, bg: ['#0d0800', '#1a0e00', '#33200a'], accent: '#ff6600', accent2: '#ff8800' },
   { id: 'galaxy', name: 'Galaxy', desc: 'Deep space purple nebula.', price: 250, bg: ['#02000f', '#05001a', '#11063a'], accent: '#9933ff', accent2: '#bb55ff' },
-  { id: 'forest', name: 'Forest', desc: 'Dark woodland green.', price: 150, bg: ['#000d00', '#001500', '#093009'], accent: '#22aa44', accent2: '#33cc55' },
-  { id: 'cherry', name: 'Cherry', desc: 'Hot pink cherry blossom.', price: 200, bg: ['#140008', '#200010', '#3a0824'], accent: '#ff2266', accent2: '#ff4488' },
+  { id: 'forest', name: 'Forest', desc: 'Olive woodland and moss.', price: 150, bg: ['#0b1408', '#17230f', '#2e3d1b'], accent: '#7cb342', accent2: '#9ccc65' },
+  { id: 'cherry', name: 'Cherry', desc: 'Deep cherry red.', price: 200, bg: ['#1a0204', '#2e0508', '#5a0c14'], accent: '#e11d48', accent2: '#fb7185' },
   { id: 'gold', name: 'Gold', desc: 'Luxurious gold on black.', price: 300, bg: ['#0d0900', '#1a1200', '#352706'], accent: '#ccaa00', accent2: '#ffcc00' },
   { id: 'matrix', name: 'Matrix', desc: 'Green code on black.', price: 200, bg: ['#000800', '#001000', '#062806'], accent: '#00ff00', accent2: '#33ff33' },
   { id: 'copper', name: 'Copper', desc: 'Warm metallic copper tones.', price: 175, bg: ['#0d0700', '#1a0e00', '#33200a'], accent: '#cc6622', accent2: '#ee8844' },
-  { id: 'rose', name: 'Rose', desc: 'Soft pink rose glow.', price: 175, bg: ['#140009', '#200010', '#3a0826'], accent: '#ff4499', accent2: '#ff66bb' },
+  { id: 'rose', name: 'Rose', desc: 'Dusty rose and mauve.', price: 175, bg: ['#1a0e12', '#2a161d', '#4a2834'], accent: '#e8a0b4', accent2: '#f4c2d0' },
   { id: 'ice', name: 'Ice', desc: 'Crisp pale ice blue.', price: 150, bg: ['#050f18', '#081a28', '#123347'], accent: '#88ddff', accent2: '#aaeeff' },
   { id: 'ash', name: 'Ash', desc: 'Minimal grey on black.', price: 100, bg: ['#0a0a0a', '#111111', '#262626'], accent: '#aaaaaa', accent2: '#cccccc' },
   { id: 'neonpink', name: 'Neon Pink', desc: 'Electric hot pink neon.', price: 225, bg: ['#0d000d', '#150015', '#310531'], accent: '#ff00aa', accent2: '#ff33cc' },
@@ -347,14 +352,14 @@ const SHOP_THEMES = [
   { id: 'storm', name: 'Storm', desc: 'Dark stormy blue grey.', price: 175, bg: ['#050810', '#080d18', '#142036'], accent: '#4466aa', accent2: '#5577cc' },
   { id: 'fire', name: 'Fire', desc: 'Intense fire red and orange.', price: 200, bg: ['#100000', '#1a0400', '#331206'], accent: '#ff3300', accent2: '#ff5500' },
   { id: 'void', name: 'Void', desc: 'Pure black with white.', price: 150, bg: ['#000000', '#030303', '#161616'], accent: '#ffffff', accent2: '#dddddd' },
-  { id: 'sakura', name: 'Sakura', desc: 'Soft cherry blossom pink.', price: 200, bg: ['#140009', '#1e000e', '#360820'], accent: '#ff88bb', accent2: '#ffaacc' },
+  { id: 'sakura', name: 'Sakura', desc: 'Cherry blossom pink on lavender.', price: 200, bg: ['#1c1220', '#2d1a33', '#55305e'], accent: '#ffb7d5', accent2: '#ffd6e8' },
   { id: 'rust', name: 'Rust', desc: 'Dark burnt rust orange.', price: 150, bg: ['#0d0500', '#1a0a00', '#331806'], accent: '#cc4400', accent2: '#ee5500' },
   { id: 'aqua', name: 'Aqua', desc: 'Bright teal and turquoise.', price: 200, bg: ['#00100f', '#001a18', '#063532'], accent: '#00ccbb', accent2: '#00eecc' },
-  { id: 'emerald', name: 'Emerald', desc: 'Deep rich emerald green.', price: 225, bg: ['#000f08', '#001810', '#063322'], accent: '#00aa66', accent2: '#00cc77' },
+  { id: 'emerald', name: 'Emerald', desc: 'Polished emerald teal.', price: 225, bg: ['#011713', '#04261f', '#0b4a3c'], accent: '#10b981', accent2: '#34d399' },
   { id: 'violet', name: 'Violet', desc: 'Deep violet purple.', price: 200, bg: ['#060010', '#0a0018', '#1e0639'], accent: '#8800ff', accent2: '#aa33ff' },
   { id: 'steel', name: 'Steel', desc: 'Cool metallic steel blue.', price: 175, bg: ['#060a0d', '#0a1018', '#16242f'], accent: '#4488aa', accent2: '#55aacc' },
   { id: 'coral', name: 'Coral', desc: 'Warm coral red-orange.', price: 175, bg: ['#0d0500', '#1a0800', '#331606'], accent: '#ff5533', accent2: '#ff7755' },
-  { id: 'mint', name: 'Mint', desc: 'Fresh cool mint green.', price: 150, bg: ['#001209', '#001c0e', '#063524'], accent: '#44ddaa', accent2: '#66eebb' },
+  { id: 'mint', name: 'Mint', desc: 'Soft aqua mint.', price: 150, bg: ['#0f1f1c', '#163029', '#2a5248'], accent: '#7fffd4', accent2: '#a7ffe4' },
   { id: 'lavender', name: 'Lavender', desc: 'Soft dreamy lavender.', price: 150, bg: ['#080010', '#0d0018', '#200639'], accent: '#bb88ff', accent2: '#ccaaff' },
   { id: 'cyber', name: 'Cyber', desc: 'Cyberpunk yellow-green.', price: 250, bg: ['#000d00', '#001100', '#063306'], accent: '#ddff00', accent2: '#eeff33' },
   { id: 'bloodmoon', name: 'Blood Moon', desc: 'Dark crimson lunar glow.', price: 275, bg: ['#080000', '#140400', '#331206'], accent: '#ff4400', accent2: '#ff6622' },
@@ -365,7 +370,7 @@ const SHOP_THEMES = [
   { id: 'purplerain', name: 'Purple Rain', desc: 'Deep purple rainstorm.', price: 225, bg: ['#050010', '#0a0020', '#1e063a'], accent: '#7700cc', accent2: '#9922ee' },
   { id: 'holographic', name: 'Holographic', desc: 'Pink and cyan holo shine.', price: 400, bg: ['#050508', '#08080d', '#16161e'], accent: '#ff66ff', accent2: '#66ffff', anim: 'holo', featured: true },
   { id: 'obsidian', name: 'Obsidian', desc: 'Black volcanic glass.', price: 200, bg: ['#000000', '#050508', '#16161e'], accent: '#6644ff', accent2: '#8866ff' },
-  { id: 'aurora', name: 'Aurora', desc: 'Northern lights green glow.', price: 300, bg: ['#000d0a', '#001810', '#063530'], accent: '#00ffaa', accent2: '#33ffbb', anim: 'aurora', featured: true },
+  { id: 'aurora', name: 'Aurora', desc: 'Northern lights: teal into purple.', price: 300, bg: ['#06071a', '#0b2a2a', '#3a1450'], accent: '#2de2b4', accent2: '#b16cff', anim: 'aurora', featured: true },
   { id: 'candy', name: 'Candy', desc: 'Sweet neon candy pink.', price: 200, bg: ['#0d0010', '#150018', '#310539'], accent: '#ff44cc', accent2: '#ff66dd' },
   { id: 'infrared', name: 'Infrared', desc: 'Deep infrared heat red.', price: 225, bg: ['#080000', '#110000', '#330606'], accent: '#ff0055', accent2: '#ff2266' },
 ];
@@ -528,6 +533,26 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.64', date: '2026-11-15', title: 'Loans and Mouse Maze',
+    notes: [
+      'Mouse Maze, a new game with 125 levels: get the mouse from the green square to the gold one without touching a wall. It gets harder as you go, with things that move, spin and grow, checkpoints, and a few fake finish lines. Computer only, in fullscreen.',
+      'Loans: ask someone for Orbs from their profile and they decide whether to lend them. Pay back on time and your credit goes up; pay late and it drops. Credit shows on profiles.',
+      'Banner pictures: put your own picture on your profile banner, like Discord. Every upload costs 5,000 Orbs.',
+      'Custom ranks: the Owner and Co-Owners can make ranks like Tester, with a color or a gradient, put them in order and give them to people.',
+      'Profiles show how many Orbs someone has. You can hide yours in the new Settings > Privacy.',
+      'Big numbers use letters all the way up (1.00Qa, 1.00Dc, 1.00Vg and so on) instead of 1.00×10^15.',
+      'The Owner and Co-Owners can give someone infinite Orbs: they show as Inf and never go down.',
+      'The Shop: a Buy All button on each section, no more heart, buying something updates its button straight away, profile effects are one list, and nameplates and banners can be made with up to 8 colors.',
+      'Gradient banners are gone, since the Shop has banners now. Old ones show as their first color.',
+      'Forest, Cherry, Rose, Sakura, Emerald, Mint and Aurora each have their own look now.',
+      'Phones: typing doesn\'t make the screen jump, Return makes a new line (the send button sends), the chat scrolls properly, and there\'s no member list.',
+      'A group\'s member list and a linked channel\'s DISCORD tag don\'t follow you onto Shop, Games, Codes or Friends any more. Profile buttons look tidier, and names made of underscores show each one.',
+      'Deleting an account takes it out of every DM, group and friend list right away.',
+      'Signing up while Frixion is out of database for the day no longer leaves your username stuck as taken.',
+      'Frixion keeps a copy of what it has read on your device, so opening it again uses much less of the daily database limit. If the limit runs out anyway, you can still log in and look around.',
+      'Staff can add their panel to Quick Open.',
+      '4 new easter eggs. That makes 59.',
+    ] },
   { v: '4.63', date: '2026-11-15', title: 'The Casino',
     notes: [
       'There\'s a Casino now, right under Shop. 17 games: Crash, Mines, Towers, Crossing, Hi-Lo, Blackjack, Roulette, Dice, Limbo, Coinflip, Rock Paper Scissors, Upgrader, Plinko, Slots, Keno, Cases and the Mega Ticket.',
@@ -1401,7 +1426,7 @@ function cleanCatalogItem(raw) {
   const it = { ...raw };
   delete it.svg;                                         // only built-in items carry drawing code
   ['color', 'accent', 'accent2'].forEach(k => { if (k in it) it[k] = cssColor(it[k], '#5865f2'); });
-  ['bg', 'colors'].forEach(k => { if (k in it) it[k] = (Array.isArray(it[k]) ? it[k] : []).slice(0, 4).map(c => cssColor(c, '#1e1f22')); });
+  ['bg', 'colors'].forEach(k => { if (k in it) it[k] = (Array.isArray(it[k]) ? it[k] : []).slice(0, k === 'colors' ? 8 : 4).map(c => cssColor(c, '#1e1f22')); });   // up to 8 colors (v4.64)
   ['imageUrl', 'banner', 'dataUrl'].forEach(k => { if (it[k] != null) it[k] = safeUrl(it[k], 'image') || null; });
   if (it.src != null) it.src = safeUrl(it.src, 'media') || null;
   if (Array.isArray(it.cutscenes)) it.cutscenes = it.cutscenes.filter(c => c && safeUrl(c.src, 'media')).slice(0, 3);
@@ -1644,6 +1669,76 @@ const LEET_CLASSES = { a: 'a4@', b: 'b8', e: 'e3', g: 'g9', i: 'i1!|', l: 'l1', 
 let filteredWords = [];
 let disabledFilterWords = [];
 let filterEnabled = true;
+// ---------- Custom ranks (v4.64) ----------
+// Ranks the Owner and Co-Owners make in their panel (Ranks tab), like "Tester": a name and one color or a two-color
+// gradient. Just a tag next to the name, with no powers. They live in config/ranks { list: [{ id, name, c1, c2 }] },
+// highest first, and each person's is customRank on their profile (only the Owner and Co-Owners set it: firestore.rules).
+let customRanks = [];
+function subscribeCustomRanks() {
+  catalogUnsubs.push(db.collection('config').doc('ranks').onSnapshot(snap => {
+    const list = snap.exists && Array.isArray(snap.data().list) ? snap.data().list : [];
+    customRanks = list.filter(r => r && typeof r.id === 'string' && typeof r.name === 'string').slice(0, 50)
+      .map(r => ({ id: r.id, name: r.name.slice(0, 20), c1: cssColor(r.c1, '#5865f2'), c2: r.c2 ? cssColor(r.c2, '#5865f2') : null }));
+    if (!$('admin-panel-modal').classList.contains('hidden')) { renderRanksPane(); }
+  }, () => {}));
+}
+const rankBg = r => (r.c2 && r.c2 !== r.c1 ? `linear-gradient(135deg, ${r.c1}, ${r.c2})` : r.c1);
+function customRankTag(profile) {
+  const r = profile && profile.customRank && customRanks.find(x => x.id === profile.customRank);
+  return r ? `<span class="crank-tag" style="background:${esc(rankBg(r))}">${esc(r.name)}</span>` : '';
+}
+async function saveRanks(list) {
+  if (!isOwner) { toast('Only the Owner and Co-Owners can change ranks.', 'error'); return false; }
+  try { await db.collection('config').doc('ranks').set({ list: list.map(r => ({ id: r.id, name: r.name, c1: r.c1, c2: r.c2 || null })) }); return true; }
+  catch (e) { toast('Could not save the ranks.', 'error'); return false; }
+}
+// The Ranks tab: highest to lowest, who has each, up and down to reorder, and a maker at the top.
+async function renderRanksPane() {
+  const box = $('rank-list');
+  if (!box) return;
+  const ids = customRanks.map(r => r.id);
+  let holders = {};
+  if (ids.length) {
+    try {
+      const snaps = await Promise.all(Array.from({ length: Math.ceil(ids.length / 30) }, (_, i) => db.collection('users').where('customRank', 'in', ids.slice(i * 30, i * 30 + 30)).get()));
+      snaps.forEach(s => s.forEach(d => { const u = d.data(); (holders[u.customRank] = holders[u.customRank] || []).push(u); }));
+    } catch (e) { holders = {}; }
+  }
+  box.innerHTML = customRanks.length ? customRanks.map((r, i) => `<div class="rank-row" data-rank="${esc(r.id)}">
+      <span class="rank-place">${i + 1}</span>
+      <span class="crank-tag" style="background:${esc(rankBg(r))}">${esc(r.name)}</span>
+      <span class="rank-people">${(holders[r.id] || []).map(u => esc(displayNameOf(u))).join(', ') || '<i>Nobody yet</i>'}</span>
+      <button type="button" class="btn-secondary slim" data-rank-up ${i === 0 ? 'disabled' : ''} title="Higher">&uarr;</button>
+      <button type="button" class="btn-secondary slim" data-rank-down ${i === customRanks.length - 1 ? 'disabled' : ''} title="Lower">&darr;</button>
+      <button type="button" class="btn-secondary slim" data-rank-rm title="Delete">${icon('trash')}</button>
+    </div>`).join('') : '<div class="empty">No ranks yet. Make one above.</div>';
+  box.querySelectorAll('.rank-row').forEach(row => {
+    const id = row.dataset.rank, i = customRanks.findIndex(r => r.id === id);
+    const move = d => { const list = customRanks.slice(); const [r] = list.splice(i, 1); list.splice(i + d, 0, r); saveRanks(list); };
+    row.querySelector('[data-rank-up]').onclick = () => move(-1);
+    row.querySelector('[data-rank-down]').onclick = () => move(1);
+    row.querySelector('[data-rank-rm]').onclick = () => confirmAction({
+      title: 'Delete Rank', body: `Delete the ${customRanks[i].name} rank? Anyone who has it just loses the tag.`, confirmLabel: 'Delete',
+      onConfirm: () => saveRanks(customRanks.filter(r => r.id !== id)),
+    });
+  });
+}
+function rankMakerPreview() {
+  const name = ($('rank-name').value || '').trim() || 'Rank';
+  $('rank-preview').textContent = name;
+  $('rank-preview').style.background = rankBg({ c1: $('rank-c1').value, c2: $('rank-grad').checked ? $('rank-c2').value : null });
+  $('rank-c2').classList.toggle('hidden', !$('rank-grad').checked);
+}
+['rank-name', 'rank-c1', 'rank-c2'].forEach(id => { if ($(id)) $(id).addEventListener('input', rankMakerPreview); });
+if ($('rank-grad')) $('rank-grad').addEventListener('change', rankMakerPreview);
+if ($('rank-add')) $('rank-add').onclick = async () => {
+  const name = ($('rank-name').value || '').trim().replace(/\s+/g, ' ');
+  if (!name) { toast('Give the rank a name.'); return; }
+  if (customRanks.some(r => r.name.toLowerCase() === name.toLowerCase())) { toast('There\'s already a rank with that name.'); return; }
+  if (customRanks.length >= 50) { toast('That\'s the most ranks there can be.'); return; }
+  const r = { id: 'r' + Date.now().toString(36), name: name.slice(0, 20), c1: $('rank-c1').value, c2: $('rank-grad').checked ? $('rank-c2').value : null };
+  if (await saveRanks([...customRanks, r])) { $('rank-name').value = ''; rankMakerPreview(); toast(`Made the ${r.name} rank. Give it to people from their page in System Hub.`); }
+};
 function subscribeMessageFilter() {
   catalogUnsubs.push(db.collection('config').doc('filter').onSnapshot(snap => {
     const d = snap.exists ? snap.data() : {};
@@ -1943,7 +2038,7 @@ function crackerTag(profile) { return profile && profile.cracker === true ? '<sp
 function roleTag(profile) {
   const hidden = profile && (profile.sfMode || (profile.username === myUid && sfMode));   // sfmode hides the staff tag for everyone
   const r = platformRank(profile);
-  return (hidden ? '' : r === 3 ? ownerTag(profile) : r === 2 ? coOwnerTag(profile) : opTag(profile)) + crackerTag(profile);
+  return (hidden ? '' : r === 3 ? ownerTag(profile) : r === 2 ? coOwnerTag(profile) : opTag(profile)) + customRankTag(profile) + crackerTag(profile);
 }
 // You can manage yourself, or anyone strictly below you. Admins can still
 // manage other admins (unchanged), but nobody can touch an equal-or-higher
@@ -2198,6 +2293,9 @@ const UNUSED_PERMISSIONS = new Set([
 ]);
 // The username itself is permanent (it's the Firestore doc ID), but anyone
 // can set a separate Display Name that's shown instead almost everywhere.
+// Names made of underscores (v4.64): a hair of space between two underscores, so '________' doesn't read as one line.
+// Takes text that's already escaped; the gaps are empty spans, so copying the name still gives plain underscores.
+function gapUnderscores(html) { return String(html).replace(/_(?=_)/g, '_<span class="us-gap"></span>'); }
 function displayNameOf(profile) { return (profile && profile.displayName) ? profile.displayName : ((profile && profile.username) || ''); }
 function ownerCrown(uid, ownerId) { return uid === ownerId ? `<span class="i owner-crown" title="Owner">${ICONS.crown}</span>` : ''; }
 function timeStr(ts) {
@@ -2624,6 +2722,7 @@ function renderRpcPreview() {
 function populateRpc() {
   if (!$('rpc-share-toggle') || !myProfile) return;
   if ($('dnd-toggle')) $('dnd-toggle').checked = dndOn();
+  if ($('privacy-orbs-toggle')) $('privacy-orbs-toggle').checked = myProfile.hideOrbs !== true;   // Settings > Privacy (v4.64)
   $('rpc-share-toggle').checked = rpcEnabled();
   if ($('rpc-detect-row')) {
     $('rpc-detect-row').classList.toggle('hidden', !DESKTOP);
@@ -2634,6 +2733,15 @@ function populateRpc() {
 }
 if ($('rpc-detect-toggle')) $('rpc-detect-toggle').onchange = async (e) => {
   try { await db.collection('users').doc(myUid).update({ 'rpc.detectGames': e.target.checked }); }
+  catch (err) { e.target.checked = !e.target.checked; toast('Could not save that.', 'error'); }
+};
+// Settings > Privacy (v4.64): hide your Orbs from your profile
+if ($('privacy-orbs-toggle')) $('privacy-orbs-toggle').onchange = async (e) => {
+  try {
+    await db.collection('users').doc(myUid).update({ hideOrbs: e.target.checked ? FieldValue.delete() : true });
+    toast(e.target.checked ? 'Your Orbs show on your profile.' : 'Your Orbs are hidden from your profile.');
+    if (!e.target.checked) eggFind('hideorbs');   // (an easter egg)
+  }
   catch (err) { e.target.checked = !e.target.checked; toast('Could not save that.', 'error'); }
 };
 if ($('dnd-toggle')) $('dnd-toggle').onchange = async (e) => {
@@ -3511,6 +3619,7 @@ async function boot() {
   else if (!r && !myUid) {
     showAuthScreen();
     if (failed && /permission-denied|unauthenticated/.test(failed.code || '')) $('login-error').textContent = SECURITY_CHECK_BLOCKED;
+    else if (failed && isDailyLimit(failed)) $('login-error').textContent = DAILY_LIMIT_TEXT;   // (and this device had nothing saved)
   }
 }
 
@@ -3570,8 +3679,12 @@ function authErrorText(e) {
   // Signing in reads your own account, which the database always allows, unless this browser can't get App Check's
   // pass (an ad blocker or a strict privacy setting blocking Google's reCAPTCHA).
   if (c === 'permission-denied' || c === 'unauthenticated') return SECURITY_CHECK_BLOCKED;
+  if (c === 'resource-exhausted' || /quota/i.test((e && e.message) || '')) return DAILY_LIMIT_TEXT;
   return (e && e.message) || 'Something went wrong.';
 }
+// Google's free plan gives Frixion so many database reads and writes a day; once they're used up, nothing can be saved
+// until it starts over at midnight Pacific time.
+const DAILY_LIMIT_TEXT = 'Frixion used up its database for today, so this can\'t be done right now. It starts again at midnight Pacific time (US).';
 const SECURITY_CHECK_BLOCKED = 'Frixion can\'t reach its database from this browser. Something here, usually an ad blocker or a strict privacy setting, is blocking Google\'s security check (reCAPTCHA) that Frixion needs. Allow it for this site, or try another browser.';
 // Google sign-in opens a Google window, which Google refuses inside the computer app, the Android app and the overlay;
 // an iPhone home screen app can't get the answer back from it either.
@@ -3584,10 +3697,11 @@ function authReady() { return new Promise(r => { const off = auth.onAuthStateCha
 // After any sign-in: the Frixion account it is, checked against the profile, then into the app. false: a sign-in with no
 // Frixion account yet (Google, see the pick view); null: not let in (the reason is shown).
 async function enterAs(user, errEl) {
-  const acc = await db.collection('accounts').doc(user.uid).get();
+  dailyLimitHit = false;
+  const acc = await getDocOrSaved(db.collection('accounts').doc(user.uid));
   if (!acc.exists) return false;
   const username = acc.data().username;
-  const snap = await db.collection('users').doc(username).get();
+  const snap = await getDocOrSaved(db.collection('users').doc(username));
   if (!snap.exists || snap.data().authUid !== user.uid) {
     await auth.signOut();
     if (errEl) errEl.textContent = 'That account isn\'t available.';
@@ -3595,12 +3709,28 @@ async function enterAs(user, errEl) {
   }
   const data = snap.data(), ban = banStatus(data);
   if (ban.banned) { showAuthScreen(); showBanScreen(ban, false); return null; }
-  if (ban.expired) { await db.collection('users').doc(username).update({ banned: false, banReason: '', bannedUntil: null }); data.banned = false; }
-  await normalizeProfile(username, data);
+  try {
+    if (ban.expired) { await db.collection('users').doc(username).update({ banned: false, banReason: '', bannedUntil: null }); data.banned = false; }
+    await normalizeProfile(username, data);
+  } catch (e) { if (!isDailyLimit(e)) throw e; }
   myUid = username; myProfile = data; profileCache[myUid] = data;
   setSession(username);
   enterApp();
+  if (dailyLimitHit) setTimeout(() => toast('Frixion used up its database for today, so you\'re seeing what this device saved. Sending, buying and saving won\'t work until it starts again at midnight Pacific time (US).', 'error'), 1200);
   return true;
+}
+// (v4.64) When Frixion has used up its free database for the day, every read fails until it starts over. Logging in
+// then uses this device's saved copy (db.enablePersistence above), if it has one, so you can still look around.
+let dailyLimitHit = false;
+const isDailyLimit = e => !!e && (e.code === 'resource-exhausted' || /quota/i.test(String(e.message || '')));
+async function getDocOrSaved(ref) {
+  try { return await ref.get(); }
+  catch (e) {
+    if (!isDailyLimit(e)) throw e;
+    const saved = await ref.get({ source: 'cache' }).catch(() => null);
+    if (saved && saved.exists) { dailyLimitHit = true; return saved; }
+    throw Object.assign(new Error(DAILY_LIMIT_TEXT), { code: 'resource-exhausted' });
+  }
 }
 // An account from before real sign-in whose password is still on its profile: if it's the right one, the account gets a
 // real sign-in now and the password comes off the profile.
@@ -3696,10 +3826,23 @@ $('register-btn').onclick = async () => {
     // The sign-in is made first: its made-up email is the username, so two people can't both get the same one. Nobody
     // signed out may read profiles, so a name taken by someone who only uses Google (no such sign-in) is found by
     // createProfile instead, and the sign-in just made is removed again.
-    const cred = await auth.createUserWithEmailAndPassword(authEmail(username), authPass(pass))
-      .catch(e => Promise.reject(e.code === 'auth/email-already-in-use' ? Object.assign(new Error('That username is already taken.'), { code: 'taken' }) : e));
+    let cred = await auth.createUserWithEmailAndPassword(authEmail(username), authPass(pass)).catch(e => (e.code === 'auth/email-already-in-use' ? null : Promise.reject(e)));
+    if (!cred) {
+      // There's already a sign-in with this name. A sign-up that ran out of Frixion's daily database limit halfway
+      // (before v4.64) could leave one with no account behind: with the same password it finishes now. Otherwise the
+      // name really is taken.
+      cred = await auth.signInWithEmailAndPassword(authEmail(username), authPass(pass)).catch(() => null);
+      if (!cred) throw Object.assign(new Error('That username is already taken.'), { code: 'taken' });
+      if ((await db.collection('accounts').doc(cred.user.uid).get()).exists) {   // a whole account: just log in
+        await enterAs(cred.user, err);
+        $('register-btn').disabled = false; $('register-btn').textContent = 'Continue';
+        return;
+      }
+    }
+    // If the profile can't be made (the name is taken, or the daily limit), the new sign-in comes back out, so it never
+    // holds the name on its own (v4.64).
     try { await createProfile(cred.user, username); }
-    catch (e) { if (e.code === 'taken') await cred.user.delete().catch(() => auth.signOut()); throw e; }
+    catch (e) { await cred.user.delete().catch(() => auth.signOut()); throw e; }
   } catch (e) {
     err.textContent = e.code === 'taken' ? e.message : authErrorText(e);
   }
@@ -3995,7 +4138,14 @@ async function startTermination(info) {
     cancelAnimationFrame(raf);
     el.classList.add('is-black');
     try {
-      if (mode === 'real') await db.collection('users').doc(uid).delete();
+      if (mode === 'real') {
+        // it leaves its servers on the way out (v4.64; the Owner's app already took it out of DMs and groups)
+        try {
+          const s = await db.collection('servers').where('members', 'array-contains', uid).get();
+          await Promise.allSettled(s.docs.filter(d => d.data().ownerId !== uid).map(d => d.ref.update({ members: FieldValue.arrayRemove(uid) })));
+        } catch (e) {}
+        await db.collection('users').doc(uid).delete();
+      }
       else await db.collection('users').doc(uid).update({ terminated: FieldValue.delete() });
     } catch (e) { console.warn('termination write failed', e); }
     try { await $('logout-btn').onclick(); } catch (e) {}
@@ -4067,6 +4217,7 @@ function initAppForUser() {
     }
     syncGameState(myProfile);
     if (typeof casinoProfileChanged === 'function') casinoProfileChanged();   // the Casino's balance and games left (casino.js)
+    scheduleLoanCheck();   // a loan of yours coming due (v4.64)
     maybeShowAppPrompt();
     refreshPushSub();
     maybeAskPush();
@@ -4157,6 +4308,7 @@ function initAppForUser() {
   subscribeShopOverrides();
   subscribeCustomMusic();
   subscribeMessageFilter();
+  subscribeCustomRanks();
   subscribeStickers();
   showHomeView();
   handleInviteFromUrl();
@@ -4491,14 +4643,30 @@ function syncMobileViewport() {
     return;
   }
   const vv = window.visualViewport;
-  const visibleHeight = vv ? vv.height : window.innerHeight;
-  root.style.setProperty('--mobile-viewport-height', `${Math.round(visibleHeight)}px`);
+  const visibleHeight = Math.round(vv ? vv.height : window.innerHeight);
+  // (v4.64) Only change things that really moved: iOS fires these events many times a second while you type, and
+  // re-setting the height and the shift every time made the screen bounce up and down.
+  if (Math.abs(visibleHeight - lastVisibleHeight) >= 2) {
+    lastVisibleHeight = visibleHeight;
+    root.style.setProperty('--mobile-viewport-height', `${visibleHeight}px`);
+  }
   // Shift <body> itself (not #app inside it). Body has overflow:hidden and
   // is only visibleHeight tall, so translating a CHILD of body pushed the
   // composer and newest messages outside body's clip box — that's why the
   // DM went blank and the text box vanished while the iOS keyboard was up.
-  document.body.style.transform = (vv && vv.offsetTop > 0) ? `translateY(${Math.round(vv.offsetTop)}px)` : '';
+  const shift = vv && vv.offsetTop > 0 ? Math.round(vv.offsetTop) : 0;
+  if (Math.abs(shift - lastBodyShift) >= 2 || (shift === 0) !== (lastBodyShift === 0)) {
+    lastBodyShift = shift;
+    document.body.style.transform = shift ? `translateY(${shift}px)` : '';
+  }
   document.body.classList.toggle('keyboard-open', !!vv && (window.innerHeight - vv.height) > 120);
+}
+let lastVisibleHeight = -1, lastBodyShift = 0, viewportFrame = 0;
+// at most once a frame, however many viewport events come in
+function queueViewportSync() {
+  if (viewportFrame) return;
+  viewportFrame = requestAnimationFrame(() => { viewportFrame = 0; syncMobileViewport(); });
+  setTimeout(() => { if (viewportFrame) { cancelAnimationFrame(viewportFrame); viewportFrame = 0; syncMobileViewport(); } }, 120);   // (no frames in a hidden tab)
 }
 // Keep the newest messages in view when the keyboard (or anything else)
 // shrinks the message list: preserve the distance from the bottom instead
@@ -4506,18 +4674,25 @@ function syncMobileViewport() {
 (function keepMessagesAnchored() {
   const wrap = $('messages');
   if (!wrap || typeof ResizeObserver === 'undefined') return;
-  let distFromBottom = 0;
+  let distFromBottom = 0, touching = false, lastScroll = 0;
   wrap.addEventListener('scroll', () => {
     distFromBottom = wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight;
+    lastScroll = Date.now();
   }, { passive: true });
+  // (v4.64) Never move the list while a finger is on it or it's still gliding from a flick: that stopped scrolls dead
+  // on phones ("sometimes you cannot scroll").
+  wrap.addEventListener('touchstart', () => { touching = true; }, { passive: true });
+  wrap.addEventListener('touchend', () => { touching = false; }, { passive: true });
+  wrap.addEventListener('touchcancel', () => { touching = false; }, { passive: true });
   new ResizeObserver(() => {
+    if (touching || (isTouchDevice() && Date.now() - lastScroll < 250 && distFromBottom >= 80)) return;
     wrap.scrollTop = wrap.scrollHeight - wrap.clientHeight - (distFromBottom < 80 ? 0 : distFromBottom);
   }).observe(wrap);
 })();
-window.addEventListener('resize', syncMobileViewport);
+window.addEventListener('resize', queueViewportSync);
 if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', syncMobileViewport);
-  window.visualViewport.addEventListener('scroll', syncMobileViewport);
+  window.visualViewport.addEventListener('resize', queueViewportSync);
+  window.visualViewport.addEventListener('scroll', queueViewportSync);
 }
 // Belt-and-suspenders for browsers/webviews that fire the events above
 // late, or not at all, relative to the keyboard's own show/hide animation:
@@ -4699,6 +4874,9 @@ function openHomeMainView(which) {
   $('welcome-view').classList.add('hidden');
   $('chat-view').classList.add('hidden');
   hideHeaderActions();
+  // a group's member list and a linked channel's DISCORD tag don't follow you onto these pages (v4.64)
+  $('members-toggle').classList.add('hidden'); $('app').classList.remove('member-list-open');
+  $('chat-header-discord').classList.add('hidden'); $('chat-header-topic').classList.add('hidden'); $('slowmode-indicator').classList.add('hidden');
   hideMainPageViews();
   setChatHeaderHash('');
   if (which === 'friends') { currentView = 'friends'; $('chat-header-title').textContent = 'Friends'; $('friends-view').classList.remove('hidden'); renderFriendsView(); }
@@ -4732,9 +4910,11 @@ function maybePingForConversationSnapshot(snap, isFirstSync, kind) {
 function subscribeDMList() {
   let dmsFirstSync = true;
   if (unsub.dms) unsub.dms();
-  unsub.dms = db.collection('dms').where('participants', 'array-contains', myUid).onSnapshot(async snap => {
+  // (v4.64: with the local copy, the first list can come from it; the baseline is the first list the server confirms,
+  // so messages from while you were away don't all ping at once)
+  unsub.dms = db.collection('dms').where('participants', 'array-contains', myUid).onSnapshot({ includeMetadataChanges: true }, async snap => {
     maybePingForConversationSnapshot(snap, dmsFirstSync, 'dm');
-    dmsFirstSync = false;
+    if (!snap.metadata.fromCache) dmsFirstSync = false;
     const dms = [];
     snap.forEach(d => dms.push({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }));
     window.__myDMs = dms;
@@ -4747,9 +4927,9 @@ function subscribeDMList() {
   });
   let groupDmsFirstSync = true;
   if (unsub.groupDms) unsub.groupDms();
-  unsub.groupDms = db.collection('groupDMs').where('participants', 'array-contains', myUid).onSnapshot(async snap => {
+  unsub.groupDms = db.collection('groupDMs').where('participants', 'array-contains', myUid).onSnapshot({ includeMetadataChanges: true }, async snap => {
     maybePingForConversationSnapshot(snap, groupDmsFirstSync, 'gdm');
-    groupDmsFirstSync = false;
+    if (!snap.metadata.fromCache) groupDmsFirstSync = false;
     const gs = [];
     snap.forEach(d => gs.push({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }));
     window.__myGroupDMs = gs;
@@ -5519,7 +5699,7 @@ function renderDMRows() {
       row.className = 'dm-row' + (currentDMId === dm.id ? ' active' : '') + (isConversationUnread(dm) ? ' unread' : '') + (nameplate ? ' has-nameplate' : '');
       row.innerHTML = nameplateBgHTML(nameplate) +
         avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(otherUid), p.avatarUrl, p.equippedDecoration, otherUid, p.equippedMask, typersIn('dm', dm).includes(otherUid)) +
-        `<div class="dm-copy"><span class="dm-name">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div><span class="dm-time">${esc(shortAgo(timeValue(dm.updatedAt) || timeValue((dm.lastMessage || {}).createdAt)))}</span>`;
+        `<div class="dm-copy"><span class="dm-name">${gapUnderscores(esc(displayNameOf(p)))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div><span class="dm-time">${esc(shortAgo(timeValue(dm.updatedAt) || timeValue((dm.lastMessage || {}).createdAt)))}</span>`;
       row.onclick = () => selectDM(dm.id, otherUid);
     } else {
       const g = c;
@@ -5697,7 +5877,7 @@ async function selectGroupDM(id) {
   $('composer-input').placeholder = `Message ${name}`;
   refreshChannelComposerState();
   $('gift-btn').classList.add('hidden');
-  $('members-toggle').classList.remove('hidden');
+  $('members-toggle').classList.toggle('hidden', isMobile());   // no member list on phones (v4.64)
   applyDefaultMemberListState();
   showHeaderActions();
   $('pins-toggle').classList.remove('hidden');
@@ -5875,31 +6055,155 @@ function renderBannerSwatches(current) {
     return sw;
   };
   AVATAR_COLORS.forEach(c => wrap.appendChild(makeSwatch(c, false)));
-
+  // Gradient banners are gone (v4.64, the Owner: they made the Shop's banners pointless). A banner is a plain color, a
+  // picture (Settings: Banner Image) or a Shop banner.
   gradWrap.innerHTML = '';
-  const premium = isPremium(myProfile);
-  BANNER_GRADIENTS.forEach(g => gradWrap.appendChild(makeSwatch(g, !premium)));
-  $('banner-gradient-label').textContent = premium ? 'Gradient Banners' : 'Gradient Banners (Frixion Premium)';
-  // Premium (v4.56): mix your own two-color banner (saved like the others: linear-gradient(135deg,#..,#..))
-  const mix = $('banner-mix'), m1 = $('banner-mix-1'), m2 = $('banner-mix-2');
-  const own = /^linear-gradient\(135deg,(#[0-9a-f]{6}),(#[0-9a-f]{6})\)$/i.exec(current || '');
-  const isOwn = !!own && !BANNER_GRADIENTS.includes(current);
-  if (own) { m1.value = own[1]; m2.value = own[2]; }
-  const custom = document.createElement('div');
-  custom.className = 'swatch swatch-mix' + (isOwn ? ' selected' : '') + (premium ? '' : ' locked-swatch');
-  custom.title = 'Mix your own';
-  custom.style.background = `linear-gradient(135deg,${m1.value},${m2.value})`;
-  custom.innerHTML = premium ? '<span class="swatch-plus">+</span>' : `<span class="swatch-lock">${icon('shield')}</span>`;
-  const useMix = () => {
-    const bg = `linear-gradient(135deg,${m1.value.toLowerCase()},${m2.value.toLowerCase()})`;
-    clearSelected(); custom.classList.add('selected'); custom.style.background = bg;
-    wrap.dataset.chosen = bg; $('profile-banner').style.background = bg;
-  };
-  custom.onclick = () => { if (!premium) { openPremiumModal(); return; } mix.classList.remove('hidden'); useMix(); };
-  m1.oninput = m2.oninput = useMix;
-  gradWrap.appendChild(custom);
-  mix.classList.toggle('hidden', !(premium && isOwn));
   renderNameGradientPicker();
+}
+// Banner pictures (v4.64): 5,000 Orbs per upload, paid through functions/api/admin/banner, which only takes a picture
+// from Frixion's own Cloudinary account (and the rules let nobody set one any other way). The same check here keeps
+// anything odd out of the style attribute.
+const BANNER_PICTURE_PRICE = 5000;
+const BANNER_PIC_URL = new RegExp('^https://res\\.cloudinary\\.com/' + CLOUDINARY_CLOUD_NAME + '/image/upload/[A-Za-z0-9_./,-]{1,300}\\.(png|jpe?g|webp|gif|avif)$', 'i');
+function bannerImageUrl(p) { return p && typeof p.bannerImage === 'string' && BANNER_PIC_URL.test(p.bannerImage) && !p.bannerImage.includes('..') ? p.bannerImage : ''; }
+$('banner-image-btn').onclick = () => {
+  if (!hasOrbsFor(BANNER_PICTURE_PRICE)) { toast(`A banner picture costs ${fmtOrbs(BANNER_PICTURE_PRICE)} Orbs.`, 'error'); return; }
+  $('banner-image-file').click();
+};
+$('banner-image-file').onchange = e => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) { toast('Pick a PNG, JPG, WebP or GIF.', 'error'); return; }
+  if (file.size > 8 * 1024 * 1024) { toast('That picture is over 8 MB. Pick a smaller one.', 'error'); return; }
+  confirmAction({
+    title: 'Banner Picture', body: `Use this picture as your banner for ${fmtOrbs(BANNER_PICTURE_PRICE)} Orbs?`, confirmLabel: `Pay ${fmtOrbs(BANNER_PICTURE_PRICE)} Orbs`, danger: false,
+    onConfirm: async () => {
+      try {
+        toast('Uploading your banner...');
+        await flushEarn();
+        const url = await uploadImageToCloudinary(await shrinkImage(file, 3 * 1024 * 1024));
+        const r = await orbsCall('banner', { url });
+        myProfile.bannerImage = r.bannerImage;
+        if (r.orbs != null) myProfile.orbs = r.orbs;
+        toast('Banner picture set.');
+        openProfileModal(myUid);
+      } catch (err) { toast(err.message || 'Could not set the picture.', 'error'); }
+    },
+  });
+};
+$('banner-image-remove').onclick = () => confirmAction({
+  title: 'Remove Banner Picture', body: `Take your banner picture off? Putting one back costs ${fmtOrbs(BANNER_PICTURE_PRICE)} Orbs again.`, confirmLabel: 'Remove',
+  onConfirm: async () => {
+    try { await db.collection('users').doc(myUid).update({ bannerImage: FieldValue.delete() }); delete myProfile.bannerImage; toast('Banner picture removed.'); openProfileModal(myUid); }
+    catch (err) { toast('Could not remove it.', 'error'); }
+  },
+});
+// ---------- Loans (v4.64) ----------
+// Ask someone for Orbs from their profile; they accept or deny it there. The Orbs move when they accept. Nothing is
+// taken back if it isn't paid back (the Owner's choice): the borrower's credit drops instead. functions/api/admin/loan
+// does all of it; loans/<id> is only readable by the two people. A profile shows the loans between you two, and only
+// asks for them when your loanWith says there are some.
+const LOAN_TIME_NAMES = { '1h': '1 hour', '1d': '1 day', '3d': '3 days', '7d': '7 days', '14d': '14 days', '30d': '30 days' };
+function loanWhen(t) {
+  const d = t - Date.now(), a = Math.abs(d), n = a < 3600000 ? Math.max(1, Math.round(a / 60000)) : a < 86400000 ? Math.round(a / 3600000) : Math.round(a / 86400000);
+  const unit = a < 3600000 ? 'minute' : a < 86400000 ? 'hour' : 'day', s = `${n} ${unit}${n === 1 ? '' : 's'}`;
+  return d >= 0 ? 'in ' + s : s + ' ago';
+}
+let loanAskTo = null;
+function openLoanModal(username) {
+  loanAskTo = username;
+  $('loan-desc').textContent = `Ask ${displayNameOf(profileCache[username] || { username })} to lend you Orbs. They decide whether to.`;
+  $('loan-amount').value = ''; $('loan-note').value = ''; $('loan-time').value = '1d';
+  openModal('loan-modal');
+  setTimeout(() => $('loan-amount').focus(), 50);
+}
+$('loan-send').onclick = async () => {
+  const amount = Math.floor(Number($('loan-amount').value)), time = $('loan-time').value, to = loanAskTo;
+  if (!to) return;
+  if (!(amount >= 10)) { toast('Ask for at least 10 Orbs.'); return; }
+  $('loan-send').disabled = true;
+  try {
+    await orbsCall('loan', { action: 'ask', to, amount, time, note: $('loan-note').value });
+    myProfile.loanWith = [...new Set([...(myProfile.loanWith || []), to])];
+    closeModal('loan-modal'); closeModal('profile-modal');
+    toast('Loan request sent.');
+    // tell them in your DMs (you can change the words first)
+    await startDMWith(to);
+    const box = $('composer-input');
+    if (box && currentDMOtherUid === to && !box.value.trim()) {
+      box.value = `I asked you for a loan of ${fmtOrbs(amount)} Orbs, to pay back within ${LOAN_TIME_NAMES[time]}. You can accept or deny it on my profile.`;
+      box.dispatchEvent(new Event('input'));
+      box.focus();
+    }
+  } catch (e) { toast(e.message || 'Could not send the request.', 'error'); }
+  finally { $('loan-send').disabled = false; }
+};
+async function renderProfileLoans(username, isSelf, isBot) {
+  const box = $('profile-loans'), label = $('profile-loans-label'), withList = Array.isArray(myProfile.loanWith) ? myProfile.loanWith : [];
+  const show = !isBot && (isSelf ? withList.length > 0 : withList.includes(username));
+  box.classList.toggle('hidden', !show); label.classList.toggle('hidden', !show);
+  box.innerHTML = show ? '<div class="loan-empty">Loading loans...</div>' : '';
+  if (!show) return;
+  let loans;
+  try { loans = (await orbsCall('loan', { action: 'check', ...(isSelf ? {} : { with: username }) })).loans || []; }
+  catch (e) { box.innerHTML = `<div class="loan-empty">${esc(e.message || 'Could not load loans.')}</div>`; return; }
+  if ($('profile-modal').dataset.user !== username) return;   // (another profile was opened meanwhile)
+  const name = u => esc(u === myUid ? 'You' : displayNameOf(profileCache[u] || { username: u }));
+  const rows = loans.slice(0, 12).map(l => {
+    const lender = l.from === myUid, other = lender ? l.to : l.from, owed = l.amount - l.paid, note = l.note ? `<div class="loan-note">"${esc(l.note)}"</div>` : '';
+    let text, act = '', cls = '';
+    if (l.status === 'asked') {
+      text = lender ? `<b>${name(other)}</b> asked you for <b>${fmtOrbs(l.amount)} Orbs</b>, to pay back within ${LOAN_TIME_NAMES[l.time] || l.time}.` : `You asked <b>${name(other)}</b> for <b>${fmtOrbs(l.amount)} Orbs</b>. Waiting for an answer.`;
+      act = lender ? `<select class="loan-time-pick" data-loan-time>${Object.entries(LOAN_TIME_NAMES).map(([k, v]) => `<option value="${k}"${k === l.time ? ' selected' : ''}>${v}</option>`).join('')}</select><button class="pa-btn primary" data-loan-yes>Lend It</button><button class="pa-btn quiet" data-loan-no>Deny</button>`
+        : `<button class="pa-btn quiet" data-loan-cancel>Cancel</button>`;
+    } else if (l.status === 'active') {
+      const late = l.late || Date.now() > l.dueAt;
+      cls = late ? 'late' : '';
+      text = lender ? `<b>${name(other)}</b> owes you <b>${fmtOrbs(owed)}</b> of ${fmtOrbs(l.amount)} Orbs, due ${loanWhen(l.dueAt)}${late ? ' (late)' : ''}.`
+        : `You owe <b>${name(other)}</b> <b>${fmtOrbs(owed)}</b> of ${fmtOrbs(l.amount)} Orbs, due ${loanWhen(l.dueAt)}${late ? ' (late)' : ''}.`;
+      if (!lender) act = `<input type="number" class="loan-pay-amt" data-loan-amt min="1" max="${owed}" value="${owed}"><button class="pa-btn primary" data-loan-pay>Pay Back</button>`;
+    } else {
+      cls = 'done';
+      text = l.status === 'paid' ? `${name(l.to)} paid back ${fmtOrbs(l.amount)} Orbs to ${name(l.from)}${l.late ? ', late' : ''}.`
+        : l.status === 'denied' ? `${name(l.from)} said no to ${fmtOrbs(l.amount)} Orbs.` : `${name(l.to)} took back a request for ${fmtOrbs(l.amount)} Orbs.`;
+    }
+    return `<div class="loan-row ${cls}" data-loan="${esc(l.id)}"><div class="loan-text">${text}${note}</div>${act ? `<div class="loan-acts">${act}</div>` : ''}</div>`;
+  });
+  box.innerHTML = rows.join('') || '<div class="loan-empty">No loans between you yet.</div>';
+  const run = async (body, done) => {
+    try { const r = await orbsCall('loan', body); if (r.orbs != null) myProfile.orbs = r.orbs; toast(done(r)); }
+    catch (e) { toast(e.message || 'That didn\'t work.', 'error'); }
+    renderProfileLoans(username, isSelf, isBot);
+  };
+  box.querySelectorAll('[data-loan]').forEach(row => {
+    const id = row.dataset.loan, q = s => row.querySelector(s);
+    if (q('[data-loan-yes]')) q('[data-loan-yes]').onclick = () => run({ action: 'answer', id, yes: true, time: q('[data-loan-time]').value }, () => 'Lent. They have the Orbs now.');
+    if (q('[data-loan-no]')) q('[data-loan-no]').onclick = () => run({ action: 'answer', id, yes: false }, () => 'Request denied.');
+    if (q('[data-loan-cancel]')) q('[data-loan-cancel]').onclick = () => run({ action: 'cancel', id }, () => 'Request taken back.');
+    if (q('[data-loan-pay]')) q('[data-loan-pay]').onclick = () => run({ action: 'pay', id, amount: Math.floor(Number(q('[data-loan-amt]').value)) }, r => {
+      if (r.done && r.credit > 0 && !r.late) eggFind('ontime');   // (an easter egg)
+      return r.done ? `Paid back in full.${r.credit > 0 ? ` Credit +${r.credit}.` : ''}` : `Paid ${fmtOrbs(r.paid)}. ${fmtOrbs(r.owed)} to go.`;
+    });
+  });
+}
+// When a loan of yours comes due, the app asks for a check so being late counts (functions/api/admin/loan check).
+let loanCheckTimer = 0, loanCheckFor = 0;
+function scheduleLoanCheck() {
+  const at = myProfile && Number(myProfile.loanNext);
+  if (!at || at === loanCheckFor) return;
+  loanCheckFor = at;
+  clearTimeout(loanCheckTimer);
+  const wait = at - Date.now() + 5000;
+  if (wait > 86400000) return;
+  loanCheckTimer = setTimeout(() => { orbsCall('loan', { action: 'check' }).catch(() => {}); }, Math.max(1500, wait));
+}
+// a profile's own banner color: gradients from before v4.64 show as their first color
+function plainBannerColor(c) {
+  if (typeof c !== 'string') return null;
+  if (/^#[0-9a-f]{6}$/i.test(c)) return c;
+  const m = /#[0-9a-f]{6}/i.exec(c);
+  return m ? m[0] : null;
 }
 // Premium (v4.56): your name in two colors (nameGradient), saved with the profile. Without Premium it just shows what
 // it would look like and opens the Premium page.
@@ -5922,7 +6226,7 @@ function renderNameGradientPicker() {
 
 function openGiftModal(username) {
   $('gift-modal-desc').textContent = `Send Frixion Premium to ${username}.`;
-  $('gift-modal-orb-amt').textContent = fmtOrbs(myProfile.orbs);
+  $('gift-modal-orb-amt').textContent = orbsLabel(myProfile);
   $('confirm-gift-premium').onclick = () => giftPremiumTo(username);
   openModal('gift-modal');
 }
@@ -5933,6 +6237,7 @@ async function openProfileModal(username) {
     toast(`${p.username || 'This person'}${p.discordTag ? ` (@${p.discordTag})` : ''} is on Discord. Their messages come through this channel's link.`);
     return;
   }
+  $('profile-modal').dataset.user = username;   // (whose profile this is, for answers that come back later: loans)
   const isSelf = username === myUid;
   const isBot = !!BOT_PROFILES[username];
   let p;
@@ -5947,11 +6252,14 @@ async function openProfileModal(username) {
     } catch (e) { toast('Could not load profile.', 'error'); return; }
   }
 
-  const shopBanner = bannerById(p.equippedBanner);
-  // a two-color banner is a Premium perk (v4.56): once Premium runs out, everyone sees the profile color instead
-  const ownBanner = p.bannerColor && (isPremium(p) || !/gradient/.test(p.bannerColor)) ? p.bannerColor : null;
-  $('profile-banner').style.background = shopBanner ? bannerGradientCSS(shopBanner) : (ownBanner || p.avatarColor || '#5865f2');
-  $('profile-banner').classList.toggle('banner-anim', !!(shopBanner && shopBanner.animated));
+  const shopBanner = bannerById(p.equippedBanner), bannerPic = bannerImageUrl(p);
+  // (v4.64: no more gradient banners, so an old one shows as its first color)
+  const ownBanner = plainBannerColor(p.bannerColor);
+  if (isSelf) { $('banner-image-remove').classList.toggle('hidden', !bannerPic); $('banner-image-btn').textContent = bannerPic ? 'Change the picture (5,000 Orbs)' : 'Upload a picture (5,000 Orbs)'; }
+  $('profile-banner').style.background = bannerPic ? `center / cover no-repeat url("${bannerPic}"), ${ownBanner || p.avatarColor || '#5865f2'}`
+    : shopBanner ? bannerGradientCSS(shopBanner) : (ownBanner || p.avatarColor || '#5865f2');
+  $('profile-banner').classList.toggle('banner-anim', !bannerPic && !!(shopBanner && shopBanner.animated));
+  $('profile-banner').classList.toggle('has-picture', !!bannerPic);
   $('profile-avatar').style.background = 'transparent';
   $('profile-avatar').classList.add('has-image');
   // The picture here is 80px with a 6px ring around it (.profile-avatar), so the picture itself is 68px and starts
@@ -5966,7 +6274,7 @@ async function openProfileModal(username) {
   const nameplate = nameplateById(p.equippedNameplate);
   const nameplateBg = $('profile-nameplate-bg');
   nameplateBg.className = 'profile-nameplate-bg' + (nameplate && nameplate.cssClass ? ' ' + nameplate.cssClass : '') + (nameplate && (nameplate.animated && !nameplate.cssClass) ? ' nameplate-shimmer' : '');
-  nameplateBg.style.background = (nameplate && nameplate.colors) ? `linear-gradient(135deg, ${nameplate.colors[0]}, ${nameplate.colors[1]})` : '';
+  nameplateBg.style.background = (nameplate && nameplate.colors) ? nameplateGradientCSS(nameplate) : '';
   const effect = profileEffectById(p.equippedProfileEffect);
   const effectOverlay = $('profile-effect-overlay');
   effectOverlay.className = 'profile-effect-overlay' + (effect && effect.cssClass ? ' ' + effect.cssClass : '') + (effect && effect.style ? ' effect-style-' + effect.style : '');
@@ -5979,7 +6287,7 @@ async function openProfileModal(username) {
   frameLayer.className = 'profile-frame-layer' + (frame && frame.cssClass ? ' ' + frame.cssClass : '') + (frame && frame.glow ? ' frame-custom-glow' : '') + (frame ? '' : ' hidden');
   frameLayer.style.border = (frame && frame.color) ? `3px solid ${frame.color}` : '';
   frameLayer.style.setProperty('--custom-frame-color', (frame && frame.color) || '');
-  $('profile-username').innerHTML = esc(displayNameOf(p)) + premiumStar(p) + roleTag(p) + botTag(p);
+  $('profile-username').innerHTML = gapUnderscores(esc(displayNameOf(p))) + premiumStar(p) + roleTag(p) + botTag(p);
   const showHandle = p.displayName && p.displayName !== p.username;
   $('profile-handle').textContent = showHandle ? '@' + p.username : '';
   $('profile-handle').classList.toggle('hidden', !showHandle);
@@ -5990,6 +6298,17 @@ async function openProfileModal(username) {
   $('profile-activity').classList.toggle('hidden', !pAct);
   $('profile-bio-view').textContent = p.bio || (isSelf ? 'Add a bio below with Edit Profile.' : 'No bio yet.');
   $('profile-member-since').textContent = (p.createdAt && p.createdAt.toDate) ? p.createdAt.toDate().toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) : '—';
+  // Orbs (v4.64), unless they hid them in Settings > Privacy (they still see their own)
+  const showOrbs = !isBot && (isSelf || p.hideOrbs !== true);
+  $('profile-orbs').innerHTML = showOrbs ? `${orbIconSVG(14)}<span>${esc(orbsLabel(p))}</span>${isSelf && p.hideOrbs === true ? '<span class="profile-orbs-note">Hidden from others</span>' : ''}` : '';
+  $('profile-orbs').classList.toggle('hidden', !showOrbs);
+  $('profile-orbs-label').classList.toggle('hidden', !showOrbs);
+  // Credit (v4.64): goes up for paying loans back on time, down for not
+  const cr = Math.round(Number(p.credit) || 0), showCredit = !isBot && (typeof p.credit === 'number' || (Array.isArray(p.loanWith) && p.loanWith.length > 0));
+  $('profile-credit').innerHTML = showCredit ? `<span class="credit-num ${cr < 0 ? 'bad' : cr > 0 ? 'good' : ''}">${cr > 0 ? '+' : ''}${cr.toLocaleString()}</span><span class="credit-note">${cr < 0 ? 'Has paid loans back late' : cr > 0 ? 'Pays loans back on time' : 'No loans paid back yet'}</span>` : '';
+  $('profile-credit').classList.toggle('hidden', !showCredit);
+  $('profile-credit-label').classList.toggle('hidden', !showCredit);
+  renderProfileLoans(username, isSelf, isBot);
 
   $('profile-edit-fields').classList.toggle('hidden', !isSelf);
   $('profile-note-wrap').classList.toggle('hidden', isSelf || isBot);
@@ -6013,21 +6332,31 @@ async function openProfileModal(username) {
     const outgoing = (myProfile.outgoingRequests || []).includes(username);
     const incoming = (myProfile.incomingRequests || []).includes(username);
     const blocked = myBlocks.includes(username);
+    // (v4.64: one set of matching buttons instead of a bright Message button and a loose "Friends" label)
+    const PA_ICON = {
+      msg: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.4A8 8 0 1 1 21 12z"/></svg>',
+      check: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+      add: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+      gift: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="8.5" width="17" height="12" rx="1.5"/><path d="M12 8.5v12M3.5 12.5h17M12 8.5c-2-4-6-4-6-1.5S10 8.5 12 8.5zm0 0c2-4 6-4 6-1.5S14 8.5 12 8.5z"/></svg>',
+      loan: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="5.5"/><path d="M14.5 6.2A5.5 5.5 0 1 1 9.8 15"/><path d="M9 6.8v4.4"/></svg>',
+    };
     let friendBtn;
     if (blocked) friendBtn = '';   // (no friends with someone you blocked)
-    else if (isFriend) friendBtn = `<span class="quest-claimed">Friends</span>`;
-    else if (outgoing) friendBtn = `<button class="btn-secondary slim" id="profile-cancel-req">Cancel Request</button>`;
-    else if (incoming) friendBtn = `<button class="btn-accent-inline slim" id="profile-accept-req">Accept Request</button>`;
-    else friendBtn = `<button class="btn-accent-inline slim" id="profile-add-friend">Add Friend</button>`;
+    else if (isFriend) friendBtn = `<span class="pa-pill">${PA_ICON.check}Friends</span>`;
+    else if (outgoing) friendBtn = `<button class="pa-btn" id="profile-cancel-req">Cancel Request</button>`;
+    else if (incoming) friendBtn = `<button class="pa-btn primary" id="profile-accept-req">${PA_ICON.check}Accept Request</button>`;
+    else friendBtn = `<button class="pa-btn" id="profile-add-friend">${PA_ICON.add}Add Friend</button>`;
     // Block (v4.61): only someone who isn't ranked above you
-    const blockBtn = blocked ? `<button class="btn-secondary slim" id="profile-unblock">Unblock</button>`
-      : canBlock(p) ? `<button class="btn-secondary slim profile-block-btn" id="profile-block">Block</button>` : '';
+    const blockBtn = blocked ? `<button class="pa-btn quiet" id="profile-unblock">Unblock</button>`
+      : canBlock(p) ? `<button class="pa-btn quiet profile-block-btn" id="profile-block">Block</button>` : '';
     $('profile-actions').innerHTML = `<div class="profile-action-row">
-      <button class="btn-accent-inline slim" id="profile-message-btn">Message</button>
+      <button class="pa-btn primary" id="profile-message-btn">${PA_ICON.msg}Message</button>
       ${friendBtn}
-      <button class="btn-secondary slim" id="profile-gift-btn">Gift Premium</button>
+      <button class="pa-btn" id="profile-gift-btn">${PA_ICON.gift}Gift Premium</button>
+      ${isBot ? '' : `<button class="pa-btn" id="profile-loan-btn">${PA_ICON.loan}Ask for a Loan</button>`}
       ${blockBtn}
     </div>`;
+    if ($('profile-loan-btn')) $('profile-loan-btn').onclick = () => openLoanModal(username);
     if ($('profile-block')) $('profile-block').onclick = () => blockUser(username);
     if ($('profile-unblock')) $('profile-unblock').onclick = () => unblockUser(username);
     $('profile-message-btn').onclick = () => { closeModal('profile-modal'); startDMWith(username); };
@@ -8318,7 +8647,7 @@ function selectChannel(channel) {
   $('chat-header-title').textContent = channel.name;
   $('composer-input').placeholder = `Message #${channel.name}`;
   refreshChannelComposerState();
-  $('members-toggle').classList.remove('hidden');
+  $('members-toggle').classList.toggle('hidden', isMobile());   // no member list on phones (v4.64)
   applyDefaultMemberListState();
   $('gift-btn').classList.add('hidden');
   showHeaderActions();
@@ -8391,7 +8720,7 @@ function selectThread(t) {
   $('chat-header').classList.add('is-thread');
   $('chat-header-title').textContent = t.name;
   refreshChannelComposerState();
-  $('members-toggle').classList.remove('hidden');
+  $('members-toggle').classList.toggle('hidden', isMobile());   // no member list on phones (v4.64)
   applyDefaultMemberListState();
   $('gift-btn').classList.add('hidden');
   showHeaderActions();
@@ -8912,7 +9241,7 @@ async function renderMemberPanel(members, ownerId, server) {
     return `
     <div class="member-row" data-u="${esc(uid)}">
       ${avatarHTML(32, p.avatarColor, initials(p.username), disp, p.avatarUrl, p.equippedDecoration, uid, p.equippedMask)}
-      <span class="mname${disp !== 'offline' ? ' online-name' : ''}"${nameStyle(p, roleColor)}>${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}${vanishedListFor(vanishData).includes(uid) && (uid === myUid || isOwner) ? `<span class="vanish-tag" title="${uid === myUid ? 'Only you and other owners can see you here' : 'Vanished. Only owners and co-owners can see this'}">Vanished</span>` : ''}</span>
+      <span class="mname${disp !== 'offline' ? ' online-name' : ''}"${nameStyle(p, roleColor)}>${gapUnderscores(esc(displayNameOf(p)))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}${vanishedListFor(vanishData).includes(uid) && (uid === myUid || isOwner) ? `<span class="vanish-tag" title="${uid === myUid ? 'Only you and other owners can see you here' : 'Vanished. Only owners and co-owners can see this'}">Vanished</span>` : ''}</span>
       ${topRole && topRole.color ? roleChipHTML(topRole) : ''}
       ${showGear ? `<span class="member-manage-btn" title="Manage Member" data-manage-uid="${esc(uid)}">${icon('gear')}</span>` : ''}
     </div>`;
@@ -9458,7 +9787,7 @@ async function renderMessages(rawMsgs) {
       const meta = document.createElement('div');
       meta.className = 'msg-meta';
       const roleColor = (currentView === 'channel' && currentServerData) ? roleColorFor(currentServerData, m.uid) : null;
-      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}"${nameStyle(p, roleColor)}>${esc((currentView === 'channel' && serverNickFor(m.uid)) || displayNameOf(p))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
+      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}"${nameStyle(p, roleColor)}>${gapUnderscores(esc((currentView === 'channel' && serverNickFor(m.uid)) || displayNameOf(p)))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
       body.appendChild(meta);
       body.appendChild(buildMessageLineEl(m, canDelete));
       groupEl.innerHTML = avatarHTML(40, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration, undefined, p.equippedMask);
@@ -10385,8 +10714,13 @@ $('composer-input').addEventListener('keydown', (e) => {
     if (e.key === 'ArrowUp') { e.preventDefault(); mentionSelectedIndex = (mentionSelectedIndex - 1 + mentionCandidates.length) % mentionCandidates.length; renderMentionPopup(); return; }
     if (e.key === 'Escape') { closeMentionPopup(); return; }
   }
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ckWordBoundaryCheck(e.target); sendMessage(); }
+  if (e.key === 'Enter' && (e.isComposing || e.keyCode === 229)) return;   // a phone keyboard finishing a word, not a send
+  // Phones (v4.64): Return makes a new line and the send button sends, like Discord's app, so a stray Return or a
+  // keyboard suggestion never sends half a message.
+  if (e.key === 'Enter' && !e.shiftKey && !isMobile()) { e.preventDefault(); ckWordBoundaryCheck(e.target); sendMessage(); }
 });
+// (the phone keyboard's Return key says "return", not "send")
+if (isMobile()) $('composer-input').setAttribute('enterkeyhint', 'enter');
 // Autocorrect on desktop: the word-boundary check only ran through the
 // mobile custom keyboard's own key handlers before, so a real keyboard
 // typing space never triggered it. This covers that path; Enter is
@@ -12358,6 +12692,7 @@ const YOU_ICONS = {
   friends: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="8" r="3.600"/><path d="M2.500 20c0-3.700 2.900-6.300 6.500-6.300s6.500 2.600 6.500 6.300H2.500Z"/><circle cx="17.200" cy="9" r="2.700"/><path d="M16.800 13.800c2.800.2 4.700 2.600 4.700 6.200h-4.300c0-2.400-.8-4.500-2.200-5.800.5-.3 1.200-.4 1.800-.4Z"/></svg>',
   shop: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.500 7V6a3.500 3.500 0 0 1 7 0v1H19a1 1 0 0 1 1 1l-1 12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1L4 8a1 1 0 0 1 1-1h3.500Zm2 0h3V6a1.500 1.500 0 0 0-3 0v1Z"/></svg>',
   codes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.500 5.500l-3 13"/></svg>',
+  privacy: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10V8a5 5 0 0 1 10 0v2h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h1Zm2 0h6V8a3 3 0 0 0-6 0v2Z"/></svg>',
   casino: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 3h10a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4Zm1.500 4a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3Zm7 0a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3ZM12 10.500a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3ZM8.500 14a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3Zm7 0a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3Z"/></svg>',
 };
 function renderMobileYou() {
@@ -12377,13 +12712,13 @@ function renderMobileYou() {
   box.innerHTML = `<div class="mpage-title">${MPAGE_BACK}<span>You</span></div><div class="mpage-body">
     <button type="button" class="myou-card" id="myou-card">
       ${avatarHTML(72, p.avatarColor, initials(p.username), computeDisplayStatus(myUid), p.avatarUrl, p.equippedDecoration, myUid, p.equippedMask)}
-      <span class="myou-who"><span class="myou-name">${esc(displayNameOf(p))}${premiumStar(p)}${roleTag(p)}</span><span class="myou-user">${esc(p.username)}</span><span class="myou-status">${esc(sub)}</span></span>
+      <span class="myou-who"><span class="myou-name">${gapUnderscores(esc(displayNameOf(p)))}${premiumStar(p)}${roleTag(p)}</span><span class="myou-user">${esc(p.username)}</span><span class="myou-status">${esc(sub)}</span></span>
       <svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
     </button>
     <div class="mpage-label">Frixion</div>
     <div class="myou-group">${page('friends', 'Friends', 'friends', reqs)}${page('shop', 'Shop', 'shop')}${page('casino', 'Casino', 'casino')}${page('quests', 'Games', 'activity')}${page('codes', 'Codes', 'codes')}</div>
     <div class="mpage-label">Settings</div>
-    <div class="myou-group">${row('pane-account', 'My Account', 'account')}${row('pane-activity', 'Activity Status', 'activity')}${row('pane-premium', 'Frixion Premium', 'premium')}${row('pane-themes', 'Themes', 'themes')}${row('pane-accessibility', 'Accessibility', 'access')}${row('pane-notifications', 'Notifications', 'notify')}${row('pane-keyboard', 'Keyboard', 'keyboard')}</div>
+    <div class="myou-group">${row('pane-account', 'My Account', 'account')}${row('pane-activity', 'Activity Status', 'activity')}${row('pane-privacy', 'Privacy', 'privacy')}${row('pane-premium', 'Frixion Premium', 'premium')}${row('pane-themes', 'Themes', 'themes')}${row('pane-accessibility', 'Accessibility', 'access')}${row('pane-notifications', 'Notifications', 'notify')}${row('pane-keyboard', 'Keyboard', 'keyboard')}</div>
     <div class="mpage-label">App</div>
     <div class="myou-group">${row('pane-app', 'Frixion App', 'app')}${row('pane-updates', 'Update Log', 'updates')}</div>
     ${staff.length ? `<div class="mpage-label">Staff</div><div class="myou-group">${staff.join('')}</div>` : ''}
@@ -12411,7 +12746,7 @@ function renderMobileYou() {
 // The background art of a nameplate, as used behind DM rows and the phone's profile bar.
 function nameplateBgHTML(nameplate, cls = 'dm-row-nameplate-bg') {
   if (!nameplate) return '';
-  return `<div class="${cls}${nameplate.cssClass ? ' ' + nameplate.cssClass : ''}${(nameplate.animated && !nameplate.cssClass) ? ' nameplate-shimmer' : ''}" style="${nameplate.colors ? `background:linear-gradient(135deg, ${esc(nameplate.colors[0])}, ${esc(nameplate.colors[1])});` : ''}"></div>`;
+  return `<div class="${cls}${nameplate.cssClass ? ' ' + nameplate.cssClass : ''}${(nameplate.animated && !nameplate.cssClass) ? ' nameplate-shimmer' : ''}" style="${nameplate.colors ? `background:${esc(nameplateGradientCSS(nameplate))};` : ''}"></div>`;
 }
 // Keeps the phone's profile bar in step with you: picture, name, what you're doing, your nameplate, and the number on
 // the bell. renderSelfPanel() calls it whenever presence or activity changes; profile changes also refresh the pages.
@@ -12488,7 +12823,7 @@ function populateSettings() {
     swatchWrap.appendChild(sw);
   });
 
-  $('orb-balance-amt').textContent = fmtOrbs(myProfile.orbs);
+  $('orb-balance-amt').textContent = orbsLabel(myProfile);
   $('premium-action-area').innerHTML = buildPremiumActionHTML();
   wirePremiumActionButtons('premium-action-area');
 
@@ -12567,8 +12902,9 @@ async function buyPremiumCode(days) {
       code = await db.runTransaction(async tx => {
         const [me, existing] = await Promise.all([tx.get(userRef), tx.get(codeRef)]);
         if (existing.exists) return null;                  // that random code is taken: try another
-        if (((me.data() || {}).orbs || 0) < PREMIUM_COST_ORBS) throw new Error('not-enough-orbs');
-        tx.update(userRef, { orbs: FieldValue.increment(-PREMIUM_COST_ORBS) });
+        const inf = (me.data() || {}).infOrbs === true;    // infinite Orbs (v4.64) pay nothing
+        if (!inf && ((me.data() || {}).orbs || 0) < PREMIUM_COST_ORBS) throw new Error('not-enough-orbs');
+        if (!inf) tx.update(userRef, { orbs: FieldValue.increment(-PREMIUM_COST_ORBS) });
         tx.set(codeRef, { code: candidate, type: 'premium', value: days, createdBy: myUid, maxUses: 1, uses: 0, usedBy: [], redeemedBy: null, createdAt: FieldValue.serverTimestamp(), redeemedAt: null });
         return candidate;
       });
@@ -12644,7 +12980,7 @@ async function redeemCode() {
 }
 
 function openPremiumModal() {
-  $('premium-modal-orb-amt').textContent = fmtOrbs(myProfile.orbs);
+  $('premium-modal-orb-amt').textContent = orbsLabel(myProfile);
   $('premium-modal-action-area').innerHTML = buildPremiumActionHTML();
   wirePremiumActionButtons('premium-modal-action-area');
   openModal('premium-modal');
@@ -13070,7 +13406,7 @@ function shopItemPreviewHTML(key, item) {
   </div>`;
   if (key === 'nameplates') {
     const cls = 'sic-nameplate-preview' + (item.cssClass ? ' ' + item.cssClass : '') + ((item.animated && !item.cssClass) ? ' nameplate-shimmer' : '');
-    const style = item.colors ? `background:linear-gradient(135deg, ${esc(item.colors[0])}, ${esc(item.colors[1])});` : '';
+    const style = item.colors ? `background:${esc(nameplateGradientCSS(item))};` : '';
     return `<div class="${cls}" style="${style}"><span>${esc(displayNameOf(myProfile))}</span></div>`;
   }
   if (key === 'profile_effects') {
@@ -13127,7 +13463,7 @@ function shopItemCardHTML(key, item) {
   const label = equipped ? 'Unequip' : owned ? 'Equip' : `${orbIconSVG(13)}<span>${Number(item.price).toLocaleString()}</span>`;
   return `<div class="shop-item-card${key === 'themes' ? ' is-theme-card' : ''}${key === 'music' ? ' is-music-card' : ''}${item.hero ? ' is-hero' : ''}" data-item="${esc(item.id)}" data-cat="${key}">
     <div class="sic-preview">${shopItemPreviewHTML(key, item)}</div>
-    ${(key === 'themes' || key === 'music') ? '' : `<div class="sic-name">${esc(item.name)}${item.animated ? '<span class="sic-animated-tag">Animated</span>' : ''}</div>`}
+    ${(key === 'themes' || key === 'music') ? '' : `<div class="sic-name">${esc(item.name)}${item.animated && key !== 'profile_effects' ? '<span class="sic-animated-tag">Animated</span>' : ''}</div>`}
     ${item.desc ? `<div class="sic-desc">${esc(item.desc)}</div>` : ''}
     <button class="sic-btn${equipped ? ' is-equipped' : owned ? ' is-owned' : ''}" data-action="${action}">${label}</button>
     ${owned && itemCutscenes(item).length ? `<div class="sic-replay" role="group" aria-label="Replay cutscenes">${itemCutscenes(item).map((c, n) => `<button type="button" class="sic-replay-seg" data-seg="${n}">Replay ${esc(c.label)}</button>`).join('')}</div>` : ''}
@@ -13187,17 +13523,18 @@ function renderShopCategoryPane(key) {
     }
     shopSectionsFor(key, list).forEach(sec => {
       const items = list.filter(i => shopSectionOf(key, i) === sec);
-      html += `<div class="shop-section-label">${esc(sec)}</div><div class="${gridCls}">${items.map(i => shopItemCardHTML(key, i)).join('')}</div>`;
+      html += `<div class="shop-section-label">${esc(sec)}${buyAllBtn(key, items)}</div><div class="${gridCls}">${items.map(i => shopItemCardHTML(key, i)).join('')}</div>`;
     });
     wrap.innerHTML = html || `<div class="shop-empty-state"><b>${q ? 'Nothing found' : 'Nothing here yet'}</b><span>${q ? 'Try a different search.' : key === 'masks' ? 'Full avatar masks published by Frixion staff will show up here.' : 'New items will show up here.'}</span></div>`;
     wireShopCardButtons(wrap);
     wireFreeThemeButtons(wrap);
+    wireBuyAll(wrap);
     return;
   }
   if (key === 'music') {
     const list = def.catalog.filter(i => !i.disabled && matches(i));
     const now = def.catalog.find(t => t.id === myProfile.equippedMusic);
-    wrap.innerHTML = `<div class="shop-section-label">Music</div>
+    wrap.innerHTML = `<div class="shop-section-label">Music${buyAllBtn(key, list)}</div>
       <div class="music-toolbar">
         <div class="mt-now">${now ? `<span class="mt-label">Now playing</span> ${esc(now.name)}` : 'Nothing equipped.'}</div>
         <label class="mt-vol"><span>Volume</span><input type="range" id="music-volume" min="0" max="100" value="${Math.round(musicVolume() * 100)}" aria-label="Music volume"></label>
@@ -13205,6 +13542,7 @@ function renderShopCategoryPane(key) {
         ? `<div class="${shopGridClass(key)}">${list.map(i => shopItemCardHTML(key, i)).join('')}</div>`
         : `<div class="shop-empty-state"><b>${q ? 'No music found' : 'No music yet'}</b><span>${q ? 'Try a different search.' : 'New tracks will show up here.'}</span></div>`);
     wireShopCardButtons(wrap);
+    wireBuyAll(wrap);
     $('music-volume').oninput = e => setMusicVolume(e.target.value / 100);
     return;
   }
@@ -13212,17 +13550,51 @@ function renderShopCategoryPane(key) {
     wrap.innerHTML = `<div class="shop-section-label">Banners</div><div class="shop-empty-state"><b>No banners yet</b><span>Gradient banners published by Frixion staff will show up here.</span></div>`;
     return;
   }
-  wrap.innerHTML =
-    `<div class="shop-section-label">Animated</div>` +
-    `<div class="${gridCls}">${animated.map(i => shopItemCardHTML(key, i)).join('') || '<div class="empty">No animated items found.</div>'}</div>` +
-    `<div class="shop-section-label">Not Animated</div>` +
-    `<div class="${gridCls}">${staticOnes.map(i => shopItemCardHTML(key, i)).join('') || '<div class="empty">No items found.</div>'}</div>`;
+  const section = (label, items, none) => `<div class="shop-section-label">${label}${buyAllBtn(key, items)}</div>`
+    + `<div class="${gridCls}">${items.map(i => shopItemCardHTML(key, i)).join('') || `<div class="empty">${none}</div>`}</div>`;
+  // Every profile effect moves, so they're one list with no Animated tag (v4.64).
+  wrap.innerHTML = key === 'profile_effects'
+    ? section('Profile Effects', def.catalog.filter(i => matches(i)), 'No profile effects found.')
+    : section('Animated', animated, 'No animated items found.') + section('Not Animated', staticOnes, 'No items found.');
   wireShopCardButtons(wrap);
+  wireBuyAll(wrap);
+}
+// Buy All (v4.64): a section's button buys every item in it you don't have yet, in one go (functions/api/admin/buyall).
+function buyAllBtn(key, items) {
+  const def = SHOP_CATEGORY_DEFS[key], have = myProfile[def.ownedField] || [];
+  const left = items.filter(i => !i.disabled && !have.includes(i.id));
+  if (left.length < 2) return '';
+  const total = left.reduce((s, i) => s + (Number(i.price) || 0), 0);
+  return `<button type="button" class="shop-buyall" data-buyall="${key}" data-ids="${esc(left.map(i => i.id).join(','))}" title="Buy every item here you don't own yet">Buy all ${left.length} ${orbIconSVG(12)}${fmtOrbs(total)}</button>`;
+}
+function wireBuyAll(wrap) {
+  wrap.querySelectorAll('[data-buyall]').forEach(b => {
+    b.onclick = () => {
+      const key = b.dataset.buyall, def = SHOP_CATEGORY_DEFS[key], ids = b.dataset.ids.split(',').filter(Boolean);
+      const total = ids.reduce((s, id) => s + (Number((def.catalog.find(i => i.id === id) || {}).price) || 0), 0);
+      if (!hasOrbsFor(total)) { toast(`That's ${fmtOrbs(total)} Orbs. You don't have enough.`, 'error'); return; }
+      confirmAction({ title: 'Buy All', body: `Buy all ${ids.length} for ${fmtOrbs(total)} Orbs? Nothing gets equipped.`, confirmLabel: 'Buy All', danger: false, onConfirm: () => buyAllShopItems(key, ids) });
+    };
+  });
+}
+async function buyAllShopItems(key, ids) {
+  const def = SHOP_CATEGORY_DEFS[key];
+  if (shopBuying) return;
+  shopBuying = true;
+  try {
+    await flushEarn();
+    const r = await orbsCall('buyall', { cat: key, ids });
+    myProfile[def.ownedField] = [...new Set([...(myProfile[def.ownedField] || []), ...(r.bought || [])])];
+    if (r.orbs != null) myProfile.orbs = r.orbs;
+    toast(`Bought ${r.bought.length} for ${fmtOrbs(r.total)} Orbs.`);
+    refreshOpenShopPanes();
+  } catch (e) { toast(e.message || 'Could not buy them.', 'error'); }
+  finally { shopBuying = false; }
 }
 
 function refreshOpenShopPanes() {
   if ($('shop-view').classList.contains('hidden')) return;
-  $('shop-orb-amt').textContent = fmtOrbs(myProfile.orbs);
+  $('shop-orb-amt').textContent = orbsLabel(myProfile);
   renderShopFeatured();
   Object.keys(SHOP_CATEGORY_DEFS).forEach(renderShopCategoryPane);
 }
@@ -13234,7 +13606,7 @@ async function buyShopItem(key, id) {
   if (!item || shopBuying) return;
   if (item.disabled) { toast('That item is not available right now.', 'error'); return; }
   if ((myProfile[def.ownedField] || []).includes(id)) { toast('You already own this.'); return; }
-  if ((myProfile.orbs || 0) + pendingOrbs() < item.price) { toast('Not enough Orbs. Play games to earn more.'); return; }
+  if (!hasOrbsFor(item.price)) { toast('Not enough Orbs. Play games to earn more.'); return; }
   shopBuying = true;
   try {
     await flushEarn();   // Orbs a game just paid count too
@@ -13244,7 +13616,12 @@ async function buyShopItem(key, id) {
     if (showCut) cutsceneActive = true;
     // The server (functions/api/admin/buy) charges the database's price, adds it and equips it right away, matching how
     // Discord's own shop works (v4.57: a page can't add items or Orbs to itself).
-    await orbsCall('buy', { cat: key, id });
+    const r = await orbsCall('buy', { cat: key, id });
+    // The server owns and equips it, but this page only hears about it when the profile next comes in, so the Shop would
+    // still show the price (v4.64 fix): note it here straight away.
+    myProfile[def.ownedField] = [...new Set([...(myProfile[def.ownedField] || []), id])];
+    myProfile[def.equipField] = id;
+    if (r && r.orbs != null) myProfile.orbs = r.orbs;
     if (key === 'themes' && ['light', 'sync'].includes(myProfile.theme)) db.collection('users').doc(myUid).update({ theme: 'dark' }).catch(() => {});   // (see equipShopItem)
     toast(`Purchased ${item.name}!`);
     refreshOpenShopPanes();
@@ -13291,7 +13668,7 @@ async function equipShopItem(key, id) {
 }
 
 function openShop() {
-  $('shop-orb-amt').textContent = fmtOrbs(myProfile.orbs);
+  $('shop-orb-amt').textContent = orbsLabel(myProfile);
   document.querySelectorAll('.shop-tab').forEach(t => t.classList.remove('on'));
   document.querySelector('.shop-tab[data-shop-tab="featured"]').classList.add('on');
   document.querySelectorAll('.shop-pane').forEach(p => p.classList.add('hidden'));
@@ -13359,6 +13736,7 @@ function openAdminPanel() {
   // owner-only actions), never both at once.
   $('admin-tab-players').classList.toggle('hidden', isOwner);
   $('admin-tab-systemhub').classList.toggle('hidden', !isOwner);
+  $('admin-tab-ranks').classList.toggle('hidden', !isOwner);   // custom ranks (v4.64): the Owner and Co-Owners
   // Devices, IP and Purge Perms are the Owner's alone (v4.63: Co-Owners don't see them, and the rules refuse them too)
   $('admin-tab-devices').classList.toggle('hidden', !realOwner());
   $('admin-tab-ips').classList.toggle('hidden', !realOwner());
@@ -13428,6 +13806,7 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
     if (tab.dataset.adminTab === 'devices') renderDevicesPane();
     if (tab.dataset.adminTab === 'ips') renderIpsPane();
     if (tab.dataset.adminTab === 'purgeperms') renderPurgePerms();
+    if (tab.dataset.adminTab === 'ranks') { rankMakerPreview(); renderRanksPane(); }
     if (tab.dataset.adminTab === 'emojis') renderAdminEmojiList();
     if (tab.dataset.adminTab === 'stickers') renderAdminStickerList();
     if (tab.dataset.adminTab === 'filter') renderAdminFilterList();
@@ -14365,16 +14744,35 @@ function renderAdminThemeList() {
 
 // ---------- Nameplate creator (admin/owner only) ----------
 let nameplateEditorInitialized = false;
+// The color pickers in the nameplate and banner makers: 2 to 8 colors, with + to add one and x to take one out (v4.64).
+// The colors live in the box's data-colors ("#aaaaaa,#bbbbbb").
+const colorListValues = id => ($(id).dataset.colors || '').split(',').filter(c => /^#[0-9a-f]{6}$/i.test(c));
+function colorListSet(id, colors, onChange) {
+  const box = $(id), cs = colors.slice(0, 8);
+  box.dataset.colors = cs.join(',');
+  box.innerHTML = cs.map((c, i) => `<span class="cl-item"><input type="color" value="${esc(c)}" data-cl="${i}" class="deco-color-input" aria-label="Color ${i + 1}">${cs.length > 2 ? `<button type="button" class="cl-rm" data-clrm="${i}" title="Take this color out">&times;</button>` : ''}</span>`).join('')
+    + (cs.length < 8 ? '<button type="button" class="cl-add" title="Add a color">+</button>' : '');
+  box.querySelectorAll('[data-cl]').forEach(inp => {
+    inp.oninput = () => { const a = colorListValues(id); a[+inp.dataset.cl] = inp.value; box.dataset.colors = a.join(','); if (onChange) onChange(); };
+  });
+  box.querySelectorAll('[data-clrm]').forEach(b => { b.onclick = () => { const a = colorListValues(id); a.splice(+b.dataset.clrm, 1); colorListSet(id, a, onChange); if (onChange) onChange(); }; });
+  const add = box.querySelector('.cl-add');
+  if (add) add.onclick = () => { const a = colorListValues(id); a.push(a[a.length - 1] || '#5865f2'); colorListSet(id, a, onChange); if (onChange) onChange(); };
+}
+// a custom nameplate's background: every color it has, left to right
+function nameplateGradientCSS(np) {
+  const cs = (np && Array.isArray(np.colors) ? np.colors : []).map(c => cssColor(c, '#1e1f22'));
+  return cs.length >= 2 ? `linear-gradient(135deg, ${cs.join(', ')})` : cs.length ? cs[0] : '';
+}
 function updateNameplatePreview() {
-  const c1 = $('nameplate-color1-input').value, c2 = $('nameplate-color2-input').value;
   const swatch = $('nameplate-preview-swatch');
-  swatch.style.background = `linear-gradient(135deg, ${c1}, ${c2})`;
+  swatch.style.background = nameplateGradientCSS({ colors: colorListValues('nameplate-colors') });
   swatch.classList.toggle('nameplate-shimmer', $('nameplate-animated-input').checked);
 }
 function initNameplateEditor() {
   if (nameplateEditorInitialized) { updateNameplatePreview(); return; }
   nameplateEditorInitialized = true;
-  ['nameplate-color1-input', 'nameplate-color2-input'].forEach(id => $(id).addEventListener('input', updateNameplatePreview));
+  colorListSet('nameplate-colors', colorListValues('nameplate-colors'), updateNameplatePreview);
   $('nameplate-animated-input').addEventListener('change', updateNameplatePreview);
   updateNameplatePreview();
 }
@@ -14389,7 +14787,7 @@ $('nameplate-publish-btn').onclick = async () => {
   try {
     await db.collection('shopNameplates').add({
       name, desc, price,
-      colors: [$('nameplate-color1-input').value, $('nameplate-color2-input').value],
+      colors: colorListValues('nameplate-colors'),
       animated: $('nameplate-animated-input').checked,
       createdBy: myUid, createdAt: FieldValue.serverTimestamp(),
     });
@@ -14403,7 +14801,7 @@ function renderAdminNameplateList() {
   const wrap = $('admin-nameplate-list');
   if (!wrap) return;
   wrap.innerHTML = customNameplates.length
-    ? customNameplates.map(n => `<div class="admin-emoji-chip editable" data-id="${esc(n.id)}"><span class="admin-theme-chip-swatch" style="background:linear-gradient(135deg, ${n.colors[0]}, ${n.colors[1]});"></span><span>${esc(n.name)}</span><span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
+    ? customNameplates.map(n => `<div class="admin-emoji-chip editable" data-id="${esc(n.id)}"><span class="admin-theme-chip-swatch" style="background:${esc(nameplateGradientCSS(n))};"></span><span>${esc(n.name)}</span><span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
     : '<div class="empty">No custom nameplates yet.</div>';
   wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
     btn.onclick = async () => { await db.collection('shopNameplates').doc(btn.closest('.admin-emoji-chip').dataset.id).delete(); };
@@ -14415,7 +14813,7 @@ function renderAdminNameplateList() {
 let bannerEditorInitialized = false;
 function currentBannerDraft() {
   return {
-    colors: [$('banner-color1-input').value, $('banner-color2-input').value, $('banner-color3-input').value],
+    colors: colorListValues('banner-colors'),
     angle: parseInt($('banner-angle-input').value, 10) || 0,
     animated: $('banner-animated-input').checked,
   };
@@ -14430,11 +14828,12 @@ function updateBannerPreview() {
 function initBannerEditor() {
   if (bannerEditorInitialized) { updateBannerPreview(); return; }
   bannerEditorInitialized = true;
-  ['banner-color1-input', 'banner-color2-input', 'banner-color3-input', 'banner-angle-input'].forEach(id => $(id).addEventListener('input', updateBannerPreview));
+  colorListSet('banner-colors', colorListValues('banner-colors'), updateBannerPreview);
+  $('banner-angle-input').addEventListener('input', updateBannerPreview);
   $('banner-animated-input').addEventListener('change', updateBannerPreview);
   $('banner-randomize-btn').onclick = () => {
     const rand = () => '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
-    ['banner-color1-input', 'banner-color2-input', 'banner-color3-input'].forEach(id => { $(id).value = rand(); });
+    colorListSet('banner-colors', colorListValues('banner-colors').map(rand), updateBannerPreview);
     $('banner-angle-input').value = String(Math.round(Math.random() * 72) * 5);
     updateBannerPreview();
   };
@@ -15130,12 +15529,16 @@ async function renderAdminActions() {
   wrap.innerHTML = `
     <div class="admin-sel-head">${avatarHTML(44, u.avatarColor, initials(u.username), null, u.avatarUrl)}<div><div class="as-name">${esc(u.username)}${roleTag(u)}</div><div class="as-sub">${ban.banned ? ('Banned — ' + esc(ban.reason)) : 'Not banned'}</div></div></div>
     <div class="admin-block">
-      <div class="ab-title">Orbs — Balance: ${fmtOrbs(u.orbs)}</div>
+      <div class="ab-title">Orbs — Balance: ${orbsLabel(u)}</div>
       <div class="ab-row">
         <input id="admin-orbs-amt" type="number" min="1" placeholder="Amount" class="fld-input">
         <button class="btn-accent-inline slim" id="admin-orbs-grant">Grant</button>
         <button class="btn-secondary slim" id="admin-orbs-remove">Remove</button>
       </div>
+      ${isOwner ? `<div class="ab-row" style="margin-top:8px">
+        <span class="ab-note">${u.infOrbs === true ? 'Has infinite Orbs: they show as Inf and never go down.' : 'Infinite Orbs show as Inf and never go down.'}</span>
+        <button class="${u.infOrbs === true ? 'btn-secondary' : 'btn-accent-inline'} slim" id="admin-inf-btn">${u.infOrbs === true ? 'Take Away Infinite Orbs' : 'Give Infinite Orbs'}</button>
+      </div>` : ''}
     </div>
     <div class="admin-block">
       <div class="ab-title">Frixion Premium — ${isPremium(u) ? (premiumUntilText(u.premiumUntil) ? 'Active until ' + premiumUntilText(u.premiumUntil) : 'Active forever') : 'Not active'}</div>
@@ -15167,6 +15570,11 @@ async function renderAdminActions() {
         <button class="btn-danger slim" id="admin-ban-btn">Ban</button>
       </div>`}
     </div>
+    ${isOwner ? `<div class="admin-block">
+      <div class="ab-title">Rank</div>
+      <div class="ab-row"><select id="admin-rank-select" class="fld-input"><option value="">No rank</option>${customRanks.map(r => `<option value="${esc(r.id)}"${u.customRank === r.id ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select>
+        <span class="ab-note">${customRanks.length ? 'Just a tag next to their name.' : 'Make ranks in the Ranks tab.'}</span></div>
+    </div>` : ''}
     ${isOwner ? `
     <div class="admin-block">
       <div class="ab-title">Operator</div>
@@ -15204,6 +15612,24 @@ async function renderAdminActions() {
 
   $('admin-orbs-grant').onclick = () => adminAdjustOrbs(u.username, 1);
   $('admin-orbs-remove').onclick = () => adminAdjustOrbs(u.username, -1);
+  // custom rank (v4.64)
+  if ($('admin-rank-select')) $('admin-rank-select').onchange = async e => {
+    const id = e.target.value, r = customRanks.find(x => x.id === id);
+    try {
+      await db.collection('users').doc(u.username).update({ customRank: id || FieldValue.delete() });
+      toast(r ? `${u.username} is ${r.name} now.` : `${u.username} has no rank now.`);
+      renderAdminList();
+    } catch (err) { toast('Could not change the rank.', 'error'); }
+  };
+  // infinite Orbs (v4.64): the Owner and Co-Owners only (firestore.rules: nobody gives it to themselves, Admins can't)
+  if ($('admin-inf-btn')) $('admin-inf-btn').onclick = async () => {
+    const on = u.infOrbs !== true;
+    try {
+      await db.collection('users').doc(u.username).update({ infOrbs: on ? true : FieldValue.delete() });
+      toast(on ? `${u.username} has infinite Orbs now.` : `${u.username}'s Orbs are back to normal.`);
+      renderAdminActions();
+    } catch (e) { toast('Could not change that.', 'error'); }
+  };
   $('admin-premium-grant').onclick = () => adminAdjustPremium(u.username, 1);
   $('admin-premium-remove').onclick = () => adminAdjustPremium(u.username, -1);
   if (ban.banned) $('admin-unban-btn').onclick = adminUnban;
@@ -15472,11 +15898,36 @@ async function adminDelete() {
         // Flag, don't delete: the target's own app plays the sequence and removes the account at the end.
         await db.collection('users').doc(target).update({ terminated: { mode: 'real', by: myUid, nonce: Date.now(), at: Date.now() } });
         toast(`Termination sent to ${target}. Their account is removed when it finishes.`);
+        cleanupDeletedAccount(target).catch(e => console.warn('cleanup after delete', e));
       } catch (e) { toast(e.message || 'Could not delete account.', 'error'); return; }
       adminSelectedUser = null;
       renderAdminList();
     },
   });
+}
+// Deleting an account (v4.64): it leaves everything straight away, so nobody is left in a DM or group with an account
+// that's gone. Its DMs are deleted, it comes out of every group (the group passes to someone else if it owned it), and
+// off friend lists, friend requests and server member lists. The Owner's app does this when sending the skull; the
+// rules let the Owner and Co-Owners make these changes. (The messages inside deleted DMs stay hidden, not read again.)
+async function cleanupDeletedAccount(target) {
+  const out = FieldValue.arrayRemove(target), q = (coll, field) => db.collection(coll).where(field, 'array-contains', target).get();
+  const [dms, groups, friendsOf, wantedBy, askedBy, servers] = await Promise.all([
+    q('dms', 'participants'), q('groupDMs', 'participants'), q('users', 'friends'), q('users', 'incomingRequests'), q('users', 'outgoingRequests'), q('servers', 'members'),
+  ].map(p => p.catch(() => ({ forEach() {} }))));
+  const jobs = [];
+  dms.forEach(d => jobs.push(d.ref.delete()));
+  groups.forEach(g => {
+    const data = g.data(), left = (data.participants || []).filter(p => p !== target), change = { participants: out };
+    if (data.ownerId === target && left.length) change.ownerId = left[0];
+    jobs.push(g.ref.update(change));
+  });
+  friendsOf.forEach(u => jobs.push(u.ref.update({ friends: out })));
+  wantedBy.forEach(u => jobs.push(u.ref.update({ incomingRequests: out })));
+  askedBy.forEach(u => jobs.push(u.ref.update({ outgoingRequests: out })));
+  servers.forEach(s => { if (s.data().ownerId !== target) jobs.push(s.ref.update({ members: out })); });
+  const done = (await Promise.allSettled(jobs)).filter(r => r.status === 'fulfilled').length;
+  if (done) toast(`Took ${target} out of their DMs, groups and friend lists.`);
+  return done;
 }
 // Owner-only rehearsal: identical sequence for the target, but it just signs them out.
 async function adminFakeDelete() {
@@ -15573,7 +16024,7 @@ async function dbUpdateUser(uid, changes) {
     }
     Object.assign(UC, changes);
   }
-  if (spend) {
+  if (spend && !(myProfile && myProfile.infOrbs === true)) {   // (infinite Orbs never go down, v4.64)
     await flushEarn();   // Orbs a game just paid have to be in before they can be spent
     update.orbs = firebase.firestore.FieldValue.increment(spend);
   }
@@ -15622,6 +16073,8 @@ async function orbsCall(route, body) {
 }
 // Orbs still on their way to the server count in the balance games show.
 function pendingOrbs() { return earnFor === myUid ? earnQueued + earnSending : 0; }
+// Enough Orbs for something that costs n? (Infinite Orbs from the Owner panel always are, v4.64.)
+function hasOrbsFor(n) { return !!(myProfile && (myProfile.infOrbs === true || (myProfile.orbs || 0) + pendingOrbs() >= n)); }
 function settleOrbs() {
   if (!myProfile || gameStateOwner !== myUid) return;
   UC.coins = settledOrbs = (myProfile.orbs || 0) + pendingOrbs();
@@ -15786,14 +16239,29 @@ let ccBuyN=1;   // how many buildings one click buys: 1, 10, 100 or 'max'
 
 // Compact numbers: 1.23K, 4.56M, 7.89B, 1.20T. Past a quadrillion they are written as a
 // power of ten (3.33x10^66) so the text never turns into a wall of digits or "e+" notation.
+// Big numbers get letters all the way up (v4.64): K, M, B, T, Qa (10^15), Qi, Sx, Sp, Oc, No, Dc (10^33), UDc, DDc...
+// Vg (10^63), Tg (10^93), Qag, Qig, Sxg, Spg, Ocg, Nog, then Ce (10^303). Only past that does it show a power of ten.
+const NUM_FIRST = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No'];
+const NUM_UNITS = ['', 'U', 'D', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No'];
+const NUM_TENS = ['', 'Dc', 'Vg', 'Tg', 'Qag', 'Qig', 'Sxg', 'Spg', 'Ocg', 'Nog'];
+// the letters for 1000^g (g = 1 is K), or '' when there are none
+function numSuffix(g) {
+  if (g <= 10) return NUM_FIRST[g] || '';
+  const i = g - 1;                                   // 1000^g is 10^(3i+3): the "i-illion"
+  if (i < 100) return NUM_UNITS[i % 10] + NUM_TENS[Math.floor(i / 10)];
+  if (i < 110) return NUM_UNITS[i - 100] + 'Ce';
+  return '';
+}
 function fmtNum(n){
   if(!isFinite(n)) return n>0 ? '∞' : '0';
   n=Math.floor(n||0);
   if(n<1000) return ''+n;
-  if(n>=1e15) return fmtPower(n);
-  const u=['K','M','B','T']; let i=-1, x=n;
-  while(x>=1000){ x/=1000; i++; }
-  return (x<10?x.toFixed(2):x<100?x.toFixed(1):Math.floor(x))+u[i];
+  let g = Math.floor(Math.log10(n) / 3), x = n / Math.pow(10, g * 3);
+  if (x >= 999.995) { x /= 1000; g++; }           // 999,999 shows as 1.00M, not 1000K
+  if (x < 1) { x *= 1000; g--; }                   // (log10 rounding just under a power of ten)
+  const s = numSuffix(g);
+  if (!s) return fmtPower(n);
+  return (x<10?x.toFixed(2):x<100?x.toFixed(1):Math.floor(x))+s;
 }
 function fmtPower(n){ const [m,e]=n.toExponential(2).split('e'); return m+'×10^'+(+e); }
 // Orb balances show in full up to 999,999, then switch to the compact form.
@@ -15801,6 +16269,8 @@ function fmtOrbs(n){
   n=Math.floor(n||0);
   return n<1e6 ? n.toLocaleString() : fmtNum(n);
 }
+// what someone's Orbs say: "Inf" for infinite Orbs from the Owner or Co-Owner panel (v4.64)
+function orbsLabel(p) { return p && p.infOrbs === true ? 'Inf' : fmtOrbs(p ? p.orbs : 0); }
 // ---- Staff-made Cookie Clicker content (Admin Panel -> Quests -> CC) ----
 // Upgrades are one-time buys that boost the run. Items are extra shop entries you can buy again
 // and again, like buildings. Both live in one Firestore doc, config/cookieClicker, as maps keyed by
@@ -18286,10 +18756,29 @@ const GAME_TILES = [
   { id: 'crush',      title: 'Orb Crush', ic: '💎', c: '#19c3ff', open: () => renderCrush() },
   { id: 'brick',      title: 'Brick Breaker', ic: '🏓', c: '#e0563b', open: () => renderBrick() },
   { id: 'simon',      title: 'Color Simon', ic: '🎨', c: '#2faf4e', open: () => renderSimon() },
+  { id: 'maze',       title: 'Mouse Maze', ic: '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 4v8h4M16 8v12M8 16h4"/><path d="M12.5 11.5l3.5 1.2-1.5.6-.6 1.5z" fill="#fff"/></svg>', c: '#5865f2', open: stage => openMouseMaze(stage) },
 ];
+// Mouse Maze (v4.64, games/maze/maze.js): loaded when it's opened. Its progress is saved like every game's (tb.mazeBest,
+// tb.mazeClr: one character per level, 1 for cleared) and its Orbs paid the same way.
+let mazeMod = null;
+function openMouseMaze(stage) {
+  if (!mazeMod) mazeMod = import('./games/maze/maze.js?v=1');
+  mazeMod.then(m => m.open(stage, {
+    isTouchOnly: () => isMobile() || !(window.matchMedia && matchMedia('(pointer: fine)').matches),
+    load: () => ({ best: Math.max(0, Math.min(125, Number(UC.mazeBest) || 0)), cleared: typeof UC.mazeClr === 'string' ? UC.mazeClr.slice(0, 125) : '' }),
+    save: (p, orbs) => {
+      UC.coins = (UC.coins || 0) + orbs;
+      if (typeof trackQuest === 'function') trackQuest('caps', orbs);
+      dbUpdateUser(getU(), { coins: UC.coins, mazeBest: p.best, mazeClr: p.cleared }).catch(() => {});
+      refreshCaps();
+    },
+    egg: id => eggFind(id),
+  })).catch(err => { mazeMod = null; console.error(err); toast('Mouse Maze could not load. Check your connection and try again.', 'error'); });
+}
+function mzCleanup() { if (mazeMod) mazeMod.then(m => m.close()).catch(() => {}); }
 
 const GAME_CLEANUPS = () => [gdCleanup, xtraCleanup, snakeCleanup, mergeCleanup, tsCleanup, atCleanup, dwCleanup, bbCleanup,
-  suCleanup, c4Cleanup, stCleanup, mmCleanup, csCleanup, crCleanup, bkCleanup, smCleanup, ggCleanup, ccCleanup];
+  suCleanup, c4Cleanup, stCleanup, mmCleanup, csCleanup, crCleanup, bkCleanup, smCleanup, ggCleanup, ccCleanup, mzCleanup];
 
 let gameWin = null;
 
@@ -18378,12 +18867,12 @@ function setGameApi() {
     premium: () => isPremium(myProfile),
     orbs: () => (myProfile && myProfile.orbs) || 0,
     // Takes n Orbs if you have them (counting ones a game just paid). Resolves true when paid.
-    spendOrbs: n => flushEarn().then(() => db.runTransaction(async tx => {
+    spendOrbs: n => (myProfile && myProfile.infOrbs === true ? Promise.resolve(true) : flushEarn().then(() => db.runTransaction(async tx => {
       const ref = db.collection('users').doc(myUid), d = await tx.get(ref);
       if (((d.data() || {}).orbs || 0) < n) return false;
       tx.update(ref, { orbs: FieldValue.increment(-n) });
       return true;
-    })),
+    }))),
   };
 }
 function openOcrng() {
@@ -18483,6 +18972,11 @@ const EGGS = [
   { id: 'triple', t: 'm', name: 'Triple', how: 'Line up three of a kind in Slots.', hint: 'Three of anything in a row.' },
   { id: 'tenx', t: 'h', name: 'Ten Times Over', how: 'Win 10 times your bet or more in one Casino game.', hint: 'Walk out of the Casino with ten times what you put in.' },
   { id: 'jackpot', t: 'e', name: 'Jackpot', how: 'Type "jackpot" anywhere, text boxes too.', hint: 'Say the word every gambler wants to hear.' },
+  // v4.64
+  { id: 'tricked', t: 'e', name: 'Tricked', how: 'In Mouse Maze, touch a fake finish or a fake checkpoint (level 10 on).', hint: 'Not every finish line is real.' },
+  { id: 'mazehalf', t: 'h', name: 'Halfway There', how: 'Clear level 50 of Mouse Maze.', hint: 'Fifty mazes in.' },
+  { id: 'ontime', t: 'm', name: 'Good Credit', how: 'Pay a loan back in full before it\'s due.', hint: 'Borrow, then be on time.' },
+  { id: 'hideorbs', t: 'e', name: 'Nobody\'s Business', how: 'Turn off "Show my Orbs on my profile" in Settings > Privacy.', hint: 'Some numbers are private.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -18695,6 +19189,10 @@ function eggEffect(id, first) {
     case 'triple': eggToast('Three in a row.'); return;
     case 'tenx': eggParticles('confetti', 5000); eggToast('Ten times over!'); return;
     case 'jackpot': eggBigWord('JACKPOT'); return;
+    case 'tricked': eggToast('Gotcha.', 'That finish was fake.'); return;
+    case 'mazehalf': eggToast('Halfway through the maze.'); return;
+    case 'ontime': eggToast('Paid back on time.', 'Your credit thanks you.'); return;
+    case 'hideorbs': eggToast('Your secret is safe.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
@@ -18809,6 +19307,7 @@ const EGG_GROUPS = [
   ['Everywhere else', ['hashegg', 'console', 'idle10', 'dnd5', 'themehop', 'lightmode', 'quickopen', 'selfadd', 'displayegg']],
   ['Games', ['snake67', 'merge2048', 'typingegg', 'simon15', 'luckyrush', 'voidcrop', 'samegarden']],
   ['Casino (v4.63)', ['zerohero', 'onepointoh', 'triple', 'tenx', 'jackpot']],
+  ['Maze, loans and privacy (v4.64)', ['tricked', 'mazehalf', 'ontime', 'hideorbs']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {
@@ -18836,7 +19335,10 @@ const QO_KINDS = [
   { k: 'games', label: 'Games' }, { k: 'settings', label: 'Settings' },
   { k: 'dm', label: 'A DM', pick: true }, { k: 'gdm', label: 'A group chat', pick: true },
   { k: 'server', label: 'A server', pick: true }, { k: 'game', label: 'A game', pick: true },
+  { k: 'panel', label: 'My staff panel', staff: true },   // Admin, Co-Owner or Owner Panel (v4.64), staff only
 ];
+// the kinds this person can pick (the staff panel only for staff)
+const qoKinds = () => QO_KINDS.filter(q => !q.staff || isAdmin || isOwner);
 let qoCapturing = false;
 function qoList() {
   const l = myProfile && Array.isArray(myProfile.quickOpen) ? myProfile.quickOpen : [];
@@ -18854,6 +19356,7 @@ function qoTargets(k) {
 function qoLabel(x) {
   const kind = QO_KINDS.find(q => q.k === x.t);
   if (!kind) return 'Unknown';
+  if (x.t === 'panel') return isOwner ? ownerPanelName() : 'Admin Panel';
   if (!kind.pick) return kind.label;
   const hit = qoTargets(x.t).find(o => o.id === x.id);
   const what = x.t === 'dm' ? 'DM with ' : x.t === 'gdm' ? 'Group: ' : x.t === 'server' ? 'Server: ' : '';
@@ -18867,7 +19370,8 @@ function renderQuickOpen() {
     : '<div class="empty">No shortcuts yet. Pick something below, then press Add Shortcut.</div>';
   list.querySelectorAll('.qo-rm').forEach(b => { b.onclick = () => qoSave(qoList().filter((_, i) => i !== +b.dataset.i), 'Shortcut removed.'); });
   const kind = $('qo-kind');
-  if (!kind.options.length) kind.innerHTML = QO_KINDS.map(q => `<option value="${q.k}">${esc(q.label)}</option>`).join('');
+  const kinds = qoKinds();
+  if (kind.options.length !== kinds.length) kind.innerHTML = kinds.map(q => `<option value="${q.k}">${esc(q.k === 'panel' ? (isOwner ? ownerPanelName() : 'Admin Panel') : q.label)}</option>`).join('');
   qoFillTargets();
 }
 function qoFillTargets() {
@@ -18943,6 +19447,7 @@ function qoOpen(x) {
   if (x.t !== 'settings') closeModal('settings-modal');
   const gone = () => toast('That isn\'t there any more. Change the shortcut in Settings > Quick Open.', 'error');
   if (x.t === 'settings') { openSettings(); return; }
+  if (x.t === 'panel') { if (isAdmin || isOwner) openAdminEntry(); else gone(); return; }
   if (['friends', 'shop', 'casino', 'codes', 'games'].includes(x.t)) { goHomePage(x.t === 'games' ? 'quests' : x.t); return; }
   if (x.t === 'dm') {
     const d = (window.__myDMs || []).find(c => c.id === x.id);

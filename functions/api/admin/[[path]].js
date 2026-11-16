@@ -64,6 +64,9 @@ export async function onRequest({ request, env, params }) {
     if (route === 'claims' && request.method === 'POST') return json(await setClaims(env, await request.json().catch(() => ({}))));
     if (route === 'earn' && request.method === 'POST') return json(await earn(env, await request.json().catch(() => ({}))));
     if (route === 'buy' && request.method === 'POST') return json(await buy(env, await request.json().catch(() => ({}))));
+    if (route === 'buyall' && request.method === 'POST') return json(await buyAll(env, await request.json().catch(() => ({}))));
+    if (route === 'banner' && request.method === 'POST') return json(await setBanner(env, await request.json().catch(() => ({}))));
+    if (route === 'loan' && request.method === 'POST') return json(await loanRoute(env, await request.json().catch(() => ({}))));
     if (route === 'code' && request.method === 'POST') return json(await redeemCode(env, await request.json().catch(() => ({}))));
     if (route === 'egg' && request.method === 'POST') return json(await findEgg(env, await request.json().catch(() => ({}))));
     if (route === 'casino' && request.method === 'POST') return json(await casino(env, await request.json().catch(() => ({}))));
@@ -436,14 +439,65 @@ async function buy(env, { token, cat, id }) {
     const price = priceOf(cat, id, builtin, custom);
     if (price == null) fail(404, 'That item isn\'t for sale right now.');
     if ((Array.isArray(u[owned]) ? u[owned] : []).includes(id)) fail(409, 'You already own this.');
-    if ((Number(u.orbs) || 0) < price) fail(402, 'Not enough Orbs. Play games to earn more.');
+    const inf = u.infOrbs === true;   // infinite Orbs (v4.64): nothing is taken
+    if (!inf && (Number(u.orbs) || 0) < price) fail(402, 'Not enough Orbs. Play games to earn more.');
     // paid, owned and worn at once (like Discord's shop), only if the profile is still what was read
     const done = await fsCommit(env, [{
       update: { name: docName(env, `users/${me.name}`), fields: { [equip]: enc(id) } }, updateMask: { fieldPaths: [equip] },
-      updateTransforms: [{ fieldPath: 'orbs', increment: enc(-price) }, { fieldPath: owned, appendMissingElements: { values: [enc(id)] } }],
+      updateTransforms: [...(inf ? [] : [{ fieldPath: 'orbs', increment: enc(-price) }]), { fieldPath: owned, appendMissingElements: { values: [enc(id)] } }],
       currentDocument: { updateTime: prof.updateTime },
     }]);
-    if (done) return { ok: true, price, orbs: orbsAfter(done, 0) };
+    if (done) return { ok: true, price, orbs: inf ? Number(u.orbs) || 0 : orbsAfter(done, 0) };
+  }
+  fail(409, 'Frixion is busy. Try again.');
+}
+// Banner pictures (v4.64): 5,000 Orbs every upload (the Owner's price). The picture is uploaded to Frixion's Cloudinary
+// first; this checks it's from there, takes the Orbs and puts it on the profile in one commit. Nothing else may set
+// bannerImage (firestore.rules); the profile's owner may only take it off.
+const BANNER_PRICE = 5000;
+const BANNER_URL = /^https:\/\/res\.cloudinary\.com\/a97nqv9w\/image\/upload\/[A-Za-z0-9_./,-]{1,300}\.(png|jpe?g|webp|gif|avif)$/i;
+async function setBanner(env, { token, url }) {
+  const me = await caller(env, token);
+  if (typeof url !== 'string' || !BANNER_URL.test(url) || url.includes('..')) fail(400, 'That picture didn\'t upload right. Try again.');
+  slowDown('banner:' + me.name, 6);
+  for (let i = 0; i < 6; i++) {
+    const [prof] = await fsGetMany(env, [`users/${me.name}`]);
+    const u = mine(prof, me), inf = u.infOrbs === true;
+    if (!inf && (Number(u.orbs) || 0) < BANNER_PRICE) fail(402, 'A banner picture costs 5,000 Orbs.');
+    const done = await fsCommit(env, [{
+      update: { name: docName(env, `users/${me.name}`), fields: { bannerImage: enc(url) } }, updateMask: { fieldPaths: ['bannerImage'] },
+      ...(inf ? {} : { updateTransforms: [{ fieldPath: 'orbs', increment: enc(-BANNER_PRICE) }] }),
+      currentDocument: { updateTime: prof.updateTime },
+    }]);
+    if (done) return { ok: true, bannerImage: url, orbs: inf ? Number(u.orbs) || 0 : orbsAfter(done, 0) };
+  }
+  fail(409, 'Frixion is busy. Try again.');
+}
+// Buy All (v4.64): every item in the list the buyer doesn't own yet, in one commit (one read of each item's price, one
+// write). Items that aren't for sale are skipped; nothing is equipped.
+async function buyAll(env, { token, cat, ids }) {
+  const me = await caller(env, token);
+  if (!own(SHOP, cat) || !Array.isArray(ids) || !ids.length || ids.length > 60 || ids.some(id => typeof id !== 'string' || !ITEM_ID.test(id))) fail(400, 'Nothing to buy.');
+  slowDown('buy:' + me.name, 20);
+  const [owned, , coll] = SHOP[cat], want = [...new Set(ids)];
+  for (let i = 0; i < 6; i++) {
+    const [prof, builtin, ...docs] = await fsGetMany(env, [`users/${me.name}`, 'shopPrices/builtin', ...(coll ? want.map(id => `${coll}/${id}`) : ['config/customMusic'])]);
+    const u = mine(prof, me), have = Array.isArray(u[owned]) ? u[owned] : [], inf = u.infOrbs === true;
+    let total = 0;
+    const bought = [];
+    want.forEach((id, k) => {
+      if (have.includes(id)) return;
+      const price = priceOf(cat, id, builtin, coll ? docs[k] : docs[0]);
+      if (price == null) return;
+      total += price; bought.push(id);
+    });
+    if (!bought.length) fail(409, 'You already own all of those.');
+    if (!inf && (Number(u.orbs) || 0) < total) fail(402, `That's ${total.toLocaleString('en-US')} Orbs. You don't have enough.`);
+    const done = await fsCommit(env, [{
+      transform: { document: docName(env, `users/${me.name}`), fieldTransforms: [...(inf ? [] : [{ fieldPath: 'orbs', increment: enc(-total) }]), { fieldPath: owned, appendMissingElements: { values: bought.map(enc) } }] },
+      currentDocument: { updateTime: prof.updateTime },
+    }]);
+    if (done) return { ok: true, bought, total, orbs: inf ? Number(u.orbs) || 0 : orbsAfter(done, 0) };
   }
   fail(409, 'Frixion is busy. Try again.');
 }
@@ -459,6 +513,7 @@ const EGGS = {
   console: 'h', idle10: 'm', dnd5: 'm', themehop: 'm', lightmode: 'e', quickopen: 'e', selfadd: 'e', displayegg: 'm',
   snake67: 'm', merge2048: 'v', typingegg: 'e', simon15: 'h', luckyrush: 'h', voidcrop: 'v', samegarden: 'h', lastegg: 'l',
   zerohero: 'm', onepointoh: 'e', triple: 'm', tenx: 'h', jackpot: 'e',   // v4.63: the Casino
+  tricked: 'e', mazehalf: 'h', ontime: 'm', hideorbs: 'e',                // v4.64
   xyzzy: ['m', '7d76c6d11ed06a3e671afa826c4f88f4e8227fdef446cbd576a3428967e45af9'],
   codeb1: ['e', '4f3cd88dc035fd4d04dda074fd7ced1722751824644c1a27a700dfd5d06ba19e'],
   codeb2: ['e', 'c886bb737cc711b2dfcb069ea8179dc430661db13a38113ddf718b9098f653c7'],
@@ -628,6 +683,7 @@ async function casinoCommit(env, name, prof, u, { delta = 0, set = {}, stake = 0
   const fields = { at: enc(new Date()) }, paths = ['casino.at'];
   for (const [k, v] of Object.entries(set)) { paths.push('casino.' + k); if (v !== null) fields[k] = encAny(v); }
   const tf = [];
+  if (u && u.infOrbs === true) delta = 0;            // infinite Orbs (v4.64) never go up or down
   if (delta) tf.push({ fieldPath: 'orbs', increment: enc(delta) });
   if (game) tf.push({ fieldPath: 'casino.games', increment: enc(1) });
   if (stake) tf.push({ fieldPath: 'casino.wagered', increment: enc(stake) });
@@ -647,7 +703,7 @@ function dayCount(c) {
 const gamesLeft = c => CASINO_DAY - (c.day === utcDay() ? Math.max(0, Number(c.n) || 0) : 0);
 async function readProfile(env, me) { const [prof] = await fsGetMany(env, [`users/${me.name}`]); return { prof, u: mine(prof, me) }; }
 const BUSY = 'Frixion is busy. Try again.';
-const hasOrbs = (u, n) => { if ((Number(u.orbs) || 0) < n) fail(400, 'You don\'t have enough Orbs for that.'); };
+const hasOrbs = (u, n) => { if (u.infOrbs !== true && (Number(u.orbs) || 0) < n) fail(400, 'You don\'t have enough Orbs for that.'); };
 
 async function casino(env, b) {
   const me = await caller(env, b.token);
@@ -1111,4 +1167,154 @@ async function casinoInfo(env, me) {
   const r = await resumeOpen(env, me, '', u);
   const c = casinoOf(u), mega = c.mega && typeof c.mega === 'object' ? { at: c.mega.at, drawAt: c.mega.at + MEGA_WAIT } : null;
   return { ok: true, left: gamesLeft(c), open: r.open, mega, stats: { games: c.games || 0, wagered: c.wagered || 0, won: c.won || 0, best: c.best || 0 } };
+}
+
+// ---------------- Loans (v4.64) ----------------
+// POST /api/admin/loan { token, action, ... }. Someone asks another person for Orbs, to pay back within a time they
+// pick (the two can talk the time over in their DMs, and the lender can change it when accepting). Accepting moves the
+// Orbs at once. Nothing is ever taken back (the Owner's choice, 2026-11-15): paying back on time raises the borrower's
+// credit, not paying back in time lowers it (twice as much), and bigger loans move it more. Paying back after that wins
+// half of it back. loans/<id> is written only here (firestore.rules: the two people in it can read it). Each profile
+// keeps credit, loanWith (everyone you've had a loan or a request with, so a profile only looks loans up when there
+// are some) and loanNext (the soonest due date of a running loan, so the app knows when to ask for a check).
+const LOAN_MIN = 10, LOAN_MAX = 1000000000;
+const LOAN_TIMES = { '1h': 3600000, '1d': 86400000, '3d': 259200000, '7d': 604800000, '14d': 1209600000, '30d': 2592000000 };
+const loanWeight = n => Math.max(1, Math.round(Math.log10(Math.max(10, n)) * 10 - 10));   // 100 Orbs: 10, 1,000: 20, 10,000: 30
+// documents matching every [field, value], straight from the database (up to `limit`)
+async function fsQuery(env, coll, where, limit = 100) {
+  const ff = ([field, value]) => ({ fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value: enc(value) } });
+  const body = { structuredQuery: { from: [{ collectionId: coll }], where: where.length === 1 ? ff(where[0]) : { compositeFilter: { op: 'AND', filters: where.map(ff) } }, limit } };
+  const r = await fetch(`${fsBase(env)}:runQuery`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await googleToken(env) }, body: JSON.stringify(body) });
+  if (r.status === 429) fail(503, OUT_OF_READS);
+  if (!r.ok) fail(502, 'Could not read Frixion.');
+  return (await r.json()).filter(x => x.document).map(x => ({ id: x.document.name.split('/').pop(), data: decFields(x.document.fields), updateTime: x.document.updateTime }));
+}
+const loanUpdate = (env, id, fields, updateTime) => ({
+  update: { name: docName(env, `loans/${id}`), fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, encAny(v)])) },
+  updateMask: { fieldPaths: Object.keys(fields) }, currentDocument: { updateTime },
+});
+// Orbs and the like onto a profile: [path, transforms] as one write
+const profileTransform = (env, name, tf, updateTime) => ({ transform: { document: docName(env, `users/${name}`), fieldTransforms: tf }, currentDocument: updateTime ? { updateTime } : { exists: true } });
+const loanShown = l => ({ id: l.id, from: l.data.from, to: l.data.to, amount: l.data.amount, paid: l.data.paid || 0, time: l.data.time, dueAt: l.data.dueAt || null,
+  status: l.data.status, note: l.data.note || '', at: l.data.at, late: l.data.late === true });
+
+async function loanRoute(env, b) {
+  const me = await caller(env, b.token);
+  const action = String(b.action || '');
+  slowDown('loan:' + me.name, 30);
+  if (action === 'ask') return loanAsk(env, me, b);
+  if (action === 'answer') return loanAnswer(env, me, b);
+  if (action === 'cancel') return loanCancel(env, me, b);
+  if (action === 'pay') return loanPay(env, me, b);
+  if (action === 'check') return loanCheck(env, me, b);
+  fail(400, 'That isn\'t a loan action.');
+}
+async function loanAsk(env, me, { to, amount, time, note }) {
+  const n = Number(amount);
+  if (typeof to !== 'string' || !USERNAME.test(to) || to === me.name) fail(400, 'Pick someone to ask.');
+  if (!Number.isInteger(n) || n < LOAN_MIN || n > LOAN_MAX) fail(400, 'Ask for 10 to 1,000,000,000 Orbs.');
+  if (!own(LOAN_TIMES, time)) fail(400, 'Pick when you\'ll pay it back.');
+  const text = String(note || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  const [prof, them] = await fsGetMany(env, [`users/${me.name}`, `users/${to}`]);
+  mine(prof, me);
+  if (!them) fail(404, 'No account has that username.');
+  const id = 'l' + Date.now().toString(36) + [...crypto.getRandomValues(new Uint8Array(4))].map(x => x.toString(16).padStart(2, '0')).join('');
+  const loan = { from: to, to: me.name, amount: n, paid: 0, time, dueIn: LOAN_TIMES[time], note: text, status: 'asked', at: Date.now() };
+  const done = await fsCommit(env, [
+    { update: { name: docName(env, `loans/${id}`), fields: Object.fromEntries(Object.entries(loan).map(([k, v]) => [k, encAny(v)])) }, currentDocument: { exists: false } },
+    profileTransform(env, me.name, [{ fieldPath: 'loanWith', appendMissingElements: { values: [enc(to)] } }]),
+    profileTransform(env, to, [{ fieldPath: 'loanWith', appendMissingElements: { values: [enc(me.name)] } }]),
+  ]);
+  if (!done) fail(409, 'Frixion is busy. Try again.');
+  return { ok: true, loan: loanShown({ id, data: loan }) };
+}
+async function loanAnswer(env, me, { id, yes, time }) {
+  if (typeof id !== 'string' || !/^l[a-z0-9]{6,30}$/.test(id)) fail(404, 'That loan isn\'t there.');
+  for (let i = 0; i < 5; i++) {
+    const [l, lender] = await fsGetMany(env, [`loans/${id}`, `users/${me.name}`]);
+    const u = mine(lender, me);
+    if (!l || l.data.from !== me.name) fail(404, 'That loan isn\'t there.');
+    if (l.data.status !== 'asked') fail(409, 'That request was already answered.');
+    l.id = id;
+    if (!yes) {
+      const done = await fsCommit(env, [loanUpdate(env, id, { status: 'denied', decidedAt: Date.now() }, l.updateTime)]);
+      if (done) return { ok: true, loan: loanShown({ id, data: { ...l.data, status: 'denied' } }) };
+      continue;
+    }
+    const t = own(LOAN_TIMES, time) ? time : l.data.time, dueIn = LOAN_TIMES[t] || LOAN_TIMES['1d'];
+    const amount = Number(l.data.amount) || 0, inf = u.infOrbs === true;
+    if (!inf && (Number(u.orbs) || 0) < amount) fail(402, `You don't have ${amount.toLocaleString('en-US')} Orbs to lend.`);
+    const dueAt = Date.now() + dueIn;
+    const done = await fsCommit(env, [
+      loanUpdate(env, id, { status: 'active', time: t, dueIn, dueAt, decidedAt: Date.now() }, l.updateTime),
+      profileTransform(env, me.name, [...(inf ? [] : [{ fieldPath: 'orbs', increment: enc(-amount) }]), { fieldPath: 'loanNext', minimum: enc(dueAt) }], lender.updateTime),
+      profileTransform(env, l.data.to, [{ fieldPath: 'orbs', increment: enc(amount) }, { fieldPath: 'loanNext', minimum: enc(dueAt) }]),
+    ]);
+    if (done) return { ok: true, orbs: inf ? Number(u.orbs) || 0 : orbsAfter(done, 1), loan: loanShown({ id, data: { ...l.data, status: 'active', time: t, dueAt } }) };
+  }
+  fail(409, 'Frixion is busy. Try again.');
+}
+async function loanCancel(env, me, { id }) {
+  if (typeof id !== 'string' || !/^l[a-z0-9]{6,30}$/.test(id)) fail(404, 'That loan isn\'t there.');
+  const [l] = await fsGetMany(env, [`loans/${id}`]);
+  if (!l || l.data.to !== me.name) fail(404, 'That loan isn\'t there.');
+  if (l.data.status !== 'asked') fail(409, 'It was already answered.');
+  const done = await fsCommit(env, [loanUpdate(env, id, { status: 'cancelled', decidedAt: Date.now() }, l.updateTime)]);
+  if (!done) fail(409, 'Frixion is busy. Try again.');
+  return { ok: true };
+}
+async function loanPay(env, me, { id, amount }) {
+  if (typeof id !== 'string' || !/^l[a-z0-9]{6,30}$/.test(id)) fail(404, 'That loan isn\'t there.');
+  for (let i = 0; i < 5; i++) {
+    const [l, prof] = await fsGetMany(env, [`loans/${id}`, `users/${me.name}`]);
+    const u = mine(prof, me);
+    if (!l || l.data.to !== me.name) fail(404, 'That loan isn\'t there.');
+    if (l.data.status !== 'active') fail(409, l.data.status === 'paid' ? 'It\'s already paid back.' : 'That loan isn\'t running.');
+    const total = Number(l.data.amount) || 0, paid = Number(l.data.paid) || 0, owed = total - paid;
+    const want = amount == null ? owed : Math.floor(Number(amount));
+    if (!(want >= 1)) fail(400, 'Pay at least 1 Orb.');
+    const pay = Math.min(owed, want), inf = u.infOrbs === true;
+    if (!inf && (Number(u.orbs) || 0) < pay) fail(402, 'You don\'t have that many Orbs.');
+    const now = Date.now(), all = paid + pay >= total, late = l.data.late === true || now > (l.data.dueAt || 0);
+    const w = loanWeight(total);
+    let credit = 0;
+    if (late && l.data.late !== true) credit -= 2 * w;          // it went past its due date and no check had counted that yet
+    if (all) credit += late ? Math.ceil(w / 2) : w;             // paid back: all of it on time, half after the due date
+    const fields = { paid: paid + pay, ...(all ? { status: 'paid', paidAt: now } : {}), ...(late && l.data.late !== true ? { late: true } : {}) };
+    const done = await fsCommit(env, [
+      loanUpdate(env, id, fields, l.updateTime),
+      profileTransform(env, me.name, [...(inf ? [] : [{ fieldPath: 'orbs', increment: enc(-pay) }]), ...(credit ? [{ fieldPath: 'credit', increment: enc(credit) }] : [])], prof.updateTime),
+      profileTransform(env, l.data.from, [{ fieldPath: 'orbs', increment: enc(pay) }]),
+    ]);
+    if (done) return { ok: true, paid: pay, owed: owed - pay, done: all, credit, late, orbs: inf ? Number(u.orbs) || 0 : orbsAfter(done, 1) };
+  }
+  fail(409, 'Frixion is busy. Try again.');
+}
+// Looks over your loans (both ways): any past its due date and not paid back costs the borrower credit, once. Also
+// returns them, newest first, for the page (with someone: only the ones between you two).
+async function loanCheck(env, me, { with: other }) {
+  const [prof] = await fsGetMany(env, [`users/${me.name}`]);
+  mine(prof, me);
+  const [mineOut, mineIn] = await Promise.all([fsQuery(env, 'loans', [['from', me.name]]), fsQuery(env, 'loans', [['to', me.name]])]);
+  const all = [...mineOut, ...mineIn], now = Date.now();
+  let next = null;
+  for (const l of all) {
+    const d = l.data;
+    if (d.status === 'active' && !d.late && now > (d.dueAt || 0)) {
+      const w = loanWeight(Number(d.amount) || 0);
+      const done = await fsCommit(env, [
+        loanUpdate(env, l.id, { late: true }, l.updateTime),
+        profileTransform(env, d.to, [{ fieldPath: 'credit', increment: enc(-2 * w) }]),
+      ]);
+      if (done) d.late = true;
+    }
+    if (d.status === 'active' && now <= (d.dueAt || 0) && (next === null || d.dueAt < next)) next = d.dueAt;
+  }
+  // the soonest due date still to come, so the app knows when to ask again
+  const want = next === null ? null : next;
+  if ((prof.data.loanNext || null) !== want) {
+    await fsCommit(env, [{ update: { name: docName(env, `users/${me.name}`), fields: want === null ? {} : { loanNext: enc(want) } }, updateMask: { fieldPaths: ['loanNext'] } }]).catch(() => null);
+  }
+  const shown = all.filter(l => !other || l.data.from === other || l.data.to === other).map(loanShown).sort((a, b) => b.at - a.at).slice(0, 40);
+  return { ok: true, loans: shown };
 }

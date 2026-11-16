@@ -29,7 +29,8 @@ let live = 0;           // goes up whenever the page changes, so animations from
 const recent = {};      // game id -> last results, newest first
 const casinoRec = () => (typeof myProfile !== 'undefined' && myProfile && myProfile.casino && typeof myProfile.casino === 'object' ? myProfile.casino : {});
 const gamesLeft = () => { const c = casinoRec(); return DAY_GAMES - (c.day === utcDay() ? Math.max(0, Number(c.n) || 0) : 0); };
-const balance = () => (typeof myProfile !== 'undefined' && myProfile ? Math.floor(myProfile.orbs || 0) : 0);
+const infinite = () => typeof myProfile !== 'undefined' && !!myProfile && myProfile.infOrbs === true;   // infinite Orbs (v4.64)
+const balance = () => (infinite() ? Infinity : typeof myProfile !== 'undefined' && myProfile ? Math.floor(myProfile.orbs || 0) : 0);
 
 // ---------- talking to the server ----------
 async function call(game, action, body) {
@@ -112,7 +113,7 @@ function shell() {
 }
 function showTop() {
   if (!el('cz-bal')) return;
-  el('cz-bal').textContent = fmt(balance());
+  el('cz-bal').textContent = infinite() ? 'Inf' : fmt(balance());
   const n = gamesLeft();
   el('cz-left').textContent = n > 0 ? `${n} game${n === 1 ? '' : 's'} left today` : 'No games left today. More after midnight UTC.';
   showOpenNote();
