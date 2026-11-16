@@ -81,6 +81,10 @@ Other sites on the Firebase project (Gavinperri docs) stay on Firebase.
 - [x] 003_users.sql: profiles, meta, private notes, mentions (mentions wait for servers)
 - [x] rules2.test.js runs on it: tests/r2-ported.mjs (made by make-r2-ported.js) through tests/r2compat.mjs.
       2026-11-15: 165 pass, 2 fail (mentions), 451 wait for collections not ported yet
-- [ ] Servers, channels, categories, threads, messages (most of the waiting tests)
+- [x] 004_servers.sql + 005_messages.sql: servers, channels, categories, threads, slowmode stamps, server cards,
+      channel and thread messages, mentions. 2026-11-16: 349 pass, 0 fail, 269 wait (Realtime 61, DMs 45, devices 26,
+      codes 18, banned IPs 12, login codes 10, groups 9, loans 9, config 8, orb days 7, ips 7...)
+- Notes: only a server's first 8 roles count, like Firestore (could be lifted later); typing docs are left for
+  Realtime; fx_commit lets the row it writes through the read policies; empty lists are checked with a sample row.
 - [ ] DMs and groups, codes, devices and networks, the staff-published collections, the rest
 - [ ] Realtime tests (the old Realtime Database section waits on these)
