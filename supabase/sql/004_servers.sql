@@ -314,7 +314,7 @@ create policy threads_read on public.threads for select to authenticated
   using (fx.in_server((select fx.who()), fx.srv(server_id)) or fx.is_writing('threads', array[server_id, id]));
 create policy slow_read on public.channel_slow for select to authenticated
   using (fx.is_who((select fx.who()), id) or fx.is_writing('channel_slow', array[server_id, channel_id, id]));
-create policy cards_read on public.server_cards for select to authenticated using (true);
+create policy cards_read on public.server_cards for select to authenticated using (fx.signed_in());
 
 do $$
 declare t text;

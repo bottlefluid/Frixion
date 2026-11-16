@@ -105,10 +105,10 @@ $$;
 -- A new profile belongs to the sign-in making it (one per sign-in), with no staff powers, bans or extra Orbs, no Shop
 -- items, no game time or gifts, and plain colors only.
 create or replace function fx.user_create_ok(username text, d jsonb) returns boolean language sql stable set search_path = '' as $$
-  select auth.uid() is not null
-     and not exists (select 1 from public.accounts a where a.id = auth.uid()::text)
+  select fx.sub() is not null
+     and not exists (select 1 from public.accounts a where a.id = fx.sub())
      and fx.str(d->'username') = username
-     and fx.str(d->'authUid') = auth.uid()::text
+     and fx.str(d->'authUid') = fx.sub()
      and not (fx.keys(d) && array['password', 'owner', 'coowner', 'terminated', 'redirectUrl', 'redirectNonce', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker', 'casino', 'infOrbs', 'bannerImage', 'customRank', 'credit', 'loanWith', 'loanNext', 'staffBadges'])
      and coalesce(d->'op', 'false'::jsonb) = 'false'::jsonb
      and coalesce(d->'banned', 'false'::jsonb) = 'false'::jsonb
@@ -178,7 +178,7 @@ end $$;
 
 -- ---------- policies ----------
 alter table public.users enable row level security;
-create policy users_read on public.users for select to authenticated using (true);           -- anyone signed in
+create policy users_read on public.users for select to authenticated using (fx.signed_in());   -- anyone signed in
 create policy users_insert on public.users for insert to authenticated with check (true);    -- (the trigger decides)
 create policy users_update on public.users for update to authenticated using (true) with check (true);
 create policy users_delete on public.users for delete to authenticated using (true);

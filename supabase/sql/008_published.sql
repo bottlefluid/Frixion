@@ -42,7 +42,7 @@ declare t text;
 begin
   foreach t in array array['config', 'custom_emojis', 'stickers', 'shop_decorations', 'shop_themes', 'shop_nameplates', 'shop_banners',
                            'shop_profile_effects', 'shop_profile_frames', 'shop_badges', 'garden_seeds', 'garden_sprinklers', 'garden_pets'] loop
-    execute format('create policy %I on public.%I for select to authenticated using (true)', t || '_read', t);
+    execute format('create policy %I on public.%I for select to authenticated using (fx.signed_in())', t || '_read', t);
     call fx.write_policies(t);
     execute format('create or replace trigger rules before insert or update or delete on public.%I for each row execute function fx.published_rules()', t);
   end loop;
@@ -101,10 +101,10 @@ begin
   if not coalesce(ok, false) then raise exception 'permission denied' using errcode = '42501'; end if;
   return coalesce(new, old);
 end $$;
-create policy rng_saves_read on public.rng_saves for select to authenticated using (true);
+create policy rng_saves_read on public.rng_saves for select to authenticated using (fx.signed_in());
 call fx.write_policies('rng_saves');
 create or replace trigger rules before insert or update or delete on public.rng_saves for each row execute function fx.game_saves_rules();
-create policy sac_saves_read on public.sac_saves for select to authenticated using (true);
+create policy sac_saves_read on public.sac_saves for select to authenticated using (fx.signed_in());
 call fx.write_policies('sac_saves');
 create or replace trigger rules before insert or update or delete on public.sac_saves for each row execute function fx.game_saves_rules();
 -- Overcontrol RNG codes: anyone signed in fetches one by name (fx_get) and counts a use; the Owner and Co-Owners list,
@@ -114,7 +114,7 @@ declare ok boolean;
 begin
   if fx.trusted() then return coalesce(new, old); end if;
   ok := fx.is_owner_level(fx.who())
-        or (tg_op = 'UPDATE' and auth.uid() is not null and fx.changed(old.data, new.data) <@ array['uses']
+        or (tg_op = 'UPDATE' and fx.signed_in() and fx.changed(old.data, new.data) <@ array['uses']
             and coalesce(fx.num(coalesce(new.data->'uses', '0'::jsonb)) = coalesce(fx.num(old.data->'uses'), 0) + 1, false));
   if not coalesce(ok, false) then raise exception 'permission denied' using errcode = '42501'; end if;
   return coalesce(new, old);

@@ -5,7 +5,7 @@
 // - query is allowed if the person sees every row the query matches (Firestore refuses a list that could include
 //   something you can't read; row level security would quietly leave it out, so seeing fewer counts as refused).
 // - A test that touches a collection that isn't ported yet counts as "waiting", not as a pass or a failure.
-import { makeDb, as, uidOf as uuidOf } from './harness.mjs';
+import { makeDb, as, uidOf as uuidOf, FIREBASE } from './harness.mjs';
 
 export const db = await makeDb();
 export const uidOf = uuidOf;
@@ -134,7 +134,7 @@ async function probe(who, rt, ids, where, sql, params) {
       [...keys, JSON.stringify(data)]);
     if (who) {
       await db.exec('set local role authenticated');
-      await db.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: uidOf(who), role: 'authenticated' })]);
+      await db.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: uidOf(who), role: 'authenticated', ...FIREBASE })]);
     } else await db.exec('set local role anon');
     const n = (await db.query(sql, params)).rows[0].n;
     return { ok: n === 1, status: n === 1 ? 200 : 403, text: n === 1 ? '' : 'the sample row was hidden' };
@@ -145,15 +145,18 @@ async function probe(who, rt, ids, where, sql, params) {
   }
 }
 
-// The Realtime Database moves to Supabase Realtime; its tests get rewritten for that, so these wait.
-const rtWait = async () => ({ ok: false, status: 0, text: 'no table for the Realtime Database (moving to Realtime)' });
-export const rtPut = rtWait, rtDel = rtWait, rtGet = rtWait;
+// The Realtime Database stays on Firebase, with sign-in (2026-11-16): rules2.test.js keeps testing it on the Firebase
+// emulators, so here those checks are only counted.
+const RTDB_STAYS = 'stays on Firebase (Realtime Database)';
+const rtStays = async () => ({ ok: false, status: 0, text: RTDB_STAYS });
+export const rtPut = rtStays, rtDel = rtStays, rtGet = rtStays;
 
 // ---------- the runner, as in rules2 ----------
-let pass = 0, fail = 0, waiting = 0;
+let pass = 0, fail = 0, waiting = 0, onFirebase = 0;
 const waitingBy = {};
 export async function expect(label, want, p) {
   const r = await p;
+  if (r.text === RTDB_STAYS) { onFirebase++; return; }
   const m = /no table for ([^\s:]+)/.exec(r.text || '');
   if (m) { waiting++; waitingBy[m[1]] = (waitingBy[m[1]] || 0) + 1; if (process.env.VERBOSE) console.log('  wait  ' + label); return; }
   const got = r.ok ? 'allow' : 'deny';
@@ -165,7 +168,7 @@ export const daysAgo = d => new Date(Date.now() - d * 86400000);
 export const section = s => console.log('\n' + s);
 export function seedMode(on) { seeding = on; }
 export function summary() {
-  console.log(`\n${pass} passed, ${fail} failed, ${waiting} waiting for collections not ported yet`);
+  console.log(`\n${pass} passed, ${fail} failed, ${waiting} waiting for collections not ported yet, ${onFirebase} Realtime Database checks that stay on Firebase`);
   const top = Object.entries(waitingBy).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => `${k} ${n}`).join(', ');
   if (top) console.log('waiting on: ' + top);
   return fail;

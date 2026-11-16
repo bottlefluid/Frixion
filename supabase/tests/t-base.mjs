@@ -55,6 +55,13 @@ check('staff checks: Mod staff, not owner level; Co owner level; only Owner1 is 
   && (await as(db, 'Co', 'select fx.is_the_owner(fx.who()) c')).rows[0].c === false
   && (await as(db, 'Owner1', 'select fx.is_the_owner(fx.who()) c')).rows[0].c === true);
 
+section('Tokens: only Firebase sign-ins for Frixion count');
+check('a Firebase token: fx.sub() is its sign-in id', (await as(db, 'Alice', 'select fx.sub() s')).rows[0].s === uidOf('Alice'));
+w = (await as(db, { supabase: 'Mod' }, 'select (fx.who()).*')).rows[0];
+check('a Supabase-issued token with Mod\'s id: nobody (no name, not ok, no rank)', w.name === null && w.ok === false && w.rank === 0, w);
+await sees('...it reads no profiles', as(db, { supabase: 'Mod' }, 'select id from public.users'), 0);
+await deny('...and can\'t make an account row', as(db, { supabase: 'Bob2' }, 'insert into public.accounts (id, data) values ($1, $2)', [uidOf('Bob2'), { username: 'Bob', at: 1 }]));
+
 section('List helpers');
 const q = async (sql, p) => (await db.query(sql, p)).rows[0].v;
 check('only_added: [a] -> [a, b] added b', await q('select fx.only_added($1, $2, $3, $4) v', [{ f: ['a'] }, { f: ['b', 'a'] }, 'f', 'b']) === true);

@@ -34,7 +34,7 @@ begin
     when 'accounts' then m.ok and m.rank >= 1
     when 'orb_days' then m.ok and (m.name = ids[1] or m.rank >= 1)
     when 'eggs' then m.ok and (m.name = ids[1] or m.rank >= 1)
-    when 'rng_codes' then auth.uid() is not null
+    when 'rng_codes' then fx.signed_in()
     else false end, false);
 end $$;
 create or replace function public.fx_get(path text) returns jsonb language plpgsql set search_path = '' as $$
@@ -60,7 +60,7 @@ grant execute on function public.fx_get(text) to anon, authenticated, service_ro
 
 -- accounts: Firestore lets nobody list them; you read your own, staff look one up by name (fx_get)
 drop policy if exists accounts_read on public.accounts;
-create policy accounts_read on public.accounts for select to authenticated using (id = auth.uid()::text);
+create policy accounts_read on public.accounts for select to authenticated using (id = fx.sub());
 
 -- ---------- codes ----------
 -- A Premium code someone buys, in the same batch that takes 1,400 of their Orbs (buyPremiumCode()). Checked at the end
@@ -158,7 +158,7 @@ create policy orb_days_list on public.orb_days for select to authenticated using
 create policy eggs_list on public.eggs for select to authenticated using (fx.is_staff((select fx.who())));
 create policy loans_read on public.loans for select to authenticated
   using ((select fx.who()).ok and (fx.str(data->'from') = (select fx.who()).name or fx.str(data->'to') = (select fx.who()).name or (select fx.who()).rank >= 1));
-create policy prices_read on public.shop_prices for select to authenticated using (true);
+create policy prices_read on public.shop_prices for select to authenticated using (fx.signed_in());
 create policy banned_hw_list on public.banned_hw for select to authenticated using (fx.is_the_owner((select fx.who())) or fx.is_writing('banned_hw', array[id]));
 create policy devices_list on public.devices for select to authenticated
   using (((select fx.who()).ok and ((select fx.who()).rank = 3 or coalesce((select fx.who()).name = any(fx.set_of(data, 'accounts')), false)))

@@ -32,7 +32,7 @@ create table if not exists public.users (
 
 -- accounts/{sign-in id}: which Frixion account a sign-in is. Made once, never changed (rules: accounts).
 create table if not exists public.accounts (
-  id text primary key,                       -- the Supabase sign-in id (auth.uid()), as text
+  id text primary key,                       -- the Firebase sign-in id (fx.sub())
   data jsonb not null,                       -- { username, at }
   created_at timestamptz not null default now()
 );
@@ -52,6 +52,13 @@ create or replace function fx.user_data(name text) returns jsonb language sql st
 $$;
 
 -- ---------- who is asking (rules: signedIn, rankOf, who, isStaff, isOwnerLevel, isTheOwner, canPost, active) ----------
+-- Sign-in stays on Firebase: Supabase checks Firebase's token (Authentication > Third-Party Auth, project liquidalt)
+-- and passes its claims on. fx.sub() is the Firebase sign-in id, only for a token Firebase issued for Frixion's
+-- project: a token from Supabase's own sign-in (which Frixion doesn't use) counts as nobody.
+create or replace function fx.sub() returns text language sql stable as $$
+  select case when auth.jwt()->>'iss' = 'https://securetoken.google.com/liquidalt' and auth.jwt()->>'aud' = 'liquidalt'
+              then nullif(auth.jwt()->>'sub', '') end
+$$;
 
 -- Owner 3 > Co-Owner 2 > Admin 1 > everyone 0, the same order as platformRank() in script.js.
 create or replace function fx.rank_of(u jsonb) returns int language sql immutable as $$
@@ -63,15 +70,15 @@ $$;
 create type fx.person as (name text, ok boolean, rank int, u jsonb);
 create or replace function fx.who() returns fx.person language sql stable security definer set search_path = '' as $$
   select a.data->>'username',
-         coalesce(auth.uid() is not null and (p.data->>'authUid') = auth.uid()::text, false),
+         coalesce(fx.sub() is not null and (p.data->>'authUid') = fx.sub(), false),
          coalesce(fx.rank_of(p.data), 0),
          coalesce(p.data, '{}'::jsonb)
   from (select 1) one
-  left join public.accounts a on a.id = auth.uid()::text
+  left join public.accounts a on a.id = fx.sub()
   left join public.users p on p.id = a.data->>'username'
 $$;
 
-create or replace function fx.signed_in() returns boolean language sql stable as $$ select auth.uid() is not null $$;
+create or replace function fx.signed_in() returns boolean language sql stable as $$ select fx.sub() is not null $$;
 create or replace function fx.is_who(m fx.person, name text) returns boolean language sql immutable as $$ select m.ok and m.name = name $$;
 create or replace function fx.is_staff(m fx.person) returns boolean language sql immutable as $$ select m.ok and m.rank >= 1 $$;
 create or replace function fx.is_owner_level(m fx.person) returns boolean language sql immutable as $$ select m.ok and m.rank >= 2 $$;
@@ -124,15 +131,15 @@ alter table public.accounts enable row level security;
 
 -- read: your own, or staff
 create policy accounts_read on public.accounts for select to authenticated
-  using (id = auth.uid()::text or fx.is_staff((select fx.who())));
+  using (id = fx.sub() or fx.is_staff((select fx.who())));
 
 -- create: your own sign-in only, just {username, at}, for a profile that names this sign-in back
 create policy accounts_create on public.accounts for insert to authenticated
   with check (
-    id = auth.uid()::text
+    id = fx.sub()
     and (select array_agg(k) from jsonb_object_keys(data) k) <@ array['username', 'at']
     and jsonb_typeof(data->'username') = 'string'
-    and (fx.user_data(data->>'username')->>'authUid') = auth.uid()::text
+    and (fx.user_data(data->>'username')->>'authUid') = fx.sub()
   );
 -- no update or delete policies: nobody changes or removes an account row (the server's secret key still can)
 grant select, insert on public.accounts to authenticated;

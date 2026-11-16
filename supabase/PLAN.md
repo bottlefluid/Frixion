@@ -1,40 +1,49 @@
-# Moving Frixion from Firebase to Supabase
+# Moving Frixion's database from Firestore to Supabase
 
 Branch `supabase` (folder D:\Downloads\Frixion-supabase). Nothing here reaches the live site until switch day, when
 this branch is merged into main.
+
+## What moves, what stays (decided 2026-11-16)
+
+- **Firestore moves to Supabase (Postgres).** That's all the data (profiles, servers, messages, DMs, the Shop, the
+  Casino, codes...) and it's what ran out of its daily free limit.
+- **Sign-in stays on Firebase Authentication.** Supabase accepts Firebase's sign-in tokens (Authentication >
+  Third-Party Auth, project liquidalt), so accounts, passwords and one-time passwords stay exactly as they are and
+  nothing about them has to be moved. Every user's token needs the claim `role: authenticated` (the server's
+  ensureClaims adds it next to `n` and `r`). Supabase's own sign-in isn't used, and a token from it counts as nobody.
+- **The Realtime Database stays on Firebase** (online status, DM and group typing through typingTo, the Overcontrol
+  RNG lobby), with database.rules.json as it is. It isn't what ran out, and the RNG lobby's position updates would use
+  up Supabase's free 2 million live messages a month within hours.
+- Other sites on the Firebase project (Gavinperri docs) stay on Firebase.
 
 ## The approach
 
 Keep the data shaped the way Frixion already uses it, so the 336 database calls in script.js mostly stay as they are:
 
 - **One table per collection**, keyed the same way (users by username, servers by their id). Each row has its id,
-  the ids of its parents (a message knows its server and channel), a few real columns for things Frixion searches or
-  sorts by (createdAt, uid, members), and `data` (jsonb) holding the document as it is today.
-- Every write goes through `public.fx_commit(writes)` (002_commit.sql): Firestore-commit-shaped, one transaction, as the
-  person asking. Checks that compare a batch's end with its start (the rules' getAfter) are deferred triggers that
-  read `fx.before(path)`. Writes from the server or the database's own functions skip the rules (fx.trusted()).
+  the ids of its parents (a message knows its server and channel), and `data` (jsonb) holding the document as it is
+  today. Timestamps inside `data` are {"$t": milliseconds}.
+- **Writes** all go through `public.fx_commit(writes)` (002_commit.sql): Firestore-commit-shaped, one transaction, as
+  the person asking, with transforms and preconditions. Checks that compare a batch's end with its start (the rules'
+  getAfter) are deferred triggers reading `fx.before(path)`. Writes from the server or the database's own functions
+  skip the rules (fx.trusted()).
+- **Reads:** one document through `public.fx_get(path)` (Firestore's "get" rules, including the few that let more
+  people fetch one document than list them); lists and live listeners straight from the tables, whose read policies
+  hold Firestore's "list" rules.
+- **Security, ported rule by rule:** read rules are row level security policies; write rules are triggers that see
+  the old and new row like `resource` and `request.resource`. Each function in firestore.rules (selfEdit, staffEdit,
+  economyOk, statsOk, plainColors...) is a SQL function with the same name and checks. Who is asking: fx.sub(), the
+  Firebase token's sign-in id, only for tokens issued for liquidalt.
 - **A small adapter in the site** (`fdb`) with the calls Frixion uses now: collection/doc, get/set/update/delete/add,
-  where/orderBy/limit, onSnapshot, batch, runTransaction, and FieldValue increment, arrayUnion, arrayRemove,
-  serverTimestamp and delete. It turns them into Supabase calls. Transforms (increment and so on) run inside the
-  database in one statement, so two people can't overwrite each other.
-- **Security, ported rule by rule:** who may read a collection becomes a row level security (RLS) policy; what a
-  write may change becomes a BEFORE trigger, which sees the old and the new row just like Firestore's `resource` and
-  `request.resource`. Each function in firestore.rules (selfEdit, staffEdit, economyOk, statsOk, plainColors...)
-  becomes a SQL function with the same name and the same checks. All 764 tests in rules2.test.js are ported case for
-  case and run against it, first locally, then on the real project.
+  where/orderBy/limit, onSnapshot, batch, runTransaction, FieldValue increment/arrayUnion/arrayRemove/
+  serverTimestamp/delete. Gets go to fx_get, writes to fx_commit, listeners to Postgres Changes. supabase-js gets the
+  Firebase token through its accessToken option.
 - **Server routes** (functions/api: Shop, Casino, eggs, loans, codes, banners, push, the Discord bridge) keep running
-  on Cloudflare but call Postgres functions with the secret key. Money things become one database transaction each
-  (no more read, check, retry loops).
-- **Sign-in:** Supabase Auth with the same made-up emails (username in hex at u.frixionbeta.pages.dev). Old passwords
-  keep working: the first login checks them against Firebase's saved hash once, then Supabase stores them. The
-  username claim (`n`) comes from a token hook. One-time passwords become server-made login links. No Google sign-in:
-  Frixion removed it on 2026-11-16 (main 3cc73b8); an account that only had Google sets a password first.
-- **Realtime:** listeners become Postgres Changes subscriptions; online status becomes Realtime Presence; typing dots
-  (Firestore typing docs and RTDB typingTo) become Broadcast, which writes nothing to the database; the Overcontrol
-  RNG lobby (RTDB ocrng/*) becomes Broadcast channels, plus small tables for what has to survive a reload.
+  on Cloudflare but write with fx_commit and the secret key.
 
-**Can't be the same:** App Check (Supabase has none; the policies are the whole wall, plus a captcha on sign-up and
-login and rate limits); Firestore's offline copy (rebuilt by hand with the browser's storage).
+**Can't be the same:** App Check (Supabase has none; the policies are the whole wall); Firestore's offline copy
+(rebuilt by hand with the browser's storage). Watch: Supabase's free plan counts live updates (2 million a month)
+and data sent out (5 GB + 5 GB cached a month); over either means restrictions until the next month.
 
 ## Tables
 
@@ -42,52 +51,36 @@ login and rate limits); Firestore's offline copy (rebuilt by hand with the brows
 | --- | --- |
 | users/{username} | users |
 | users/{u}/mentions, /meta, /privateNotes | user_mentions, user_meta, user_notes |
-| accounts/{authUid} | accounts |
+| accounts/{authUid} | accounts (keyed by the Firebase sign-in id, as now) |
 | servers/{sid} | servers |
 | servers/{sid}/channels, /categories, /threads | channels, categories, threads |
-| servers/{sid}/channels/{cid}/messages | channel_messages |
-| servers/{sid}/threads/{tid}/messages | thread_messages |
-| servers/{sid}/channels/{cid}/slow | channel_slow |
-| dms/{id}, dms/{id}/messages | dms, dm_messages |
-| groupDMs/{id}, groupDMs/{id}/messages | group_dms, group_messages |
-| */typing (all four) | none: Realtime Broadcast |
-| serverCards, discordLinks, config, site | server_cards, discord_links, config, site |
-| customEmojis, stickers, shopDecorations, shopThemes, shopNameplates, shopBanners, shopProfileEffects, shopProfileFrames, shopBadges, gardenSeeds, gardenSprinklers, gardenPets | one table each (custom_emojis, stickers, shop_decorations...), made in a loop with the same rule: anyone signed in reads, staff write |
+| servers/{sid}/channels/{cid}/messages, /slow, /typing | channel_messages, channel_slow, channel_typing |
+| servers/{sid}/threads/{tid}/messages, /typing | thread_messages, thread_typing |
+| dms/{id}, its messages, its typing | dms, dm_messages, dm_typing |
+| groupDMs/{id}, its messages, its typing | group_dms, group_messages, group_typing |
+| serverCards, discordLinks, config | server_cards, discord_links, config |
+| customEmojis, stickers, shopDecorations, shopThemes, shopNameplates, shopBanners, shopProfileEffects, shopProfileFrames, shopBadges, gardenSeeds, gardenSprinklers, gardenPets | one table each (custom_emojis, stickers, shop_decorations...): anyone signed in reads, staff write |
 | shopPrices | shop_prices |
 | redeemCodes, loginCodes, rngCodes | redeem_codes, login_codes, rng_codes |
 | rngSaves, sacSaves, orbDays, eggs, loans | rng_saves, sac_saves, orb_days, eggs, loans |
 | devices, ips, bannedIps, bannedHw, pushSubs | devices, ips, banned_ips, banned_hw, push_subs |
 
-Realtime Database: presence -> Presence; typingTo -> Broadcast; ocrng/* (roster, session, cmd fights, sweeps) ->
-Broadcast channels and small tables.
-
-Other sites on the Firebase project (Gavinperri docs) stay on Firebase.
-
 ## Phases
 
-1. Tables, policies, triggers and the ported tests, run locally (PGlite) until all pass.
+1. Tables, policies, triggers and the ported tests, run locally (PGlite) until all pass. **Done.**
 2. The adapter and the site code, tested against a Supabase project before anyone uses it.
-3. Server routes and the Discord timer.
-4. Copying data and accounts (reads count against Firebase's 50,000 a day, so spread over days).
-5. Switch day: a short read-only window, a last copy, merge into main, push. Firebase stays as a backup.
+3. Server routes, the role claim, and the Discord timer.
+4. Copying the data (reads count against Firebase's 50,000 a day, so spread over days).
+5. Switch day: a short read-only window, a last copy, merge into main, push. Firestore stays as a backup.
 
 ## Status
 
-- [x] Branch and plan (2026-11-15)
-- [x] Supabase project made (https://qhiedomoxvmhamjflysa.supabase.co, East US)
-- [x] Test tool: PGlite 0.5.12 on this PC, with Supabase's roles and auth.uid() (tests live outside the repo for now)
-- [x] 001_base.sql: helpers and accounts (29 tests pass)
-- [x] 002_commit.sql: public.fx_commit, routes, transforms, preconditions, batch snapshots (49 tests pass)
-- [x] 003_users.sql: profiles, meta, private notes, mentions (mentions wait for servers)
-- [x] rules2.test.js runs on it: tests/r2-ported.mjs (made by make-r2-ported.js) through tests/r2compat.mjs.
-      2026-11-15: 165 pass, 2 fail (mentions), 451 wait for collections not ported yet
-- [x] 004_servers.sql + 005_messages.sql: servers, channels, categories, threads, slowmode stamps, server cards,
-      channel and thread messages, mentions. 2026-11-16: 349 pass, 0 fail, 269 wait (Realtime 61, DMs 45, devices 26,
-      codes 18, banned IPs 12, login codes 10, groups 9, loans 9, config 8, orb days 7, ips 7...)
-- Notes: only a server's first 8 roles count, like Firestore (could be lifted later); typing docs are left for
-  Realtime; fx_commit lets the row it writes through the read policies; empty lists are checked with a sample row.
-- [x] 006_dms.sql, 007_records.sql, 008_published.sql: DMs and groups, codes, Orbs records, loans, prices, devices,
-      bans, one-time passwords, config and the staff-published collections, push, the Discord link list, game saves.
-      public.fx_get reads one document with Firestore's "get" exceptions (the tables hold the "list" rules).
-      2026-11-16: 550 pass, 0 fail; 68 wait (Realtime Database 61, typing 7: they move to Supabase Realtime)
-- [ ] Realtime tests (the old Realtime Database section waits on these)
+- [x] Branch and plan (2026-11-15); Supabase project https://qhiedomoxvmhamjflysa.supabase.co (East US)
+- [x] Tests on this PC: PGlite 0.5.12 with Supabase's roles and JWT claims (supabase/tests/harness.mjs)
+- [x] 001-009: every Firestore collection, with fx_commit and fx_get. On 2026-11-16, with Firebase tokens:
+      tests/t-base.mjs 36/36, t-commit.mjs 49/49, and rules2.test.js ported (tests/r2-ported.mjs, made by
+      make-r2-ported.js, through r2compat.mjs): 557 pass, 0 fail; its 61 Realtime Database checks stay on Firebase.
+- Notes: only a server's first 8 roles count, like Firestore (could be lifted later); fx_commit lets the row it writes
+  through the read policies (Firestore never needed read access to write); empty lists are checked with a sample row.
+- [ ] The user: Third-Party Auth > Firebase (liquidalt) in Supabase, and Supabase's own sign-ups off
+- [ ] Phase 2: the adapter

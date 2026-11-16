@@ -26,11 +26,12 @@ grant execute on all functions in schema auth to anon, authenticated, service_ro
 grant usage on schema public to anon, authenticated, service_role;
 `;
 
-// a stable made-up sign-in id per test name, shaped like a Supabase user id
-export const uidOf = name => {
-  const h = crypto.createHash('sha1').update('frixion-test:' + name).digest('hex');
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
-};
+// A made-up Firebase sign-in id per test name, as rules2.test.js makes them. Sign-in stays on Firebase: Supabase gets
+// Firebase's token (Third-Party Auth), so a test person carries Firebase's claims for the liquidalt project.
+export const uidOf = name => 'uid-' + String(name).toLowerCase();
+export const FIREBASE = { iss: 'https://securetoken.google.com/liquidalt', aud: 'liquidalt' };
+// (a token from Supabase's own sign-in, which Frixion doesn't use: it must count as nobody)
+export const SUPABASE_TOKEN = { iss: 'https://qhiedomoxvmhamjflysa.supabase.co/auth/v1', aud: 'authenticated' };
 
 export async function makeDb(files) {
   const db = new PGlite();
@@ -43,15 +44,18 @@ export async function makeDb(files) {
   return db;
 }
 
-// Runs one statement as someone: null = signed out (anon), 'server' = the secret key (service_role), or a test name
-// (signed in as uidOf(name)). Each call is its own transaction, so a refused one changes nothing.
+// Runs one statement as someone: null = signed out (anon), 'server' = the secret key (service_role), a test name
+// (signed in with Firebase as uidOf(name)), or { supabase: name } (a Supabase-issued token for that id). Each call is
+// its own transaction, so a refused one changes nothing.
 export async function as(db, who, sql, params = []) {
   await db.exec('begin');
   try {
     if (who === 'server') await db.exec('set local role service_role');
     else if (who) {
+      const name = typeof who === 'object' ? who.supabase : who;
+      const claims = { sub: uidOf(name), role: 'authenticated', ...(typeof who === 'object' ? SUPABASE_TOKEN : FIREBASE) };
       await db.exec('set local role authenticated');
-      await db.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: uidOf(who), role: 'authenticated' })]);
+      await db.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify(claims)]);
     } else await db.exec('set local role anon');
     const r = await db.query(sql, params);
     await db.exec('commit');
