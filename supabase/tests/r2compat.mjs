@@ -91,14 +91,10 @@ export const setDoc = (who, path, data, extra = {}) => commit(who, [write(path, 
 export const updateDoc = (who, path, data, extra = {}) => commit(who, [write(path, { set: data, merge: Object.keys(data), exists: true, ...extra })]);
 export const delDoc = (who, path) => commit(who, [write(path, { del: true })]);
 
+// One document, through public.fx_get like the site's doc.get(): allowed if it comes back, or doesn't exist.
 export async function getDoc(who, path) {
-  let rt;
-  try { rt = (await db.query('select tbl, cols, ids from fx.route($1)', [path])).rows[0]; }
-  catch (e) { return { ok: false, status: 400, text: e.message }; }
-  const where = rt.cols.map((c, i) => `"${c}" = $${i + 1}`).join(' and ');
-  const exists = (await db.query(`select 1 from public."${rt.tbl}" where ${where}`, rt.ids)).rows.length > 0;
-  const r = await as(db, who2(who), `select data from public."${rt.tbl}" where ${where}`, rt.ids);
-  return { ok: r.ok && (r.rows.length > 0 || !exists), status: r.ok ? 200 : 403, text: r.error || (r.ok && exists && !r.rows.length ? 'row hidden' : '') };
+  const r = await as(db, who2(who), 'select public.fx_get($1) r', [path]);
+  return { ok: r.ok, status: r.ok ? 200 : 403, text: r.error || '' };
 }
 
 const OPS = { EQUAL: '=', LESS_THAN: '<', LESS_THAN_OR_EQUAL: '<=', GREATER_THAN: '>', GREATER_THAN_OR_EQUAL: '>=', NOT_EQUAL: '<>' };

@@ -86,5 +86,8 @@ Other sites on the Firebase project (Gavinperri docs) stay on Firebase.
       codes 18, banned IPs 12, login codes 10, groups 9, loans 9, config 8, orb days 7, ips 7...)
 - Notes: only a server's first 8 roles count, like Firestore (could be lifted later); typing docs are left for
   Realtime; fx_commit lets the row it writes through the read policies; empty lists are checked with a sample row.
-- [ ] DMs and groups, codes, devices and networks, the staff-published collections, the rest
+- [x] 006_dms.sql, 007_records.sql, 008_published.sql: DMs and groups, codes, Orbs records, loans, prices, devices,
+      bans, one-time passwords, config and the staff-published collections, push, the Discord link list, game saves.
+      public.fx_get reads one document with Firestore's "get" exceptions (the tables hold the "list" rules).
+      2026-11-16: 550 pass, 0 fail; 68 wait (Realtime Database 61, typing 7: they move to Supabase Realtime)
 - [ ] Realtime tests (the old Realtime Database section waits on these)

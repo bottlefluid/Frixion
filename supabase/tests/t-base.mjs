@@ -24,7 +24,9 @@ await deny('Bob names a profile that doesn\'t exist', as(db, 'Bob', 'insert into
 await allow('Bob makes his own properly', as(db, 'Bob', 'insert into public.accounts (id, data) values ($1, $2)', [uidOf('Bob'), { username: 'Bob', at: 1 }]));
 await deny('Bob makes a second one', as(db, 'Bob', 'insert into public.accounts (id, data) values ($1, $2)', [uidOf('Bob'), { username: 'Bob', at: 2 }]));
 await sees('Alice reads the accounts table: only her own row', as(db, 'Alice', 'select id from public.accounts'), 1);
-await sees('Mod (staff) reads all of them', as(db, 'Mod', 'select id from public.accounts'), 8);
+await sees('Mod (staff) lists accounts: only his own, as in Firestore (nobody lists them)', as(db, 'Mod', 'select id from public.accounts'), 1);
+await allow("Mod looks up Alice's account by name (fx_get)", as(db, 'Mod', 'select public.fx_get($1) r', ['accounts/' + uidOf('Alice')]));
+await deny("Bob looks up Alice's account by name", as(db, 'Bob', 'select public.fx_get($1) r', ['accounts/' + uidOf('Alice')]));
 await deny('Alice changes her account row', as(db, 'Alice', 'update public.accounts set data = $1 where id = $2', [{ username: 'Mod', at: 1 }, uidOf('Alice')]));
 await deny('Alice deletes it', as(db, 'Alice', 'delete from public.accounts where id = $1', [uidOf('Alice')]));
 await deny('someone signed out reads accounts', as(db, null, 'select id from public.accounts'));
