@@ -95,7 +95,7 @@ service cloud.firestore {
       allow create: if signedIn() && !exists(acctPath())
         && request.resource.data.get('username', '') == username
         && request.resource.data.get('authUid', '') == request.auth.uid
-        && !request.resource.data.keys().hasAny(['password', 'owner', 'coowner', 'terminated', 'redirectUrl', 'redirectNonce', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker', 'casino'])
+        && !request.resource.data.keys().hasAny(['password', 'owner', 'coowner', 'terminated', 'redirectUrl', 'redirectNonce', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker', 'casino', 'infOrbs', 'bannerImage', 'customRank', 'credit', 'loanWith', 'loanNext'])
         && request.resource.data.get('op', false) == false
         && request.resource.data.get('banned', false) == false
         && request.resource.data.get('premiumUntil', null) == null
@@ -132,9 +132,11 @@ service cloud.firestore {
     // Your own profile: anything except your rank, sign-in, bans and mutes. A few staff-set fields may only be cleared.
     // cracker (v4.62) is the Cracker tag for finding every easter egg: only functions/api/admin/egg (or Co-Owners) set it.
     // casino (v4.63) is the Casino's record (games today, the game going on, totals): only functions/api/admin/casino.
+    // infOrbs (v4.64): infinite Orbs, given only by the Owner and Co-Owners (staffEdit; Admins can't).
     function selfEdit(m, k, username) {
       return m.name == username
-        && !k.hasAny(['authUid', 'owner', 'coowner', 'op', 'username', 'createdAt', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker', 'casino'])
+        && !k.hasAny(['authUid', 'owner', 'coowner', 'op', 'username', 'createdAt', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker', 'casino', 'infOrbs', 'customRank', 'credit', 'loanWith', 'loanNext'])
+        && (!k.hasAny(['bannerImage']) || !('bannerImage' in request.resource.data))   // a banner picture (v4.64) is paid for: you may only take yours off
         && (!k.hasAny(['banned', 'banReason', 'bannedUntil']) || clearingExpiredBan())
         && (!k.hasAny(['redirectUrl', 'redirectNonce']) || !request.resource.data.keys().hasAny(['redirectUrl', 'redirectNonce']))
         && (!k.hasAny(['terminated']) || !('terminated' in request.resource.data))
@@ -220,7 +222,7 @@ service cloud.firestore {
     }
 
     // ---------- things staff publish (the Shop, emoji, stickers, the word filter): for anyone signed in ----------
-    match /config/{docId}            { allow read: if signedIn(); allow write: if isStaff(who()); }
+    match /config/{docId}            { allow read: if signedIn(); allow write: if isStaff(who()) && (docId != 'ranks' || isOwnerLevel(who())); }   // config/ranks: the Owner and Co-Owners (v4.64)
     match /customEmojis/{id}         { allow read: if signedIn(); allow write: if isStaff(who()); }
     match /stickers/{id}             { allow read: if signedIn(); allow write: if isStaff(who()); }
     match /shopDecorations/{id}      { allow read: if signedIn(); allow write: if isStaff(who()); }
@@ -271,6 +273,12 @@ service cloud.firestore {
       allow list: if isStaff(who());
       allow write: if false;
     }
+    // Loans (v4.64): written only by functions/api/admin/loan. The lender and the borrower (and staff) can read one.
+    match /loans/{id} {
+      allow get, list: if loanReader(who());
+      allow write: if false;
+    }
+    function loanReader(m) { return m.ok && (resource.data.get('from', '') == m.name || resource.data.get('to', '') == m.name || m.rank >= 1); }
     // The prices of the Shop items built into script.js, which functions/api/admin/buy charges (syncShopPrices() keeps
     // them in step from the Owner's and Co-Owners' apps).
     match /shopPrices/{id} {
