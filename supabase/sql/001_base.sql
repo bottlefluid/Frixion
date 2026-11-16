@@ -8,6 +8,10 @@
 -- delete) and preconditions, all in one transaction, as the person asking, so the policies and triggers below apply.
 
 create schema if not exists fx;   -- helpers; not exposed through the Data API
+-- The project has "Automatically expose new tables" off, so nothing is reachable unless it's granted below, table by
+-- table. Policies call these helpers as the person asking, so they need to be able to run them.
+grant usage on schema fx to anon, authenticated, service_role;
+alter default privileges in schema fx grant execute on functions to anon, authenticated, service_role;
 
 -- The time of this request in milliseconds (Firestore's request.time.toMillis()). now() is fixed for the whole
 -- transaction, so every check in one commit sees the same time, like Firestore.
@@ -31,6 +35,20 @@ create table if not exists public.accounts (
   data jsonb not null,                       -- { username, at }
   created_at timestamptz not null default now()
 );
+
+-- ---------- reading fields the way the rules do ----------
+-- A missing field is "not set", never "unknown": SQL's null would otherwise make `not (banned and ...)` null instead
+-- of true. These two keep every check two-valued.
+create or replace function fx.is_true(j jsonb) returns boolean language sql immutable as $$ select coalesce(j = 'true'::jsonb, false) $$;
+-- a field's number, or null when it's missing, null or not a number
+create or replace function fx.num(j jsonb) returns numeric language sql immutable as $$
+  select case when jsonb_typeof(j) = 'number' then (j #>> '{}')::numeric end
+$$;
+-- Another document, read with the database's own rights (the rules' get(): it doesn't depend on what the person
+-- asking may read). Only the profile is needed this way so far.
+create or replace function fx.user_data(name text) returns jsonb language sql stable security definer set search_path = '' as $$
+  select data from public.users where id = name
+$$;
 
 -- ---------- who is asking (rules: signedIn, rankOf, who, isStaff, isOwnerLevel, isTheOwner, canPost, active) ----------
 
@@ -59,20 +77,21 @@ create or replace function fx.is_owner_level(m fx.person) returns boolean langua
 create or replace function fx.is_the_owner(m fx.person) returns boolean language sql immutable as $$ select m.ok and m.rank = 3 $$;
 
 -- Banned and muted accounts can still read, but can't post.
+-- banned right now: banned, with no end or an end still ahead
+create or replace function fx.banned_now(u jsonb) returns boolean language sql stable as $$
+  select fx.is_true(u->'banned') and coalesce(fx.num(u->'bannedUntil') > fx.now_ms(), true)
+$$;
 create or replace function fx.can_post(m fx.person) returns boolean language sql stable as $$
-  select not ((m.u->>'banned') = 'true' and (m.u->'bannedUntil' is null or jsonb_typeof(m.u->'bannedUntil') = 'null'
-                or (m.u->>'bannedUntil')::bigint > fx.now_ms()))
-     and (m.u->'mutedUntil' is null or jsonb_typeof(m.u->'mutedUntil') = 'null' or (m.u->>'mutedUntil')::numeric <= fx.now_ms())
+  select not fx.banned_now(m.u) and coalesce(fx.num(m.u->'mutedUntil') <= fx.now_ms(), true)
 $$;
 
 -- Purge perms (v4.59/v4.60): the Owner, and whoever the Owner gave /purge.
-create or replace function fx.purge_ok(m fx.person) returns boolean language sql immutable as $$ select (m.u->>'purgePerm') = 'true' $$;
+create or replace function fx.purge_ok(m fx.person) returns boolean language sql immutable as $$ select fx.is_true(m.u->'purgePerm') $$;
 create or replace function fx.purger(m fx.person) returns boolean language sql immutable as $$ select m.rank = 3 or fx.purge_ok(m) $$;
 
 -- Not banned from Frixion right now: a banned account sees nothing but its own profile (the ban screen).
 create or replace function fx.active(m fx.person) returns boolean language sql stable as $$
-  select m.ok and not ((m.u->>'banned') = 'true' and (m.u->'bannedUntil' is null or jsonb_typeof(m.u->'bannedUntil') = 'null'
-                         or (m.u->>'bannedUntil')::bigint > fx.now_ms()))
+  select m.ok and not fx.banned_now(m.u)
 $$;
 
 -- ---------- list helpers for triggers (rules: onlyAdded, onlyTakenOut, onlyRemoved) ----------
@@ -111,6 +130,10 @@ create policy accounts_create on public.accounts for insert to authenticated
     id = auth.uid()::text
     and (select array_agg(k) from jsonb_object_keys(data) k) <@ array['username', 'at']
     and jsonb_typeof(data->'username') = 'string'
-    and exists (select 1 from public.users p where p.id = data->>'username' and (p.data->>'authUid') = auth.uid()::text)
+    and (fx.user_data(data->>'username')->>'authUid') = auth.uid()::text
   );
 -- no update or delete policies: nobody changes or removes an account row (the server's secret key still can)
+grant select, insert on public.accounts to authenticated;
+grant all on public.accounts to service_role;
+-- (profiles get their policies and triggers in the users part; until then nobody but the server can read them)
+grant all on public.users to service_role;

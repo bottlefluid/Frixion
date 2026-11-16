@@ -10,6 +10,9 @@ Keep the data shaped the way Frixion already uses it, so the 336 database calls 
 - **One table per collection**, keyed the same way (users by username, servers by their id). Each row has its id,
   the ids of its parents (a message knows its server and channel), a few real columns for things Frixion searches or
   sorts by (createdAt, uid, members), and `data` (jsonb) holding the document as it is today.
+- Every write goes through `public.fx_commit(writes)` (002_commit.sql): Firestore-commit-shaped, one transaction, as the
+  person asking. Checks that compare a batch's end with its start (the rules' getAfter) are deferred triggers that
+  read `fx.before(path)`. Writes from the server or the database's own functions skip the rules (fx.trusted()).
 - **A small adapter in the site** (`fdb`) with the calls Frixion uses now: collection/doc, get/set/update/delete/add,
   where/orderBy/limit, onSnapshot, batch, runTransaction, and FieldValue increment, arrayUnion, arrayRemove,
   serverTimestamp and delete. It turns them into Supabase calls. Transforms (increment and so on) run inside the
@@ -49,7 +52,7 @@ login and rate limits); Firestore's offline copy (rebuilt by hand with the brows
 | groupDMs/{id}, groupDMs/{id}/messages | group_dms, group_messages |
 | */typing (all four) | none: Realtime Broadcast |
 | serverCards, discordLinks, config, site | server_cards, discord_links, config, site |
-| customEmojis, stickers, shopDecorations, shopThemes, shopNameplates, shopBanners, shopProfileEffects, shopProfileFrames, shopBadges, gardenSeeds, gardenSprinklers, gardenPets | staff_items (one table, `kind` = the collection; same rule for all: anyone signed in reads, staff write) |
+| customEmojis, stickers, shopDecorations, shopThemes, shopNameplates, shopBanners, shopProfileEffects, shopProfileFrames, shopBadges, gardenSeeds, gardenSprinklers, gardenPets | one table each (custom_emojis, stickers, shop_decorations...), made in a loop with the same rule: anyone signed in reads, staff write |
 | shopPrices | shop_prices |
 | redeemCodes, loginCodes, rngCodes | redeem_codes, login_codes, rng_codes |
 | rngSaves, sacSaves, orbDays, eggs, loans | rng_saves, sac_saves, orb_days, eggs, loans |
@@ -71,6 +74,10 @@ Other sites on the Firebase project (Gavinperri docs) stay on Firebase.
 ## Status
 
 - [x] Branch and plan (2026-11-15)
-- [ ] Supabase project made (the user)
-- [ ] Test tool (PGlite, waiting for the user's OK to download)
-- [ ] Phase 1
+- [x] Supabase project made (https://qhiedomoxvmhamjflysa.supabase.co, East US)
+- [x] Test tool: PGlite 0.5.12 on this PC, with Supabase's roles and auth.uid() (tests live outside the repo for now)
+- [x] 001_base.sql: helpers and accounts (29 tests pass)
+- [x] 002_commit.sql: public.fx_commit, routes, transforms, preconditions, batch snapshots (49 tests pass)
+- [ ] Profiles (users): read, create, selfEdit, staffEdit, friendEdit, economyOk, statsOk, plainColors
+- [ ] The other collections
+- [ ] Port all of rules2.test.js
