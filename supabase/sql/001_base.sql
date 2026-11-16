@@ -114,7 +114,8 @@ create or replace function fx.only_removed(old jsonb, new jsonb, f text) returns
 $$;
 -- Which top-level fields differ (rules: request.resource.data.diff(resource.data).affectedKeys())
 create or replace function fx.changed(old jsonb, new jsonb) returns text[] language sql immutable as $$
-  select coalesce(array(select k from (select jsonb_object_keys(coalesce(old, '{}')) k union select jsonb_object_keys(coalesce(new, '{}'))) ks
+  select coalesce(array(select k from (select jsonb_object_keys(case when jsonb_typeof(old) = 'object' then old else '{}'::jsonb end) k
+                                       union select jsonb_object_keys(case when jsonb_typeof(new) = 'object' then new else '{}'::jsonb end)) ks
                         where (old->k) is distinct from (new->k) order by k), '{}')
 $$;
 

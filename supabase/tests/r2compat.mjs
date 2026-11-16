@@ -119,8 +119,34 @@ export async function query(who, parentPath, collectionId, where) {
   }
   const sql = `select count(*)::int n from public."${rt.tbl}"` + (conds.length ? ' where ' + conds.join(' and ') : '');
   const all = (await db.query(sql, params)).rows[0].n;
+  if (all === 0 && who !== 'owner') return probe(who, rt, ids, where, sql, params);
   const r = await as(db, who2(who), sql, params);
   return { ok: r.ok && r.rows[0].n === all, status: r.ok ? 200 : 403, text: r.error || `saw ${r.ok ? r.rows[0].n : '?'} of ${all}` };
+}
+// An empty list: Firestore still refuses it when the rules would refuse what it could hold. So add one sample row
+// that matches the query (made by the database itself, no rules), see whether the person can read it, and undo it.
+async function probe(who, rt, ids, where, sql, params) {
+  let data = {};
+  if (where) {
+    const [field, op, value] = where, v = enc(op === 'ARRAY_CONTAINS' ? [value] : op === 'IN' ? value[0] : value);
+    data = field.split('.').reduceRight((acc, k) => ({ [k]: acc }), v);
+  }
+  const keys = [...ids, '__probe__'];
+  await db.exec('begin');
+  try {
+    await db.query(`insert into public."${rt.tbl}" (${rt.cols.map(c => `"${c}"`).join(', ')}, data) values (${keys.map((_, i) => `$${i + 1}`).join(', ')}, $${keys.length + 1})`,
+      [...keys, JSON.stringify(data)]);
+    if (who) {
+      await db.exec('set local role authenticated');
+      await db.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: uidOf(who), role: 'authenticated' })]);
+    } else await db.exec('set local role anon');
+    const n = (await db.query(sql, params)).rows[0].n;
+    return { ok: n === 1, status: n === 1 ? 200 : 403, text: n === 1 ? '' : 'the sample row was hidden' };
+  } catch (e) {
+    return { ok: false, status: 403, text: e.message };
+  } finally {
+    await db.exec('rollback');
+  }
 }
 
 // The Realtime Database moves to Supabase Realtime; its tests get rewritten for that, so these wait.
