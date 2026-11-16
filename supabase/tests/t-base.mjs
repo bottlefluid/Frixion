@@ -29,7 +29,8 @@ await deny('Alice changes her account row', as(db, 'Alice', 'update public.accou
 await deny('Alice deletes it', as(db, 'Alice', 'delete from public.accounts where id = $1', [uidOf('Alice')]));
 await deny('someone signed out reads accounts', as(db, null, 'select id from public.accounts'));
 await allow('the server (secret key) reads accounts', as(db, 'server', 'select id from public.accounts'));
-await deny('Alice reads profiles directly before the profile rules exist', as(db, 'Alice', 'select id from public.users'));
+await allow('Alice reads profiles (anyone signed in may, part 3)', as(db, 'Alice', 'select id from public.users'));
+await deny('someone signed out reads profiles', as(db, null, 'select id from public.users'));
 
 section('Ranks and bans');
 w = await who('Alice');
