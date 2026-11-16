@@ -411,6 +411,7 @@ const SHOP = {
   nameplates: ['ownedNameplates', 'equippedNameplate', 'shopNameplates'],
   profile_effects: ['ownedProfileEffects', 'equippedProfileEffect', 'shopProfileEffects'],
   profile_frames: ['ownedProfileFrames', 'equippedProfileFrame', 'shopProfileFrames'],
+  badges: ['ownedBadges', 'equippedBadge', 'shopBadges'],   // (v4.65: they all show on the profile; the equipped one doesn't matter)
   themes: ['ownedThemes', 'equippedTheme', 'shopThemes'],
   banners: ['ownedBanners', 'equippedBanner', 'shopBanners'],
   music: ['ownedMusic', 'equippedMusic', null],
@@ -514,6 +515,7 @@ const EGGS = {
   snake67: 'm', merge2048: 'v', typingegg: 'e', simon15: 'h', luckyrush: 'h', voidcrop: 'v', samegarden: 'h', lastegg: 'l',
   zerohero: 'm', onepointoh: 'e', triple: 'm', tenx: 'h', jackpot: 'e',   // v4.63: the Casino
   tricked: 'e', mazehalf: 'h', ontime: 'm', hideorbs: 'e',                // v4.64
+  badgefan: 'm', allbadges: 'h', fxwatch: 'm', slimepoke: 'e',           // v4.65: badges and drawn effects
   xyzzy: ['m', '7d76c6d11ed06a3e671afa826c4f88f4e8227fdef446cbd576a3428967e45af9'],
   codeb1: ['e', '4f3cd88dc035fd4d04dda074fd7ced1722751824644c1a27a700dfd5d06ba19e'],
   codeb2: ['e', 'c886bb737cc711b2dfcb069ea8179dc430661db13a38113ddf718b9098f653c7'],

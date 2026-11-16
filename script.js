@@ -289,6 +289,16 @@ const PROFILE_EFFECTS = [
   { id: 'matrix', name: 'Matrix', desc: 'Streams of green code raining down.', price: 650, cssClass: 'effect-matrix', animated: true },
   { id: 'shooting-stars', name: 'Shooting Stars', desc: 'Stars streaking across your profile.', price: 700, cssClass: 'effect-shooting-stars', animated: true, featured: true },
   { id: 'glitter', name: 'Glitter', desc: 'Multicolor glitter sparkling everywhere.', price: 450, cssClass: 'effect-glitter', animated: true },
+  // drawn ones (v4.65): an intro when your profile opens, then a loop that sits behind your text (FX_DRAW below)
+  { id: 'fx-aurora', name: 'Northern Lights', desc: 'Ribbons of green, blue and violet light unroll across the top and keep waving. Nice to watch for a while.', price: 3500, fx: 'aurora', animated: true, featured: true },
+  { id: 'fx-smoke', name: 'Smoke Bomb', desc: 'Smoke bursts up and fills the card, clears, then keeps curling along the bottom.', price: 2500, fx: 'smoke', animated: true, featured: true },
+  { id: 'fx-ooze', name: 'Toxic Ooze', desc: 'Green slime pours over the top, then hangs there dripping and bubbling. Don\'t poke it.', price: 2500, fx: 'ooze', animated: true },
+  { id: 'fx-grid', name: 'Neon Grid', desc: 'A glowing floor grid draws itself out and keeps rolling toward you.', price: 3000, fx: 'grid', animated: true, featured: true },
+  { id: 'fx-glitch', name: 'Glitch', desc: 'The card tears into colored slices, then slips now and then.', price: 2800, fx: 'glitch', animated: true },
+  { id: 'fx-static', name: 'Static Charge', desc: 'A bolt runs round the card, then little arcs crackle on the edge.', price: 2000, fx: 'static', animated: true },
+  { id: 'fx-nightsky', name: 'Night Sky', desc: 'Stars fly out from your picture and settle into a sky with a shooting star.', price: 2200, fx: 'nightsky', animated: true },
+  { id: 'fx-watercolor', name: 'Watercolor', desc: 'Soft blots of paint bloom one after another and slowly wander.', price: 1800, fx: 'watercolor', animated: true },
+  { id: 'fx-clouds', name: 'Cotton Clouds', desc: 'Puffy clouds float in from both sides and drift across the top.', price: 1500, fx: 'clouds', animated: true },
 ];
 let customProfileEffects = [];
 function profileEffectById(id) { return PROFILE_EFFECTS.find(d => d.id === id) || customProfileEffects.find(d => d.id === id) || null; }
@@ -303,6 +313,404 @@ const PROFILE_EFFECT_PARTICLES_HTML = Array.from({ length: 18 }, (_, i) => {
   const drift = (i % 2 ? 1 : -1) * (6 + ((i * 5) % 16));
   return `<span class="particle" style="left:${left}%;animation-delay:${delay}s;--s:${scale};--drift:${drift}px;"></span>`;
 }).join('');
+
+// ---------- Drawn profile effects (v4.65) ----------
+// The newer effects are drawn on a canvas instead of CSS particles. Each plays an intro when a profile opens, then
+// settles into a light loop at about 30 frames a second, and stops when the profile closes. They sit under the
+// profile's text and over its background: the canvas is below .profile-main, and .fx-on makes the panel a little
+// see-through. A few ("front") cover the whole card during their intro, then drop behind the text. Epilepsy mode and
+// "reduce motion" get one still picture instead, and none of them flash the whole card in any mode.
+function fxRand(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+const fxStill = () => epilepsyMode() || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const fxClamp = x => Math.min(1, Math.max(0, x));
+const fxEase = x => 1 - Math.pow(1 - fxClamp(x), 3);
+const fxRGBA = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+// where the profile picture sits on the card (for intros that start from it), kept inside small Shop previews
+const fxAv = (w, h) => [Math.min(66, w * .2), Math.min(96, h * .4)];
+// Soft round blobs and fading strips, drawn once and stamped many times (much cheaper than a new gradient each frame)
+const fxSprites = {};
+function fxBlob(c, size) {
+  const key = 'b' + c.join() + ':' + size;
+  if (fxSprites[key]) return fxSprites[key];
+  const s = document.createElement('canvas'), r = size / 2;
+  s.width = s.height = size;
+  const g = s.getContext('2d'), gr = g.createRadialGradient(r, r, 0, r, r, r);
+  gr.addColorStop(0, fxRGBA(c, 1)); gr.addColorStop(.45, fxRGBA(c, .55)); gr.addColorStop(1, fxRGBA(c, 0));
+  g.fillStyle = gr; g.fillRect(0, 0, size, size);
+  return (fxSprites[key] = s);
+}
+function fxStrip(c) {
+  const key = 's' + c.join();
+  if (fxSprites[key]) return fxSprites[key];
+  const s = document.createElement('canvas');
+  s.width = 4; s.height = 64;
+  const g = s.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 64);
+  gr.addColorStop(0, fxRGBA(c, 0)); gr.addColorStop(.75, fxRGBA(c, .7)); gr.addColorStop(.92, fxRGBA(c, 1)); gr.addColorStop(1, fxRGBA(c, 0));
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 64);
+  return (fxSprites[key] = s);
+}
+// a point u (0 to 1) of the way round the card's edge, m pixels in
+function fxEdge(u, w, h, m) {
+  const W = w - 2 * m, H = h - 2 * m;
+  let d = (((u % 1) + 1) % 1) * 2 * (W + H);
+  if (d < W) return [m + d, m];
+  d -= W; if (d < H) return [w - m, m + d];
+  d -= H; if (d < W) return [w - m - d, h - m];
+  d -= W; return [m, h - m - d];
+}
+// Runs one effect on a canvas. opts.still: one picture (also forced by Epilepsy mode); opts.seed keeps Shop previews
+// the same every time. Returns { stop }.
+function fxRun(canvas, kind, opts) {
+  const def = FX_DRAW[kind];
+  if (!def || !canvas) return null;
+  opts = opts || {};
+  const ctx = canvas.getContext('2d'), dpr = Math.min(1.5, window.devicePixelRatio || 1);
+  const run = { w: 0, h: 0, stopped: false, raf: 0, t0: 0, last: 0, front: false };
+  const still = !!opts.still || fxStill(), stillAt = def.still || def.intro + 6000;   // (still: a moment worth showing)
+  const st = def.make(fxRand(opts.seed || 1));
+  const fit = () => {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h || (w === run.w && h === run.h)) return false;
+    run.w = w; run.h = h; canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    return true;
+  };
+  const paint = t => {
+    if (!run.w) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    ctx.clearRect(0, 0, run.w, run.h);
+    def.draw(ctx, st, t, run.w, run.h);
+  };
+  fit();
+  // (a size change clears the canvas, so a still picture is drawn again; a running one draws its next frame anyway)
+  const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => { if (fit() && still) paint(stillAt); }) : null;
+  if (ro) ro.observe(canvas);
+  const stop = () => {
+    run.stopped = true; cancelAnimationFrame(run.raf);
+    if (ro) ro.disconnect();
+    canvas.classList.remove('pfx-front');
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
+  };
+  if (still) { paint(stillAt); return { stop: () => { run.stopped = true; if (ro) ro.disconnect(); }, still: true }; }
+  run.front = !!def.front;
+  canvas.classList.toggle('pfx-front', run.front);
+  const tick = now => {
+    if (run.stopped) return;
+    run.raf = requestAnimationFrame(tick);
+    if (!run.t0) run.t0 = now;
+    const t = now - run.t0;
+    if (run.front && t >= def.intro) { run.front = false; canvas.classList.remove('pfx-front'); }
+    if (t > def.intro && now - run.last < 31) return;   // after the intro, about 30 frames a second is plenty
+    run.last = now;
+    paint(t);
+  };
+  run.raf = requestAnimationFrame(tick);
+  return { stop };
+}
+// Each effect: intro (ms), front (covers the card during the intro), make(random) for its fixed parts, and
+// draw(ctx, state, ms since it started, width, height).
+const FX_DRAW = {
+  // Static Charge: a bolt runs round the card, then little arcs crackle on the edge and sparks float up
+  static: {
+    intro: 1600,
+    make: R => ({ seed: Math.floor(R() * 1e6), sparks: Array.from({ length: 24 }, () => ({ x: R(), y: R(), v: .03 + R() * .06, s: .8 + R() * 1.6, p: R() * 6.28 })) }),
+    draw(c, st, t, w, h) {
+      const blue = [120, 200, 255], m = 3;
+      const bolt = (u0, u1, R, wide) => {
+        const n = Math.max(4, Math.round((u1 - u0) * 2 * (w + h) / 14));
+        c.beginPath();
+        for (let i = 0; i <= n; i++) {
+          const [x, y] = fxEdge(u0 + (u1 - u0) * i / n, w, h, m + 4);
+          const j = i === 0 || i === n ? 0 : 7;
+          c.lineTo(x + (R() - .5) * j, y + (R() - .5) * j);
+        }
+        c.lineJoin = 'round';
+        c.strokeStyle = fxRGBA(blue, .35); c.lineWidth = wide; c.stroke();
+        c.strokeStyle = 'rgba(240,250,255,.9)'; c.lineWidth = 1.3; c.stroke();
+      };
+      // the glow along the edge
+      c.strokeStyle = fxRGBA(blue, .12 + .05 * Math.sin(t / 500)); c.lineWidth = 8; c.strokeRect(m, m, w - 2 * m, h - 2 * m);
+      c.strokeStyle = fxRGBA(blue, .3); c.lineWidth = 1.5; c.strokeRect(m + 2, m + 2, w - 2 * m - 4, h - 2 * m - 4);
+      if (t < 1600) bolt(t / 1600 - .14, t / 1600, fxRand(st.seed + Math.floor(t / 60)), 5);
+      else {
+        const slot = Math.floor(t / 700), age = t - slot * 700;
+        if (age < 260) {
+          const R = fxRand(st.seed + slot * 7), u = R();
+          bolt(u, u + .025 + R() * .04, fxRand(st.seed + slot * 7 + Math.floor(age / 90)), 4);
+        }
+      }
+      // sparks: out of the picture in the intro, then floating up from the bottom
+      const [ax, ay] = fxAv(w, h), k = fxEase(t / 1600);
+      st.sparks.forEach(p => {
+        const q = (p.y + t / 1000 * p.v) % 1;
+        const x = (p.x + .012 * Math.sin(t / 800 + p.p)) * w, y = h * (1 - q);
+        const px = ax + (x - ax) * k, py = ay + (y - ay) * k;
+        c.fillStyle = fxRGBA([200, 235, 255], (.25 + .6 * Math.sin(q * Math.PI)) * (.4 + .6 * k));
+        c.fillRect(px - p.s / 2, py - p.s / 2, p.s, p.s);
+      });
+    },
+  },
+  // Night Sky: stars fly out from the picture and settle into a sky, with slow clouds of color and a shooting star
+  nightsky: {
+    intro: 2000,
+    make: R => ({
+      seed: Math.floor(R() * 1e6),
+      stars: Array.from({ length: 70 }, () => ({ x: R(), y: R(), s: .6 + R() * 1.4, p: R() * 6.28, f: .6 + R() * 1.8 })),
+      neb: [[140, 90, 255], [60, 140, 255], [255, 90, 190]].map(col => ({ col, x: .15 + R() * .7, y: R() * .55, r: .3 + R() * .25, p: R() * 6.28 })),
+    }),
+    draw(c, st, t, w, h) {
+      const k = fxEase(t / 2000), [ax, ay] = fxAv(w, h), S = Math.max(w, h);
+      c.fillStyle = fxRGBA([8, 12, 38], .42 * k); c.fillRect(0, 0, w, h);
+      st.neb.forEach(n => {
+        const r = n.r * S * (.4 + .6 * k), x = (n.x + .05 * Math.sin(t / 7000 + n.p)) * w, y = (n.y + .04 * Math.cos(t / 9000 + n.p)) * h;
+        c.globalAlpha = .2 * k; c.drawImage(fxBlob(n.col, 128), x - r, y - r, 2 * r, 2 * r);
+      });
+      c.globalAlpha = 1;
+      st.stars.forEach(s => {
+        const x = ax + (s.x * w - ax) * k, y = ay + (s.y * h - ay) * k;
+        const tw = .55 + .45 * Math.sin(t / 1000 * s.f + s.p);
+        c.fillStyle = fxRGBA([255, 255, 255], tw * (.3 + .7 * k));
+        c.fillRect(x - s.s / 2, y - s.s / 2, s.s, s.s);
+        if (s.s > 1.6) {   // a little cross on the bright ones
+          c.fillStyle = fxRGBA([200, 220, 255], .3 * tw * k);
+          c.fillRect(x - s.s * 1.8, y - .35, s.s * 3.6, .7); c.fillRect(x - .35, y - s.s * 1.8, .7, s.s * 3.6);
+        }
+      });
+      const slot = Math.floor(t / 4500), age = t - slot * 4500;
+      if (t > 2000 && age < 900) {
+        const R = fxRand(st.seed + slot), q = age / 900, len = 70 + R() * 60;
+        const x = w * (.35 + R() * .6) - q * w * .45, y = h * R() * .35 + q * w * .22;
+        const g = c.createLinearGradient(x, y, x + len, y - len / 2);
+        g.addColorStop(0, `rgba(255,255,255,${.9 * Math.sin(q * Math.PI)})`); g.addColorStop(1, 'rgba(255,255,255,0)');
+        c.strokeStyle = g; c.lineWidth = 1.6; c.beginPath(); c.moveTo(x, y); c.lineTo(x + len, y - len / 2); c.stroke();
+      }
+    },
+  },
+  // Smoke Bomb: smoke bursts up from the bottom and fills the card, clears, then keeps curling up along the bottom
+  smoke: {
+    intro: 2400, front: true,
+    make: R => ({
+      puffs: Array.from({ length: 30 }, () => ({ a: -Math.PI / 2 + (R() - .5) * 2.6, sp: .45 + R() * .8, r: .16 + R() * .2, g: 165 + Math.floor(R() * 60) })),
+      wisps: Array.from({ length: 12 }, () => ({ x: R(), per: 6000 + R() * 5000, off: R(), r: .1 + R() * .1, g: 175 + Math.floor(R() * 50), dr: (R() - .5) * .15 })),
+    }),
+    draw(c, st, t, w, h) {
+      const S = Math.max(w, h);
+      if (t < 2400) {
+        const q = t / 2400, burst = fxEase(q * 2.4), fade = q < .3 ? 1 : 1 - (q - .3) / .7;
+        st.puffs.forEach(p => {
+          const d = burst * p.sp * S * .8, r = p.r * S * (.35 + .9 * burst);
+          const x = w * .5 + Math.cos(p.a) * d, y = h * 1.02 + Math.sin(p.a) * d;
+          c.globalAlpha = .8 * fade; c.drawImage(fxBlob([p.g, p.g, p.g + 8], 128), x - r, y - r, 2 * r, 2 * r);
+        });
+      }
+      const k = fxClamp((t - 1300) / 1500);
+      st.wisps.forEach(m => {
+        const life = ((t / m.per) + m.off) % 1, r = m.r * S * (.6 + .8 * life);
+        const x = (m.x + m.dr * life + .02 * Math.sin(t / 1300 + m.off * 9)) * w, y = h * (1.08 - .42 * life);
+        c.globalAlpha = .34 * Math.sin(life * Math.PI) * k;
+        c.drawImage(fxBlob([m.g, m.g, m.g + 10], 128), x - r, y - r, 2 * r, 2 * r);
+      });
+      c.globalAlpha = 1;
+    },
+  },
+  // Toxic Ooze: green slime pours over the top of the card and runs down, then hangs there dripping and bubbling
+  ooze: {
+    intro: 2000, front: true,
+    make: R => ({
+      drips: Array.from({ length: 11 }, (_, i) => ({ x: (i + .2 + R() * .6) / 11, wd: 8 + R() * 14, len: .04 + R() * .1, sp: .5 + R(), p: R() * 6.28, fall: 2600 + R() * 3000 })),
+      bubbles: Array.from({ length: 10 }, () => ({ x: R(), r: 2 + R() * 4, per: 2600 + R() * 3000, off: R() })),
+    }),
+    draw(c, st, t, w, h) {
+      const green = [118, 224, 64], slime = fxRGBA(green, .93), sc = Math.min(1, w / 400);
+      const pour = t < 2000 ? fxEase(t / 700) : 1, over = t < 2000 ? Math.sin(fxClamp(t / 2000) * Math.PI) : 0;
+      const band = (24 + 14 * over) * pour * sc + 4;
+      const wave = x => band + 5 * sc * Math.sin(x / 37 + t / 700) + 3 * sc * Math.sin(x / 13 - t / 500);
+      c.fillStyle = slime;
+      c.beginPath(); c.moveTo(0, 0); c.lineTo(w, 0);
+      for (let x = w; x >= -10; x -= 10) c.lineTo(Math.max(0, x), wave(x));
+      c.closePath(); c.fill();
+      st.drips.forEach(d => {
+        const x = d.x * w, wd = d.wd * sc, y0 = wave(x) - 4;
+        const L = Math.max(wd, h * (d.len + over * .45 * d.sp) * pour + 6 * Math.sin(t / 900 * d.sp + d.p));
+        const y1 = y0 + L, r = wd * .45;
+        c.fillStyle = slime;
+        c.beginPath(); c.moveTo(x - wd / 2, y0);
+        c.quadraticCurveTo(x - wd * .3, y1 - r * 2, x - r, y1 - r);
+        c.arc(x, y1 - r, r, Math.PI, 0, true);
+        c.quadraticCurveTo(x + wd * .3, y1 - r * 2, x + wd / 2, y0);
+        c.closePath(); c.fill();
+        c.fillStyle = 'rgba(225,255,200,.5)'; c.fillRect(x - wd * .2, y0 + 5, 1.6, Math.max(0, L - wd - 4));
+        if (t > 2000) {   // now and then a drop lets go
+          const q = ((t + d.p * 1000) % d.fall) / d.fall;
+          if (q < .4) { c.fillStyle = slime; c.beginPath(); c.arc(x, y1 + (h - y1) * (q / .4) ** 2, r * .7, 0, 6.283); c.fill(); }
+        }
+      });
+      // a pool along the bottom, with bubbles coming up out of it
+      const k = fxClamp((t - 900) / 900);
+      c.fillStyle = fxRGBA(green, .8 * k);
+      c.beginPath(); c.moveTo(0, h);
+      for (let x = 0; x <= w + 10; x += 10) c.lineTo(Math.min(w, x), h - (8 + 3 * Math.sin(x / 29 + t / 800)) * sc * k);
+      c.lineTo(w, h); c.closePath(); c.fill();
+      c.strokeStyle = fxRGBA(green, .75); c.lineWidth = 1.4;
+      st.bubbles.forEach(b => {
+        const q = ((t / b.per) + b.off) % 1;
+        c.globalAlpha = Math.sin(q * Math.PI) * k;
+        c.beginPath(); c.arc(b.x * w, h - 8 - q * 55 * sc, b.r * sc + .5, 0, 6.283); c.stroke();
+      });
+      c.globalAlpha = 1;
+    },
+  },
+  // Watercolor: soft blots of paint bloom one after another, then slowly breathe and wander
+  watercolor: {
+    intro: 2200,
+    make: R => {
+      const pal = [[255, 160, 190], [150, 190, 255], [170, 235, 190], [255, 210, 140], [200, 165, 255], [140, 225, 230]];
+      return { blooms: Array.from({ length: 9 }, (_, i) => ({ col: pal[i % pal.length], x: R(), y: R(), r: .2 + R() * .18, p: R() * 6.28, d: i * 140 + R() * 200, wob: [R() * 6.28, R() * 6.28] })) };
+    },
+    draw(c, st, t, w, h) {
+      const S = Math.max(w, h);
+      st.blooms.forEach(b => {
+        const grow = fxEase((t - b.d) / 1400);
+        if (grow <= 0) return;
+        const x = (b.x + .03 * Math.sin(t / 6000 + b.p)) * w, y = (b.y + .03 * Math.cos(t / 7000 + b.p)) * h;
+        const r = b.r * S * grow * (1 + .05 * Math.sin(t / 2500 + b.p));
+        c.globalAlpha = .45; c.drawImage(fxBlob(b.col, 128), x - r, y - r, 2 * r, 2 * r);
+        // the darker edge paint leaves where it dries
+        c.globalAlpha = .28 * grow; c.strokeStyle = fxRGBA(b.col.map(v => Math.round(v * .75)), 1); c.lineWidth = 1.5;
+        c.beginPath();
+        for (let i = 0; i <= 24; i++) {
+          const a = i / 24 * 6.2832, rr = r * .6 * (1 + .07 * Math.sin(a * 3 + b.wob[0] + t / 3000) + .04 * Math.sin(a * 5 + b.wob[1]));
+          c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+        }
+        c.stroke();
+      });
+      c.globalAlpha = 1;
+    },
+  },
+  // Cotton Clouds: puffy clouds float in from both sides and drift across the top of the card
+  clouds: {
+    intro: 1800,
+    make: R => ({
+      clouds: Array.from({ length: 6 }, (_, i) => ({
+        y: .03 + R() * .17, s: .7 + R() * .6, v: 5 + R() * 9, x: R(), side: i % 2 ? 1 : -1,
+        tint: [[255, 255, 255], [255, 236, 246], [236, 244, 255]][i % 3],
+        parts: Array.from({ length: 6 }, (_, k) => [(k - 2.5) * 16 + (R() - .5) * 8, -Math.sin((k + .5) / 6 * Math.PI) * 14 - R() * 6, 13 + R() * 9]),
+      })),
+    }),
+    draw(c, st, t, w, h) {
+      const k = fxEase(t / 1800), size = Math.min(1, w / 320);
+      st.clouds.forEach(cl => {
+        const span = w + 220, home = ((cl.x * span + t / 1000 * cl.v) % span) - 110, from = cl.side < 0 ? -130 : w + 130;
+        const x = from + (home - from) * k, y = cl.y * Math.min(h, 520), s = cl.s * (.6 + .4 * k) * size;   // (kept over the banner)
+        const blobs = dy => { c.beginPath(); cl.parts.forEach(([px, py, pr]) => { c.moveTo(x + (px + pr) * s, y + (py + dy) * s); c.arc(x + px * s, y + (py + dy) * s, pr * s, 0, 6.2832); }); c.fill(); };
+        c.fillStyle = 'rgba(150,170,215,.25)'; blobs(6);
+        c.fillStyle = fxRGBA(cl.tint, .92); blobs(0);
+      });
+    },
+  },
+  // Neon Grid: a scan line sweeps down and a glowing floor grid draws itself out, then keeps rolling toward you
+  grid: {
+    intro: 2000,
+    make: R => ({ trails: Array.from({ length: 4 }, () => ({ lane: Math.floor(R() * 13) - 6, per: 1800 + R() * 1800, off: R() })) }),
+    draw(c, st, t, w, h) {
+      const hz = h * .38, vx = w / 2, pink = [255, 70, 200], cyan = [70, 220, 255], s0 = 5, s1 = w * .16;
+      const k = fxEase(t / 1500), reach = hz + (h - hz) * k;
+      const at = (i, f) => [vx + i * (s0 + (s1 - s0) * f), hz + (h - hz) * f];
+      const g = c.createLinearGradient(0, hz - 50, 0, hz + 4);
+      g.addColorStop(0, fxRGBA(pink, 0)); g.addColorStop(1, fxRGBA(pink, .4 * k));
+      c.fillStyle = g; c.fillRect(0, hz - 50, w, 54);
+      c.strokeStyle = fxRGBA(cyan, .5); c.lineWidth = 1.2; c.beginPath();
+      for (let i = -12; i <= 12; i++) { const [x0, y0] = at(i, 0), [x1, y1] = at(i, k); c.moveTo(x0, y0); c.lineTo(x1, y1); }
+      c.stroke();
+      c.strokeStyle = fxRGBA(pink, .55); c.beginPath();
+      const off = (t / 1400) % 1;
+      for (let j = 0; j < 12; j++) {
+        const z = (j + 1 - off) / 12, y = hz + (h - hz) * Math.pow(z, 2.2);
+        if (y <= reach) { c.moveTo(0, y); c.lineTo(w, y); }
+      }
+      c.stroke();
+      c.fillStyle = fxRGBA(pink, .8 * k); c.fillRect(0, hz - 1, w, 2);
+      if (t < 2000) { const y = h * fxEase(t / 1600); c.fillStyle = fxRGBA(cyan, .55 * (1 - t / 2000)); c.fillRect(0, y - 1.5, w, 3); }
+      c.lineWidth = 2.4; c.lineCap = 'round';
+      st.trails.forEach(tr => {
+        const q = ((t / tr.per) + tr.off) % 1, f1 = Math.pow(q, 2.2), f0 = Math.pow(Math.max(0, q - .12), 2.2);
+        if (hz + (h - hz) * f1 > reach) return;
+        const [x0, y0] = at(tr.lane, f0), [x1, y1] = at(tr.lane, f1);
+        const lg = c.createLinearGradient(x0, y0, x1, y1);
+        lg.addColorStop(0, fxRGBA(cyan, 0)); lg.addColorStop(1, fxRGBA([220, 250, 255], .9));
+        c.strokeStyle = lg; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+      });
+      c.lineCap = 'butt';
+    },
+  },
+  // Glitch: the card tears into colored slices for a moment, then a slice slips now and then over faint scan lines
+  glitch: {
+    intro: 1300, front: true, still: 6480,
+    make: R => ({ seed: Math.floor(R() * 1e6) }),
+    draw(c, st, t, w, h) {
+      c.fillStyle = 'rgba(0,0,0,.1)';
+      for (let y = 0; y < h; y += 3) c.fillRect(0, y, w, 1);
+      const intro = t < 1300, slot = intro ? Math.floor(t / 70) : Math.floor(t / 1600), age = intro ? 0 : t - slot * 1600;
+      if (!intro && age > 240) return;
+      const R = fxRand(st.seed + slot * 31 + (intro ? 0 : 1000 + Math.floor(age / 80)));
+      const n = intro ? 9 : 2 + Math.floor(R() * 3), fade = intro ? 1 - .6 * t / 1300 : 1;
+      for (let i = 0; i < n; i++) {
+        const y = R() * h, bh = 2 + R() * (intro ? 20 : 9), x = (R() - .3) * w * .5, bw = w * (.3 + R() * .7);
+        c.fillStyle = fxRGBA([255, 40, 170], .3 * fade); c.fillRect(x - 4, y, bw, bh);
+        c.fillStyle = fxRGBA([40, 230, 255], .3 * fade); c.fillRect(x + 4, y + 1, bw, bh);
+        c.fillStyle = fxRGBA([255, 255, 255], .14 * fade); c.fillRect(x, y + bh * .4, bw, Math.max(1, bh * .2));
+      }
+    },
+  },
+  // Northern Lights: ribbons of green, blue and violet light unroll across the top and keep waving
+  aurora: {
+    intro: 2200,
+    make: R => ({ bands: [[90, 255, 170], [70, 200, 255], [190, 120, 255]].map((col, i) => ({ col, y: .1 + i * .06 + R() * .04, a: 10 + R() * 12, k: .008 + R() * .008, s: .4 + R() * .5, len: 50 + R() * 45, p: R() * 6.28 })) }),
+    draw(c, st, t, w, h) {
+      const reveal = fxEase(t / 2200), sec = t / 1000, small = h < 200, sc = Math.min(1, Math.max(h, small ? 230 : 0) / 500);
+      st.bands.forEach(b => {
+        const strip = fxStrip(b.col);
+        for (let x = -4; x < w * reveal + 6; x += 5) {
+          const y = (small ? .42 + (b.y - .1) * 1.5 : b.y) * h + b.a * sc * Math.sin(x * b.k + sec * b.s + b.p) + b.a * .5 * sc * Math.sin(x * b.k * 2.3 - sec * b.s * 1.4);
+          const L = b.len * sc * (.75 + .25 * Math.sin(x * .03 + sec * .9 + b.p));
+          c.globalAlpha = .5 * (.6 + .4 * Math.sin(x * .02 - sec * .7 + b.p)) * (t < 2200 ? .6 + .4 * reveal : 1);
+          c.drawImage(strip, x, y - L, 6, L);
+        }
+      });
+      c.globalAlpha = 1;
+    },
+  },
+};
+// The effect on an open profile, and the Shop's previews: a still picture, and the whole thing while the pointer is on it
+let profileFx = null;
+let fxWatchT = 0;
+function profileFxStop() {
+  clearTimeout(fxWatchT);
+  if (profileFx) profileFx.stop();
+  profileFx = null;
+  const b = $('profile-modal-box');
+  if (b) b.classList.remove('fx-on');
+}
+function profileFxStart(effect) {
+  profileFxStop();
+  if (!effect || !effect.fx || !FX_DRAW[effect.fx]) return;
+  $('profile-modal-box').classList.add('fx-on');
+  profileFx = fxRun($('profile-fx-canvas'), effect.fx, { seed: Math.floor(Math.random() * 1e9) });
+  fxWatchT = setTimeout(() => { if (profileFx && !$('profile-modal').classList.contains('hidden')) eggFindOnce('fxwatch'); }, 120000);
+}
+function wireFxPreviews(wrap) {
+  wrap.querySelectorAll('canvas[data-fx]').forEach(cv => {
+    const kind = cv.dataset.fx, card = cv.closest('.shop-item-card') || cv.parentElement;
+    let run = fxRun(cv, kind, { still: true, seed: 7 });
+    if (kind === 'ooze') { let pokes = 0; card.addEventListener('click', e => { if (!e.target.closest('button') && ++pokes >= 5) eggFindOnce('slimepoke'); }); }
+    if (fxStill()) return;
+    card.addEventListener('mouseenter', () => { if (run) run.stop(); run = fxRun(cv, kind, { seed: 7 }); });
+    card.addEventListener('mouseleave', () => { if (run) run.stop(); run = fxRun(cv, kind, { still: true, seed: 7 }); });
+  });
+}
 
 // Profile Frames — a decorative border treatment around the whole profile
 // card itself, separate from the avatar's own decoration.
@@ -499,6 +907,8 @@ const SHOP_CATEGORY_DEFS = {
   nameplates: { label: 'Nameplates', get catalog() { return [...NAMEPLATES, ...customNameplates]; }, ownedField: 'ownedNameplates', equipField: 'equippedNameplate' },
   profile_effects: { label: 'Profile Effects', get catalog() { return [...PROFILE_EFFECTS, ...customProfileEffects]; }, ownedField: 'ownedProfileEffects', equipField: 'equippedProfileEffect' },
   profile_frames: { label: 'Profile Frames', get catalog() { return [...PROFILE_FRAMES, ...customProfileFrames]; }, ownedField: 'ownedProfileFrames', equipField: 'equippedProfileFrame' },
+  // Badges (v4.65): every one you own shows on your profile, next to the ones you earn, so there's nothing to equip
+  badges: { label: 'Badges', get catalog() { return SHOP_BADGES; }, ownedField: 'ownedBadges', equipField: 'equippedBadge' },
   // (no "Animated" tag on themes since v4.62: the three with a moving background barely showed it, so the Owner had it removed)
   themes: { label: 'Themes', get catalog() { return [...SHOP_THEMES, ...customThemes]; }, ownedField: 'ownedThemes', equipField: 'equippedTheme' },
   banners: { label: 'Banners', get catalog() { return customBanners; }, ownedField: 'ownedBanners', equipField: 'equippedBanner' },
@@ -533,6 +943,17 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.65', date: '2026-11-15', title: 'Badges and new profile effects',
+    notes: [
+      'Badges, like Discord: a row of little icons on every profile. Hover or tap one to see what it is.',
+      'You earn most of them: Account Age, Game Time (hours spent in Frixion\'s games), Gifting (for giving people Premium), Premium, Casino, Cracker, and a Staff badge for Admins, Co-Owners and the Owner.',
+      'The Owner and Co-Owners can give Tester, Bug Hunter, Helper, Artist and Early Supporter badges from someone\'s page in System Hub.',
+      'The Shop has a Badges tab with 12 badges to buy. Every one you own shows on your profile.',
+      '9 new profile effects: Northern Lights, Smoke Bomb, Toxic Ooze, Neon Grid, Glitch, Static Charge, Night Sky, Watercolor and Cotton Clouds. Each plays an intro when your profile opens, then keeps going behind your text. Hover one in the Shop to see it move.',
+      'With Epilepsy mode on (or your device set to reduce motion), the new effects show as a still picture.',
+      'You can send any kind of file now, not just pictures and documents. Files that can run programs (like .exe or .bat) get a warning on them, so only open those from people you trust.',
+      '4 new easter eggs. That makes 63.',
+    ] },
   { v: '4.64', date: '2026-11-15', title: 'Loans and Mouse Maze',
     notes: [
       'Mouse Maze, a new game with 125 levels: get the mouse from the green square to the gold one without touching a wall. It gets harder as you go, with things that move, spin and grow, checkpoints, and a few fake finish lines. Computer only, in fullscreen.',
@@ -2052,6 +2473,112 @@ function canManagePlatformUser(target) {
 }
 function botTag(profile) { return profile && profile.discord ? `<span class="bot-tag discord-tag" title="Sent from Discord"><span>DISCORD</span></span>` : profile && profile.bot ? `<span class="bot-tag" title="Verified App">${icon('check')}<span>APP</span></span>` : ''; }
 
+// ---------- Badges (v4.65) ----------
+// A row of small badges on profiles, like Discord's: hover (or tap) one for what it is. Most come from things the rules
+// or the server already keep honest: staff rank, Premium, how old the account is, Casino totals and the Cracker tag.
+// Game time and Premium gifts are counted by your own app, and the rules only let those grow as fast as they really can
+// (statsOk in firestore.rules). Staff hand out a few (staffBadges: Tester and others), and some are sold in the Shop
+// (ownedBadges, bought through functions/api/admin/buy like every Shop item).
+const BADGE_PATHS = {
+  staff: '<path d="M12 2.5l8 3.2v6.1c0 4.9-3.4 8.8-8 9.7-4.6-.9-8-4.8-8-9.7V5.7z"/><path d="M8.6 12.2l2.4 2.4 4.6-4.8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+  premium: '<path d="M6 3.5h12l3.5 5L12 21 2.5 8.5z"/><path d="M2.5 8.5h19M9 3.5l3 5 3-5M8.6 8.5L12 21l3.4-12.5" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1.3"/>',
+  age: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18" stroke="#fff" stroke-opacity=".5" stroke-width="1.6"/><path d="M8 3v4M16 3v4" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="15.5" r="2.4" fill="#fff" fill-opacity=".85"/>',
+  game: '<path d="M7 8h10a5 5 0 0 1 4.9 6l-.7 3.4a2.5 2.5 0 0 1-4.3 1.2L14.5 16h-5l-2.4 2.6a2.5 2.5 0 0 1-4.3-1.2L2.1 14A5 5 0 0 1 7 8z"/><path d="M7.5 11v4M5.5 13h4" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><circle cx="16" cy="12" r="1.1" fill="#fff"/><circle cx="18" cy="14.4" r="1.1" fill="#fff"/>',
+  gift: '<rect x="3.5" y="9" width="17" height="12" rx="1.6"/><rect x="2.5" y="7" width="19" height="4" rx="1.2"/><path d="M12 7v14" stroke="#fff" stroke-opacity=".7" stroke-width="2"/><path d="M12 7c-2.2-4.5-6.6-4.2-6.3-1.5S10 7 12 7zm0 0c2.2-4.5 6.6-4.2 6.3-1.5S14 7 12 7z" fill="none" stroke="currentColor" stroke-width="2"/>',
+  casino: '<circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="5.6" fill="none" stroke="#fff" stroke-opacity=".75" stroke-width="1.6"/><path d="M12 2.5v3.4M12 18.1v3.4M2.5 12h3.4M18.1 12h3.4M5.3 5.3l2.4 2.4M16.3 16.3l2.4 2.4M5.3 18.7l2.4-2.4M16.3 7.7l2.4-2.4" stroke="#fff" stroke-opacity=".75" stroke-width="1.6"/>',
+  cracker: '<path d="M12 2.5c4 0 7 6 7 10.5a7 7 0 0 1-14 0C5 8.5 8 2.5 12 2.5z"/><path d="M5.6 11.5l3 2 2.4-2.6 2.6 2.6 2.4-2.4 2.6 1.8" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>',
+  tester: '<path d="M9 2.5h6M10 2.5v6.2L4.6 18.3A2.2 2.2 0 0 0 6.5 21.5h11a2.2 2.2 0 0 0 1.9-3.2L14 8.7V2.5" /><path d="M7.3 14.5h9.4" stroke="#fff" stroke-opacity=".7" stroke-width="1.6"/><circle cx="10.5" cy="17.5" r="1" fill="#fff"/><circle cx="13.8" cy="18.6" r=".8" fill="#fff"/>',
+  bughunter: '<ellipse cx="12" cy="14" rx="5.5" ry="7"/><circle cx="12" cy="6.2" r="3"/><path d="M6.5 11H3M6.5 15.5H3M17.5 11H21M17.5 15.5H21M9.5 3.5l-1.5-1.5M14.5 3.5l1.5-1.5M12 8.5v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 9v12" stroke="#fff" stroke-opacity=".6" stroke-width="1.4"/>',
+  helper: '<path d="M12 20.5s-8-5-8-11a4.5 4.5 0 0 1 8-2.8 4.5 4.5 0 0 1 8 2.8c0 6-8 11-8 11z"/><path d="M9 10.5h6M12 7.5v6" stroke="#fff" stroke-width="2" stroke-linecap="round"/>',
+  artist: '<path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-1 1.6-2.2-.5-1.4.3-2.8 1.8-2.8H18a3 3 0 0 0 3-3C21 7 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.4" fill="#fff"/><circle cx="10" cy="7" r="1.4" fill="#fff"/><circle cx="14.5" cy="7" r="1.4" fill="#fff"/><circle cx="17" cy="11" r="1.4" fill="#fff"/>',
+  early: '<path d="M12 2.5l2.5 6.3 6.8.5-5.2 4.4 1.6 6.6L12 16.8l-5.7 3.5 1.6-6.6-5.2-4.4 6.8-.5z"/><circle cx="12" cy="12" r="2.2" fill="#fff" fill-opacity=".8"/>',
+};
+// tiers: [at least, name, color]
+const BADGE_AGE_TIERS = [[0, 'NEW', '#9aa3b2'], [30, 'ONE MONTH', '#7fb3ff'], [90, 'THREE MONTHS', '#5ad1a8'], [180, 'SIX MONTHS', '#f0b232'], [365, 'ONE YEAR', '#ff8a4c'], [730, 'TWO YEARS', '#e05cff'], [1095, 'THREE YEARS', '#ff4d6d']];
+const BADGE_GAME_TIERS = [[1, 'ROOKIE', '#9aa3b2'], [10, 'CASUAL', '#7fb3ff'], [50, 'REGULAR', '#5ad1a8'], [150, 'DEDICATED', '#f0b232'], [300, 'SEASONED', '#b18cff'], [600, 'VETERAN', '#ff8a4c'], [1000, 'LEGEND', '#ff4d6d']];
+const BADGE_GIFT_TIERS = [[1, 'GIFTER', '#ff8fc7'], [3, 'GENEROUS', '#ff6fae'], [10, 'BIG HEART', '#ff4d8d'], [25, 'SANTA', '#ff2d55']];
+const BADGE_CASINO_TIERS = [[10000, 'PUNTER', '#9aa3b2'], [100000, 'REGULAR', '#5ad1a8'], [1000000, 'HIGH ROLLER', '#f0b232'], [10000000, 'WHALE', '#4aa3ff']];
+const tierOf = (tiers, n) => { let t = null; for (const x of tiers) if (n >= x[0]) t = x; return t; };
+// staff hand these out (Owner and Co-Owner panels, a person's page in System Hub)
+const STAFF_BADGES = {
+  tester: { name: 'Tester', text: 'Tests new Frixion things before everyone else', color: '#3ddc97' },
+  bughunter: { name: 'Bug Hunter', text: 'Found bugs and told the Owner', color: '#8bc34a' },
+  helper: { name: 'Helper', text: 'Helps people around Frixion', color: '#ff6f91' },
+  artist: { name: 'Artist', text: 'Made art for Frixion', color: '#ffb74d' },
+  early: { name: 'Early Supporter', text: 'Was here in the early days', color: '#f5c542' },
+};
+// sold in the Shop (Badges): [id, name, what it says, price, color, svg inside a 24x24 box]
+const SHOP_BADGES = [
+  ['star', 'Star', 'A little gold star.', 300, '#f5c542', '<path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z"/>'],
+  ['heart', 'Heart', 'Wear it on your profile.', 400, '#ff4d6d', '<path d="M12 20.5s-8-5-8-11a4.5 4.5 0 0 1 8-2.8 4.5 4.5 0 0 1 8 2.8c0 6-8 11-8 11z"/>'],
+  ['orbit', 'Orbit', 'A ringed planet.', 500, '#7c8cff', '<circle cx="12" cy="12" r="5.5"/><ellipse cx="12" cy="12" rx="10.5" ry="3.6" fill="none" stroke="currentColor" stroke-width="1.8" transform="rotate(-20 12 12)"/>'],
+  ['moon', 'Crescent', 'For night owls.', 600, '#c7b8ff', '<path d="M15.5 3a9 9 0 1 0 5.5 14.8A7.5 7.5 0 0 1 15.5 3z"/>'],
+  ['flame', 'Flame', 'Hot right now.', 750, '#ff7a1a', '<path d="M12 2.5c1.5 3.5 6.5 6.2 6.5 11.5a6.5 6.5 0 0 1-13 0c0-3 1.6-4.6 2.8-6 .3 1.7 1.1 2.8 2.3 3.3C10 8.5 10.6 5.5 12 2.5z"/>'],
+  ['bolt', 'Bolt', 'Fast.', 800, '#ffd23f', '<path d="M13.5 2.5L4.5 13.5h6l-1.5 8 9.5-11.5h-6z"/>'],
+  ['ghost', 'Ghost', 'Boo.', 900, '#d9e2ff', '<path d="M12 2.5a7.5 7.5 0 0 1 7.5 7.5v11l-2.5-1.8-2.5 1.8-2.5-1.8-2.5 1.8-2.5-1.8-2.5 1.8V10A7.5 7.5 0 0 1 12 2.5z"/><circle cx="9.3" cy="10" r="1.3" fill="#20222a"/><circle cx="14.7" cy="10" r="1.3" fill="#20222a"/>'],
+  ['skull', 'Skull', 'Spooky.', 1000, '#e8e8e8', '<path d="M12 2.5c5 0 8.5 3.4 8.5 8 0 2.6-1.3 4.4-3 5.4v3.6h-11v-3.6c-1.7-1-3-2.8-3-5.4 0-4.6 3.5-8 8.5-8z"/><circle cx="8.8" cy="11" r="2" fill="#20222a"/><circle cx="15.2" cy="11" r="2" fill="#20222a"/><path d="M12 13.5l-1 2h2z" fill="#20222a"/>'],
+  ['cat', 'Cat', 'Meow.', 1200, '#ffb36b', '<path d="M4 3.5l4 4h8l4-4v9.5a8 8 0 0 1-16 0z"/><circle cx="9" cy="12.5" r="1.2" fill="#20222a"/><circle cx="15" cy="12.5" r="1.2" fill="#20222a"/><path d="M11 15.5h2l-1 1z" fill="#20222a"/>'],
+  ['clover', 'Lucky Clover', 'Four leaves.', 1500, '#3ccf68', '<circle cx="8.5" cy="8.5" r="3.6"/><circle cx="15.5" cy="8.5" r="3.6"/><circle cx="8.5" cy="15.5" r="3.6"/><circle cx="15.5" cy="15.5" r="3.6"/><path d="M12 12l5 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'],
+  ['crown', 'Crown', 'For royalty.', 2500, '#f5c542', '<path d="M3 7.5l4.5 4 4.5-6.5 4.5 6.5 4.5-4-2 11H5z"/><path d="M5 20h14" stroke="currentColor" stroke-width="2"/>'],
+  ['diamond', 'Diamond', 'Shiny and rare.', 5000, '#6ee7ff', '<path d="M6 3.5h12l3.5 5L12 21 2.5 8.5z"/><path d="M2.5 8.5h19M8.6 8.5L12 21l3.4-12.5" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="1.2"/>'],
+].map(([id, name, desc, price, color, svg]) => ({ id, name, desc, price, color, svg, featured: price >= 2500 }));
+const badgeSvg = (inner, color, size) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="${color}" style="color:${color}">${inner}</svg>`;
+// everything this profile has earned, in the order shown
+function badgesFor(p, self) {
+  if (!p || p.bot || p.discord) return [];
+  const out = [], rank = p.sfMode ? 0 : platformRank(p);
+  if (rank >= 1) out.push({ key: 'staff', color: rank === 3 ? '#ff4d6d' : rank === 2 ? '#ff8a4c' : '#5865f2', title: 'Frixion Staff', tier: rank === 3 ? 'OWNER' : rank === 2 ? 'CO-OWNER' : 'ADMIN', text: rank === 3 ? 'Runs Frixion' : rank === 2 ? 'Helps run Frixion' : 'Keeps Frixion tidy' });
+  Object.entries(STAFF_BADGES).forEach(([id, b]) => { if ((p.staffBadges || []).includes(id)) out.push({ key: id, color: b.color, title: 'Given by staff', tier: b.name.toUpperCase(), text: b.text }); });
+  if (isPremium(p)) out.push({ key: 'premium', color: '#f4a4ff', title: 'Frixion Premium', tier: 'SUBSCRIBER', text: `Premium until ${new Date(p.premiumUntil).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}` });
+  const born = p.createdAt && p.createdAt.toDate ? p.createdAt.toDate() : null;
+  if (born) {
+    const days = Math.floor((Date.now() - born.getTime()) / 86400000), t = tierOf(BADGE_AGE_TIERS, days);
+    out.push({ key: 'age', color: t[2], title: 'Account Age', tier: t[1], text: `Member since ${born.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}` });
+  }
+  const st = p.stats || {}, hours = Math.floor((Number(st.gameMinutes) || 0) / 60), gt = tierOf(BADGE_GAME_TIERS, hours);
+  if (gt) out.push({ key: 'game', color: gt[2], title: 'Game Time', tier: gt[1], text: `${hours.toLocaleString()} hour${hours === 1 ? '' : 's'} of games played` });
+  const gifts = Number(st.giftsGiven) || 0, gf = tierOf(BADGE_GIFT_TIERS, gifts);
+  if (gf) out.push({ key: 'gift', color: gf[2], title: 'Gifting', tier: gf[1], text: `Gifted Premium ${gifts} time${gifts === 1 ? '' : 's'}` });
+  const bet = Number(p.casino && p.casino.wagered) || 0, ct = tierOf(BADGE_CASINO_TIERS, bet);
+  if (ct && (self || p.hideOrbs !== true)) out.push({ key: 'casino', color: ct[2], title: 'Casino', tier: ct[1], text: `${fmtOrbs(bet)} Orbs bet in the Casino` });
+  if (p.cracker === true) out.push({ key: 'cracker', color: '#ff4d4f', title: 'Easter Eggs', tier: 'CRACKER', text: 'Found every easter egg' });
+  SHOP_BADGES.forEach(b => { if ((p.ownedBadges || []).includes(b.id)) out.push({ key: 'shop:' + b.id, svg: b.svg, color: b.color, title: 'Shop Badge', tier: b.name.toUpperCase(), text: b.desc }); });
+  return out;
+}
+function badgeIcon(b, size) { return badgeSvg(b.svg || BADGE_PATHS[b.key] || '', b.color, size); }
+function renderProfileBadges(p, self) {
+  const box = $('profile-badges');
+  if (!box) return;
+  const list = badgesFor(p, self);
+  box.classList.toggle('hidden', !list.length);
+  box.innerHTML = list.map((b, i) => `<button type="button" class="pbadge" data-badge="${i}" aria-label="${esc(b.title + ': ' + b.tier)}">${badgeIcon(b, 20)}</button>`).join('');
+  box.querySelectorAll('.pbadge').forEach(btn => {
+    const b = list[+btn.dataset.badge];
+    const show = () => showBadgeTip(btn, b);
+    btn.addEventListener('mouseenter', show);
+    btn.addEventListener('focus', show);
+    btn.addEventListener('mouseleave', hideBadgeTip);
+    btn.addEventListener('blur', hideBadgeTip);
+    btn.addEventListener('click', e => { e.stopPropagation(); if (badgeTipFor === btn) hideBadgeTip(); else show(); });
+  });
+}
+let badgeTipFor = null;
+const badgesRead = new Set();
+function showBadgeTip(btn, b) {
+  badgesRead.add(b.key + ':' + b.tier);
+  if (badgesRead.size >= 8) eggFindOnce('badgefan');
+  let tip = $('badge-tip');
+  if (!tip) { tip = document.createElement('div'); tip.id = 'badge-tip'; tip.className = 'badge-tip'; document.body.appendChild(tip); }
+  tip.innerHTML = `<div class="bt-icon">${badgeIcon(b, 54)}</div><div class="bt-title">${esc(b.title)}</div><div class="bt-tier" style="color:${b.color}">${esc(b.tier)}</div><div class="bt-text">${esc(b.text)}</div>`;
+  tip.classList.add('on');
+  const r = btn.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
+  tip.style.top = Math.max(8, r.top - h - 10) + 'px';
+  badgeTipFor = btn;
+}
+function hideBadgeTip() { const tip = $('badge-tip'); if (tip) tip.classList.remove('on'); badgeTipFor = null; }
+document.addEventListener('click', () => { if (badgeTipFor) hideBadgeTip(); });
+
 // ============================================================
 // SERVER ROLES & PERMISSIONS (per-server, Discord-style)
 // A server document carries its own `roles` array and a `memberRoles`
@@ -2612,6 +3139,27 @@ function computeMyActivity() {
   return null;
 }
 function activityRefresh() { clearTimeout(activityDebounce); activityDebounce = setTimeout(publishActivity, 250); }
+// Game time (v4.65, for the Game Time badge): a minute is counted for every minute a Frixion game, Overcontrol RNG or
+// the Casino is open while Frixion is on screen. It's saved (stats.gameMinutes) at most every 10 minutes and when you
+// leave, so it costs one write now and then.
+let gameMinutesWaiting = 0;
+function playingSomething() {
+  if (document.visibilityState !== 'visible' || !myUid) return false;
+  return !!((typeof currentGameId !== 'undefined' && currentGameId) || document.getElementById('ocrng') || currentView === 'casino');
+}
+// (the rules let it go up at most 10 at a time and at most every 9 minutes, stamped with the server's time, so it can
+// only ever grow as fast as real time)
+let gameMinutesSavedAt = 0;
+function saveGameMinutes() {
+  if (!gameMinutesWaiting || !myUid || Date.now() - gameMinutesSavedAt < 9.5 * 60000) return;
+  const n = Math.min(10, gameMinutesWaiting);
+  gameMinutesWaiting -= n;
+  gameMinutesSavedAt = Date.now();
+  db.collection('users').doc(myUid).update({ 'stats.gameMinutes': FieldValue.increment(n), 'stats.gameAt': FieldValue.serverTimestamp() }).catch(() => { gameMinutesWaiting += n; });
+}
+setInterval(() => { if (playingSomething()) { gameMinutesWaiting++; if (gameMinutesWaiting >= 10) saveGameMinutes(); } }, 60000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveGameMinutes(); });
+window.addEventListener('pagehide', saveGameMinutes);
 function syncDesktopDetection() {
   if (!DESKTOP) return;
   const on = !!myUid && detectEnabled();
@@ -2764,6 +3312,7 @@ function openModal(id) {
 }
 function closeModal(id) {
   const el = $(id);
+  if (id === 'profile-modal' && typeof hideBadgeTip === 'function') { hideBadgeTip(); profileFxStop(); }   // (v4.65: the badge card and a drawn effect go with it)
   // On a phone, windows slide away (down, or off to the right for full-screen settings) instead of vanishing.
   if (document.body.classList.contains('is-mobile') && el.classList.contains('modal-overlay') && !el.classList.contains('hidden') && !el.classList.contains('sheet-closing')
       && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -6279,7 +6828,8 @@ async function openProfileModal(username) {
   const effectOverlay = $('profile-effect-overlay');
   effectOverlay.className = 'profile-effect-overlay' + (effect && effect.cssClass ? ' ' + effect.cssClass : '') + (effect && effect.style ? ' effect-style-' + effect.style : '');
   effectOverlay.style.setProperty('--custom-particle-color', (effect && effect.color) || '');
-  effectOverlay.innerHTML = effect ? PROFILE_EFFECT_PARTICLES_HTML : '';
+  effectOverlay.innerHTML = effect && !effect.fx ? PROFILE_EFFECT_PARTICLES_HTML : '';
+  profileFxStop();   // (a drawn one starts below, once the card is showing)
   const frame = profileFrameById(p.equippedProfileFrame);
   // The frame goes on its own layer over the card (v4.62). On the card itself, the card's pop-in animation replaced
   // the frame's animation, so moving frames like Rainbow stood still.
@@ -6288,6 +6838,7 @@ async function openProfileModal(username) {
   frameLayer.style.border = (frame && frame.color) ? `3px solid ${frame.color}` : '';
   frameLayer.style.setProperty('--custom-frame-color', (frame && frame.color) || '');
   $('profile-username').innerHTML = gapUnderscores(esc(displayNameOf(p))) + premiumStar(p) + roleTag(p) + botTag(p);
+  hideBadgeTip(); renderProfileBadges(p, isSelf);   // (v4.65)
   const showHandle = p.displayName && p.displayName !== p.username;
   $('profile-handle').textContent = showHandle ? '@' + p.username : '';
   $('profile-handle').classList.toggle('hidden', !showHandle);
@@ -6376,6 +6927,7 @@ async function openProfileModal(username) {
     } catch (e) {}
   }
   openModal('profile-modal');
+  if (effect && effect.fx && $('profile-modal').dataset.user === username) profileFxStart(effect);
 }
 $('profile-note-input').addEventListener('blur', async (e) => {
   const target = e.target.dataset.target;
@@ -9360,6 +9912,8 @@ function reactionsHTML(reactions) {
 // starts after a delay ("this site attempted to download multiple files automatically"). For Cloudinary files the link has the
 // fl_attachment flag, which makes Cloudinary send the file as a download instead of showing it in the tab. The download attribute
 // is ignored for links to another site, so the file name comes from Cloudinary (new uploads keep their real name, see uploadFileToCloudinary).
+// files that can run something on a computer or as a web page (v4.65): they still send, with a warning on the card
+const RISKY_FILE_EXT = /\.(exe|msi|bat|cmd|com|scr|pif|ps1|psm1|vbs|vbe|js|mjs|jse|wsf|hta|jar|apk|app|dmg|pkg|deb|rpm|sh|bash|bin|run|reg|lnk|html?|xhtml|svg|py|pyw|iso|img|dll)$/i;
 function attachmentDownloadUrl(url) {
   if (/^https:\/\/res\.cloudinary\.com\//.test(url) && url.includes('/upload/') && !url.includes('fl_attachment')) return url.replace('/upload/', '/upload/fl_attachment/');
   return url;
@@ -9461,10 +10015,12 @@ function attachmentHTML(m, canDelete) {
           <div class="msg-media-cap"><span class="mfc-icon">${icon('file')}</span><span class="mmc-name">${dlName}</span><span class="mmc-size">${esc(humanFileSize(a.size || 0))}</span>
             <a class="msg-media-dl" href="${dlHref}" download="${dlName}" rel="noopener" title="Download ${dlName}" aria-label="Download ${dlName}">${icon('download')}</a></div>
         </div>${delBtn}</div>`;
-      // Other files: clicking the card downloads it (it no longer opens the Cloudinary page in a new tab).
-      return `<div class="msg-att-item is-file"><a class="msg-file-card" href="${dlHref}" download="${dlName}" rel="noopener">
+      // Other files: clicking the card downloads it (it no longer opens the Cloudinary page in a new tab). Any kind of file
+      // can be sent (v4.65); ones that can run a program or a web page say so.
+      const risky = RISKY_FILE_EXT.test(a.name || '');
+      return `<div class="msg-att-item is-file${risky ? ' is-risky' : ''}"><a class="msg-file-card" href="${dlHref}" download="${dlName}" rel="noopener">
             <span class="mfc-icon">${icon('file')}</span>
-            <span class="mfc-body"><span class="mfc-name">${esc(a.name)}</span><span class="mfc-size">${esc(humanFileSize(a.size || 0))}</span></span>
+            <span class="mfc-body"><span class="mfc-name">${esc(a.name)}</span><span class="mfc-size">${esc(humanFileSize(a.size || 0))}${risky ? ' &middot; <span class="mfc-warn">can run programs, only open it if you trust who sent it</span>' : ''}</span></span>
           </a><a class="msg-att-dl" href="${dlHref}" download="${dlName}" rel="noopener" title="Download ${dlName}" aria-label="Download ${dlName}">${icon('download')}</a>${delBtn}</div>`;
     }).join('') + `</div>`;
   }
@@ -12889,7 +13445,7 @@ $('code-reveal-copy').onclick = () => {
 // Pays for a Premium code and creates it in one transaction: the Orbs are checked and taken at the same moment the code is
 // made, so clicking twice (or two open tabs) can't spend the same Orbs twice or push the balance below zero.
 let premiumPurchaseBusy = false;
-async function buyPremiumCode(days) {
+async function buyPremiumCode(days, gift) {
   if (premiumPurchaseBusy) throw new Error('busy');
   premiumPurchaseBusy = true;
   try {
@@ -12904,7 +13460,9 @@ async function buyPremiumCode(days) {
         if (existing.exists) return null;                  // that random code is taken: try another
         const inf = (me.data() || {}).infOrbs === true;    // infinite Orbs (v4.64) pay nothing
         if (!inf && ((me.data() || {}).orbs || 0) < PREMIUM_COST_ORBS) throw new Error('not-enough-orbs');
-        if (!inf) tx.update(userRef, { orbs: FieldValue.increment(-PREMIUM_COST_ORBS) });
+        // a gift also counts toward the Gifting badge (v4.65), in the same write that pays for it, which is the only way
+        // the rules let that count go up (infinite Orbs pay nothing, so they don't count)
+        if (!inf) tx.update(userRef, { orbs: FieldValue.increment(-PREMIUM_COST_ORBS), ...(gift ? { 'stats.giftsGiven': FieldValue.increment(1) } : {}) });
         tx.set(codeRef, { code: candidate, type: 'premium', value: days, createdBy: myUid, maxUses: 1, uses: 0, usedBy: [], redeemedBy: null, createdAt: FieldValue.serverTimestamp(), redeemedAt: null });
         return candidate;
       });
@@ -12936,7 +13494,7 @@ async function giftPremiumTo(recipientUsername) {
     onConfirm: async () => {
   try {
     let code;
-    try { code = await buyPremiumCode(days); } catch (e) {
+    try { code = await buyPremiumCode(days, true); } catch (e) {
       if (e.message === 'busy') return;
       toast(e.message === 'not-enough-orbs' ? `You need ${PREMIUM_COST_ORBS} Orbs to gift Premium.` : 'Something went wrong.', 'error');
       return;
@@ -13396,6 +13954,7 @@ function fxTextHTML(text, fx) {
 function orbIconSVG(size) { return `<svg viewBox="0 0 24 24" width="${size}" height="${size}"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg>`; }
 
 function shopItemPreviewHTML(key, item) {
+  if (key === 'badges') return `<div class="sic-badge-preview">${badgeSvg(item.svg, item.color, 52)}</div>`;
   if (key === 'decorations') return `<div class="sic-deco-stage">${avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, item.id)}</div>`;
   if (key === 'masks') return `<div class="sic-deco-stage">${avatarHTML(72, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl, null, undefined, item.id)}</div>`;
   if (key === 'music') return `<div class="sic-music-preview${item.fx ? ' fx-bg-' + esc(item.fx) : ''}${item.banner ? ' has-banner' : ''}${myProfile && myProfile.equippedMusic === item.id ? ' is-playing' : ''}"${item.banner ? ` style="background-image:${esc(cssUrl(item.banner))}${item.bannerPos ? ';background-position:' + esc(item.bannerPos) : ''}"` : ''}><div class="smp-eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>${item.fx ? fxTextHTML(item.name, item.fx) : `<span class="smp-title">${esc(item.name)}</span>`}</div>`;
@@ -13409,6 +13968,7 @@ function shopItemPreviewHTML(key, item) {
     const style = item.colors ? `background:${esc(nameplateGradientCSS(item))};` : '';
     return `<div class="${cls}" style="${style}"><span>${esc(displayNameOf(myProfile))}</span></div>`;
   }
+  if (key === 'profile_effects' && item.fx) return `<div class="sic-effect-preview pfx-preview"><canvas data-fx="${esc(item.fx)}"></canvas></div>`;
   if (key === 'profile_effects') {
     const cls = 'sic-effect-preview' + (item.cssClass ? ' ' + item.cssClass : '') + (item.style ? ' effect-style-' + item.style : '');
     const style = item.color ? `--custom-particle-color:${esc(item.color)};` : '';
@@ -13458,25 +14018,28 @@ function itemCutscenes(item) { return item.cutscenes || (item.cutscene ? [{ src:
 function shopItemCardHTML(key, item) {
   const def = SHOP_CATEGORY_DEFS[key];
   const owned = (myProfile[def.ownedField] || []).includes(item.id);
-  const equipped = myProfile[def.equipField] === item.id;
-  const action = equipped ? 'unequip' : owned ? 'equip' : 'buy';
-  const label = equipped ? 'Unequip' : owned ? 'Equip' : `${orbIconSVG(13)}<span>${Number(item.price).toLocaleString()}</span>`;
+  const noEquip = key === 'badges';
+  const equipped = !noEquip && myProfile[def.equipField] === item.id;
+  const action = equipped ? 'unequip' : owned ? (noEquip ? 'none' : 'equip') : 'buy';
+  const label = equipped ? 'Unequip' : owned ? (noEquip ? 'Owned' : 'Equip') : `${orbIconSVG(13)}<span>${Number(item.price).toLocaleString()}</span>`;
   return `<div class="shop-item-card${key === 'themes' ? ' is-theme-card' : ''}${key === 'music' ? ' is-music-card' : ''}${item.hero ? ' is-hero' : ''}" data-item="${esc(item.id)}" data-cat="${key}">
     <div class="sic-preview">${shopItemPreviewHTML(key, item)}</div>
     ${(key === 'themes' || key === 'music') ? '' : `<div class="sic-name">${esc(item.name)}${item.animated && key !== 'profile_effects' ? '<span class="sic-animated-tag">Animated</span>' : ''}</div>`}
     ${item.desc ? `<div class="sic-desc">${esc(item.desc)}</div>` : ''}
-    <button class="sic-btn${equipped ? ' is-equipped' : owned ? ' is-owned' : ''}" data-action="${action}">${label}</button>
+    <button class="sic-btn${equipped ? ' is-equipped' : owned ? ' is-owned' : ''}" data-action="${action}"${action === 'none' ? ' disabled' : ''}>${label}</button>
     ${owned && itemCutscenes(item).length ? `<div class="sic-replay" role="group" aria-label="Replay cutscenes">${itemCutscenes(item).map((c, n) => `<button type="button" class="sic-replay-seg" data-seg="${n}">Replay ${esc(c.label)}</button>`).join('')}</div>` : ''}
   </div>`;
 }
 
 function wireShopCardButtons(wrap) {
+  wireFxPreviews(wrap);   // (v4.65)
   wrap.querySelectorAll('.shop-item-card[data-cat]').forEach(card => {
     const key = card.dataset.cat;
     const id = card.dataset.item;
     const btn = card.querySelector('.sic-btn');
     card.querySelectorAll('.sic-replay-seg').forEach(b => { b.onclick = () => replayCutscene(key, id, +b.dataset.seg); });
     btn.onclick = () => {
+      if (btn.dataset.action === 'none') return;
       if (btn.dataset.action === 'buy') buyShopItem(key, id);
       else if (btn.dataset.action === 'equip') equipShopItem(key, id);
       else equipShopItem(key, null);
@@ -13555,6 +14118,8 @@ function renderShopCategoryPane(key) {
   // Every profile effect moves, so they're one list with no Animated tag (v4.64).
   wrap.innerHTML = key === 'profile_effects'
     ? section('Profile Effects', def.catalog.filter(i => matches(i)), 'No profile effects found.')
+    : key === 'badges'
+    ? '<div class="shop-note">Badges you buy show on your profile next to the ones you earn (Account Age, Game Time, Gifting and more). Hover any badge on a profile to read it. Some people collect them all.</div>' + section('Badges', def.catalog.filter(i => matches(i)), 'No badges found.')
     : section('Animated', animated, 'No animated items found.') + section('Not Animated', staticOnes, 'No items found.');
   wireShopCardButtons(wrap);
   wireBuyAll(wrap);
@@ -13577,6 +14142,7 @@ function wireBuyAll(wrap) {
     };
   });
 }
+function checkAllBadges() { if (myProfile && SHOP_BADGES.every(b => (myProfile.ownedBadges || []).includes(b.id))) eggFindOnce('allbadges'); }
 async function buyAllShopItems(key, ids) {
   const def = SHOP_CATEGORY_DEFS[key];
   if (shopBuying) return;
@@ -13588,6 +14154,7 @@ async function buyAllShopItems(key, ids) {
     if (r.orbs != null) myProfile.orbs = r.orbs;
     toast(`Bought ${r.bought.length} for ${fmtOrbs(r.total)} Orbs.`);
     refreshOpenShopPanes();
+    if (key === 'badges') checkAllBadges();
   } catch (e) { toast(e.message || 'Could not buy them.', 'error'); }
   finally { shopBuying = false; }
 }
@@ -13624,6 +14191,7 @@ async function buyShopItem(key, id) {
     if (r && r.orbs != null) myProfile.orbs = r.orbs;
     if (key === 'themes' && ['light', 'sync'].includes(myProfile.theme)) db.collection('users').doc(myUid).update({ theme: 'dark' }).catch(() => {});   // (see equipShopItem)
     toast(`Purchased ${item.name}!`);
+    if (key === 'badges') checkAllBadges();
     refreshOpenShopPanes();
     if (cuts.length && !showCut) toast('Epilepsy mode is on, so the cutscenes were skipped. You can replay them from the Shop.');
     if (showCut) {
@@ -15575,6 +16143,11 @@ async function renderAdminActions() {
       <div class="ab-row"><select id="admin-rank-select" class="fld-input"><option value="">No rank</option>${customRanks.map(r => `<option value="${esc(r.id)}"${u.customRank === r.id ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select>
         <span class="ab-note">${customRanks.length ? 'Just a tag next to their name.' : 'Make ranks in the Ranks tab.'}</span></div>
     </div>` : ''}
+    ${isOwner ? `<div class="admin-block">
+      <div class="ab-title">Badges</div>
+      <div class="admin-badge-picks">${Object.entries(STAFF_BADGES).map(([id, b]) => `<label class="admin-badge-pick"><input type="checkbox" data-staff-badge="${id}"${(u.staffBadges || []).includes(id) ? ' checked' : ''}>${badgeSvg(BADGE_PATHS[id], b.color, 18)}<span>${esc(b.name)}</span></label>`).join('')}</div>
+      <div class="ab-note" style="margin-top:6px">Shown on their profile. Account Age, Game Time, Gifting and the rest they earn by themselves.</div>
+    </div>` : ''}
     ${isOwner ? `
     <div class="admin-block">
       <div class="ab-title">Operator</div>
@@ -15621,6 +16194,14 @@ async function renderAdminActions() {
       renderAdminList();
     } catch (err) { toast('Could not change the rank.', 'error'); }
   };
+  // staff badges (v4.65): the Owner and Co-Owners (firestore.rules: staffBadges is never your own app's to change)
+  wrap.querySelectorAll('[data-staff-badge]').forEach(cb => cb.onchange = async () => {
+    const id = cb.dataset.staffBadge, b = STAFF_BADGES[id];
+    try {
+      await db.collection('users').doc(u.username).update({ staffBadges: cb.checked ? FieldValue.arrayUnion(id) : FieldValue.arrayRemove(id) });
+      toast(cb.checked ? `Gave ${u.username} the ${b.name} badge.` : `Took the ${b.name} badge from ${u.username}.`);
+    } catch (err) { cb.checked = !cb.checked; toast('Could not change that badge.', 'error'); }
+  });
   // infinite Orbs (v4.64): the Owner and Co-Owners only (firestore.rules: nobody gives it to themselves, Admins can't)
   if ($('admin-inf-btn')) $('admin-inf-btn').onclick = async () => {
     const on = u.infOrbs !== true;
@@ -15852,7 +16433,7 @@ function ownedShopRows(u) {
     (u[field] || []).forEach(id => {
       const def = defs.find(d => d.catalog.some(i => i.id === id));
       const item = def && def.catalog.find(i => i.id === id);
-      rows.push({ field, id, name: item ? item.name : id, label: def ? def.label : 'Removed item', equipped: defs.some(d => u[d.equipField] === id) });
+      rows.push({ field, id, name: item ? item.name : id, label: def ? def.label : 'Removed item', equipped: field !== 'ownedBadges' && defs.some(d => u[d.equipField] === id) });
     });
   });
   return rows;
@@ -16144,7 +16725,7 @@ addEventListener('pagehide', () => {
 // The Shop's built-in prices, for functions/api/admin/buy, which can't read this file: the Owner's and Co-Owners' apps
 // save them to shopPrices/builtin whenever they differ (unless a newer version of Frixion already saved its own).
 function builtinShopPrices() {
-  const lists = { decorations: AVATAR_DECORATIONS, nameplates: NAMEPLATES, profile_effects: PROFILE_EFFECTS, profile_frames: PROFILE_FRAMES, themes: SHOP_THEMES, music: MUSIC_TRACKS };
+  const lists = { decorations: AVATAR_DECORATIONS, nameplates: NAMEPLATES, profile_effects: PROFILE_EFFECTS, profile_frames: PROFILE_FRAMES, badges: SHOP_BADGES, themes: SHOP_THEMES, music: MUSIC_TRACKS };
   return Object.fromEntries(Object.entries(lists).map(([cat, list]) =>
     [cat, Object.fromEntries(list.filter(i => !i.disabled && Number.isInteger(i.price) && i.price >= 0).map(i => [i.id, i.price]))]));
 }
@@ -18977,6 +19558,11 @@ const EGGS = [
   { id: 'mazehalf', t: 'h', name: 'Halfway There', how: 'Clear level 50 of Mouse Maze.', hint: 'Fifty mazes in.' },
   { id: 'ontime', t: 'm', name: 'Good Credit', how: 'Pay a loan back in full before it\'s due.', hint: 'Borrow, then be on time.' },
   { id: 'hideorbs', t: 'e', name: 'Nobody\'s Business', how: 'Turn off "Show my Orbs on my profile" in Settings > Privacy.', hint: 'Some numbers are private.' },
+  // v4.65
+  { id: 'badgefan', t: 'm', name: 'Badge Reader', how: 'Open the card of 8 different badges on profiles (hover or tap them), without reloading.', hint: 'Read the small print on people\'s badges.' },
+  { id: 'allbadges', t: 'h', name: 'Badge Hoarder', how: 'Own every badge in the Shop\'s Badges tab.', hint: 'Collect a whole tab of the Shop.' },
+  { id: 'fxwatch', t: 'm', name: 'Stargazer', how: 'Keep a profile with a drawn effect (Northern Lights, Night Sky and the other new ones) open for 2 minutes.', hint: 'Some profile effects are worth watching.' },
+  { id: 'slimepoke', t: 'e', name: 'Don\'t Touch That', how: 'Click the Toxic Ooze card in the Shop 5 times (not its buy button).', hint: 'Something in the Shop is sticky.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -19193,6 +19779,10 @@ function eggEffect(id, first) {
     case 'mazehalf': eggToast('Halfway through the maze.'); return;
     case 'ontime': eggToast('Paid back on time.', 'Your credit thanks you.'); return;
     case 'hideorbs': eggToast('Your secret is safe.'); return;
+    case 'badgefan': eggToast('You read all the small print.'); return;
+    case 'allbadges': eggToast('Every badge in the Shop.', 'Your profile is getting crowded.'); return;
+    case 'fxwatch': eggToast('Still watching?', 'It never ends, but you can close it.'); return;
+    case 'slimepoke': eggToast('Ew.', 'Now it\'s on your hands.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
@@ -19308,6 +19898,7 @@ const EGG_GROUPS = [
   ['Games', ['snake67', 'merge2048', 'typingegg', 'simon15', 'luckyrush', 'voidcrop', 'samegarden']],
   ['Casino (v4.63)', ['zerohero', 'onepointoh', 'triple', 'tenx', 'jackpot']],
   ['Maze, loans and privacy (v4.64)', ['tricked', 'mazehalf', 'ontime', 'hideorbs']],
+  ['Badges and effects (v4.65)', ['badgefan', 'allbadges', 'fxwatch', 'slimepoke']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {

@@ -1418,6 +1418,10 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 .admin-block:last-child { border-bottom: none; }
 .ab-title { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; letter-spacing: .3px; }
 .ab-row { display: flex; gap: 8px; align-items: center; }
+/* staff badges on a person's page (v4.65) */
+.admin-badge-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.admin-badge-pick { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px 5px 8px; border-radius: 6px; background: var(--bg-tertiary); cursor: pointer; font-size: 13px; }
+.admin-badge-pick input { margin: 0; }
 .gen-code-uses-row { margin-top: 8px; flex-wrap: wrap; }
 .gen-code-uses-row .fld-label, .gen-code-uses-row .hint { margin: 0; }
 .gen-code-uses-row .fld-input { width: 90px; flex: none; }
@@ -1532,8 +1536,20 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
    there was no way to reach the rest of it. Making this its own scroll
    region (flex:1 + min-height:0) fixes that while .profile-box still
    clips the banner's rounded top corners. */
-.profile-main { padding: 0 20px 20px; margin-top: -40px; overflow-y: auto; flex: 1; min-height: 0; }
+.profile-main { padding: 0 20px 20px; margin-top: -40px; overflow-y: auto; flex: 1; min-height: 0; position: relative; z-index: 2; }
 .profile-avatar-wrap { margin-bottom: 10px; position: relative; width: 80px; }
+/* Badges (v4.65): a small box to the right of the picture; hover or tap one for a card about it */
+.profile-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.profile-top .profile-avatar-wrap { margin-bottom: 0; flex-shrink: 0; }
+.profile-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; padding: 3px; margin-bottom: 4px; background: var(--bg-secondary); border-radius: 8px; max-width: 300px; position: relative; z-index: 6; }
+.pbadge { width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; background: none; border: 0; padding: 0; cursor: pointer; }
+.pbadge:hover, .pbadge:focus-visible { background: var(--bg-modifier-hover); outline: none; }
+.badge-tip { position: fixed; z-index: 400; width: 210px; padding: 14px 14px 12px; border-radius: 10px; background: var(--bg-floating); box-shadow: 0 8px 24px rgba(0,0,0,.45); text-align: center; pointer-events: none; opacity: 0; transform: translateY(4px); transition: opacity .12s, transform .12s; }
+.badge-tip.on { opacity: 1; transform: none; }
+.bt-icon { display: flex; justify-content: center; margin-bottom: 8px; }
+.bt-title { font-weight: 700; font-size: 15px; }
+.bt-tier { font-size: 11px; font-weight: 800; letter-spacing: .08em; margin-top: 2px; }
+.bt-text { font-size: 13px; color: var(--text-muted); margin-top: 6px; line-height: 1.35; }
 .profile-avatar { border: 6px solid var(--bg-floating); }
 .avatar-edit-btn {
   position: absolute; bottom: -2px; right: -2px; width: 28px; height: 28px; border-radius: 50%;
@@ -1628,6 +1644,14 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
    actually cross the profile card. Each particle gets --s (size scale) and
    --drift (sideways sway) inline from PROFILE_EFFECT_PARTICLES_HTML. */
 .profile-effect-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 5; }
+/* Drawn effects (v4.65): under the profile's text, over its background; the panel lets some of it through.
+   During a "front" intro (Smoke Bomb, Toxic Ooze, Glitch) it covers the whole card for a moment. */
+.profile-fx-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; display: none; }
+.profile-box.fx-on .profile-fx-canvas { display: block; }
+.profile-fx-canvas.pfx-front { z-index: 6; }
+.profile-box.fx-on .profile-body { background: color-mix(in srgb, var(--bg-secondary) 64%, transparent); }
+.pfx-preview { height: 96px; }
+.pfx-preview canvas { display: block; width: 100%; height: 100%; }
 .profile-effect-overlay .particle, .sic-effect-preview .particle { position: absolute; top: -12%; will-change: top, transform, opacity; }
 @keyframes fxFall {
   0% { top: -12%; transform: translateX(0) rotate(0deg) scale(var(--s, 1)); }
@@ -2591,6 +2615,10 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .is-theme-card .sic-preview, .shop-item-card[data-cat="banners"] .sic-preview { min-height: 0; padding: 0; background: none; }
 .sic-deco-stage { width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; }
 .sic-deco-stage .avatar { margin: 0 auto; }
+/* Shop badges (v4.65) */
+.sic-badge-preview { width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.07), transparent 70%); }
+.sic-badge-preview svg { filter: drop-shadow(0 3px 8px rgba(0,0,0,.35)); }
+.shop-note { font-size: 13px; color: var(--text-muted); margin: 2px 0 10px; }
 .sic-name { width: 100%; justify-content: center; text-align: center; line-height: 1.25; }
 .sic-desc { width: 100%; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .sic-btn { min-height: 32px; border-radius: 4px; }
@@ -4992,3 +5020,6 @@ body.is-mobile .blocked-msgs { margin-left: 16px; }
 .mz-lv:disabled { opacity: .3; cursor: default; }
 .mz-note { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #e8e9ee; text-align: center; padding: 20px; }
 .mz-note span { color: #aab0bd; font-size: 14px; }
+/* any file can be sent (v4.65); risky ones say so */
+.msg-att-item.is-risky .msg-file-card { box-shadow: inset 3px 0 0 var(--idle); }
+.mfc-warn { color: var(--idle); }
