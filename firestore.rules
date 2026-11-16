@@ -95,14 +95,16 @@ service cloud.firestore {
       allow create: if signedIn() && !exists(acctPath())
         && request.resource.data.get('username', '') == username
         && request.resource.data.get('authUid', '') == request.auth.uid
-        && !request.resource.data.keys().hasAny(['password', 'owner', 'coowner', 'terminated', 'redirectUrl', 'redirectNonce', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker', 'casino', 'infOrbs', 'bannerImage', 'customRank', 'credit', 'loanWith', 'loanNext'])
+        && !request.resource.data.keys().hasAny(['password', 'owner', 'coowner', 'terminated', 'redirectUrl', 'redirectNonce', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker', 'casino', 'infOrbs', 'bannerImage', 'customRank', 'credit', 'loanWith', 'loanNext', 'staffBadges'])
         && request.resource.data.get('op', false) == false
         && request.resource.data.get('banned', false) == false
         && request.resource.data.get('premiumUntil', null) == null
         && request.resource.data.get('orbs', 0) is int && request.resource.data.get('orbs', 0) <= 50
         // ... no Shop items yet, and plain colors only (v4.57)
-        && !request.resource.data.keys().hasAny(['ownedDecorations', 'ownedNameplates', 'ownedProfileEffects', 'ownedProfileFrames', 'ownedThemes', 'ownedBanners', 'ownedMusic',
-             'equippedDecoration', 'equippedMask', 'equippedNameplate', 'equippedProfileEffect', 'equippedProfileFrame', 'equippedTheme', 'equippedBanner', 'equippedMusic'])
+        && !request.resource.data.keys().hasAny(['ownedDecorations', 'ownedNameplates', 'ownedProfileEffects', 'ownedProfileFrames', 'ownedThemes', 'ownedBanners', 'ownedMusic', 'ownedBadges',
+             'equippedDecoration', 'equippedMask', 'equippedNameplate', 'equippedProfileEffect', 'equippedProfileFrame', 'equippedTheme', 'equippedBanner', 'equippedMusic', 'equippedBadge'])
+        // ... and no game time or gifts yet (the badges, v4.65)
+        && request.resource.data.get('stats', {}).get('gameMinutes', 0) == 0 && request.resource.data.get('stats', {}).get('giftsGiven', 0) == 0
         && plainColors(request.resource.data.keys(), request.resource.data, false);
       allow update: if profileUpdate(who(), username);
       allow delete: if profileDelete(who(), username);
@@ -135,14 +137,31 @@ service cloud.firestore {
     // infOrbs (v4.64): infinite Orbs, given only by the Owner and Co-Owners (staffEdit; Admins can't).
     function selfEdit(m, k, username) {
       return m.name == username
-        && !k.hasAny(['authUid', 'owner', 'coowner', 'op', 'username', 'createdAt', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker', 'casino', 'infOrbs', 'customRank', 'credit', 'loanWith', 'loanNext'])
+        && !k.hasAny(['authUid', 'owner', 'coowner', 'op', 'username', 'createdAt', 'mutedUntil', 'muteReason', 'purgePerm', 'cracker', 'casino', 'infOrbs', 'customRank', 'credit', 'loanWith', 'loanNext', 'staffBadges'])
         && (!k.hasAny(['bannerImage']) || !('bannerImage' in request.resource.data))   // a banner picture (v4.64) is paid for: you may only take yours off
         && (!k.hasAny(['banned', 'banReason', 'bannedUntil']) || clearingExpiredBan())
         && (!k.hasAny(['redirectUrl', 'redirectNonce']) || !request.resource.data.keys().hasAny(['redirectUrl', 'redirectNonce']))
         && (!k.hasAny(['terminated']) || !('terminated' in request.resource.data))
         && !('password' in request.resource.data)
         && plainColors(k, request.resource.data, premiumNow(resource.data))
-        && economyOk(k, request.resource.data);
+        && economyOk(k, request.resource.data)
+        && statsOk(k);
+    }
+    // (v4.65) The badge counts your own app keeps: game time goes up at most 10 minutes per save and at most every 9
+    // minutes (stamped with the server's time), so it can't grow faster than real time; Premium gifts go up one at a time,
+    // only in the same write that pays 1,400 Orbs for the code. The time stamp only changes with the minutes.
+    function statsOk(k) {
+      let b = resource.data.get('stats', {});
+      let a = request.resource.data.get('stats', {});
+      let gm0 = b.get('gameMinutes', 0);
+      let gm1 = a.get('gameMinutes', 0);
+      let gf0 = b.get('giftsGiven', 0);
+      let gf1 = a.get('giftsGiven', 0);
+      return !k.hasAny(['stats'])
+        || ((gm1 == gm0 || (gm1 > gm0 && gm1 - gm0 <= 10 && a.get('gameAt', null) == request.time
+              && (b.get('gameAt', null) == null || request.time > b.gameAt + duration.value(540, 's'))))
+          && (gf1 == gf0 || (gf1 == gf0 + 1 && request.resource.data.get('orbs', 0) <= resource.data.get('orbs', 0) - 1400))
+          && (a.get('gameAt', null) == b.get('gameAt', null) || gm1 > gm0));
     }
     function premiumNow(u) { return u.get('premiumUntil', null) is number && u.premiumUntil > request.time.toMillis(); }
     // Colors everyone else's screen draws from your profile are plain colors (v4.56): a hex color, or a two-color
@@ -164,14 +183,14 @@ service cloud.firestore {
       return (!k.hasAny(['orbs']) || (d.get('orbs', null) is number && d.orbs >= 0
             && (resource.data.get('orbs', null) is number ? d.orbs < resource.data.orbs : d.orbs <= 50)))
         && !k.hasAny(['premiumUntil'])
-        && (!k.hasAny(['ownedDecorations', 'ownedNameplates', 'ownedProfileEffects', 'ownedProfileFrames', 'ownedThemes', 'ownedBanners', 'ownedMusic'])
+        && (!k.hasAny(['ownedDecorations', 'ownedNameplates', 'ownedProfileEffects', 'ownedProfileFrames', 'ownedThemes', 'ownedBanners', 'ownedMusic', 'ownedBadges'])
           || (onlyRemoved('ownedDecorations') && onlyRemoved('ownedNameplates') && onlyRemoved('ownedProfileEffects') && onlyRemoved('ownedProfileFrames')
-            && onlyRemoved('ownedThemes') && onlyRemoved('ownedBanners') && onlyRemoved('ownedMusic')))
-        && (!k.hasAny(['equippedDecoration', 'equippedMask', 'equippedNameplate', 'equippedProfileEffect', 'equippedProfileFrame', 'equippedTheme', 'equippedBanner', 'equippedMusic'])
+            && onlyRemoved('ownedThemes') && onlyRemoved('ownedBanners') && onlyRemoved('ownedMusic') && onlyRemoved('ownedBadges')))
+        && (!k.hasAny(['equippedDecoration', 'equippedMask', 'equippedNameplate', 'equippedProfileEffect', 'equippedProfileFrame', 'equippedTheme', 'equippedBanner', 'equippedMusic', 'equippedBadge'])
           || (wears(k, d, 'equippedDecoration', 'ownedDecorations') && wears(k, d, 'equippedMask', 'ownedDecorations')
             && wears(k, d, 'equippedNameplate', 'ownedNameplates') && wears(k, d, 'equippedProfileEffect', 'ownedProfileEffects')
             && wears(k, d, 'equippedProfileFrame', 'ownedProfileFrames') && wears(k, d, 'equippedTheme', 'ownedThemes')
-            && wears(k, d, 'equippedBanner', 'ownedBanners') && wears(k, d, 'equippedMusic', 'ownedMusic')));
+            && wears(k, d, 'equippedBanner', 'ownedBanners') && wears(k, d, 'equippedMusic', 'ownedMusic') && wears(k, d, 'equippedBadge', 'ownedBadges')));
     }
     // (only checked when that slot changes, so something worn from before still shows until it's taken off)
     function wears(k, d, eq, owned) { return !k.hasAny([eq]) || d.get(eq, null) == null || d.get(eq, null) in d.get(owned, []); }
@@ -231,6 +250,7 @@ service cloud.firestore {
     match /shopBanners/{id}          { allow read: if signedIn(); allow write: if isStaff(who()); }
     match /shopProfileEffects/{id}   { allow read: if signedIn(); allow write: if isStaff(who()); }
     match /shopProfileFrames/{id}    { allow read: if signedIn(); allow write: if isStaff(who()); }
+    match /shopBadges/{id}           { allow read: if signedIn(); allow write: if isStaff(who()); }   // (v4.65)
     match /gardenSeeds/{id}          { allow read: if signedIn(); allow write: if isStaff(who()); }
     match /gardenSprinklers/{id}     { allow read: if signedIn(); allow write: if isStaff(who()); }
     match /gardenPets/{id}           { allow read: if signedIn(); allow write: if isStaff(who()); }
