@@ -78,6 +78,9 @@ Other sites on the Firebase project (Gavinperri docs) stay on Firebase.
 - [x] Test tool: PGlite 0.5.12 on this PC, with Supabase's roles and auth.uid() (tests live outside the repo for now)
 - [x] 001_base.sql: helpers and accounts (29 tests pass)
 - [x] 002_commit.sql: public.fx_commit, routes, transforms, preconditions, batch snapshots (49 tests pass)
-- [ ] Profiles (users): read, create, selfEdit, staffEdit, friendEdit, economyOk, statsOk, plainColors
-- [ ] The other collections
-- [ ] Port all of rules2.test.js
+- [x] 003_users.sql: profiles, meta, private notes, mentions (mentions wait for servers)
+- [x] rules2.test.js runs on it: tests/r2-ported.mjs (made by make-r2-ported.js) through tests/r2compat.mjs.
+      2026-11-15: 165 pass, 2 fail (mentions), 451 wait for collections not ported yet
+- [ ] Servers, channels, categories, threads, messages (most of the waiting tests)
+- [ ] DMs and groups, codes, devices and networks, the staff-published collections, the rest
+- [ ] Realtime tests (the old Realtime Database section waits on these)
