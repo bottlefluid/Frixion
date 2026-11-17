@@ -20,6 +20,10 @@
 //                                 role: 'authenticated', which Supabase will need to count it as signed in (Firebase's
 //                                 rules don't look at it); a sign-in that isn't a Frixion account yet gets only that.
 //   GET  /api/admin/info          whether it's set up here (auth: "ready" once the service account may change sign-ins).
+//   POST /api/admin/move          { token, action, group?, after?, size? }: the Owner copies Frixion's data from Firestore
+//                                 into Supabase for the switch (the Owner panel's Supabase tab): 'plan' lists the kinds
+//                                 of documents, 'count' counts one kind, 'copy' copies its next page. See "moving to
+//                                 Supabase" at the end.
 //
 // The Orbs economy (v4.57). A page can't add Orbs, Premium time or Shop items to its own account any more
 // (firestore.rules); they come from here, where the page can't change the numbers:
@@ -72,6 +76,7 @@ export async function onRequest({ request, env, params }) {
     if (route === 'code' && request.method === 'POST') return json(await redeemCode(env, await request.json().catch(() => ({}))));
     if (route === 'egg' && request.method === 'POST') return json(await findEgg(env, await request.json().catch(() => ({}))));
     if (route === 'casino' && request.method === 'POST') return json(await casino(env, await request.json().catch(() => ({}))));
+    if (route === 'move' && request.method === 'POST') return json(await move(env, await request.json().catch(() => ({}))));
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
     if (e instanceof Fail) return json({ error: e.message }, e.status);
@@ -1326,4 +1331,82 @@ async function loanCheck(env, me, { with: other }) {
   }
   const shown = all.filter(l => !other || l.data.from === other || l.data.to === other).map(loanShown).sort((a, b) => b.at - a.at).slice(0, 40);
   return { ok: true, loans: shown };
+}
+
+// ---------------- moving to Supabase (the switch, 2026-11) ----------------
+// The Owner panel's Supabase tab copies Frixion's documents from Firestore into Supabase, a page of one kind at a time.
+// The kinds are the collection names in Supabase's own path table (fx_routes), except typing notes, which only last
+// seconds. Firestore is read with the service account (each document copied is one of its daily reads; a count costs
+// one read per 1,000 documents); Supabase is written with its secret key (SUPABASE_URL and SUPABASE_SECRET_KEY,
+// Cloudflare secrets), which its rules let do anything, a whole document at a time, so copying a page again is
+// harmless. (globalThis.fetch: on the Supabase branch, this file's fetch answers Firestore's requests from Supabase.)
+const MOVE_SKIP = new Set(['typing']);
+const moveToFx = v => ('nullValue' in v ? null : 'booleanValue' in v ? v.booleanValue : 'integerValue' in v ? Number(v.integerValue)
+  : 'doubleValue' in v ? Number(v.doubleValue) : 'stringValue' in v ? v.stringValue : 'timestampValue' in v ? { $t: Date.parse(v.timestampValue) }
+  : 'referenceValue' in v ? { $ref: String(v.referenceValue).replace(/^.*?\/documents\//, '') } : 'arrayValue' in v ? (v.arrayValue.values || []).map(moveToFx)
+  : 'mapValue' in v ? moveFields(v.mapValue.fields) : (() => { throw new Error('it holds a ' + Object.keys(v)[0] + ', which Supabase has no place for'); })());
+const moveFields = f => Object.fromEntries(Object.entries(f || {}).map(([k, x]) => [k, moveToFx(x)]));
+async function supabaseRpc(env, name, args) {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY) fail(503, 'Add SUPABASE_URL and SUPABASE_SECRET_KEY to this site in Cloudflare first.');
+  const key = env.SUPABASE_SECRET_KEY;
+  const r = await globalThis.fetch(`${String(env.SUPABASE_URL).replace(/\/+$/, '')}/rest/v1/rpc/${name}`, { method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: key, Authorization: 'Bearer ' + key }, body: JSON.stringify(args) });
+  const j = await r.json().catch(() => null);
+  if (!r.ok) throw Object.assign(new Error((j && j.message) || `Supabase answered ${r.status}`), { supabase: true, status: r.status });
+  return j;
+}
+async function firestorePost(env, op, body) {
+  const r = await globalThis.fetch(`${fsBase(env)}:${op}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await googleToken(env) }, body: JSON.stringify(body) });
+  if (r.status === 429) fail(503, OUT_OF_READS);
+  if (!r.ok) fail(502, `Firestore answered ${r.status}.`);
+  return r.json();
+}
+let moveRoutes = null, moveOwner = null;   // (kept a few minutes: the tab asks for page after page)
+async function move(env, { token, action, group, after, size }) {
+  const claims = await verifyIdToken(env, token);
+  if (!moveOwner || moveOwner.uid !== claims.sub || Date.now() - moveOwner.at > 300000) { await requireOwner(env, token); moveOwner = { uid: claims.sub, at: Date.now() }; }
+  if (!moveRoutes || Date.now() - moveRoutes.at > 600000) {
+    try { moveRoutes = { at: Date.now(), list: (await supabaseRpc(env, 'fx_routes', {})).map(r => r.pattern) }; }
+    catch (e) { if (e.supabase) fail(502, 'Supabase didn\'t answer (' + e.message + '). Is its setup run?'); throw e; }
+  }
+  const routes = new Set(moveRoutes.list);
+  const groups = [...new Set(moveRoutes.list.map(p => p.split('/').slice(-2, -1)[0]))].filter(g => !MOVE_SKIP.has(g)).sort();
+  if (action === 'plan') {
+    // (and any collection at the top that Supabase keeps nothing of, so nothing is left behind unseen)
+    const tops = new Set(moveRoutes.list.map(p => p.split('/')[0]));
+    const j = await firestorePost(env, 'listCollectionIds', { pageSize: 300 });
+    return { groups, unknown: ((j && j.collectionIds) || []).filter(c => !tops.has(c)).sort() };
+  }
+  if (typeof group !== 'string' || !groups.includes(group)) fail(400, 'Supabase doesn\'t keep that kind of document.');
+  const from = [{ collectionId: group, allDescendants: true }];   // every collection with that name, at any depth
+  if (action === 'count') {
+    const j = await firestorePost(env, 'runAggregationQuery', { structuredAggregationQuery: { structuredQuery: { from }, aggregations: [{ alias: 'n', count: {} }] } });
+    const n = j && j[0] && j[0].result && j[0].result.aggregateFields && j[0].result.aggregateFields.n;
+    return { group, count: n ? Number(n.integerValue) : 0 };
+  }
+  if (action !== 'copy') fail(400, 'That isn\'t a move action.');
+  const take = Math.max(1, Math.min(300, Math.floor(Number(size) || 200))), root = docName(env, '');
+  const q = { from, orderBy: [{ field: { fieldPath: '__name__' }, direction: 'ASCENDING' }], limit: take };
+  if (after != null) {
+    if (typeof after !== 'string' || !after.startsWith(root)) fail(400, 'That isn\'t a place to carry on from.');
+    q.startAt = { values: [{ referenceValue: after }], before: false };   // (just after it)
+  }
+  const docs = (await firestorePost(env, 'runQuery', { structuredQuery: q })).filter(x => x.document).map(x => x.document);
+  const writes = [], skipped = [];
+  for (const d of docs) {
+    const path = d.name.slice(root.length);
+    if (!routes.has(path.split('/').map((s, i) => (i % 2 ? '*' : s)).join('/'))) { skipped.push(path + ': Supabase has no table for it'); continue; }
+    try { writes.push({ path, set: moveFields(d.fields) }); } catch (e) { skipped.push(path + ': ' + e.message); }
+  }
+  let copied = 0;
+  try {
+    for (let i = 0; i < writes.length; i += 500) { await supabaseRpc(env, 'fx_commit', { writes: writes.slice(i, i + 500) }); copied += Math.min(500, writes.length - i); }
+  } catch (e) {
+    if (!e.supabase) throw e;
+    // A page Supabase won't take is asked for again in smaller pages, down to the one document it won't take, which is
+    // noted and passed over.
+    if (writes.length > 1) return { group, retrySmaller: true, error: e.message };
+    if (writes.length === 1) skipped.push(writes[0].path + ': ' + e.message);
+  }
+  return { group, read: docs.length, copied, skipped, last: docs.length ? docs[docs.length - 1].name : after || null, done: docs.length < take };
 }
