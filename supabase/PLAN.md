@@ -130,6 +130,18 @@ and data sent out (5 GB + 5 GB cached a month); over either means restrictions u
       daily reset, then chooses: spread over days (free) or billing on for a day.
 - Switch day, in order: Frixion read-only (a rules change), run setup-all.sql again (it empties the tables, so
   nothing deleted in Firestore since the first copy survives), copy everything, merge this branch into main, push.
+- [x] The first real copy (2026-11-17, the user from the Owner panel): 1,592 documents, Count says 1,592 too; the
+      only thing left out was Gavinperri's two collections (no table for them yet then).
+- [x] Gavinperri (the other site on this Firebase project) moves too (2026-11-17, the user asked): sql/012_gavinperri.sql
+      ports its section of firestore.rules (tables site_gavinperri_doc, site_gavinperri_history, site_gavinperri_images;
+      nothing listable; one document at a time through fx_get's exceptions; saves filed in history in the same write,
+      checked at the end of the write; pictures made once). Its 146 rule checks are in r2-ported now: 703/703. Its site
+      (D:\Downloads\Gavinperri-supabase, branch supabase of bottlefluid/gavinperri, local only) reads and publishes
+      through a copy of fdb.js; sign-in stays Firebase's (role claim from frixionbeta's claims route); App Check and
+      reCAPTCHA are gone there. Tried locally with the stand-in: 15/15 (reads, admin check, publish with a picture,
+      history, naming, a stale publish refused, signed-out reads of only what the library lists) and its list screen.
+      Its data is copied by the same Owner tab once this setup runs (the plan picks up its kinds from fx_routes).
+      Switch day: both sites together (one lock, one copy), Gavinperri's branch merged and pushed alongside.
 - Known: a Realtime filter is one column, so a channel id two servers share ("general") sends both servers' messages
   to a listener, which drops the other's (Realtime messages used for nothing). Supabase's free plan allows 200
   Realtime connections at once (one per open tab) and 100 channels each; Frixion opens about 25 to 35 per tab.

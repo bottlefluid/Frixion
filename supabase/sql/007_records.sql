@@ -35,6 +35,8 @@ begin
     when 'orb_days' then m.ok and (m.name = ids[1] or m.rank >= 1)
     when 'eggs' then m.ok and (m.name = ids[1] or m.rank >= 1)
     when 'rng_codes' then fx.signed_in()
+    when 'site_gavinperri_doc' then fx.gp_doc_readable(ids[1], m)        -- (Gavinperri, part 12)
+    when 'site_gavinperri_images' then fx.gp_image_readable(ids[1], m)
     else false end, false);
 end $$;
 create or replace function public.fx_get(path text) returns jsonb language plpgsql set search_path = '' as $$

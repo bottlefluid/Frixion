@@ -732,6 +732,191 @@ async function seed() {
 
   // Another site on this project (D:\Downloads\Gavinperri, bottlefluid/gavinperri): a library of documents that
   // Frixion's admins write there and anyone reads. Its rules are at the end of firestore.rules.
+  section('Gavinperri (another site on this project)');
+  {
+    await setDoc('owner', 'users/BanMod', { username: 'BanMod', authUid: uidOf('BanMod'), avatarColor: '#5865f2', orbs: 50, friends: [], incomingRequests: [], outgoingRequests: [], banned: true, bannedUntil: null, op: true, premiumUntil: null });
+    await setDoc('owner', `accounts/${uidOf('BanMod')}`, { username: 'BanMod', at: 1 });
+    const D = 'site_gavinperri_doc', pics = 'site_gavinperri_images', d1 = `${D}/doc1`, lib = `${D}/library`;
+    // What one save writes: the live copy and the same thing filed in its history (o changes one side or the other).
+    const pair = (who, id, rev, body, o = {}) => {
+      const base = { rev, body, imgs: o.imgs || [], ...(o.ids ? { ids: o.ids } : {}) };
+      return [
+        write(`${D}/${id}`, { set: { ...base, ...(o.main || {}) }, serverTime: ['at'], full: true }),
+        write(`${D}/${id}/history/${o.hid || rev}`, { set: { ...base, by: o.by || who, ...(o.hist || {}) }, serverTime: ['at'], full: true }),
+      ];
+    };
+    const save = (who, id, rev, body, o) => commit(who, pair(who, id, rev, body, o));
+    const liveOnly = (who, id, rev, body, o = {}) => commit(who, [pair(who, id, rev, body, o)[0]]);
+    const histOnly = (who, id, rev, body, o = {}) => commit(who, [pair(who, id, rev, body, o)[1]]);
+
+    await allow('a signed-out visitor fetches the library before there is one', getDoc(null, lib));
+    await allow('a signed-out visitor fetches the covers before there are any', getDoc(null, `${D}/covers`));
+    await deny('a signed-out visitor fetches a document while there is no library', getDoc(null, d1));
+    await deny('a signed-out visitor makes a document', save(null, 'doc1', 1, 'x'));
+    await deny('Alice (not an admin) makes a document', save('Alice', 'doc1', 1, 'x'));
+    await deny('BanMod (a banned admin) makes a document', save('BanMod', 'doc1', 1, 'x'));
+    await deny('Alice makes a document claiming to be the owner in it', save('Alice', 'doc1', 1, 'x', { main: { owner: true }, hist: { owner: true } }));
+    await deny('Mod makes one without filing it in the history', liveOnly('Mod', 'doc1', 1, 'x'));
+    await deny('Mod files a history entry with no document', histOnly('Mod', 'doc1', 1, 'x'));
+    await deny('Mod makes one starting at revision 2', save('Mod', 'doc1', 2, 'x'));
+    await deny('Mod makes one with a history entry that says something else', save('Mod', 'doc1', 1, 'x', { hist: { body: 'y' } }));
+    await deny('Mod makes one with different pictures listed in the history', save('Mod', 'doc1', 1, 'x', { hist: { imgs: ['a'.repeat(64)] } }));
+    await deny("Mod files it under someone else's name", save('Mod', 'doc1', 1, 'x', { by: 'Alice' }));
+    await deny('Mod makes one with an extra field', save('Mod', 'doc1', 1, 'x', { main: { owner: true } }));
+    await deny('Mod makes one saying who saved it (only the history says)', save('Mod', 'doc1', 1, 'x', { main: { by: 'Mod' } }));
+    await deny('Mod files it with an extra field', save('Mod', 'doc1', 1, 'x', { hist: { note: 'hi' } }));
+    await deny('Mod makes one with a made-up date', commit('Mod', [
+      write(d1, { set: { rev: 1, body: 'x', imgs: [], at: new Date('2020-01-01T00:00:00Z') } }),
+      write(`${d1}/history/1`, { set: { rev: 1, body: 'x', imgs: [], by: 'Mod', at: new Date('2020-01-01T00:00:00Z') } })]));
+    await deny('Mod makes one with text that is too long (200,001 characters)', save('Mod', 'doc1', 1, 'x'.repeat(200001)));
+    await deny('Mod makes one with something that is not text', save('Mod', 'doc1', 1, { html: 'x' }));
+    await deny('Mod makes one listing 25 pictures', save('Mod', 'doc1', 1, 'x', { imgs: Array.from({ length: 25 }, (_, i) => 'p' + i) }));
+    await deny('Mod makes one that lists documents (only the library does)', save('Mod', 'doc1', 1, 'x', { ids: ['doc1'] }));
+    await deny('Mod makes one under a name with capitals and a space', save('Mod', 'Bad Name', 1, 'x'));
+    await deny('Mod makes one under a name that is too short', save('Mod', 'ab', 1, 'x'));
+    await deny('Mod makes a document where the covers go', save('Mod', 'covers', 1, 'x'));
+    await allow('Mod (admin) publishes a document, revision 1', save('Mod', 'doc1', 1, 'first'));
+    await deny("a signed-out visitor fetches it before the library lists it", getDoc(null, d1));
+    await deny('Alice fetches it before the library lists it', getDoc('Alice', d1));
+    await allow('Mod fetches it anyway (to edit with)', getDoc('Mod', d1));
+
+    await deny('Alice publishes the library', save('Alice', 'library', 1, 'lib', { ids: ['doc1'] }));
+    await deny('BanMod publishes the library', save('BanMod', 'library', 1, 'lib', { ids: ['doc1'] }));
+    await deny('Mod publishes the library without its list of documents', save('Mod', 'library', 1, 'lib'));
+    await deny('Mod publishes the library with a list that is not a list', save('Mod', 'library', 1, 'lib', { main: { ids: 'doc1' }, hist: { ids: 'doc1' } }));
+    await deny('Mod publishes the library listing 101 documents', save('Mod', 'library', 1, 'lib', { ids: Array.from({ length: 101 }, (_, i) => 'doc' + i) }));
+    await deny('Mod publishes the library with another list in its history', save('Mod', 'library', 1, 'lib', { ids: ['doc1'], hist: { ids: ['doc1', 'doc2'] } }));
+    await deny('Mod publishes the library listing the shelf (the admin-only list)', save('Mod', 'library', 1, 'lib', { ids: ['doc1', 'shelf'] }));
+    await deny('Mod publishes the library listing itself', save('Mod', 'library', 1, 'lib', { ids: ['library'] }));
+    await allow('Mod publishes the library, listing the document', save('Mod', 'library', 1, 'lib', { ids: ['doc1'] }));
+    await allow('Mod publishes the shelf (the full list, hidden documents too)', save('Mod', 'shelf', 1, 'all'));
+    await deny('a signed-out visitor reads the shelf', getDoc(null, `${D}/shelf`));
+    await deny('Alice reads the shelf', getDoc('Alice', `${D}/shelf`));
+    await allow('Mod reads the shelf', getDoc('Mod', `${D}/shelf`));
+    await deny('Alice publishes the shelf', save('Alice', 'shelf', 2, 'mine'));
+    await allow('a signed-out visitor reads the library', getDoc(null, lib));
+    await allow('a signed-out visitor reads the listed document', getDoc(null, d1));
+    await allow('Alice reads the listed document', getDoc('Alice', d1));
+    await deny('a signed-out visitor reads a name that is not listed', getDoc(null, `${D}/other`));
+    await deny('a signed-out visitor lists the documents', query(null, '', D));
+    await deny('Mod lists the documents', query('Mod', '', D));
+    await deny('a signed-out visitor reads a history entry', getDoc(null, `${d1}/history/1`));
+    await deny("a signed-out visitor reads the library's history", getDoc(null, `${lib}/history/1`));
+    await deny('Alice reads a history entry', getDoc('Alice', `${d1}/history/1`));
+    await deny('BanMod reads a history entry', getDoc('BanMod', `${d1}/history/1`));
+    await allow('Mod reads a history entry', getDoc('Mod', `${d1}/history/1`));
+    await allow('Mod lists a history', query('Mod', d1, 'history'));
+    await deny('Alice lists a history', query('Alice', d1, 'history'));
+    await deny('a signed-out visitor lists a history', query(null, d1, 'history'));
+
+    await deny('Mod publishes revision 1 again', save('Mod', 'doc1', 1, 'again'));
+    await deny('Mod skips to revision 3', save('Mod', 'doc1', 3, 'skip'));
+    await deny('Mod publishes revision 2 without filing it', liveOnly('Mod', 'doc1', 2, 'x'));
+    await deny('Mod publishes revision 2 but files it as 3', save('Mod', 'doc1', 2, 'x', { hid: 3 }));
+    await deny("Mod publishes revision 2 but files it in another document's history", commit('Mod', [
+      pair('Mod', 'doc1', 2, 'x')[0], pair('Mod', 'doc9', 2, 'x')[1]]));
+    await deny('Mod files revision 2 ahead of time', histOnly('Mod', 'doc1', 2, 'x'));
+    await deny('Mod files revision 2 under a second name (02)', commit('Mod', [
+      ...pair('Mod', 'doc1', 2, 'x'), write(`${d1}/history/02`, { set: { rev: 2, body: 'x', imgs: [], by: 'Mod' }, serverTime: ['at'], full: true })]));
+    await deny('Mod changes the live document in place (same revision)', updateDoc('Mod', d1, { body: 'sneaky' }));
+    await deny('Alice publishes revision 2', save('Alice', 'doc1', 2, 'x'));
+    await deny('BanMod publishes revision 2', save('BanMod', 'doc1', 2, 'x'));
+    await allow('Co (co-owner) publishes revision 2', save('Co', 'doc1', 2, 'second'));
+    await allow('Owner1 publishes revision 3', save('Owner1', 'doc1', 3, 'third'));
+    await deny('Mod rewrites a history entry', updateDoc('Mod', `${d1}/history/1`, { body: 'changed' }));
+    await deny('Owner1 rewrites a history entry', histOnly('Owner1', 'doc1', 1, 'changed'));
+    await deny('Mod deletes a document', delDoc('Mod', d1));
+    await deny('Owner1 deletes a document', delDoc('Owner1', d1));
+    await deny('Owner1 deletes a history entry', delDoc('Owner1', `${d1}/history/1`));
+    await deny('Owner1 deletes the library', delDoc('Owner1', lib));
+    await deny('a signed-out visitor deletes a document', delDoc(null, d1));
+
+    // Naming a revision: Admins and up give one a name (or change or clear it), and that is all that changes.
+    const h1 = `${d1}/history/1`;
+    const label = (who, name, o = {}) => commit(who, [write(o.path || h1, {
+      set: { name, namedBy: o.by || who, ...(o.set || {}) }, merge: ['name', 'namedBy', ...Object.keys(o.set || {})],
+      ...(o.when ? {} : { serverTime: ['namedAt'] }) })]);
+    await deny('a signed-out visitor names a revision', label(null, 'First draft', { by: 'Mod' }));
+    await deny('Alice names a revision', label('Alice', 'First draft'));
+    await deny('BanMod names a revision', label('BanMod', 'First draft'));
+    await deny('Mod names a revision as someone else', label('Mod', 'First draft', { by: 'Owner1' }));
+    await deny('Mod names a revision without saying when', label('Mod', 'First draft', { when: true }));
+    await deny('Mod names a revision with a made-up date', label('Mod', 'First draft', { when: true, set: { namedAt: new Date('2020-01-01T00:00:00Z') } }));
+    await deny('Mod names a revision and changes what it says', label('Mod', 'First draft', { set: { body: 'changed' } }));
+    await deny('Mod names a revision and changes its pictures', label('Mod', 'First draft', { set: { imgs: ['a'.repeat(64)] } }));
+    await deny('Mod names a revision and changes who published it', label('Mod', 'First draft', { set: { by: 'Owner1' } }));
+    await deny('Mod names a revision and changes its number', label('Mod', 'First draft', { set: { rev: 7 } }));
+    await deny('Mod names a revision and adds another field', label('Mod', 'First draft', { set: { note: 'hi' } }));
+    await deny('Mod gives a revision a name that is too long (61 characters)', label('Mod', 'x'.repeat(61)));
+    await deny('Mod gives a revision a name that is not text', label('Mod', 5));
+    await deny('Mod names a revision that was never published', label('Mod', 'Ghost', { path: `${d1}/history/9` }));
+    await deny('Mod names the live document (only revisions in a history have names)', label('Mod', 'Live', { path: d1 }));
+    await allow('Mod names a revision', label('Mod', 'First draft'));
+    await allow('Co (co-owner) renames it', label('Co', 'The very first one'));
+    await allow("Owner1 names one of the library's revisions", label('Owner1', 'One document', { path: `${lib}/history/1` }));
+    await allow('Mod clears a name', label('Mod', ''));
+    await allow('Mod names it again (60 characters)', label('Mod', 'n'.repeat(60)));
+    await deny('Mod takes the name field away', commit('Mod', [write(h1, { set: {}, merge: ['name'], exists: true })]));
+    await deny('Alice reads a named revision', getDoc('Alice', h1));
+    await allow('Mod reads it, name and all', getDoc('Mod', h1));
+    await deny('Owner1 deletes a named revision', delDoc('Owner1', h1));
+
+    await allow('Mod publishes a second document and lists it, in one write', commit('Mod', [
+      ...pair('Mod', 'doc2', 1, 'another'), ...pair('Mod', 'library', 2, 'lib', { ids: ['doc1', 'doc2'] })]));
+    await allow('a signed-out visitor reads the second document', getDoc(null, `${D}/doc2`));
+    await allow('Mod takes the first document off the list', save('Mod', 'library', 3, 'lib', { ids: ['doc2'] }));
+    await deny('a signed-out visitor can no longer read the first document', getDoc(null, d1));
+    await allow('...but the second still', getDoc(null, `${D}/doc2`));
+    await allow('Mod still reads the first (it is hidden, not gone)', getDoc('Mod', d1));
+    await allow('Mod still publishes to it', save('Mod', 'doc1', 4, 'fourth'));
+
+    const png = 'data:image/png;base64,iVBORw0KGgo=', id1 = 'a'.repeat(64), id2 = 'b'.repeat(64), id3 = 'c'.repeat(64);
+    const covers = (who, data, extra = {}) => commit(who, [write(`${D}/covers`, { set: { covers: data, ...extra }, serverTime: ['at'], full: true })]);
+    await deny('a signed-out visitor writes the covers', covers(null, { [id1]: png }));
+    await deny('Alice writes the covers', covers('Alice', { [id1]: png }));
+    await deny('BanMod writes the covers', covers('BanMod', { [id1]: png }));
+    await deny('Mod writes the covers with an extra field', covers('Mod', { [id1]: png }, { rev: 1 }));
+    await deny('Mod writes covers that are not a set of pictures', covers('Mod', 'x'));
+    await deny('Mod writes the covers with a made-up date', commit('Mod', [write(`${D}/covers`, { set: { covers: {}, at: new Date('2020-01-01T00:00:00Z') } })]));
+    await allow('Mod writes the covers', covers('Mod', { [id1]: png }));
+    await allow('Mod writes them again', covers('Mod', { [id1]: png, [id2]: png }));
+    await allow('a signed-out visitor reads the covers', getDoc(null, `${D}/covers`));
+    await deny('Owner1 deletes the covers', delDoc('Owner1', `${D}/covers`));
+    await deny('Mod files a history entry for the covers', histOnly('Mod', 'covers', 1, 'x'));
+
+    const pic = (who, id, data, extra = {}) => commit(who, [write(`${pics}/${id}`, { set: { data, w: 10, h: 10, ...extra }, serverTime: ['at'], full: true })]);
+    await deny('a signed-out visitor adds a picture', pic(null, id1, png));
+    await deny('Alice adds a picture', pic('Alice', id1, png));
+    await deny('BanMod adds a picture', pic('BanMod', id1, png));
+    await deny('Mod adds a picture under a made-up id', pic('Mod', 'logo', png));
+    await deny('Mod adds a web address as a picture', pic('Mod', id1, 'https://example.com/a.png'));
+    await deny('Mod adds an SVG', pic('Mod', id1, 'data:image/svg+xml;base64,PHN2Zz4='));
+    await deny('Mod adds a web page pretending to be a picture', pic('Mod', id1, 'data:text/html;base64,PGI+'));
+    await deny('Mod adds a picture with something tacked on after it', pic('Mod', id1, png + '"><script>alert(1)</script>'));
+    await deny('Mod adds a picture with an extra field', pic('Mod', id1, png, { by: 'Mod' }));
+    await deny('Mod adds a picture with a made-up size', pic('Mod', id1, png, { w: 99999 }));
+    await deny('Mod adds a picture that is too big (950,001 characters)', pic('Mod', id1, 'data:image/png;base64,' + 'A'.repeat(950001 - 22)));
+    await allow('Mod adds a picture', pic('Mod', id1, png));
+    await allow('Mod adds a big picture (900,000 characters)', pic('Mod', id2, 'data:image/webp;base64,' + 'A'.repeat(900000 - 23)));
+    await deny('Mod replaces a picture', pic('Mod', id1, 'data:image/png;base64,AAAA'));
+    await deny('Owner1 deletes a picture', delDoc('Owner1', `${pics}/${id1}`));
+    await deny('Mod lists the pictures', query('Mod', '', pics));
+    await deny('a signed-out visitor lists the pictures', query(null, '', pics));
+    await deny("a signed-out visitor fetches a picture the library doesn't list", getDoc(null, `${pics}/${id1}`));
+    await deny("Alice fetches a picture the library doesn't list", getDoc('Alice', `${pics}/${id1}`));
+    await allow('Mod fetches it anyway (to edit with)', getDoc('Mod', `${pics}/${id1}`));
+    await allow('Mod publishes the library, now listing the picture', save('Mod', 'library', 4, 'lib', { ids: ['doc2'], imgs: [id1] }));
+    await allow('a signed-out visitor fetches the picture now', getDoc(null, `${pics}/${id1}`));
+    await deny("...but still not one the library doesn't list", getDoc(null, `${pics}/${id2}`));
+    await deny('...or one that was never made', getDoc(null, `${pics}/${id3}`));
+    await allow('Mod publishes the library without the picture', save('Mod', 'library', 5, 'lib', { ids: ['doc2'] }));
+    await deny('a signed-out visitor can no longer fetch it', getDoc(null, `${pics}/${id1}`));
+    await allow("Mod still reads the library's earlier versions", getDoc('Mod', `${lib}/history/4`));
+    // (nothing here opens Frixion itself)
+    await deny('a signed-out visitor still reads no profile', getDoc(null, 'users/Mod'));
+    await deny('a signed-out visitor still reads no account', getDoc(null, `accounts/${uidOf('Mod')}`));
+  }
+
   section('Easter eggs and typing dots (v4.62)');
   {
     await deny('Alice gives herself the Cracker tag', updateDoc('Alice', 'users/Alice', { cracker: true }));

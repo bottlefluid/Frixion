@@ -1,5 +1,5 @@
 // Builds supabase/tests/r2-ported.mjs from the Firebase rule tests (rules2.test.js): the same seed data and the same
-// checks, on top of r2compat.mjs. The Gavinperri section is left out (that site stays on Firebase).
+// checks, on top of r2compat.mjs, Gavinperri's section included (that site moves to Supabase too, part 12).
 const fs = require('fs');
 const SRC = 'C:/Users/peter/AppData/Local/Temp/claude/5cb1245c0ba41c74/ab28a137-fd20-43a4-9361-bfe84f367209/scratchpad/emu/rules2.test.js';
 const OUT = 'D:/Downloads/Frixion-supabase/supabase/tests/r2-ported.mjs';
@@ -23,11 +23,10 @@ const out = [
   ...src.slice(iSeed, iMain).filter(l => !/call\('DELETE'/.test(l)),
   '(async () => {',
   '  seedMode(true); await seed(); seedMode(false);',
-  ...src.slice(iMain + 2, iGav),
-  ...src.slice(iEggs, iEnd),
+  ...src.slice(iMain + 2, iEnd),
   '  process.exit(summary() ? 1 : 0);',
   '})().catch(e => { console.error(e); process.exit(2); });',
   '',
 ];
 fs.writeFileSync(OUT, out.join('\n'));
-console.log(`wrote ${OUT}: ${out.length} lines (left out the Gavinperri section, ${iEggs - iGav} lines)`);
+console.log(`wrote ${OUT}: ${out.length} lines (Gavinperri section included, ${iEggs - iGav} lines)`);
