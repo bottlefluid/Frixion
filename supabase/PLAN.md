@@ -94,9 +94,19 @@ and data sent out (5 GB + 5 GB cached a month); over either means restrictions u
       live between two accounts; nothing refused that should pass, and editing someone else's message is refused.
 - [x] The user ran setup-all.sql (sql/001 to 010) in the SQL Editor (2026-11-16). Checked with the publishable key
       alone: 49 routes, signed-out reads and writes refused.
-- [ ] End-to-end test against the real project with a real Firebase sign-in (Realtime with Third-Party Auth above all):
-      the first try (2026-11-16) stopped at the role claim, because the live claims route couldn't read Firestore that
-      evening (its daily reads were used up).
+- [x] End-to-end test against the real project with a real Firebase sign-in (2026-11-17, after a first try on 11-16
+      stopped at the role claim because Firestore's daily reads were used up): the live claims route gave a temporary
+      sign-in its role, Supabase took the Firebase token (account read, a registration like the site's, a query),
+      a live update arrived 815 ms after the write (Realtime with Third-Party Auth works), signed-out reads and raising
+      one's own Orbs were refused, and the sign-in was deleted. Its profile and account entry stay (an account can't
+      delete those) until setup-all.sql runs again.
+- [x] The rest of the site on the local setup (2026-11-17): tests/page (run in the page, see helpers.js), 85/85 with no
+      error messages or uncaught errors: servers (form, #general, invite card, count), channels, categories, roles,
+      joining by invite, threads, pins, mentions, typing notes, /purge; group chats, blocking (DMs refused, groups
+      fine), server bans (rejoining refused), leaving a group; the Owner panel (user list, ban, unban, mute, Orbs, Make
+      Admin, purge perms, codes, the word filter, and the Devices, IP, Conversations, Codes, Ranks and Supabase tabs);
+      game Orbs (earned through the server, spent), saved game state, a cheat refused, the RNG game's save, leaderboards
+      and aura queries, Wordle, the Shop (buy, equip, unequip, wearing what you don't own refused), the privacy setting.
 - [x] Role claims: live on main since 76dae03 (2026-11-16): every sign-in gets role: 'authenticated' and accounts collect
       it as they sign in.
 - [x] Phase 3, the server (2026-11-16): functions/_lib/firestore-on-supabase.js answers the functions' Firestore REST
