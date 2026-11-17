@@ -1871,13 +1871,15 @@
   </div>
 </div>
 
-<!-- All scripts are deferred: the page (and the loading screen) paints first, then they run in order. Firebase Storage is not loaded because nothing uses it. -->
+<!-- All scripts are deferred: the page (and the loading screen) paints first, then they run in order. Firebase Storage is not loaded because nothing uses it.
+     The database is Supabase (supabase-js, with fdb.js making it look like Firestore); sign-in and the Realtime Database are still Firebase's. -->
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script defer src="script.js?v=151"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
+<script defer src="fdb.js?v=1"></script>
+<script defer src="script.js?v=152"></script>
 <script defer src="casino.js?v=2"></script>
 </body>
 </html>

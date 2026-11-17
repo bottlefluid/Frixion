@@ -43,6 +43,12 @@
 // Firebase emulators.
 const DISCORD = 'https://discord.com/api/v10';
 const FIRESTORE = 'https://firestore.googleapis.com/v1/projects/liquidalt/databases/(default)/documents';
+// (Supabase switch) With SUPABASE_URL and SUPABASE_SECRET_KEY set, every Firestore REST request in this file goes to
+// Supabase instead and is answered in Firestore's shapes (functions/_lib/firestore-on-supabase.js), so the code below
+// stays as it is. ENV is the site's settings, the same for every request.
+import { firestoreFetch } from '../../_lib/firestore-on-supabase.js';
+let ENV = null;
+const fetch = (url, init) => firestoreFetch(ENV, url, init);
 const FIREBASE_KEY = 'AIzaSyCaDVRWLOSgC_Nl0YOeoG86G_hd_LKdW2U';   // the site's public web key
 const UA = 'DiscordBot (https://equilibrium-incarnate.pages.dev, 1)';
 const SNOWFLAKE = /^\d{15,22}$/, ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -56,6 +62,7 @@ class Fail extends Error { constructor(status, message, extra) { super(message);
 const fail = (status, message, extra) => { throw new Fail(status, message, extra); };
 
 export async function onRequest({ request, env, params }) {
+  ENV = env;
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   const route = [].concat(params.path || []).join('/'), url = new URL(request.url);
   try {
@@ -151,6 +158,7 @@ let gToken = null;   // Google's access token for the service account, kept unti
 const b64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const b64urlText = s => b64url(new TextEncoder().encode(s));
 async function dbToken(env) {
+  if (env.SUPABASE_URL && env.SUPABASE_SECRET_KEY) return 'supabase';   // (Supabase answers instead: no Google token needed)
   if (env.FIRESTORE_BEARER) return env.FIRESTORE_BEARER;
   if (!env.FIREBASE_SERVICE_ACCOUNT) return null;
   if (gToken && gToken.until > Date.now() + 60000) return gToken.value;
@@ -177,9 +185,10 @@ async function dbFetch(env, url, init = {}) {
 }
 // How this function gets into the database, for /info: "service account" once it works, "public key" without one.
 async function dbStatus(env) {
-  if (!env.FIREBASE_SERVICE_ACCOUNT && !env.FIRESTORE_BEARER) return 'public key';
+  if (!env.FIREBASE_SERVICE_ACCOUNT && !env.FIRESTORE_BEARER && !env.SUPABASE_URL) return 'public key';
   try {
     const r = await dbFetch(env, `${fsBase(env)}/config/filter?mask.fieldPaths=enabled`);
+    if (env.SUPABASE_URL) return r.ok || r.status === 404 ? 'Supabase' : `Supabase answered ${r.status}: check SUPABASE_URL and SUPABASE_SECRET_KEY`;
     return r.ok || r.status === 404 ? 'service account' : `the service account can't read the database (${r.status}): give it the Cloud Datastore User role`;
   } catch (e) { return e.message; }
 }

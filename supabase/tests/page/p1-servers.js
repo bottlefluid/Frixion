@@ -1,0 +1,27 @@
+// Servers, as Tester: one made through its form (with #general and its invite card), a channel, a category, a role.
+const { check, until, sql, doc } = T;
+check('Tester logs in', await T.login('Tester'));
+openModal('create-server-modal');
+$('new-server-name').value = 'Page Test'; $('new-server-code').value = 'ptest';
+await $('confirm-create-server').onclick();
+const srv = await until(() => (window.__myServers || []).find(s => s.inviteCode === 'ptest'));
+check('create a server: it shows in my list', !!srv, $('create-server-error').textContent);
+if (!srv) return T.report();
+const sid = srv.id;
+check('create a server: #general', !!(await until(async () => (await sql("select 1 from public.channels where server_id = $1 and data->>'name' = 'general'", [sid])).length)));
+check('create a server: its invite card', !!(await until(() => doc('serverCards/' + sid))));
+check('create a server: my servers count', (await until(async () => ((await doc('users/Tester')).stats || {}).serversCount >= 1)) != null);
+selectServer(srv);
+await until(() => currentServerId === sid && currentServerData);
+openCreateChannelModal(null); $('new-channel-name').value = 'second';
+await createChannelFromModal();
+check('a channel through its form', !!(await until(async () => (await sql("select 1 from public.channels where server_id = $1 and data->>'name' = 'second'", [sid])).length)));
+check('the audit log notes it', !!(await until(async () => ((await doc('servers/' + sid)).auditLog || []).some(a => /second/.test(a.action)))));
+openModal('create-category-modal'); $('new-category-name').value = 'voice stuff';
+await createCategoryFromModal();
+check('a category through its form', !!(await until(async () => (await sql("select 1 from public.categories where server_id = $1 and data->>'name' = 'VOICE STUFF'", [sid])).length)));
+const before = serverRoles(currentServerData).length;
+await createServerRole();
+check('a role', !!(await until(async () => ((await doc('servers/' + sid)).roles || []).length === before + 1)));
+closeModal('server-settings-modal');
+return T.report();

@@ -17,8 +17,9 @@
 //                                 rules (database.rules.json: the games' shared lobby) know who is writing. Everyone
 //                                 asks for their own when they sign in (ensureClaims() in script.js); the Owner and
 //                                 Co-Owners also redo someone else's after changing their rank. Every sign-in also gets
-//                                 role: 'authenticated', which Supabase will need to count it as signed in (Firebase's
-//                                 rules don't look at it); a sign-in that isn't a Frixion account yet gets only that.
+//                                 role: 'authenticated', without which Supabase treats its requests as signed out
+//                                 (supabaseToken() in script.js asks before the first one); a sign-in that isn't a
+//                                 Frixion account yet (someone registering) gets only that.
 //   GET  /api/admin/info          whether it's set up here (auth: "ready" once the service account may change sign-ins;
 //                                 supabase: "ready" once SUPABASE_URL and SUPABASE_SECRET_KEY reach a set-up Supabase).
 //   POST /api/admin/move          { token, action, group?, after?, size? }: the Owner copies Frixion's data from Firestore
@@ -51,6 +52,12 @@
 // "owner" too) and TEST_TOKENS=1, which accepts the emulator's unsigned ID tokens. Never set TEST_TOKENS on a real site.
 const PROJECT = 'liquidalt';
 const FIRESTORE = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`;
+// (Supabase switch) With SUPABASE_URL and SUPABASE_SECRET_KEY set, every Firestore REST request in this file goes to
+// Supabase instead and is answered in Firestore's shapes (functions/_lib/firestore-on-supabase.js), so the code below
+// stays as it is. ENV is the site's settings, the same for every request.
+import { firestoreFetch } from '../../_lib/firestore-on-supabase.js';
+let ENV = null;
+const fetch = (url, init) => firestoreFetch(ENV, url, init);
 const IDENTITY = `https://identitytoolkit.googleapis.com/v1/projects/${PROJECT}`;
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400' };
 const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...CORS } });
@@ -58,6 +65,7 @@ class Fail extends Error { constructor(status, message) { super(message); this.s
 const fail = (status, message) => { throw new Fail(status, message); };
 
 export async function onRequest({ request, env, params }) {
+  ENV = env;
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   const route = [].concat(params.path || []).join('/');
   try {
