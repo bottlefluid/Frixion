@@ -82,5 +82,31 @@ and data sent out (5 GB + 5 GB cached a month); over either means restrictions u
       make-r2-ported.js, through r2compat.mjs): 557 pass, 0 fail; its 61 Realtime Database checks stay on Firebase.
 - Notes: only a server's first 8 roles count, like Firestore (could be lifted later); fx_commit lets the row it writes
   through the read policies (Firestore never needed read access to write); empty lists are checked with a sample row.
-- [ ] The user: Third-Party Auth > Firebase (liquidalt) in Supabase, and Supabase's own sign-ups off
-- [ ] Phase 2: the adapter
+- [x] The user: Third-Party Auth > Firebase (liquidalt) in Supabase, and Supabase's own sign-ups off (2026-11-16)
+- [x] Phase 2a, the adapter: fdb.js, Firestore-shaped over supabase-js (tests/t-fdb.mjs 44/44 through
+      tests/fake-supabase.mjs)
+- [x] Phase 2b, the site on it (2026-11-16): index.html loads supabase-js 2.118.0 and fdb.js instead of Firestore;
+      script.js makes `db` with createFdb(); supabaseToken() asks /api/admin/claims once for role: 'authenticated'
+      (which now gives it to every sign-in, and only that to one with no account yet); live updates get each new
+      token at once (and fdb fetches it before each subscription: supabase-js gives a changed token only to
+      subscriptions that finished joining, so early ones stayed signed out). Smoke test on this PC (below): log in,
+      register, server messages (send, edit, delete, react, poll vote), DMs, friend requests and profile changes, all
+      live between two accounts; nothing refused that should pass, and editing someone else's message is refused.
+- [ ] The user: run sql/001 to 010 in the Supabase SQL Editor, in order
+- [ ] End-to-end test against the real project with a real Firebase sign-in (Realtime with Third-Party Auth above all)
+- [ ] Phase 3: functions/api (admin reads through Supabase when SUPABASE_URL is set, but its writes, discord and push
+      are still Firestore's), role claims for everyone before switch day, the Discord timer Worker
+- Known: a Realtime filter is one column, so a channel id two servers share ("general") sends both servers' messages
+  to a listener, which drops the other's (Realtime messages used for nothing). Supabase's free plan allows 200
+  Realtime connections at once (one per open tab) and 100 channels each; Frixion opens about 25 to 35 per tab.
+
+## Testing on this PC (supabase/local)
+
+1. The Firebase emulators for sign-in and the Realtime Database only: `firebase emulators:start --only auth,database`
+   with this branch's database.rules.json (ports 9099 and 9000).
+2. `node supabase/local/serve.mjs` (Node 24): the site on http://localhost:8124, the Supabase stand-in on 54321
+   (PGlite with sql/, answering supabase-js's database calls and live updates the way Supabase does, read rules
+   included) and functions/api/admin on 8788.
+3. `node supabase/local/seed.mjs`: Tester (the Owner), Sumi, Air and Nova, password pass1, a server, two DMs.
+4. Open http://localhost:8124/?emulators. A second account goes in a second tab at http://127.0.0.1:8124/?emulators
+   (a different address keeps a separate sign-in). The stand-in's counts: GET :54321/local/stats with the secret key.

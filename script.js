@@ -120,24 +120,53 @@ async function appCheckStatus() {
     return r && r.token ? 'Working on this device.' : 'Not working on this device.';
   } catch (e) { return `Not working on this device (${(e && (e.code || e.message)) || 'unknown error'}).`; }
 }
-const db = firebase.firestore();
-// Phones on mobile data (or behind some proxies) can stall on the default connection type; this lets Firestore switch to long-polling on its own.
-try { db.settings({ experimentalAutoDetectLongPolling: true, merge: true }); } catch (e) { console.warn('Firestore settings not applied.', e); }
-const FieldValue = firebase.firestore.FieldValue;
 let rtdb = null;
 try { rtdb = firebase.database(); } catch (e) { console.warn('Realtime Database not available — presence will stay manual-only.', e); }
 const auth = firebase.auth();   // signing in (see AUTH)
+// Owner tools that need Google's admin powers (functions/api/admin), which checks each request comes from the Owner's
+// own sign-in: one-time passwords (showPasswordHelp()) and the claims (ensureClaims(), supabaseToken()).
+const ADMIN_API = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'http://127.0.0.1:8788/api/admin' : 'https://frixionbeta.pages.dev/api/admin';
+// The database is Supabase (Postgres). fdb.js makes it look like Firestore, so the rest of this file uses `db` the
+// same way as before; the rules are in supabase/sql. Sign-in and the Realtime Database stay on Firebase: Supabase takes
+// the Firebase sign-in's token (its Third-Party Auth), so the rules know who is asking. With ?emulators on your own
+// computer it talks to the local stand-in instead (supabase/local/serve.mjs, port 54321).
+const SUPABASE_URL = USING_EMULATORS ? 'http://127.0.0.1:54321' : 'https://qhiedomoxvmhamjflysa.supabase.co';
+const SUPABASE_KEY = USING_EMULATORS ? 'local-publishable-key' : 'sb_publishable_YVLo6ROyg-dC16iT4CKqoA_nITwedqh';
+// Supabase only counts a Firebase sign-in as signed in when its token says role: 'authenticated', which only the server
+// can put on (functions/api/admin/claims). A sign-in without it asks once, before its first request (every request
+// waits for that); every token after that has it. If asking fails, the next try waits 30 seconds.
+let roleClaimAsk = null, roleClaimFailedAt = 0;
+async function supabaseToken() {
+  const user = auth.currentUser;
+  if (!user) return null;
+  const t = await user.getIdTokenResult();
+  if (t.claims.role === 'authenticated' || Date.now() - roleClaimFailedAt < 30000) return t.token;
+  if (!roleClaimAsk) {
+    roleClaimAsk = (async () => {
+      const r = await fetch(`${ADMIN_API}/claims`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token: t.token }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'claims ' + r.status);
+      await user.getIdToken(true);
+    })().catch(e => { roleClaimFailedAt = Date.now(); console.warn('Could not finish signing in to the database:', e.message); })
+      .finally(() => { roleClaimAsk = null; });
+  }
+  await roleClaimAsk;
+  return user.getIdToken();
+}
+const sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { accessToken: supabaseToken });
+// Live updates carry the sign-in's token too: supabase-js gets the new one as soon as it changes (signing in or out,
+// Firebase's hourly refresh) instead of at its next heartbeat, 25 seconds later.
+auth.onIdTokenChanged(() => { sbClient.realtime.setAuth().catch(() => {}); });
+// (v4.64's copy on this device is fdb's now: it keeps accounts and profiles between visits for logging in when the
+// database is out for the day, and answers get({ source: 'cache' }))
+const db = createFdb(sbClient);
+const FieldValue = db.FieldValue;
+// (the games and a few older lines reach Firestore's helpers through firebase.firestore: they're fdb's now)
+firebase.firestore = Object.assign(() => db, { FieldValue: db.FieldValue, Timestamp: db.Timestamp, FieldPath: db.FieldPath });
 if (USING_EMULATORS) {
-  db.useEmulator('127.0.0.1', 8080);
   if (rtdb) rtdb.useEmulator('127.0.0.1', 9000);
   auth.useEmulator('http://127.0.0.1:9099', { disableWarnings: true });
-  console.info('Frixion is using the local Firebase emulators.');
+  console.info('Frixion is using the local Firebase emulators and the local Supabase stand-in.');
 }
-// (v4.64) Keep a copy on this device of what Frixion has read. Opening Frixion again within 30 minutes (a reload, coming
-// back to the app) then only pays for what changed instead of reading every Shop item, emoji, sticker, channel and DM
-// again, which is most of what used up the free daily reads. Tabs and app windows share it. Where a browser can't keep
-// one (some private windows), it just works as before.
-try { db.enablePersistence({ synchronizeTabs: true }).catch(e => console.warn('No local copy of the database here:', e.code || e.message)); } catch (e) {}
 
 // Get a free key at https://klipy.com/developers (their API is free, no billing needed) and paste it here to enable GIF search.
 const GIF_API_KEY = 'TAGiarX1tDFDJvipS3zo71rD97RUMgnAm0iKBjLVVfJdds2DaeGxJEkcCu6GQU2Z';
@@ -4278,7 +4307,7 @@ function googleOnlyNotice(user) {
   }), 1500);
 }
 // (v4.64) When Frixion has used up its free database for the day, every read fails until it starts over. Logging in
-// then uses this device's saved copy (db.enablePersistence above), if it has one, so you can still look around.
+// then uses this device's saved copy (fdb.js keeps accounts and profiles), if it has one, so you can still look around.
 let dailyLimitHit = false;
 const isDailyLimit = e => !!e && (e.code === 'resource-exhausted' || /quota/i.test(String(e.message || '')));
 async function getDocOrSaved(ref) {
@@ -4454,6 +4483,7 @@ $('logout-btn').onclick = async () => {
   setSession(null);
   await auth.signOut().catch(() => {});
   stopGameEngines();
+  claimsPromise = null;   // (the next account to log in here asks for its own)
   myUid = null; myProfile = null; profileCache = {}; profileFetchedAt = {}; myLookSig = null; isAdmin = false; isOwner = false; sfMode = false; ephemeralMsgs = []; seedBotProfiles();
   clearPresenceListeners();   // the ones screens started while signing out (see clearPresenceListeners())
   applyAdminVisibility();
@@ -16295,9 +16325,7 @@ async function adminUnban() {
   toast(`Unbanned ${adminSelectedUser}.`);
   renderAdminList(); renderAdminActions();
 }
-// Owner tools that need Google's admin powers (functions/api/admin), which checks each request comes from the Owner's
-// own sign-in: one-time passwords (showPasswordHelp()) and the claims below.
-const ADMIN_API = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'http://127.0.0.1:8788/api/admin' : 'https://frixionbeta.pages.dev/api/admin';
+// (ADMIN_API, the Owner tools' address, is set at the top, next to the database)
 // The Realtime Database (the games' shared lobby, database.rules.json) can't look at profiles, so it knows who is writing
 // from claims on the sign-in: n (username) and r (rank), which functions/api/admin/claims sets from the profile, so
 // nobody can fake them. Asked for once per sign-in (enterApp()), and again if the rank changed; the game waits for it.

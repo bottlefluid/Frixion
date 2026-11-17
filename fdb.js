@@ -230,6 +230,7 @@
     const cache = new Map();   // path -> { raw, updatedAt }: for get({ source: 'cache' })
     const KEEP = /^(accounts|users)\/[^/]+$/;   // (kept between visits too: logging in when the daily limit is out)
     let routesP = null, seq = 0;
+    const inflight = new Set();   // writes on their way (waitForPendingWrites)
 
     async function rpc(name, args) {
       let res;
@@ -264,6 +265,7 @@
       batch: () => new WriteBatch(db),
       settings() {},
       enablePersistence: () => Promise.resolve(),
+      waitForPendingWrites: () => Promise.all([...inflight].map(p => p.catch(() => {}))).then(() => undefined),
       runTransaction: fn => runTransaction(db, fn),
 
       async _get(ref, o) {
@@ -314,13 +316,18 @@
         return w;
       },
       async _commit(writes) {
-        const res = await rpc('fx_commit', { writes });
-        (res || []).forEach(r => { if (r.data !== undefined) remember(r.path, r.data, r.updatedAt); });
-        return res;
+        const p = rpc('fx_commit', { writes });
+        inflight.add(p);
+        try {
+          const res = await p;
+          (res || []).forEach(r => { if (r.data !== undefined) remember(r.path, r.data, r.updatedAt); });
+          return res;
+        } finally { inflight.delete(p); }
       },
       _listen(target, args) { return listen(db, target, args); },
       _routeFor: routeFor,
       _channel: name => sb.channel(name),
+      _realtimeAuth: () => (sb.realtime && typeof sb.realtime.setAuth === 'function' ? sb.realtime.setAuth().catch(() => {}) : Promise.resolve()),
       _removeChannel: ch => { try { sb.removeChannel(ch); } catch (e) {} },
       _nextId: () => ++seq,
     };
@@ -446,9 +453,14 @@
       if (isDoc) emitDoc(); else emitQuery(false);
     }
     load();
-    db._routeFor(collPath).then(route => {
+    db._routeFor(collPath).then(async route => {
       if (stopped) return;
       apply.route = route;
+      // The subscription carries the sign-in's token, but supabase-js only sends the one it already has, and gives a
+      // changed one only to subscriptions that have finished joining: one that joined before it fetched the token would
+      // stay signed out and never get anything the read rules protect. So it fetches the current one first.
+      await db._realtimeAuth();
+      if (stopped) return;
       // the closest parent's column narrows what Supabase sends (a document with no parent: its own id)
       const n = route.ids.length;
       const filter = n ? `${route.cols[n - 1]}=eq.${route.ids[n - 1]}` : (isDoc ? `id=eq.${target.id}` : undefined);

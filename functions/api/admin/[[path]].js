@@ -16,7 +16,10 @@
 //                                 1 Admin, 0 everyone) on its sign-in, from its profile, so the Realtime Database's
 //                                 rules (database.rules.json: the games' shared lobby) know who is writing. Everyone
 //                                 asks for their own when they sign in (ensureClaims() in script.js); the Owner and
-//                                 Co-Owners also redo someone else's after changing their rank.
+//                                 Co-Owners also redo someone else's after changing their rank. Every sign-in also gets
+//                                 role: 'authenticated', without which Supabase treats its requests as signed out
+//                                 (supabaseToken() in script.js asks before the first one); a sign-in that isn't a
+//                                 Frixion account yet (someone registering) gets only that.
 //   GET  /api/admin/info          whether it's set up here (auth: "ready" once the service account may change sign-ins).
 //
 // The Orbs economy (v4.57). A page can't add Orbs, Premium time or Shop items to its own account any more
@@ -126,7 +129,22 @@ const authBase = env => env.AUTH_URL || IDENTITY;
 const dec = v => ('stringValue' in v ? v.stringValue : 'integerValue' in v ? Number(v.integerValue) : 'doubleValue' in v ? v.doubleValue : 'booleanValue' in v ? v.booleanValue
   : 'timestampValue' in v ? Date.parse(v.timestampValue) : 'mapValue' in v ? decFields(v.mapValue.fields) : 'arrayValue' in v ? (v.arrayValue.values || []).map(dec) : 'nullValue' in v ? null : undefined);
 const decFields = f => Object.fromEntries(Object.entries(f || {}).map(([k, v]) => [k, dec(v)]));
+// (Supabase switch) With SUPABASE_URL and SUPABASE_SECRET_KEY set, documents are read from Supabase instead: public.fx_get
+// with the secret key, which the database's rules let read anything (fx.trusted()). Its timestamps ({"$t": ms}) come
+// back as milliseconds, the way dec() gives Firestore's. Writes still go to Firestore until they move too.
+const fromFx = v => (v === null || typeof v !== 'object' ? v : Array.isArray(v) ? v.map(fromFx)
+  : Object.keys(v).length === 1 && typeof v.$t === 'number' ? v.$t : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fromFx(x)])));
+async function sbRpc(env, name, args) {
+  const key = env.SUPABASE_SECRET_KEY;
+  const r = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/${name}`, { method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: key, Authorization: 'Bearer ' + key }, body: JSON.stringify(args) });
+  const j = await r.json().catch(() => null);
+  if (r.status === 402 || r.status === 429) fail(503, 'Frixion reached its database limit for today. Try again later.');
+  if (!r.ok) fail(502, 'Could not read Frixion' + (j && j.message ? ' (' + j.message + ')' : '') + '.');
+  return j;
+}
 async function fsGet(env, path) {
+  if (env.SUPABASE_URL) { const r = await sbRpc(env, 'fx_get', { path }); return r && r.exists ? fromFx(r.data) : null; }
   const r = await fetch(`${fsBase(env)}/${path.split('/').map(encodeURIComponent).join('/')}`, { headers: { Authorization: 'Bearer ' + await googleToken(env) } });
   if (r.status === 404) return null;
   if (r.status === 429) fail(503, 'Frixion reached its database limit for today. Try again later.');
@@ -296,7 +314,10 @@ async function setClaims(env, { token, username }) {
   const acct = await fsGet(env, `accounts/${claims.sub}`);
   const myName = acct && typeof acct.username === 'string' ? acct.username : null;
   const me = myName ? await fsGet(env, `users/${myName}`) : null;
-  if (!me || me.authUid !== claims.sub) fail(403, 'That sign-in isn\'t a Frixion account.');
+  if (!me || me.authUid !== claims.sub) {
+    if (username != null) fail(403, 'That sign-in isn\'t a Frixion account.');
+    return putClaims(env, claims.sub, { role: 'authenticated' });   // (registering: it has no username or rank yet)
+  }
   let name = myName, target = me;
   if (username != null && username !== myName) {
     if (rankOf(me) < 2) fail(403, 'Only the Owner can do that.');
@@ -306,8 +327,10 @@ async function setClaims(env, { token, username }) {
     if (typeof target.authUid !== 'string' || !target.authUid) return { ok: true, skipped: 'no sign-in yet' };
     name = username;
   }
-  const want = { n: name, r: rankOf(target) };
-  const r = await authCall(env, 'accounts:update', { localId: target.authUid, customAttributes: JSON.stringify(want) });
+  return putClaims(env, target.authUid, { role: 'authenticated', n: name, r: rankOf(target) });
+}
+async function putClaims(env, localId, want) {
+  const r = await authCall(env, 'accounts:update', { localId, customAttributes: JSON.stringify(want) });
   if (!r.ok) {
     const why = await googleWhy(r);
     if (/USER_NOT_FOUND/.test(why)) fail(404, 'That account\'s sign-in is gone.');
