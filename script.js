@@ -954,6 +954,7 @@ const UPDATES = [
       'You can send any kind of file now, not just pictures and documents. Files that can run programs (like .exe or .bat) get a warning on them, so only open those from people you trust.',
       '4 new easter eggs. That makes 63.',
       'Continue with Google is gone. If you signed up with Google, set a password in Settings, My Account while you\'re still logged in. If you\'re logged out, tap Forgot password? on the login screen: the Owner can give you a one-time password.',
+      'Logging out and into another account without reloading no longer keeps the games\' shared lobby from knowing who you are.',
     ] },
   { v: '4.64', date: '2026-11-15', title: 'Loans and Mouse Maze',
     notes: [
@@ -4454,6 +4455,7 @@ $('logout-btn').onclick = async () => {
   setSession(null);
   await auth.signOut().catch(() => {});
   stopGameEngines();
+  claimsPromise = null;   // (the next account to log in here asks for its own)
   myUid = null; myProfile = null; profileCache = {}; profileFetchedAt = {}; myLookSig = null; isAdmin = false; isOwner = false; sfMode = false; ephemeralMsgs = []; seedBotProfiles();
   clearPresenceListeners();   // the ones screens started while signing out (see clearPresenceListeners())
   applyAdminVisibility();
@@ -16307,7 +16309,7 @@ function ensureClaims(force) {
   if (claimsPromise && !force) return claimsPromise;
   const p = claimsPromise = (async () => {
     const user = auth.currentUser, have = await user.getIdTokenResult();
-    if (have.claims.n === myUid && have.claims.r === platformRank(myProfile)) return true;
+    if (have.claims.n === myUid && have.claims.r === platformRank(myProfile) && have.claims.role === 'authenticated') return true;
     const r = await fetch(`${ADMIN_API}/claims`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token: have.token }) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'claims ' + r.status);
     await user.getIdToken(true);                    // the new claims come on a fresh token, which the Realtime Database picks up
