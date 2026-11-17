@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Move to Supabase</title>
+<!-- The copy for switch day (move-to-supabase.js). Only the Owner can use it: the server checks. -->
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #1e1f22; color: #dbdee1; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 8px; color: #fff; }
+  p { margin: 0 0 12px; color: #b5bac1; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+  input { flex: 1 1 180px; min-width: 0; padding: 10px 12px; border-radius: 6px; border: 1px solid #3f4147; background: #2b2d31; color: #fff; font: inherit; }
+  button { padding: 10px 16px; border-radius: 6px; border: 0; background: #4e5058; color: #fff; font: inherit; cursor: pointer; }
+  button.main { background: #5865f2; }
+  button:disabled { opacity: .5; cursor: default; }
+  #status { color: #fff; min-height: 1.5em; }
+  ul { list-style: none; padding: 0; margin: 12px 0; border-top: 1px solid #3f4147; }
+  li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid #3f4147; }
+  li span:last-child { color: #949ba4; text-align: right; }
+  li.all { color: #fff; font-weight: 600; }
+  .note { color: #f0b232; overflow-wrap: anywhere; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Move to Supabase</h1>
+  <p>Copies all of Frixion's data, and Gavinperri's, from Firebase into Supabase. It works while Firebase is locked:
+    the server does the reading, so this page doesn't need Firebase's database. Only the Owner can use it. If it stops
+    (you close this, or something goes wrong), open it again in this browser and press Carry On.</p>
+  <form id="signin" class="row hidden">
+    <input id="user" placeholder="Username" autocomplete="username" autocapitalize="off" spellcheck="false">
+    <input id="pass" type="password" placeholder="Password" autocomplete="current-password">
+    <button class="main" id="go" type="submit">Sign In</button>
+  </form>
+  <div id="tools" class="hidden">
+    <p id="who"></p>
+    <div class="row">
+      <button id="count" type="button">Count</button>
+      <button id="copy" class="main" type="button">Copy</button>
+      <button id="stop" type="button" disabled>Stop</button>
+      <button id="reset" type="button">Start Over</button>
+      <button id="out" type="button">Sign Out</button>
+    </div>
+  </div>
+  <p id="status"></p>
+  <ul id="list"></ul>
+  <p id="notes" class="note"></p>
+</main>
+<script type="module" src="move-to-supabase.js"></script>
+</body>
+</html>
