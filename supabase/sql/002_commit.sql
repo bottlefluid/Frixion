@@ -10,9 +10,11 @@
 --     "set": {...}, "merge": true     only these fields; maps are merged into what's there
 --     "update": {"a.b": 1, ...}       these fields (a dotted path goes inside maps); the document must exist,
 --                                     unless "upsert": true (Firestore's REST update: made from {} if missing)
+--     "updatePaths": [[["a", "b.c"], value], ...]   like update, for field names with dots in them (FieldPath)
 --     "create": {...}                 a new document; refused if it already exists (add())
 --     "delete": true
---   and optionally "transforms": [{"field": "a.b", then one of "increment": n, "maximum": n, "minimum": n,
+--     "verify": true                  no write, only the preconditions (a transaction's reads that weren't written)
+--   and optionally "transforms": [{"field": "a.b" or ["a", "b.c"], then one of "increment": n, "maximum": n, "minimum": n,
 --                                  "arrayUnion": [...], "arrayRemove": [...], "serverTime": true, "delete": true}]
 --   and the preconditions "exists": true|false and "updatedAt": "<the updatedAt a read gave>" }
 -- It returns one {"path", "updatedAt", "data"} per write (data is null after a delete).
@@ -109,8 +111,10 @@ end $$;
 create or replace function fx.transform(doc jsonb, t jsonb) returns jsonb language plpgsql stable as $$
 declare p text[]; cur jsonb; v jsonb; out jsonb;
 begin
-  if coalesce(t->>'field', '') = '' then raise exception 'a transform needs a field' using errcode = 'FX400'; end if;
-  p := string_to_array(t->>'field', '.');
+  -- the field: a dotted name ("stats.games"), or a list of names for keys that have dots in them (FieldPath)
+  p := case when jsonb_typeof(t->'field') = 'array' then array(select jsonb_array_elements_text(t->'field'))
+            else string_to_array(nullif(t->>'field', ''), '.') end;
+  if p is null or cardinality(p) = 0 then raise exception 'a transform needs a field' using errcode = 'FX400'; end if;
   cur := doc #> p;
   if t ? 'increment' or t ? 'maximum' or t ? 'minimum' then
     v := coalesce(t->'increment', t->'maximum', t->'minimum');
@@ -162,20 +166,26 @@ begin
     select * into r_tbl, r_cols, r_ids from fx.route(w->>'path');
     cur := fx.peek(r_tbl, r_cols, r_ids, true);
     old := cur -> 'data';
-    kind := case when w ? 'delete' then 'delete' when w ? 'create' then 'create' when w ? 'update' then 'update'
-                 when w ? 'set' then 'set' end;
-    if kind is null then raise exception 'a write needs set, update, create or delete' using errcode = 'FX400'; end if;
+    kind := case when w ? 'delete' then 'delete' when w ? 'verify' then 'verify' when w ? 'create' then 'create'
+                 when w ? 'update' or w ? 'updatePaths' then 'update' when w ? 'set' then 'set' end;
+    if kind is null then raise exception 'a write needs set, update, create, delete or verify' using errcode = 'FX400'; end if;
 
-    if kind = 'delete' then new := null;
+    if kind in ('delete', 'verify') then new := null;
     elsif kind = 'create' then new := w -> 'create';
     elsif kind = 'update' then
-      if jsonb_typeof(w -> 'update') <> 'object' then raise exception 'update needs fields' using errcode = 'FX400'; end if;
+      if (w ? 'update' and jsonb_typeof(w -> 'update') <> 'object') or (w ? 'updatePaths' and jsonb_typeof(w -> 'updatePaths') <> 'array') then
+        raise exception 'update needs fields' using errcode = 'FX400';
+      end if;
       new := coalesce(old, case when fx.is_true(w -> 'upsert') then '{}'::jsonb end);
-      for k, v in select * from jsonb_each(w -> 'update') loop new := fx.set_path(new, string_to_array(k, '.'), v); end loop;
+      for k, v in select * from jsonb_each(coalesce(w -> 'update', '{}'::jsonb)) loop new := fx.set_path(new, string_to_array(k, '.'), v); end loop;
+      for t in select * from jsonb_array_elements(coalesce(w -> 'updatePaths', '[]'::jsonb)) loop
+        if jsonb_typeof(t -> 0) <> 'array' or jsonb_array_length(t -> 0) = 0 then raise exception 'a field path is a list of names' using errcode = 'FX400'; end if;
+        new := fx.set_path(new, array(select jsonb_array_elements_text(t -> 0)), t -> 1);
+      end loop;
     elsif fx.is_true(w -> 'merge') then new := fx.deep_merge(old, w -> 'set');
     else new := w -> 'set';
     end if;
-    if kind <> 'delete' then
+    if kind not in ('delete', 'verify') then
       if jsonb_typeof(new) is distinct from 'object' then raise exception 'a document is a map' using errcode = 'FX400'; end if;
       for t in select * from jsonb_array_elements(coalesce(w -> 'transforms', '[]'::jsonb)) loop new := fx.transform(new, t); end loop;
     end if;
@@ -184,7 +194,9 @@ begin
     -- to read its row, which Firestore never asked (anyone may join a server they can't see yet), so the read policies
     -- let this one row through while it's being written (fx.is_writing), and only then.
     perform set_config('fx.writing', r_tbl || ':' || array_to_string(r_ids, '/'), true);
-    if kind = 'delete' then
+    if kind = 'verify' then
+      null;   -- (nothing written: only the preconditions below)
+    elsif kind = 'delete' then
       if old is not null then
         execute format('delete from public.%I where %s', r_tbl, fx.key_where(r_cols)) using r_ids;
         get diagnostics n = row_count;
@@ -214,7 +226,7 @@ begin
     -- what comes back: the document as the person may read it now (null if they can't, or after a delete)
     after := case when kind = 'delete' then null else fx.peek(r_tbl, r_cols, r_ids) end;
     v := null;
-    if kind <> 'delete' then
+    if kind not in ('delete', 'verify') then
       execute format('select data from public.%I where %s', r_tbl, fx.key_where(r_cols)) into v using r_ids;
     end if;
     res := res || jsonb_build_array(jsonb_build_object('path', w->>'path', 'updatedAt', after ->> 'updatedAt', 'data', v));

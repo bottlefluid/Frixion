@@ -62,7 +62,7 @@ export async function as(db, who, sql, params = []) {
     return { ok: true, rows: r.rows, count: Math.max(r.rows.length, r.affectedRows || 0) };
   } catch (e) {
     await db.exec('rollback');
-    return { ok: false, error: e.message };
+    return { ok: false, error: e.message, code: e.code };
   }
 }
 

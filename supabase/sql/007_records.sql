@@ -38,18 +38,58 @@ begin
     else false end, false);
 end $$;
 create or replace function public.fx_get(path text) returns jsonb language plpgsql set search_path = '' as $$
-declare r_tbl text; r_cols text[]; r_ids text[]; d jsonb; p jsonb;
+declare r_tbl text; r_cols text[]; r_ids text[]; d jsonb; u text; p jsonb;
 begin
   select * into r_tbl, r_cols, r_ids from fx.route(path);
   begin
-    execute format('select data from public.%I where %s', r_tbl, fx.key_where(r_cols)) into d using r_ids;
+    execute format('select data, updated_at::text from public.%I where %s', r_tbl, fx.key_where(r_cols)) into d, u using r_ids;
   exception when insufficient_privilege then d := null;   -- (signed out: most tables aren't readable at all)
   end;
-  if d is not null then return jsonb_build_object('exists', true, 'data', d); end if;
+  -- (updatedAt: what a transaction hands back to fx_commit to make sure nothing changed in between)
+  if d is not null then return jsonb_build_object('exists', true, 'data', d, 'updatedAt', u); end if;
   p := fx.peek_any(r_tbl, r_cols, r_ids);
-  if p is null then return jsonb_build_object('exists', false, 'data', null); end if;
-  if fx.get_exception(r_tbl, r_ids, p->'data') then return jsonb_build_object('exists', true, 'data', p->'data'); end if;
+  if p is null then
+    -- Missing. Firestore answers "not found" only to someone its rules would let read a document there; anyone else
+    -- gets "permission denied" (so nobody learns what other people don't have). A few rules let anyone fetch a
+    -- missing one (codes, DMs and groups, banned-computer checks); otherwise a blank sample row tells.
+    if fx.get_exception(r_tbl, r_ids, null)
+       or (r_tbl = 'redeem_codes')
+       or (r_tbl in ('dms', 'group_dms') and fx.active(fx.who()))
+       or fx.probe_visible(r_tbl, r_cols, r_ids) then
+      return jsonb_build_object('exists', false, 'data', null, 'updatedAt', null);
+    end if;
+    raise exception 'permission denied' using errcode = '42501';
+  end if;
+  if fx.get_exception(r_tbl, r_ids, p->'data') then return jsonb_build_object('exists', true, 'data', p->'data', 'updatedAt', p->'updatedAt'); end if;
   raise exception 'permission denied' using errcode = '42501';
+end $$;
+-- Would this person see a document at that place? A blank row is put there (with the database's own rights), looked
+-- for through the read policies as the person asking, and taken back out: the whole thing is undone, every time.
+create or replace function fx.probe_put(tbl text, cols text[], ids text[]) returns void language plpgsql
+security definer set search_path = '' as $$
+begin
+  if coalesce(current_setting('fx.probing', true), '') <> '1' then raise exception 'not inside a probe' using errcode = '42501'; end if;
+  execute format('insert into public.%I (%s, data) values (%s, ''{}''::jsonb)', tbl,
+                 (select string_agg(quote_ident(c), ', ') from unnest(cols) c),
+                 (select string_agg(format('$1[%s]', i), ', ') from generate_subscripts(cols, 1) i)) using ids;
+end $$;
+create or replace function fx.probe_visible(tbl text, cols text[], ids text[]) returns boolean language plpgsql set search_path = '' as $$
+declare vis boolean := false;
+begin
+  begin
+    perform set_config('fx.probing', '1', true);
+    perform fx.probe_put(tbl, cols, ids);
+    perform set_config('fx.probing', '', true);
+    begin
+      execute format('select true from public.%I where %s', tbl, fx.key_where(cols)) into vis using ids;
+    exception when insufficient_privilege then vis := false;
+    end;
+    raise exception 'probe done' using errcode = 'FXPRB';   -- (undoes the blank row)
+  exception
+    when sqlstate 'FXPRB' then null;
+    when unique_violation then vis := false;   -- (someone made it just now)
+  end;
+  return coalesce(vis, false);
 end $$;
 -- (fx.peek is only for the database's own functions; fx_get may look, for the exceptions above, through this)
 create or replace function fx.peek_any(tbl text, cols text[], ids text[]) returns jsonb language sql stable
