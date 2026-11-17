@@ -983,6 +983,7 @@ const UPDATES = [
       'You can send any kind of file now, not just pictures and documents. Files that can run programs (like .exe or .bat) get a warning on them, so only open those from people you trust.',
       '4 new easter eggs. That makes 63.',
       'Continue with Google is gone. If you signed up with Google, set a password in Settings, My Account while you\'re still logged in. If you\'re logged out, tap Forgot password? on the login screen: the Owner can give you a one-time password.',
+      'Logging out and into another account without reloading no longer keeps the games\' shared lobby from knowing who you are.',
     ] },
   { v: '4.64', date: '2026-11-15', title: 'Loans and Mouse Maze',
     notes: [
@@ -14295,6 +14296,7 @@ function openAdminPanel() {
   $('admin-tab-devices').classList.toggle('hidden', !realOwner());
   $('admin-tab-ips').classList.toggle('hidden', !realOwner());
   $('admin-tab-purgeperms').classList.toggle('hidden', !realOwner());
+  $('admin-tab-move').classList.toggle('hidden', !realOwner());
   adminSelectedDevice = null; adminSelectedIp = null;
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('on'));
   document.querySelectorAll('.admin-pane').forEach(p => p.classList.add('hidden'));
@@ -14345,6 +14347,93 @@ $('purgeperm-give').onclick = async () => {
   if (await setPurgePerm(name, true)) $('purgeperm-name').value = '';
 };
 $('purgeperm-name').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('purgeperm-give').click(); } });
+// ---------- Supabase: moving the data (the Owner's alone) ----------
+// Frixion is moving its database from Firestore to Supabase (supabase/PLAN.md on the supabase branch). This copies every
+// kind of document across through functions/api/admin/move, a page at a time (the server reads Firestore with the
+// service account and writes Supabase with its secret key), and keeps on this device where it got to, so it can stop
+// and carry on. Count first: each document copied is one of Firebase's daily reads.
+const MOVE_KEY = 'frixion_move';
+let moveRun = null;   // { stop } while counting or copying
+function moveState() { try { return JSON.parse(localStorage.getItem(MOVE_KEY) || '{}') || {}; } catch (e) { return {}; } }
+function moveKeep(s) { try { localStorage.setItem(MOVE_KEY, JSON.stringify(s)); } catch (e) {} }
+async function moveAsk(body) {
+  const token = await auth.currentUser.getIdToken();
+  const r = await fetch(`${ADMIN_API}/move`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token, ...body }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(j.error || `The server answered ${r.status}.`), { status: r.status });
+  return j;
+}
+const moveWhy = e => (e && e.status === 503 && /limit/i.test(e.message) ? 'Firebase\'s daily reads ran out. They come back at midnight Pacific time: press Carry On then, and it picks up from here.' : (e && e.message) || 'Something went wrong.');
+const moveN = n => Number(n || 0).toLocaleString();
+function renderMovePane(msg) {
+  if (!$('move-list')) return;
+  const s = moveState(), groups = s.groups || [], counts = s.counts || {}, copied = s.copied || {}, done = s.done || {};
+  if (msg !== undefined) $('move-status').textContent = msg;
+  $('move-count').disabled = $('move-copy').disabled = $('move-reset').disabled = !!moveRun;
+  $('move-stop').disabled = !moveRun;
+  const started = groups.some(g => copied[g] || done[g]), finished = groups.length > 0 && groups.every(g => done[g]);
+  $('move-copy').textContent = !moveRun && started && !finished ? 'Carry On' : 'Copy';
+  if (!realOwner()) { $('move-list').innerHTML = '<div class="empty">Only the Owner can move Frixion\'s data.</div>'; return; }
+  if (!groups.length) { $('move-list').innerHTML = '<div class="empty">Press Count to see how much there is to copy.</div>'; return; }
+  const total = groups.reduce((n, g) => n + (counts[g] || 0), 0), moved = groups.reduce((n, g) => n + (copied[g] || 0), 0);
+  const row = (name, sub) => `<div class="admin-row"><span class="ar-name">${esc(name)}<small class="dev-sub">${esc(sub)}</small></span></div>`;
+  $('move-list').innerHTML = row('Everything', `${s.counted ? moveN(total) + ' documents in Firebase' : 'not counted yet'}, ${moveN(moved)} copied${finished ? ', done' : ''}`) +
+    groups.map(g => row(g, [counts[g] != null ? moveN(counts[g]) + ' in Firebase' : '', copied[g] ? moveN(copied[g]) + ' copied' : '', done[g] ? 'done' : ''].filter(Boolean).join(', ') || 'waiting')).join('') +
+    ((s.unknown || []).length ? `<div class="empty">Supabase has no table for these, so they aren't copied: ${esc(s.unknown.join(', '))}</div>` : '') +
+    ((s.skipped || []).length ? `<div class="empty">Not copied (${s.skipped.length}): ${esc(s.skipped.slice(0, 20).join('; '))}${s.skipped.length > 20 ? '; ...' : ''}</div>` : '');
+}
+$('move-count').onclick = async () => {
+  if (!realOwner() || moveRun) return;
+  const run = moveRun = { stop: false };
+  renderMovePane('Counting...');
+  try {
+    const { groups, unknown } = await moveAsk({ action: 'plan' });
+    const s = moveState();
+    s.groups = groups; s.unknown = unknown || []; s.counts = {}; s.counted = false;
+    for (const g of groups) {
+      if (run.stop) break;
+      s.counts[g] = (await moveAsk({ action: 'count', group: g })).count;
+      moveKeep(s); renderMovePane(`Counting ${g}...`);
+    }
+    s.counted = !run.stop; moveKeep(s);
+    const total = groups.reduce((n, g) => n + (s.counts[g] || 0), 0);
+    moveRun = null;
+    renderMovePane(s.counted ? `${moveN(total)} documents: copying them all uses about ${moveN(total)} of Firebase's reads (50,000 a day are free, and Frixion itself uses some of those).` : 'Stopped.');
+  } catch (e) { moveRun = null; renderMovePane(moveWhy(e)); }
+};
+$('move-copy').onclick = async () => {
+  if (!realOwner() || moveRun) return;
+  const run = moveRun = { stop: false };
+  renderMovePane('Copying...');
+  try {
+    const s = moveState();
+    if (!s.groups) s.groups = (await moveAsk({ action: 'plan' })).groups;
+    s.copied = s.copied || {}; s.done = s.done || {}; s.after = s.after || {}; s.skipped = s.skipped || [];
+    let size = 200;
+    for (const g of s.groups) {
+      while (!s.done[g] && !run.stop) {
+        const r = await moveAsk({ action: 'copy', group: g, after: s.after[g] || null, size });
+        if (r.retrySmaller) { size = Math.max(1, Math.floor(size / 4)); continue; }   // (down to the one Supabase won't take)
+        s.copied[g] = (s.copied[g] || 0) + r.copied;
+        s.skipped.push(...(r.skipped || []));
+        if (r.last) s.after[g] = r.last;
+        if (r.done) s.done[g] = true;
+        moveKeep(s);
+        renderMovePane(`Copying ${g}...`);
+        size = Math.min(200, size * 2);
+      }
+      if (run.stop) break;
+    }
+    moveRun = null;
+    const all = s.groups.every(g => s.done[g]);
+    renderMovePane(all ? `Done: ${moveN(s.groups.reduce((n, g) => n + (s.copied[g] || 0), 0))} documents copied into Supabase.` : s.groups.some(g => s.copied[g] || s.done[g]) ? 'Stopped. Press Carry On to pick up where it left off.' : 'Stopped.');
+  } catch (e) { moveRun = null; renderMovePane(moveWhy(e)); }
+};
+$('move-stop').onclick = () => { if (moveRun) { moveRun.stop = true; renderMovePane('Stopping after this page...'); } };
+$('move-reset').onclick = () => confirmAction({
+  title: 'Start Over', body: 'Forget what was counted and copied on this device? What is already in Supabase stays there; copying again writes it again.',
+  confirmLabel: 'Start Over', danger: false, onConfirm: () => { moveKeep({}); renderMovePane(''); },
+});
 $('admin-search').addEventListener('input', renderAdminList);
 if ($('system-hub-search')) $('system-hub-search').addEventListener('input', renderAdminList);
 if ($('devices-search')) $('devices-search').addEventListener('input', renderDevicesPane);
@@ -14360,6 +14449,7 @@ document.querySelectorAll('.admin-tab').forEach(tab => {
     if (tab.dataset.adminTab === 'devices') renderDevicesPane();
     if (tab.dataset.adminTab === 'ips') renderIpsPane();
     if (tab.dataset.adminTab === 'purgeperms') renderPurgePerms();
+    if (tab.dataset.adminTab === 'move') renderMovePane();
     if (tab.dataset.adminTab === 'ranks') { rankMakerPreview(); renderRanksPane(); }
     if (tab.dataset.adminTab === 'emojis') renderAdminEmojiList();
     if (tab.dataset.adminTab === 'stickers') renderAdminStickerList();
@@ -16335,7 +16425,7 @@ function ensureClaims(force) {
   if (claimsPromise && !force) return claimsPromise;
   const p = claimsPromise = (async () => {
     const user = auth.currentUser, have = await user.getIdTokenResult();
-    if (have.claims.n === myUid && have.claims.r === platformRank(myProfile)) return true;
+    if (have.claims.n === myUid && have.claims.r === platformRank(myProfile) && have.claims.role === 'authenticated') return true;
     const r = await fetch(`${ADMIN_API}/claims`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token: have.token }) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'claims ' + r.status);
     await user.getIdToken(true);                    // the new claims come on a fresh token, which the Realtime Database picks up
