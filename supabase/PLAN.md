@@ -108,6 +108,18 @@ and data sent out (5 GB + 5 GB cached a month); over either means restrictions u
       Discord timer Worker only calls the bridge's address: no change.
 - [ ] The user, before switch day: SUPABASE_URL and SUPABASE_SECRET_KEY as Cloudflare secrets on frixionbeta (admin,
       push) and equilibrium-incarnate (the Discord bridge); run the new setup-all.sql (it adds fx_get_many)
+- [x] Phase 4, the copy tool (main 4c72ed1, live 2026-11-16; merged here as a93a281): the Owner panel's Supabase tab
+      (Count, Copy / Carry On, Stop, Start Over; progress kept on that device) calls POST /api/admin/move: 'plan' (the
+      collection names in fx_routes, minus typing, plus any top-level Firestore collection Supabase keeps nothing of),
+      'count' (Firestore's count, 1 read per 1,000), 'copy' (a collection-group page in name order after the last
+      one, written whole with the secret key; a refused page is retried smaller down to the one document, which is
+      listed and passed over). It reads Firestore with globalThis.fetch, so the shim here doesn't touch it.
+      tests/t-move.mjs 15/15 (Firestore emulator into the stand-in, every document compared) and the tab tried in the
+      browser (count, copy, stop, carry on, start over).
+- [ ] The copy: the user adds the two secrets on frixionbeta first (the tool needs them), then Count after Firebase's
+      daily reset, then chooses: spread over days (free) or billing on for a day.
+- Switch day, in order: Frixion read-only (a rules change), run setup-all.sql again (it empties the tables, so
+  nothing deleted in Firestore since the first copy survives), copy everything, merge this branch into main, push.
 - Known: a Realtime filter is one column, so a channel id two servers share ("general") sends both servers' messages
   to a listener, which drops the other's (Realtime messages used for nothing). Supabase's free plan allows 200
   Realtime connections at once (one per open tab) and 100 channels each; Frixion opens about 25 to 35 per tab.
@@ -122,3 +134,6 @@ and data sent out (5 GB + 5 GB cached a month); over either means restrictions u
 3. `node supabase/local/seed.mjs`: Tester (the Owner), Sumi, Air and Nova, password pass1, a server, two DMs.
 4. Open http://localhost:8124/?emulators. A second account goes in a second tab at http://127.0.0.1:8124/?emulators
    (a different address keeps a separate sign-in). The stand-in's counts: GET :54321/local/stats with the secret key.
+5. Tests against it: tests/t-server.mjs (the server's routes; reseeds), tests/t-move.mjs (the copy tool; also needs the
+   Firestore emulator on 8080, and wipes it). `serve.mjs --admin-from=<main checkout>` runs main's admin routes
+   instead, to try main's Supabase tab from main's site (on the Firestore emulator) against this stand-in.

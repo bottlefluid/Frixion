@@ -324,7 +324,11 @@ async function api(fns, req, res) {
 
 await start();
 const fns = {};
-for (const name of ['admin', 'push', 'discord']) fns[name] = await import(pathToFileURL(path.join(ROOT, `functions/api/${name}/[[path]].js`)).href);
+// --admin-from=<folder>: the admin routes from another checkout (main's, to try its Supabase tab against the Firestore
+// emulator: its routes still read Firestore there, and only its copy tool writes to this stand-in)
+const ADMIN_FROM = (process.argv.find(a => a.startsWith('--admin-from=')) || '').slice('--admin-from='.length) || ROOT;
+for (const name of ['admin', 'push', 'discord']) fns[name] = await import(pathToFileURL(path.join(name === 'admin' ? ADMIN_FROM : ROOT, `functions/api/${name}/[[path]].js`)).href);
+if (ADMIN_FROM !== ROOT) log('admin routes from ' + ADMIN_FROM);
 // a push key for this run (the real one, VAPID_PRIVATE_KEY, is a Cloudflare secret)
 const vapid = await crypto.webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
 ENVS.push.VAPID_PRIVATE_KEY = JSON.stringify(await crypto.webcrypto.subtle.exportKey('jwk', vapid.privateKey));
