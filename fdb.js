@@ -142,12 +142,29 @@
     add(data) { const ref = this.doc(); return this.firestore._commit([this.firestore._setWrite(ref, data, null, true)]).then(() => ref); }
   }
   const META = Object.freeze({ fromCache: false, hasPendingWrites: false });
+  const SAVING = Object.freeze({ fromCache: false, hasPendingWrites: true });   // (this page's own write, on its way)
   class DocumentSnapshot {
-    constructor(ref, raw, updatedAt, meta) { this.ref = ref; this.id = ref.id; this._raw = raw; this._updatedAt = updatedAt || null; this.metadata = meta || META; }
+    // times: the fields holding a time this page asked the database for (serverTimestamp) and hasn't got back yet;
+    // prev: the document before this page's writes on their way (for serverTimestamps: 'previous')
+    constructor(ref, raw, updatedAt, meta, times, prev) {
+      this.ref = ref; this.id = ref.id; this._raw = raw; this._updatedAt = updatedAt || null; this.metadata = meta || META;
+      this._times = times && times.length ? times : null; this._prev = prev == null ? null : prev;
+    }
     get exists() { return this._raw != null; }
-    data() { return this._raw == null ? undefined : dec(this._raw, this.ref.firestore); }
-    get(field) {
+    // Such a time reads as null until the database gives it, the way Firestore did; { serverTimestamps: 'estimate' }
+    // gives this device's clock instead, and 'previous' the value it had before.
+    data(o) {
       if (this._raw == null) return undefined;
+      const out = dec(this._raw, this.ref.firestore), how = o && o.serverTimestamps;
+      if (this._times && how !== 'estimate') for (const p of this._times) {
+        const was = how === 'previous' ? getPath(this._prev, p) : undefined;
+        setPath(out, p, was === undefined ? null : dec(was, this.ref.firestore));
+      }
+      return out;
+    }
+    get(field, o) {
+      if (this._raw == null) return undefined;
+      if (this._times && !(o && o.serverTimestamps === 'estimate')) return getPath(this.data(o), pathOf(field));
       let v = this._raw;
       for (const k of pathOf(field)) { if (v == null || typeof v !== 'object') return undefined; v = v[k]; }
       return v === undefined ? undefined : dec(v, this.ref.firestore);
@@ -223,6 +240,55 @@
     };
   }
 
+  // ---------- this page's own writes, worked out here before the database answers ----------
+  // The same steps fx_commit takes (fx.set_path, fx.deep_merge and fx.transform in supabase/sql/002_commit.sql), on
+  // the stored form ({"$t": ms} times), so a list can show what was just written while the database checks it.
+  const isMap = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const copy = v => (v === null || typeof v !== 'object' ? v : Array.isArray(v) ? v.map(copy) : Object.fromEntries(Object.keys(v).map(k => [k, copy(v[k])])));
+  function getPath(doc, p) { let v = doc; for (const k of p) { if (!isMap(v)) return undefined; v = v[k]; } return v; }
+  function setPath(doc, p, val) { let o = doc; for (const k of p.slice(0, -1)) { if (!isMap(o[k])) o[k] = {}; o = o[k]; } o[p[p.length - 1]] = val; }
+  function delPath(doc, p) { const o = getPath(doc, p.slice(0, -1)); if (isMap(o)) delete o[p[p.length - 1]]; }
+  function mergeInto(a, b) { for (const k of Object.keys(b)) { if (isMap(b[k]) && isMap(a[k])) mergeInto(a[k], b[k]); else a[k] = copy(b[k]); } return a; }
+  // A document (stored form, or null) after this page's writes on their way ([{ w, at }], oldest first): { raw (null
+  // if they delete it), times (the fields waiting for the database's time, which gets this device's clock for now) }.
+  // undefined if it can't be worked out here (an update to a document this page hasn't read).
+  function estimate(raw, writes) {
+    let doc = raw == null ? null : copy(raw);
+    const stamps = [];
+    for (const { w, at } of writes) {
+      if (w.delete) { doc = null; continue; }
+      if (w.verify) continue;
+      if (w.create) doc = copy(w.create);
+      else if (w.set) doc = w.merge ? mergeInto(isMap(doc) ? doc : {}, w.set) : copy(w.set);
+      else if (w.updatePaths) { if (doc == null) return undefined; for (const [p, v] of w.updatePaths) setPath(doc, p, copy(v)); }
+      else return undefined;
+      for (const t of w.transforms || []) {
+        const p = t.field;
+        if (t.delete) { delPath(doc, p); continue; }
+        const cur = getPath(doc, p);
+        let out;
+        if ('increment' in t) out = typeof cur === 'number' ? cur + t.increment : t.increment;
+        else if (t.arrayUnion) { out = Array.isArray(cur) ? cur.slice() : []; for (const v of t.arrayUnion) if (!out.some(x => same(x, v))) out.push(copy(v)); }
+        else if (t.arrayRemove) out = (Array.isArray(cur) ? cur : []).filter(x => !t.arrayRemove.some(y => same(x, y)));
+        else if (t.serverTime) { out = { $t: at }; stamps.push([p, out]); }
+        else return undefined;
+        setPath(doc, p, out);
+      }
+    }
+    return { raw: doc, times: doc == null ? [] : stamps.filter(([p, v]) => getPath(doc, p) === v).map(([p]) => p) };
+  }
+  // A database time ("2026-11-17 21:40:00.123456+00" from a read or a write's answer, or the ISO form a live change
+  // carries) in milliseconds, for telling which of two answers about a document is the newer one.
+  function tsNum(s) {
+    if (typeof s !== 'string') return -Infinity;
+    const m = /^(\d{4}-\d\d-\d\d)[T ](\d\d:\d\d:\d\d)(?:\.(\d+))?\s*(Z|[+-]\d\d(?::?\d\d)?)?$/i.exec(s.trim());
+    if (!m) { const t = Date.parse(s); return Number.isNaN(t) ? -Infinity : t; }
+    let off = (m[4] || 'Z').toUpperCase();
+    if (off !== 'Z') off = off.length === 3 ? off + ':00' : off.includes(':') ? off : off.slice(0, 3) + ':' + off.slice(3);
+    const ms = Date.parse(m[1] + 'T' + m[2] + off);
+    return Number.isNaN(ms) ? -Infinity : ms + Number((m[3] || '').slice(0, 3).padEnd(3, '0'));
+  }
+
   // ---------- the database ----------
   function createFdb(sb, opts) {
     opts = opts || {};
@@ -231,6 +297,11 @@
     const KEEP = /^(accounts|users)\/[^/]+$/;   // (kept between visits too: logging in when the daily limit is out)
     let routesP = null, seq = 0;
     const inflight = new Set();   // writes on their way (waitForPendingWrites)
+    const queue = [];             // ...those this page's live lists show already: { writes, at }, oldest first
+    const watchers = new Set();   // live listeners, told when this page writes and when the database answers
+    function tell(paths, results) {
+      for (const fn of [...watchers]) { try { fn(paths, results); } catch (e) { console.warn('fdb listener:', e && e.message); } }
+    }
 
     async function rpc(name, args) {
       let res;
@@ -315,15 +386,39 @@
         if (transforms.length) w.transforms = transforms;
         return w;
       },
+      // Plain writes and batches show on this page's live lists and documents at once, marked as still saving (the
+      // way Firestore did it); the database's answer then confirms them, or takes them away again if it refused
+      // them. A transaction's writes (they check what it read) wait for the answer.
       async _commit(writes) {
+        const paths = new Set(writes.map(w => w.path));
+        const item = writes.some(w => w.verify || 'updatedAt' in w || 'exists' in w) ? null : { writes, at: Date.now() };
+        if (item) { queue.push(item); Promise.resolve().then(() => { if (queue.includes(item)) tell(paths, null); }); }
         const p = rpc('fx_commit', { writes });
         inflight.add(p);
-        try {
-          const res = await p;
-          (res || []).forEach(r => { if (r.data !== undefined) remember(r.path, r.data, r.updatedAt); });
-          return res;
+        let res;
+        try { res = (await p) || []; }
+        catch (e) {
+          if (item && queue.includes(item)) { queue.splice(queue.indexOf(item), 1); tell(paths, null); }
+          throw e;
         } finally { inflight.delete(p); }
+        res.forEach(r => { if (r.data !== undefined) remember(r.path, r.data, r.updatedAt); });
+        if (item) queue.splice(queue.indexOf(item), 1);
+        tell(paths, res.map((r, i) => ({ path: r.path, data: r.data, updatedAt: r.updatedAt, gone: !!(writes[i] && writes[i].delete) })));
+        return res;
       },
+      // this page's writes on their way to one document (docPath) or to a collection's documents: id -> [{ w, at }]
+      _pending(docPath, collPath) {
+        const out = new Map();
+        for (const it of queue) for (const w of it.writes) {
+          const cut = w.path.lastIndexOf('/');
+          if (docPath ? w.path !== docPath : w.path.slice(0, cut) !== collPath) continue;
+          const id = w.path.slice(cut + 1);
+          if (!out.has(id)) out.set(id, []);
+          out.get(id).push({ w, at: it.at });
+        }
+        return out;
+      },
+      _watch(fn) { watchers.add(fn); return () => watchers.delete(fn); },
       _listen(target, args) { return listen(db, target, args); },
       _routeFor: routeFor,
       _channel: name => sb.channel(name),
@@ -378,80 +473,152 @@
   // its id), reads once more when the subscription is up (anything that changed in between), then applies each
   // change as it comes. A list with a limit reads again when a removal leaves a gap. If live updates can't start, the
   // first read still arrives.
+  // What it shows is the database's picture with this page's own writes on top while they're on their way (marked
+  // metadata.hasPendingWrites), so a message shows the moment it's sent; the database's answer then confirms it, and
+  // the live change that follows has nothing left to show.
   function listen(db, target, args) {
-    let next, error;
-    if (args[0] && typeof args[0] === 'object' && typeof args[0].next !== 'function' && args.length > 1) args = args.slice(1);   // (options: nothing to do)
+    let next, error, withMeta = false;
+    if (args[0] && typeof args[0] === 'object' && typeof args[0].next !== 'function' && args.length > 1) { withMeta = !!args[0].includeMetadataChanges; args = args.slice(1); }
     if (args[0] && typeof args[0] === 'object' && typeof args[0].next === 'function') { next = args[0].next.bind(args[0]); error = args[0].error && args[0].error.bind(args[0]); }
     else { next = args[0]; error = args[1]; }
     const isDoc = target instanceof DocumentReference;
     const collPath = isDoc ? target.parent.path : target._path;
     const q = isDoc ? null : target._q;
-    let channel = null, stopped = false, ready = false, pending = [], docs = new Map(), list = [], refill = null;
-    let loadSeq = 0, appliedSeq = 0, emitted = false, lastDocKey = undefined;
+    const sort = isDoc ? null : sorter(q);
+    const trim = a => (q.limit == null ? a : q.last ? a.slice(Math.max(0, a.length - q.limit)) : a.slice(0, q.limit));
+    const ours = path => (isDoc ? path === target.path : path.slice(0, path.lastIndexOf('/')) === collPath);
+    const refOf = id => (isDoc ? target : new DocumentReference(db, collPath + '/' + id));
+    let channel = null, stopped = false, ready = false, pending = [], refill = null;
+    let docs = new Map();      // id -> what the database last said (for a list: only what's in it)
+    const ver = new Map();     // id -> the database's time for that, so an older answer never undoes a newer one
+    const gone = new Map();    // id -> when the database deleted it, so a late answer doesn't bring it back
+    let list = [], baseCount = 0, lastSaving = false;
+    let loadSeq = 0, appliedSeq = 0, emitted = false, lastDocKey;
     const report = e => { if (!stopped && error) error(e); else if (!stopped) console.warn('fdb listener:', e && e.message); };
 
+    // One thing the database says about a document: { id, raw (null: gone), updatedAt, deletedAt, live }. A read, a
+    // live change and the answer to this page's own write can arrive in any order; the newer one wins.
+    function put(ev) {
+      const id = ev.id;
+      if (ev.raw == null) {
+        if (ev.deletedAt != null) { if (ver.has(id) && ver.get(id) > ev.deletedAt) return; gone.set(id, ev.deletedAt); }
+        docs.delete(id); ver.delete(id);
+        return;
+      }
+      const t = tsNum(ev.updatedAt);
+      if (ver.has(id) && ver.get(id) > t) return;
+      if (!ev.live && gone.has(id) && gone.get(id) >= t) return;
+      const old = docs.get(id);
+      docs.set(id, old && JSON.stringify(old._raw) === JSON.stringify(ev.raw) ? old : new DocumentSnapshot(refOf(id), ev.raw, ev.updatedAt));
+      ver.set(id, t);
+    }
+    // (while a read is on its way, news is also kept to apply again on top of what it brings; before the first
+    // picture there is nothing to change yet)
+    function take(ev) {
+      if (!ready) { pending.push(ev); if (!emitted) return false; }
+      put(ev);
+      return true;
+    }
+    // the database's document with this page's writes on top: null if they delete it, undefined if nothing can be
+    // shown for them (an update to a document this page hasn't read)
+    function withMine(id, writes) {
+      const s = docs.get(id), e = estimate(s ? s._raw : null, writes);
+      if (e === undefined) return undefined;
+      return e.raw === null ? null : new DocumentSnapshot(refOf(id), e.raw, s ? s._updatedAt : null, SAVING, e.times, s ? s._raw : null);
+    }
+    function emit(first) { if (isDoc) emitDoc(); else emitQuery(first); }
     function emitDoc() {
-      const s = docs.get(target.id);
-      const key = s ? JSON.stringify(s._raw) : null;
+      const w = db._pending(target.path, null).get(target.id);
+      let s = docs.get(target.id) || null;
+      if (w) { const m = withMine(target.id, w); if (m !== undefined) s = m; }
+      const key = s ? JSON.stringify(s._raw) + (withMeta && s.metadata.hasPendingWrites ? ' saving' : '') : null;
       if (emitted && key === lastDocKey) return;   // (nothing new: no second call)
       emitted = true; lastDocKey = key;
-      next(new DocumentSnapshot(target, s ? s._raw : null, s ? s._updatedAt : null));
+      next(s || new DocumentSnapshot(target, null, null));
     }
     function emitQuery(first) {
-      let all = [...docs.values()].filter(s => matches(q, s.id, s._raw)).sort(sorter(q));
-      if (q.limit != null) all = q.last ? all.slice(Math.max(0, all.length - q.limit)) : all.slice(0, q.limit);
+      // the database's picture, trimmed to the list
+      const base = trim([...docs.values()].filter(s => matches(q, s.id, s._raw)).sort(sort));
+      const keep = new Set(base.map(s => s.id));
+      for (const id of [...docs.keys()]) if (!keep.has(id)) { docs.delete(id); ver.delete(id); }
+      // a limited list that lost something may have room for one that wasn't loaded: read it again
+      if (q.limit != null && !first && baseCount >= q.limit && base.length < q.limit) scheduleRefill();
+      baseCount = base.length;
+      // with this page's own writes on top
+      let all = base;
+      const mine = db._pending(null, collPath);
+      if (mine.size) {
+        const m = new Map(base.map(s => [s.id, s]));
+        for (const [id, w] of mine) { const v = withMine(id, w); if (v === null) m.delete(id); else if (v) m.set(id, v); }
+        all = trim([...m.values()].filter(s => matches(q, s.id, s._raw)).sort(sort));
+      }
       const before = new Map(list.map((s, i) => [s.id, { s, i }])), changes = [];
-      all.forEach((s, i) => {
+      all = all.map((s, i) => {
         const b = before.get(s.id);
-        if (!b) changes.push({ type: 'added', doc: s, oldIndex: -1, newIndex: i });
-        else if (b.s !== s) changes.push({ type: 'modified', doc: s, oldIndex: b.i, newIndex: i });
+        if (!b) { changes.push({ type: 'added', doc: s, oldIndex: -1, newIndex: i }); return s; }
+        if (b.s === s) return s;
+        const sameData = JSON.stringify(b.s._raw) === JSON.stringify(s._raw);
+        if (sameData && b.s.metadata === s.metadata) return b.s;   // (nothing changed: the same object as before)
+        if (!sameData || withMeta) changes.push({ type: 'modified', doc: s, oldIndex: b.i, newIndex: i });
+        return s;
       });
       const now = new Set(all.map(s => s.id));
       list.forEach((s, i) => { if (!now.has(s.id)) changes.push({ type: 'removed', doc: s, oldIndex: i, newIndex: -1 }); });
-      // a limited list that lost something may have room for one that wasn't loaded: read it again
-      if (q.limit != null && !first && list.length >= q.limit && all.length < q.limit) scheduleRefill();
       list = all;
-      for (const id of [...docs.keys()]) if (!now.has(id)) docs.delete(id);   // (only what's in the list is kept)
-      if (!emitted || changes.length) { emitted = true; next(new QuerySnapshot(target, all, changes)); }
+      const saving = all.some(s => s.metadata.hasPendingWrites);
+      if (!emitted || changes.length || (withMeta && saving !== lastSaving)) {
+        emitted = true; lastSaving = saving;
+        next(new QuerySnapshot(target, all, changes, saving ? SAVING : META));
+      }
     }
     async function load() {
       const mine = ++loadSeq;
       ready = false;
       try {
-        let fresh;
-        if (isDoc) { const r = await db._get(target); fresh = new Map(r.exists ? [[target.id, r]] : []); }
-        else {
-          const rows = await db._rows(target);
-          fresh = new Map(rows.map(r => [r.id, new DocumentSnapshot(new DocumentReference(db, collPath + '/' + r.id), r.data, r.updatedAt)]));
-        }
+        let rows;
+        if (isDoc) { const r = await db._get(target); rows = r.exists ? [{ id: target.id, data: r._raw, updatedAt: r._updatedAt }] : []; }
+        else rows = await db._rows(target);
         if (stopped || mine < appliedSeq) return;   // (an older read that finished after a newer one)
         appliedSeq = mine;
-        if (!isDoc) for (const [id, s] of fresh) { const old = docs.get(id); if (old && JSON.stringify(old._raw) === JSON.stringify(s._raw)) fresh.set(id, old); }
-        docs = fresh;
-        if (isDoc) emitDoc(); else emitQuery(!emitted);
-        if (mine === loadSeq) {
-          ready = true;
-          const p = pending; pending = [];
-          p.forEach(apply);
+        const fresh = new Map();
+        ver.clear();
+        for (const r of rows) {
+          const old = docs.get(r.id);
+          fresh.set(r.id, old && JSON.stringify(old._raw) === JSON.stringify(r.data) ? old : new DocumentSnapshot(refOf(r.id), r.data, r.updatedAt));
+          ver.set(r.id, tsNum(r.updatedAt));
         }
+        docs = fresh;
+        pending.forEach(put);   // (what came in while it was on its way, on top)
+        if (mine === loadSeq) { ready = true; pending = []; }
+        emit(!emitted);
       } catch (e) { report(e); }
     }
     function scheduleRefill() {
       if (refill) return;
       refill = setTimeout(() => { refill = null; if (!stopped) load(); }, 50);
     }
-    function apply(payload) {
-      if (!ready) { pending.push(payload); return; }
-      const row = payload.eventType === 'DELETE' ? payload.old : payload.new;
+    function apply(payload) {   // a live change from Supabase
+      const del = payload.eventType === 'DELETE', row = del ? payload.old : payload.new;
       if (!row) return;
       const route = apply.route;
       if (!route.cols.slice(0, -1).every((c, i) => row[c] === undefined || String(row[c]) === route.ids[i])) return;   // another parent
       const id = String(row.id);
       if (isDoc && id !== target.id) return;
-      if (payload.eventType === 'DELETE') docs.delete(id);
-      else docs.set(id, new DocumentSnapshot(new DocumentReference(db, collPath + '/' + id), row.data, row.updated_at || null));
-      if (isDoc) emitDoc(); else emitQuery(false);
+      if (!del && row.data === undefined) { scheduleRefill(); return; }   // (a change too big to be sent: read it instead)
+      const when = del ? tsNum(payload.commit_timestamp) : -Infinity;
+      if (take(del ? { id, raw: null, deletedAt: when > -Infinity ? when : null } : { id, raw: row.data, updatedAt: row.updated_at || null, live: true })) emit(false);
     }
+    // this page's own writes: on their way (results null), or the database's answers ({ path, data, updatedAt, gone })
+    const unwatch = db._watch((paths, results) => {
+      if (stopped || ![...paths].some(ours)) return;
+      for (const r of results || []) {
+        if (!ours(r.path)) continue;
+        const id = r.path.slice(r.path.lastIndexOf('/') + 1);
+        if (r.gone) take({ id, raw: null });
+        else if (r.data != null) take({ id, raw: r.data, updatedAt: r.updatedAt });
+      }
+      if (emitted) emit(false);
+    });
     load();
     db._routeFor(collPath).then(async route => {
       if (stopped) return;
@@ -474,6 +641,7 @@
     }, report);
     return function unsubscribe() {
       stopped = true;
+      unwatch();
       if (refill) clearTimeout(refill);
       if (channel) db._removeChannel(channel);
     };

@@ -36,11 +36,11 @@ export function makeHub(db) {
         for (const ch of [...subs]) for (const b of ch.bindings) {
           if (b.filter.table !== r.tbl) continue;
           if (b.filter.filter) { const [col, val] = b.filter.filter.split('=eq.'); if (String(keys[col]) !== val) continue; }
-          if (!row) { hub.sent++; b.cb({ eventType: 'DELETE', old: keys, new: null }); continue; }
+          if (!row) { hub.sent++; b.cb({ eventType: 'DELETE', old: keys, new: null, commit_timestamp: new Date().toISOString() }); continue; }
           const seen = await as(db, ch.who, `select data from public."${r.tbl}" where ${where}`, r.ids);
           if (!seen.ok || !seen.rows.length) continue;
           hub.sent++;
-          b.cb({ eventType: 'UPDATE', new: { ...keys, data: row.data, updated_at: row.updated_at && row.updated_at.toISOString() }, old: keys });
+          b.cb({ eventType: 'UPDATE', new: { ...keys, data: row.data, updated_at: row.updated_at && row.updated_at.toISOString() }, old: keys, commit_timestamp: new Date().toISOString() });
         }
       }
     },
@@ -56,7 +56,9 @@ export function fakeSupabase(db, who, hub) {
       const params = keys.map(k => (args[k] !== null && typeof args[k] === 'object' ? JSON.stringify(args[k]) : args[k]));
       const r = await as(db, who, sql, params);
       if (!r.ok) return { data: null, error: { message: r.error, code: r.code }, status: 400 };
-      if (name === 'fx_commit' && hub) await hub.afterCommit(args.writes);
+      // (live changes go out before the answer, unless hub.lag is set: then that many ms after it, as on the real
+      // Supabase, where Realtime is the slower of the two)
+      if (name === 'fx_commit' && hub) { if (hub.lag != null) setTimeout(() => hub.afterCommit(args.writes), hub.lag); else await hub.afterCommit(args.writes); }
       return { data: r.rows[0].r, error: null, status: 200 };
     },
     channel(name) { return hub.channel(who, name); },
