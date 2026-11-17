@@ -8,7 +8,7 @@ Both sites switch together. They are down for about 5 minutes, from the lock (st
 - [x] frixionbeta has SUPABASE_URL and SUPABASE_SECRET_KEY (2026-11-16); its /api/admin/info says supabase "ready".
 - [x] The setup ran in Supabase, and a rehearsal copy went through (1,592 documents, 2026-11-17).
 - [x] Tested: the real end-to-end test, the whole site in the page (85 checks), the server routes (41), the rules
-      (703, Gavinperri's included), the copy under the lock (move.html, t-move 15, t-lock 13).
+      (703, Gavinperri's included), the copy under the lock (/move-to-supabase, t-move 15, t-lock 13).
 - [ ] **You:** add the same two settings to **equilibrium-incarnate** (Production), where the Discord bridge runs:
       https://dash.cloudflare.com/4071088401428c07213db04018ac0d2b/pages/view/equilibrium-incarnate, Settings,
       Variables and Secrets. (They take effect with the switch's deploy, so no redeploy is needed before.)
@@ -23,7 +23,7 @@ Both sites switch together. They are down for about 5 minutes, from the lock (st
 2. **You: set Supabase up fresh.** SQL Editor (https://supabase.com/dashboard/project/qhiedomoxvmhamjflysa/sql/new):
    paste all of the newest `setup-all.sql` (I send it; it has Gavinperri's tables), Run, and choose "Run without RLS".
    This empties Supabase, so the copy that follows is the only data in it.
-3. **You: copy.** Open https://frixionbeta.pages.dev/move.html, sign in as the Owner, press **Start Over**, then
+3. **You: copy.** Open https://frixionbeta.pages.dev/move-to-supabase, sign in as the Owner, press **Start Over**, then
    **Copy**, and wait for "Done" (about a minute). Tell me the Done line and anything under "Not copied".
 4. **Me: the new versions.** Merge Frixion's `supabase` branch into main and push (all 5 sites); merge Gavinperri's
    `supabase` branch into its main and push.
@@ -41,8 +41,8 @@ Both sites switch together. They are down for about 5 minutes, from the lock (st
 
 ## After
 
-- Firestore stays locked as a backup; only the server can read it (move.html could copy again from it).
+- Firestore stays locked as a backup; only the server can read it (/move-to-supabase could copy again from it).
 - Watch Supabase's Usage page (database size, egress, Realtime connections) for the first days.
-- move.html, the Owner panel's Supabase tab and /api/admin/move can go once nothing needs a copy any more.
+- move-to-supabase.html, the Owner panel's Supabase tab and /api/admin/move can go once nothing needs a copy any more.
 - The CLAUDE.md section about publishing Firestore rules for other sites becomes out of date (other sites' data now
   goes into Frixion's supabase/sql).
