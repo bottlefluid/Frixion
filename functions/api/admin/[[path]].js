@@ -19,7 +19,8 @@
 //                                 Co-Owners also redo someone else's after changing their rank. Every sign-in also gets
 //                                 role: 'authenticated', which Supabase will need to count it as signed in (Firebase's
 //                                 rules don't look at it); a sign-in that isn't a Frixion account yet gets only that.
-//   GET  /api/admin/info          whether it's set up here (auth: "ready" once the service account may change sign-ins).
+//   GET  /api/admin/info          whether it's set up here (auth: "ready" once the service account may change sign-ins;
+//                                 supabase: "ready" once SUPABASE_URL and SUPABASE_SECRET_KEY reach a set-up Supabase).
 //   POST /api/admin/move          { token, action, group?, after?, size? }: the Owner copies Frixion's data from Firestore
 //                                 into Supabase for the switch (the Owner panel's Supabase tab): 'plan' lists the kinds
 //                                 of documents, 'count' counts one kind, 'copy' copies its next page. See "moving to
@@ -86,13 +87,18 @@ export async function onRequest({ request, env, params }) {
 }
 
 async function info(env) {
-  if (!env.FIREBASE_SERVICE_ACCOUNT && !env.FIRESTORE_BEARER) return { ready: false };
+  // (the Supabase switch: whether this site reaches Supabase with its secret key, which the Owner panel's Supabase tab
+  // needs now, and every route after the switch)
+  const supabase = !env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY ? 'not set up here'
+    : await supabaseRpc(env, 'fx_routes', {}).then(r => (Array.isArray(r) && r.length ? 'ready' : 'reachable, but its setup hasn\'t been run'),
+      e => 'Supabase said: ' + String(e && e.message).slice(0, 160));
+  if (!env.FIREBASE_SERVICE_ACCOUNT && !env.FIRESTORE_BEARER) return { ready: false, supabase };
   try {
     const r = await authCall(env, 'accounts:query', { returnUserInfo: false, limit: 1 });
-    if (r.ok) return { ready: true, auth: 'ready' };
+    if (r.ok) return { ready: true, auth: 'ready', supabase };
     const why = await googleWhy(r);
-    return { ready: true, auth: noRole(r, why) ? 'the service account needs the Firebase Authentication Admin role' : `Google said ${r.status}: ${why.slice(0, 200)}` };
-  } catch (e) { return { ready: true, auth: e.message }; }
+    return { ready: true, auth: noRole(r, why) ? 'the service account needs the Firebase Authentication Admin role' : `Google said ${r.status}: ${why.slice(0, 200)}`, supabase };
+  } catch (e) { return { ready: true, auth: e.message, supabase }; }
 }
 // What Google's answer says went wrong, and whether it's the missing role (Google answers that with 400
 // INSUFFICIENT_PERMISSION, or a 403).
