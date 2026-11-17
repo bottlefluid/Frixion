@@ -3,7 +3,8 @@
 //   http://127.0.0.1:54321  a stand-in for the Supabase project: PGlite (real Postgres, in memory) with Frixion's SQL
 //                           (supabase/sql), answering supabase-js the way Supabase does: /rest/v1/rpc/<function>
 //                           (PostgREST) and /realtime/v1/websocket (Realtime's Postgres Changes, Phoenix protocol)
-//   http://127.0.0.1:8788   the server's routes (functions/api/admin), reading from the stand-in
+//   http://127.0.0.1:8788   the server's routes (functions/api/admin, push and discord), on the stand-in too
+//   http://127.0.0.1:8789   a fake Discord for the bridge (fake-discord.mjs)
 // Sign-in and the Realtime Database stay on the Firebase emulators (Auth 9099, Realtime Database 9000): start those
 // first, then this, then seed it (seed.mjs). Then open http://localhost:8124/?emulators and log in as Tester / pass1.
 //
@@ -20,11 +21,13 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { makeDb, FIREBASE } from '../tests/harness.mjs';
+import { startFakeDiscord, TOKEN as DISCORD_TOKEN } from './fake-discord.mjs';
 
 export const SECRET = 'local-secret-key';             // the stand-in's "secret key" (the server)
 export const PUBLISHABLE = 'local-publishable-key';   // and its "publishable key" (what script.js uses here)
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PORT_SITE = +(process.env.PORT_SITE || 8124), PORT_SUPABASE = +(process.env.PORT_SUPABASE || 54321), PORT_API = +(process.env.PORT_API || 8788);
+const PORT_DISCORD = +(process.env.PORT_DISCORD || 8789);
 const log = (...a) => console.log(new Date().toISOString().slice(11, 23), ...a);
 
 // ---------------- the database ----------------
@@ -101,7 +104,7 @@ function whoFrom(token) {
 const bearer = req => { const h = req.headers.authorization || ''; return h.startsWith('Bearer ') ? h.slice(7) : (req.headers.apikey || null); };
 
 // ---------------- PostgREST's part: /rest/v1/rpc/<function> ----------------
-const RPCS = new Set(['fx_commit', 'fx_get', 'fx_query', 'fx_routes']);
+const RPCS = new Set(['fx_commit', 'fx_get', 'fx_query', 'fx_routes', 'fx_get_many']);
 // Postgres errors as PostgREST sends them (its status for each SQLSTATE)
 function statusFor(code, who) {
   if (code === '42501') return who.role === 'anon' ? 401 : 403;
@@ -295,18 +298,23 @@ function site(req, res) {
   });
 }
 
-// ---------------- the server's routes (functions/api/admin) ----------------
-const ADMIN_ENV = {
-  SUPABASE_URL: `http://127.0.0.1:${PORT_SUPABASE}`, SUPABASE_SECRET_KEY: SECRET,
-  FIRESTORE_URL: 'http://127.0.0.1:8080/v1/projects/liquidalt/databases/(default)/documents', FIRESTORE_BEARER: 'owner',
-  AUTH_URL: 'http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/projects/liquidalt', TEST_TOKENS: '1',
+// ---------------- the server's routes (functions/api: admin, push, discord) ----------------
+// Each one's database requests go to the stand-in (SUPABASE_URL), the Owner tools' sign-in work to the Auth emulator,
+// the Discord bridge to a fake Discord (fake-discord.mjs, port 8789), and push gets a key made for this run.
+const SB = { SUPABASE_URL: `http://127.0.0.1:${PORT_SUPABASE}`, SUPABASE_SECRET_KEY: SECRET };
+const ENVS = {
+  admin: { ...SB, FIRESTORE_URL: 'http://127.0.0.1:8080/v1/projects/liquidalt/databases/(default)/documents', FIRESTORE_BEARER: 'owner',
+    AUTH_URL: 'http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/projects/liquidalt', TEST_TOKENS: '1' },
+  push: { ...SB },
+  discord: { ...SB, DISCORD_BOT_TOKEN: DISCORD_TOKEN, DISCORD_API: `http://127.0.0.1:${PORT_DISCORD}/api/v10` },
 };
-async function api(admin, req, res) {
+async function api(fns, req, res) {
   const body = ['GET', 'HEAD', 'OPTIONS'].includes(req.method) ? undefined : await readBody(req);
   const url = `http://127.0.0.1:${PORT_API}${req.url}`, u = new URL(url);
-  if (!u.pathname.startsWith('/api/admin')) { res.writeHead(404, CORS); return res.end(); }
-  const rest = u.pathname.replace(/^\/api\/admin\/?/, '');
-  const r = await admin.onRequest({ request: new Request(url, { method: req.method, headers: req.headers, body }), env: ADMIN_ENV, params: { path: rest ? rest.split('/') : [] } });
+  const m = /^\/api\/(admin|push|discord)(?:\/(.*))?$/.exec(u.pathname);
+  if (!m) { res.writeHead(404, CORS); return res.end(); }
+  const rest = m[2] || '';
+  const r = await fns[m[1]].onRequest({ request: new Request(url, { method: req.method, headers: req.headers, body }), env: ENVS[m[1]], params: { path: rest ? rest.split('/') : [] } });
   const h = {};
   r.headers.forEach((v, k) => { h[k] = v; });
   res.writeHead(r.status, h);
@@ -315,10 +323,15 @@ async function api(admin, req, res) {
 }
 
 await start();
-const admin = await import(pathToFileURL(path.join(ROOT, 'functions/api/admin/[[path]].js')).href);
+const fns = {};
+for (const name of ['admin', 'push', 'discord']) fns[name] = await import(pathToFileURL(path.join(ROOT, `functions/api/${name}/[[path]].js`)).href);
+// a push key for this run (the real one, VAPID_PRIVATE_KEY, is a Cloudflare secret)
+const vapid = await crypto.webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+ENVS.push.VAPID_PRIVATE_KEY = JSON.stringify(await crypto.webcrypto.subtle.exportKey('jwk', vapid.privateKey));
+startFakeDiscord(PORT_DISCORD);
 const sbServer = http.createServer((req, res) => supabaseHttp(req, res).catch(e => { log('supabase:', e.message); if (!res.headersSent) reply(res, 500, { message: e.message }); }));
 sbServer.on('upgrade', wsAccept);
 sbServer.listen(PORT_SUPABASE, '127.0.0.1', () => log(`Supabase stand-in on http://127.0.0.1:${PORT_SUPABASE}`));
-http.createServer((req, res) => api(admin, req, res).catch(e => { log('api:', e.message); if (!res.headersSent) { res.writeHead(500, CORS); res.end(); } }))
-  .listen(PORT_API, '127.0.0.1', () => log(`server routes on http://127.0.0.1:${PORT_API}/api/admin`));
+http.createServer((req, res) => api(fns, req, res).catch(e => { log('api:', e.message); if (!res.headersSent) { res.writeHead(500, CORS); res.end(); } }))
+  .listen(PORT_API, '127.0.0.1', () => log(`server routes on http://127.0.0.1:${PORT_API}/api/{admin,push,discord}, fake Discord on ${PORT_DISCORD}`));
 http.createServer(site).listen(PORT_SITE, '127.0.0.1', () => log(`site on http://localhost:${PORT_SITE}/?emulators`));

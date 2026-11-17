@@ -47,6 +47,12 @@
 // "owner" too) and TEST_TOKENS=1, which accepts the emulator's unsigned ID tokens. Never set TEST_TOKENS on a real site.
 const PROJECT = 'liquidalt';
 const FIRESTORE = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`;
+// (Supabase switch) With SUPABASE_URL and SUPABASE_SECRET_KEY set, every Firestore REST request in this file goes to
+// Supabase instead and is answered in Firestore's shapes (functions/_lib/firestore-on-supabase.js), so the code below
+// stays as it is. ENV is the site's settings, the same for every request.
+import { firestoreFetch } from '../../_lib/firestore-on-supabase.js';
+let ENV = null;
+const fetch = (url, init) => firestoreFetch(ENV, url, init);
 const IDENTITY = `https://identitytoolkit.googleapis.com/v1/projects/${PROJECT}`;
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400' };
 const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...CORS } });
@@ -54,6 +60,7 @@ class Fail extends Error { constructor(status, message) { super(message); this.s
 const fail = (status, message) => { throw new Fail(status, message); };
 
 export async function onRequest({ request, env, params }) {
+  ENV = env;
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   const route = [].concat(params.path || []).join('/');
   try {
@@ -129,22 +136,7 @@ const authBase = env => env.AUTH_URL || IDENTITY;
 const dec = v => ('stringValue' in v ? v.stringValue : 'integerValue' in v ? Number(v.integerValue) : 'doubleValue' in v ? v.doubleValue : 'booleanValue' in v ? v.booleanValue
   : 'timestampValue' in v ? Date.parse(v.timestampValue) : 'mapValue' in v ? decFields(v.mapValue.fields) : 'arrayValue' in v ? (v.arrayValue.values || []).map(dec) : 'nullValue' in v ? null : undefined);
 const decFields = f => Object.fromEntries(Object.entries(f || {}).map(([k, v]) => [k, dec(v)]));
-// (Supabase switch) With SUPABASE_URL and SUPABASE_SECRET_KEY set, documents are read from Supabase instead: public.fx_get
-// with the secret key, which the database's rules let read anything (fx.trusted()). Its timestamps ({"$t": ms}) come
-// back as milliseconds, the way dec() gives Firestore's. Writes still go to Firestore until they move too.
-const fromFx = v => (v === null || typeof v !== 'object' ? v : Array.isArray(v) ? v.map(fromFx)
-  : Object.keys(v).length === 1 && typeof v.$t === 'number' ? v.$t : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fromFx(x)])));
-async function sbRpc(env, name, args) {
-  const key = env.SUPABASE_SECRET_KEY;
-  const r = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/${name}`, { method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: key, Authorization: 'Bearer ' + key }, body: JSON.stringify(args) });
-  const j = await r.json().catch(() => null);
-  if (r.status === 402 || r.status === 429) fail(503, 'Frixion reached its database limit for today. Try again later.');
-  if (!r.ok) fail(502, 'Could not read Frixion' + (j && j.message ? ' (' + j.message + ')' : '') + '.');
-  return j;
-}
 async function fsGet(env, path) {
-  if (env.SUPABASE_URL) { const r = await sbRpc(env, 'fx_get', { path }); return r && r.exists ? fromFx(r.data) : null; }
   const r = await fetch(`${fsBase(env)}/${path.split('/').map(encodeURIComponent).join('/')}`, { headers: { Authorization: 'Bearer ' + await googleToken(env) } });
   if (r.status === 404) return null;
   if (r.status === 429) fail(503, 'Frixion reached its database limit for today. Try again later.');

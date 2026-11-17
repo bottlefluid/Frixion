@@ -92,10 +92,22 @@ and data sent out (5 GB + 5 GB cached a month); over either means restrictions u
       subscriptions that finished joining, so early ones stayed signed out). Smoke test on this PC (below): log in,
       register, server messages (send, edit, delete, react, poll vote), DMs, friend requests and profile changes, all
       live between two accounts; nothing refused that should pass, and editing someone else's message is refused.
-- [ ] The user: run sql/001 to 010 in the Supabase SQL Editor, in order
-- [ ] End-to-end test against the real project with a real Firebase sign-in (Realtime with Third-Party Auth above all)
-- [ ] Phase 3: functions/api (admin reads through Supabase when SUPABASE_URL is set, but its writes, discord and push
-      are still Firestore's), role claims for everyone before switch day, the Discord timer Worker
+- [x] The user ran setup-all.sql (sql/001 to 010) in the SQL Editor (2026-11-16). Checked with the publishable key
+      alone: 49 routes, signed-out reads and writes refused.
+- [ ] End-to-end test against the real project with a real Firebase sign-in (Realtime with Third-Party Auth above all):
+      the first try (2026-11-16) stopped at the role claim, because the live claims route couldn't read Firestore that
+      evening (its daily reads were used up).
+- [x] Role claims: live on main since 76dae03 (2026-11-16): every sign-in gets role: 'authenticated' and accounts collect
+      it as they sign in.
+- [x] Phase 3, the server (2026-11-16): functions/_lib/firestore-on-supabase.js answers the functions' Firestore REST
+      requests (get, list, patch, delete, :commit with masks, transforms and preconditions, :batchGet, :runQuery) from
+      Supabase once SUPABASE_URL and SUPABASE_SECRET_KEY are set, one request each, so admin, push and discord keep their
+      logic. sql/011_server.sql adds fx_get_many (batchGet; the secret key only). tests/t-server.mjs 41/41 on the local
+      setup: claims, IP notes, Orbs from games, codes, eggs, the Shop, the casino, one-time passwords, loans, push (DMs,
+      mentions, blocks and ranks) and the Discord bridge (verify, send, sync, pull, tick) with a fake Discord. The
+      Discord timer Worker only calls the bridge's address: no change.
+- [ ] The user, before switch day: SUPABASE_URL and SUPABASE_SECRET_KEY as Cloudflare secrets on frixionbeta (admin,
+      push) and equilibrium-incarnate (the Discord bridge); run the new setup-all.sql (it adds fx_get_many)
 - Known: a Realtime filter is one column, so a channel id two servers share ("general") sends both servers' messages
   to a listener, which drops the other's (Realtime messages used for nothing). Supabase's free plan allows 200
   Realtime connections at once (one per open tab) and 100 channels each; Frixion opens about 25 to 35 per tab.

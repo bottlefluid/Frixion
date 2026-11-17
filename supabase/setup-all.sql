@@ -1,4 +1,4 @@
--- Frixion on Supabase: the whole database setup (supabase/sql/001_base.sql to 010_reads.sql, in order), made by
+-- Frixion on Supabase: the whole database setup (supabase/sql/001_base.sql to 011_server.sql, in order), made by
 -- supabase/make-setup.mjs. Paste all of it into the SQL Editor and run it once.
 --
 -- It starts by removing what an earlier run made, so it can be run again when the SQL changes. That also deletes every
@@ -6,6 +6,7 @@
 drop schema if exists fx cascade;
 drop function if exists public.fx_commit(jsonb) cascade;
 drop function if exists public.fx_get(text) cascade;
+drop function if exists public.fx_get_many(jsonb) cascade;
 drop function if exists public.fx_query(text,jsonb,jsonb,integer,boolean) cascade;
 drop function if exists public.fx_routes() cascade;
 drop table if exists public.accounts, public.banned_hw, public.banned_ips, public.categories, public.channel_messages, public.channel_slow, public.channel_typing, public.channels, public.config, public.custom_emojis, public.devices, public.discord_links, public.dm_messages, public.dm_typing, public.dms, public.eggs, public.garden_pets, public.garden_seeds, public.garden_sprinklers, public.group_dms, public.group_messages, public.group_typing, public.ips, public.loans, public.login_codes, public.orb_days, public.push_subs, public.redeem_codes, public.rng_codes, public.rng_saves, public.sac_saves, public.server_cards, public.servers, public.shop_badges, public.shop_banners, public.shop_decorations, public.shop_nameplates, public.shop_prices, public.shop_profile_effects, public.shop_profile_frames, public.shop_themes, public.stickers, public.thread_messages, public.thread_typing, public.threads, public.user_mentions, public.user_meta, public.user_notes, public.users cascade;
@@ -1915,3 +1916,23 @@ begin
     end loop;
   end if;
 end $$;
+
+
+-- ======================== 011_server.sql ========================
+-- Frixion on Supabase, part 11: what the server (functions/api) needs besides fx_get, fx_query and fx_commit.
+-- Several documents in one request, like Firestore's batchGet: the push function reads every recipient's profile and
+-- block list at once, and a Cloudflare function may only make 50 requests. Each comes back the way public.fx_get gives
+-- it, with its path. Only the server's secret key may call it.
+create or replace function public.fx_get_many(paths jsonb) returns jsonb language plpgsql set search_path = '' as $$
+declare p text; res jsonb := '[]'::jsonb;
+begin
+  if jsonb_typeof(paths) is distinct from 'array' or jsonb_array_length(paths) > 500 then
+    raise exception 'a list of up to 500 paths' using errcode = 'FX400';
+  end if;
+  for p in select jsonb_array_elements_text(paths) loop
+    res := res || jsonb_build_array(public.fx_get(p) || jsonb_build_object('path', p));
+  end loop;
+  return res;
+end $$;
+revoke execute on function public.fx_get_many(jsonb) from public, anon, authenticated;
+grant execute on function public.fx_get_many(jsonb) to service_role;
