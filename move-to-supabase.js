@@ -1,6 +1,6 @@
 // move-to-supabase.html (served as /move-to-supabase): the copy for switch day, on a page of its own. (Not /move:
 // that could be a server's invite link.) On switch day Firestore is locked to every page
-// (firestore.lock.rules), so Frixion itself can't load any more; this page never reads Firestore. It signs in with
+// (firestore.rules: the switch-day lock), so Frixion itself couldn't load; this page never reads Firestore. It signs in with
 // Frixion's Firebase sign-in and asks functions/api/admin/move, which checks it's the Owner and does the reading (the
 // service account, which the lock doesn't apply to) and the writing (Supabase's secret key), a page of one kind of
 // document at a time. Where it got to is kept on this device, under the same name as the Owner panel's Supabase tab,

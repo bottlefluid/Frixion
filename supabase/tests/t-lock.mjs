@@ -1,4 +1,4 @@
-// The switch-day lock (main's firestore.lock.rules), on the Firestore emulator (8080) loaded with it: no page can read or
+// The switch-day lock (firestore.rules since then), on the Firestore emulator (8080) loaded with it: no page can read or
 // write anything, signed out, signed in, or as the Owner; the server (the emulator's "owner", like the service
 // account) still reads, which is what the copy needs. Run after t-move.mjs (its data and sign-ins).
 import { section, check, summary } from './harness.mjs';
