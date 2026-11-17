@@ -3,7 +3,7 @@ rules_version = '2';
 // data from Firestore to Supabase; this goes up first, before the last copy, and then stays: no page can read or write
 // Firestore any more, so nothing changes during the copy and nothing is left half-moved. What Firestore holds is kept
 // as a backup. Only the server's service account (which rules don't apply to) still reads it, for the copy
-// (move.html and /api/admin/move). The Realtime Database's rules (database.rules.json) don't change: it stays in use.
+// (/move-to-supabase and /api/admin/move). The Realtime Database's rules (database.rules.json) don't change: it stays in use.
 // It opens nothing to anyone: every read and write from a page is refused.
 service cloud.firestore {
   match /databases/{database}/documents {
