@@ -29,7 +29,7 @@ let live = 0;           // goes up whenever the page changes, so animations from
 const recent = {};      // game id -> last results, newest first
 const casinoRec = () => (typeof myProfile !== 'undefined' && myProfile && myProfile.casino && typeof myProfile.casino === 'object' ? myProfile.casino : {});
 const gamesLeft = () => { const c = casinoRec(); return DAY_GAMES - (c.day === utcDay() ? Math.max(0, Number(c.n) || 0) : 0); };
-const infinite = () => typeof myProfile !== 'undefined' && !!myProfile && myProfile.infOrbs === true;   // infinite Orbs (v4.64)
+const infinite = () => typeof myProfile !== 'undefined' && !!myProfile && (myProfile.infOrbs === true || myProfile.orbs === Infinity);   // infinite Orbs (v4.64; the infinity sign too, v4.66)
 const balance = () => (infinite() ? Infinity : typeof myProfile !== 'undefined' && myProfile ? Math.floor(myProfile.orbs || 0) : 0);
 
 // ---------- talking to the server ----------

@@ -972,6 +972,22 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.66', date: '2026-11-17', title: 'A better Mouse Maze, and a lot of fixes',
+    notes: [
+      'Mouse Maze has its own mouse now. Touch something and it goes straight back to your checkpoint, every level starts on the green square, and you click the gold square to finish. It looks cleaner too. Esc lets go of the mouse and pauses.',
+      'Profiles are bigger. Gift Premium and Ask for a Loan close the profile instead of opening behind it, and Gift Premium shows in the middle of the screen.',
+      'Name gradients can have up to 8 colors.',
+      'Messages you send show up the moment you send them again.',
+      'Frixion keeps itself up to date: when a new version is out, it reloads the next time you come back to it (or asks first if you\'re typing or playing). No more old version stuck on the iPhone home screen app.',
+      'Press Enter to log in or make your account.',
+      'Quick Open: press a shortcut again to close what it opened (Settings, your staff panel, a game).',
+      'A profile shows the 5 newest finished loans, with Show all for the rest. Loans between accounts on the same device or network don\'t change credit any more, and paying back the same person again and again counts for less.',
+      'The infinity sign works like Inf Orbs again.',
+      'If someone signs in to your account with a one-time password from staff, you\'re told, and it stays listed in Settings, My Account.',
+      'Staff: Set To and the Equilibrium Button for Orbs in System Hub. Staff of the same rank can change each other\'s Orbs, Premium, items and badges, but banning, timing out, ranks and deleting still take a higher rank.',
+      'Things staff delete from the Shop leave everyone\'s items too, instead of showing up as Removed item.',
+      '4 new easter eggs. That makes 67.',
+    ] },
   { v: '4.65', date: '2026-11-15', title: 'Badges and new profile effects',
     notes: [
       'Badges, like Discord: a row of little icons on every profile. Hover or tap one to see what it is.',
@@ -2302,16 +2318,18 @@ function safeUrl(u, kind) {
   return '';
 }
 // A colour for a style attribute: #rgb / #rrggbb(aa), rgb()/hsl(), or a plain name. Anything else uses the fallback.
-// Frixion Premium (v4.56): a name in two colors (nameGradient on the profile: two #rrggbb), on messages and in member
-// lists, instead of the role color. Only while Premium is active, and only plain colors (the rules check them too).
+// Frixion Premium (v4.56): a name in several colors (nameGradient on the profile: #rrggbb colors, 2 to 8 since v4.66,
+// request 40), on messages and in member lists, instead of the role color. Only while Premium is active, and only plain
+// colors (the rules check them too).
 const HEX6 = /^#[0-9a-f]{6}$/i;
+const NAME_GRAD_MAX = 8;
 function nameGradientOf(p) {
   const g = p && isPremium(p) && Array.isArray(p.nameGradient) ? p.nameGradient : null;
-  return g && g.length === 2 && HEX6.test(g[0]) && HEX6.test(g[1]) ? g : null;
+  return g && g.length >= 2 && g.length <= NAME_GRAD_MAX && g.every(c => HEX6.test(c)) ? g : null;
 }
 function nameStyle(p, roleColor) {
   const g = nameGradientOf(p);
-  if (g) return ` style="background:linear-gradient(90deg,${g[0]},${g[1]});-webkit-background-clip:text;background-clip:text;color:transparent"`;
+  if (g) return ` style="background:linear-gradient(90deg,${g.join(',')});-webkit-background-clip:text;background-clip:text;color:transparent"`;
   return roleColor ? ` style="color:${esc(cssColor(roleColor, 'inherit'))}"` : '';
 }
 function cssColor(c, fallback = 'transparent') {
@@ -2492,15 +2510,21 @@ function roleTag(profile) {
   const r = platformRank(profile);
   return (hidden ? '' : r === 3 ? ownerTag(profile) : r === 2 ? coOwnerTag(profile) : opTag(profile)) + customRankTag(profile) + crackerTag(profile);
 }
-// You can manage yourself, or anyone strictly below you. Admins can still
-// manage other admins (unchanged), but nobody can touch an equal-or-higher
-// Co-Owner/Owner — so admins can't manage Owner/Co-Owner, and Co-Owners
-// can't manage the Owner.
+// Banning, timing out, ranks, redirects and deleting: yourself, or anyone strictly below you. Since v4.66 (request 48)
+// that goes for Admins too: an Admin no longer bans another Admin (the database checks the same,
+// supabase/sql/013_v466.sql).
 function canManagePlatformUser(target) {
   if (!target || target.username === myUid) return true;
   const mine = platformRank(myProfile), theirs = platformRank(target);
-  if (theirs >= 2) return mine > theirs;
+  if (theirs >= 1) return mine > theirs;
   return mine >= 1;
+}
+// Orbs, Premium, Shop items and badges (v4.66, request 48): the same rank too, so a Co-Owner can look after another
+// Co-Owner (or their own alt), and an Admin another Admin.
+function canEditPlatformUser(target) {
+  if (!target || target.username === myUid) return true;
+  const mine = platformRank(myProfile);
+  return mine >= 1 && mine >= platformRank(target);
 }
 function botTag(profile) { return profile && profile.discord ? `<span class="bot-tag discord-tag" title="Sent from Discord"><span>DISCORD</span></span>` : profile && profile.bot ? `<span class="bot-tag" title="Verified App">${icon('check')}<span>APP</span></span>` : ''; }
 
@@ -3375,6 +3399,37 @@ function confirmAction({ title, body, confirmLabel, danger = true, input, onConf
   btn.onclick = async () => { const typed = field.value.trim(); closeModal('confirm-modal'); await onConfirm(typed); };
   openModal('confirm-modal');
   if (input) setTimeout(() => field.focus(), 50);
+}
+// One-time password sign-ins (v4.66, request 52: staff signing in to someone's account must never go unseen). The
+// server logs each one on the account it was used on (who made the password, when it was used, the last 10), and
+// nobody can take an entry off from the site, not even whoever is signed in as that account. Its owner sees a notice
+// once on each device for anything new from the last 30 days, and the whole list under Settings, My Account.
+function securityLogOf(p) { return (p && Array.isArray(p.securityLog) ? p.securityLog : []).filter(x => x && typeof x === 'object' && Number(x.at) > 0); }
+function securityLogLine(x) { return `${new Date(Number(x.at)).toLocaleString()}: signed in with a one-time password${x.by ? ` made by ${x.by}` : ''}`; }
+function showSecurityNotice() {
+  const list = securityLogOf(myProfile);
+  if (!list.length || OVERLAY_WINDOW || !myUid) return;
+  const key = 'frixion_seclog_seen_' + myUid, newest = Math.max(...list.map(x => Number(x.at)));
+  let seen = 0;
+  try { seen = Number(localStorage.getItem(key)) || 0; } catch (e) {}
+  if (newest <= seen) return;
+  try { localStorage.setItem(key, String(newest)); } catch (e) {}
+  const fresh = list.filter(x => Number(x.at) > seen && Date.now() - Number(x.at) < 30 * 86400000);
+  if (!fresh.length) return;
+  confirmAction({
+    title: 'Someone signed in with a one-time password',
+    body: `${fresh.map(securityLogLine).join('. ')}. If that was you, all is well. If you never asked staff for one, someone else was in your account: tell staff. This stays listed in Settings, My Account.`,
+    confirmLabel: 'OK', danger: false, onConfirm: () => {},
+  });
+}
+function renderSecurityLog() {
+  const el = $('seclog-block');
+  if (!el) return;
+  const list = securityLogOf(myProfile);
+  el.classList.toggle('hidden', !list.length);
+  el.innerHTML = list.length ? `<div class="seclog-title">One-time password sign-ins</div>
+    <div class="seclog-sub">Each time someone signed in to this account with a one-time password from staff. The last 10 are kept, and nobody can remove them.</div>
+    ${list.slice().reverse().map(x => `<div class="seclog-row">${esc(securityLogLine(x))}</div>`).join('')}` : '';
 }
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => closeModal(el.dataset.close)));
 document.querySelectorAll('[data-back]').forEach(el => {
@@ -4382,6 +4437,16 @@ async function redeemLoginCode(username, typed) {
 $('show-forgot').onclick = () => authView('forgot-view');
 $('show-forgot-google').onclick = () => authView('forgot-view');
 $('forgot-back').onclick = () => authView('login-view');
+// Enter in the username or password box logs in (or makes the account), like any sign-in form (v4.66, request 49).
+// Enter in an empty username's partner goes on to the password box first.
+[['login-username', 'login-password', 'login-btn'], ['login-password', null, 'login-btn'], ['reg-username', 'reg-password', 'register-btn'], ['reg-password', null, 'register-btn']].forEach(([field, next, btn]) => {
+  $(field).addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    if (next && !$(next).value) { $(next).focus(); return; }
+    if (!$(btn).disabled) $(btn).click();
+  });
+});
 
 $('login-btn').onclick = async () => {
   const username = $('login-username').value.trim();
@@ -4754,6 +4819,8 @@ function initAppForUser() {
     syncGameState(myProfile);
     if (typeof casinoProfileChanged === 'function') casinoProfileChanged();   // the Casino's balance and games left (casino.js)
     scheduleLoanCheck();   // a loan of yours coming due (v4.64)
+    if (myProfile.orbs === 0 && myProfile.infOrbs !== true && typeof eggFindOnce === 'function') eggFindOnce('equilibrium');   // exactly 0 Orbs (v4.66)
+    showSecurityNotice();   // someone signed in to this account with a one-time password (v4.66)
     maybeShowAppPrompt();
     refreshPushSub();
     maybeAskPush();
@@ -5247,6 +5314,45 @@ document.addEventListener('focusout', (e) => {
   }
 });
 syncMobileViewport();
+
+// ---- a newer Frixion (v4.66, request 42) ----
+// The iPhone home screen app can keep running an old Frixion for days ("an older phone design", and none of the phone
+// fixes since): iOS brings the app back as it was left instead of loading it again, and a computer tab left open does
+// the same. So whenever Frixion comes back on screen, and every 15 minutes, it asks the site which versions of its files
+// are current (index.html names them, like script.js?v=153). If they changed, it reloads by itself, unless you're
+// typing or playing something, when a bar offers the reload instead.
+// (the page's own script and stylesheet files that carry a ?v=, read the same way for the running page and the live one)
+const versionsIn = doc => [...doc.querySelectorAll('script[src], link[rel="stylesheet"][href]')].map(el => el.getAttribute('src') || el.getAttribute('href'))
+  .filter(u => /^[\w./-]+\.(?:js|css)\?v=\d+$/.test(u)).sort().join(' ');
+const RUNNING_FILES = versionsIn(document);
+let versionCheckAt = 0, versionBar = null;
+async function checkForNewVersion() {
+  if (!RUNNING_FILES || OVERLAY_WINDOW || !/^https?:$/.test(location.protocol) || Date.now() - versionCheckAt < 60000) return;
+  versionCheckAt = Date.now();
+  let live;
+  try {
+    const r = await fetch('/?fresh=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    live = versionsIn(new DOMParser().parseFromString(await r.text(), 'text/html'));
+  } catch (e) { return; }
+  if (!live || live === RUNNING_FILES || versionBar) return;
+  // (never twice for the same version: if a reload didn't bring it, something else is going on, so leave it be)
+  try { if (sessionStorage.getItem('frixion_reloaded_for') === live) return; } catch (e) {}
+  const el = document.activeElement, typing = el && /^(INPUT|TEXTAREA)$/.test(el.tagName) && el.value;
+  if (!typing && !currentGameId && !document.getElementById('ocrng') && !document.querySelector('.modal-overlay:not(.hidden)')) {
+    try { sessionStorage.setItem('frixion_reloaded_for', live); } catch (e) {}
+    location.reload(); return;
+  }
+  versionBar = document.createElement('div');
+  versionBar.className = 'version-bar';
+  versionBar.innerHTML = '<span>A new version of Frixion is out.</span><button type="button">Reload</button>';
+  versionBar.querySelector('button').onclick = () => { try { sessionStorage.setItem('frixion_reloaded_for', live); } catch (e) {} location.reload(); };
+  document.body.appendChild(versionBar);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForNewVersion(); });
+window.addEventListener('pageshow', e => { if (e.persisted) { versionCheckAt = 0; checkForNewVersion(); } });   // (brought back from the browser's memory)
+setInterval(() => { if (!document.hidden) checkForNewVersion(); }, 15 * 60000);
+setTimeout(checkForNewVersion, 20000);
 
 // ---- block browser/OS zoom (pinch, ctrl+scroll, ctrl+plus/minus) ----
 // The viewport meta tag + touch-action:pan-x pan-y in CSS handle most of
@@ -6686,7 +6792,11 @@ async function renderProfileLoans(username, isSelf, isBot) {
   catch (e) { box.innerHTML = `<div class="loan-empty">${esc(e.message || 'Could not load loans.')}</div>`; return; }
   if ($('profile-modal').dataset.user !== username) return;   // (another profile was opened meanwhile)
   const name = u => esc(u === myUid ? 'You' : displayNameOf(profileCache[u] || { username: u }));
-  const rows = loans.slice(0, 12).map(l => {
+  // (v4.66, request 54) loans still going (asked or running) always show; of the finished ones only the 5 newest, with
+  // Show all for the rest, so a long history doesn't push everything else off the card
+  const going = l => l.status === 'asked' || l.status === 'active';
+  const past = loans.filter(l => !going(l)), showAll = box.dataset.all === username;
+  const rowsFor = list => list.map(l => {
     const lender = l.from === myUid, other = lender ? l.to : l.from, owed = l.amount - l.paid, note = l.note ? `<div class="loan-note">"${esc(l.note)}"</div>` : '';
     let text, act = '', cls = '';
     if (l.status === 'asked') {
@@ -6706,7 +6816,13 @@ async function renderProfileLoans(username, isSelf, isBot) {
     }
     return `<div class="loan-row ${cls}" data-loan="${esc(l.id)}"><div class="loan-text">${text}${note}</div>${act ? `<div class="loan-acts">${act}</div>` : ''}</div>`;
   });
-  box.innerHTML = rows.join('') || '<div class="loan-empty">No loans between you yet.</div>';
+  const rows = rowsFor([...loans.filter(going), ...(showAll ? past : past.slice(0, 5))]);
+  box.innerHTML = (rows.join('') || '<div class="loan-empty">No loans between you yet.</div>')
+    + (past.length > 5 ? `<button type="button" class="loan-more" data-loan-more>${showAll ? 'Show fewer' : `Show all ${past.length} finished loans`}</button>` : '');
+  if (box.querySelector('[data-loan-more]')) box.querySelector('[data-loan-more]').onclick = () => {
+    box.dataset.all = showAll ? '' : username;
+    renderProfileLoans(username, isSelf, isBot);
+  };
   const run = async (body, done) => {
     try { const r = await orbsCall('loan', body); if (r.orbs != null) myProfile.orbs = r.orbs; toast(done(r)); }
     catch (e) { toast(e.message || 'That didn\'t work.', 'error'); }
@@ -6741,21 +6857,33 @@ function plainBannerColor(c) {
   const m = /#[0-9a-f]{6}/i.exec(c);
   return m ? m[0] : null;
 }
-// Premium (v4.56): your name in two colors (nameGradient), saved with the profile. Without Premium it just shows what
-// it would look like and opens the Premium page.
+// Premium (v4.56): your name in colors (nameGradient: 2 to 8 since v4.66), saved with the profile. Without Premium it just
+// shows what it would look like and opens the Premium page.
+const NAME_GRAD_START = ['#5865f2', '#eb459e', '#fee75c', '#57f287', '#5bc0eb', '#ed4245', '#f47b67', '#9b59b6'];
+function nameGradColors() { return [...$('name-grad-colors').querySelectorAll('input[type="color"]')].map(i => i.value.toLowerCase()); }
 function renderNameGradientPicker() {
-  const row = $('name-grad-row'), c1 = $('name-grad-1'), c2 = $('name-grad-2'), prev = $('name-grad-preview'), btn = $('name-grad-toggle');
-  if (!row || !myProfile) return;
-  const premium = isPremium(myProfile), g = Array.isArray(myProfile.nameGradient) && myProfile.nameGradient.length === 2 ? myProfile.nameGradient : null;
-  if (g && HEX6.test(g[0]) && HEX6.test(g[1])) { c1.value = g[0]; c2.value = g[1]; }
+  const row = $('name-grad-row'), box = $('name-grad-colors'), prev = $('name-grad-preview'), btn = $('name-grad-toggle');
+  if (!row || !box || !myProfile) return;
+  const premium = isPremium(myProfile), saved = Array.isArray(myProfile.nameGradient) ? myProfile.nameGradient.filter(c => HEX6.test(c)).slice(0, NAME_GRAD_MAX) : [];
+  const g = saved.length >= 2 ? saved : null;
   row.dataset.on = g ? '1' : '0';
-  $('name-grad-label').textContent = premium ? 'Name Gradient' : 'Name Gradient (Frixion Premium)';
+  $('name-grad-label').textContent = premium ? `Name Gradient (2 to ${NAME_GRAD_MAX} colors)` : 'Name Gradient (Frixion Premium)';
   prev.textContent = displayNameOf(myProfile);
   const draw = () => {
-    prev.style.background = `linear-gradient(90deg,${c1.value},${c2.value})`;
+    const cols = nameGradColors();
+    prev.style.background = `linear-gradient(90deg,${cols.join(',')})`;
     btn.textContent = row.dataset.on === '1' ? 'Turn Off' : 'Use It';
+    $('name-grad-add').disabled = cols.length >= NAME_GRAD_MAX;
+    $('name-grad-remove').disabled = cols.length <= 2;
   };
-  c1.oninput = c2.oninput = () => { if (!premium) { openPremiumModal(); return; } row.dataset.on = '1'; draw(); };
+  const changed = () => { if (!premium) { openPremiumModal(); return false; } row.dataset.on = '1'; draw(); return true; };
+  const setColors = cols => {
+    box.innerHTML = cols.map((c, i) => `<input type="color" value="${c}" aria-label="Name color ${i + 1}">`).join('');
+    box.querySelectorAll('input').forEach(inp => { inp.oninput = changed; });
+  };
+  setColors(g || NAME_GRAD_START.slice(0, 2));
+  $('name-grad-add').onclick = () => { const cols = nameGradColors(); if (cols.length >= NAME_GRAD_MAX || !premium) { if (!premium) openPremiumModal(); return; } setColors([...cols, NAME_GRAD_START[cols.length] || '#ffffff']); changed(); };
+  $('name-grad-remove').onclick = () => { const cols = nameGradColors(); if (cols.length <= 2 || !premium) { if (!premium) openPremiumModal(); return; } setColors(cols.slice(0, -1)); changed(); };
   btn.onclick = () => { if (!premium) { openPremiumModal(); return; } row.dataset.on = row.dataset.on === '1' ? '0' : '1'; draw(); };
   draw();
 }
@@ -6894,7 +7022,9 @@ async function openProfileModal(username) {
       ${isBot ? '' : `<button class="pa-btn" id="profile-loan-btn">${PA_ICON.loan}Ask for a Loan</button>`}
       ${blockBtn}
     </div>`;
-    if ($('profile-loan-btn')) $('profile-loan-btn').onclick = () => openLoanModal(username);
+    // (v4.66, request 38) a button that opens a window of its own closes the profile first, as Message always did,
+    // instead of opening behind or on top of it
+    if ($('profile-loan-btn')) $('profile-loan-btn').onclick = () => { closeModal('profile-modal'); openLoanModal(username); };
     if ($('profile-block')) $('profile-block').onclick = () => blockUser(username);
     if ($('profile-unblock')) $('profile-unblock').onclick = () => unblockUser(username);
     $('profile-message-btn').onclick = () => { closeModal('profile-modal'); startDMWith(username); };
@@ -6904,7 +7034,7 @@ async function openProfileModal(username) {
     };
     if ($('profile-cancel-req')) $('profile-cancel-req').onclick = async () => { await cancelFriendRequest(username); openProfileModal(username); };
     if ($('profile-accept-req')) $('profile-accept-req').onclick = async () => { await respondFriendRequest(username, true); openProfileModal(username); };
-    $('profile-gift-btn').onclick = () => openGiftModal(username);
+    $('profile-gift-btn').onclick = () => { closeModal('profile-modal'); openGiftModal(username); };
 
     $('profile-note-input').value = '';
     $('profile-note-input').dataset.target = username;
@@ -6928,7 +7058,8 @@ $('save-profile-btn').onclick = async () => {
   const bannerColor = $('banner-color-swatches').dataset.chosen || myProfile.bannerColor;
   // the name gradient, if Premium is on and it's switched on (renderNameGradientPicker())
   const gradOn = isPremium(myProfile) && $('name-grad-row').dataset.on === '1';
-  const nameGradient = gradOn ? [$('name-grad-1').value.toLowerCase(), $('name-grad-2').value.toLowerCase()] : FieldValue.delete();
+  const gradColors = nameGradColors().slice(0, NAME_GRAD_MAX);
+  const nameGradient = gradOn && gradColors.length >= 2 ? gradColors : FieldValue.delete();
   try {
     // An empty Display Name just means "use my username" — store it as a
     // deletion rather than an empty string so displayNameOf() falls back
@@ -6939,6 +7070,7 @@ $('save-profile-btn').onclick = async () => {
     });
     toast('Profile updated.');
     if (/^egg$/i.test(displayName)) eggFind('displayegg');   // (an easter egg)
+    if (gradOn && gradColors.length === NAME_GRAD_MAX) eggFind('rainbowname');   // all 8 colors (v4.66, an easter egg)
   } catch (e) { toast('Could not save profile.', 'error'); }
 };
 
@@ -13350,6 +13482,7 @@ function populateSettings() {
   renderQuickTextList();
   renderQuickOpen();
   renderEggSettings();
+  renderSecurityLog();
   $('egg-guide-nav').classList.toggle('hidden', !realOwner());   // the Owner's list of every egg
   if (!$('pane-eggguide').classList.contains('hidden')) renderEggGuide();
   $('egg-credits').textContent = 'Frixion v' + UPDATES[0].v;   // (click it three times...)
@@ -13445,7 +13578,7 @@ async function buyPremiumCode(days, gift) {
       code = await db.runTransaction(async tx => {
         const [me, existing] = await Promise.all([tx.get(userRef), tx.get(codeRef)]);
         if (existing.exists) return null;                  // that random code is taken: try another
-        const inf = (me.data() || {}).infOrbs === true;    // infinite Orbs (v4.64) pay nothing
+        const inf = hasInfiniteOrbs(me.data());    // infinite Orbs (v4.64) pay nothing
         if (!inf && ((me.data() || {}).orbs || 0) < PREMIUM_COST_ORBS) throw new Error('not-enough-orbs');
         // a gift also counts toward the Gifting badge (v4.65), in the same write that pays for it, which is the only way
         // the rules let that count go up (infinite Orbs pay nothing, so they don't count)
@@ -16163,21 +16296,27 @@ async function renderAdminActions() {
   const snap = await db.collection('users').doc(adminSelectedUser).get();
   if (!snap.exists) { wrap.innerHTML = '<div class="empty">User not found.</div>'; adminSelectedUser = null; return; }
   const u = snap.data();
-  if (!canManagePlatformUser(u)) {
+  if (!canEditPlatformUser(u)) {
     wrap.innerHTML = `<div class="admin-sel-head">${avatarHTML(44, u.avatarColor, initials(u.username), null, u.avatarUrl)}<div><div class="as-name">${esc(u.username)}${roleTag(u)}</div></div></div>
-      <div class="empty">You can't manage a ${u.owner ? 'Owner' : 'Co-Owner'} — they outrank you.</div>`;
+      <div class="empty">You can't manage a ${u.owner ? 'Owner' : u.coowner ? 'Co-Owner' : 'higher rank'}: they outrank you.</div>`;
     return;
   }
-  const ban = banStatus(u);
+  const ban = banStatus(u), punish = canManagePlatformUser(u);   // (the same rank: Orbs, Premium, items and badges only)
   queueMicrotask(() => renderCoOwnerBlock(wrap, u));
   wrap.innerHTML = `
     <div class="admin-sel-head">${avatarHTML(44, u.avatarColor, initials(u.username), null, u.avatarUrl)}<div><div class="as-name">${esc(u.username)}${roleTag(u)}</div><div class="as-sub">${ban.banned ? ('Banned — ' + esc(ban.reason)) : 'Not banned'}</div></div></div>
+    ${punish ? '' : '<div class="ab-note admin-same-rank">The same rank as you: you can change their Orbs, Premium, Shop items and badges, but banning, timing out, ranks and deleting take a higher rank.</div>'}
     <div class="admin-block">
       <div class="ab-title">Orbs — Balance: ${orbsLabel(u)}</div>
       <div class="ab-row">
-        <input id="admin-orbs-amt" type="number" min="1" placeholder="Amount" class="fld-input">
+        <input id="admin-orbs-amt" type="number" placeholder="Amount" class="fld-input">
         <button class="btn-accent-inline slim" id="admin-orbs-grant">Grant</button>
         <button class="btn-secondary slim" id="admin-orbs-remove">Remove</button>
+        <button class="btn-secondary slim" id="admin-orbs-set" title="Their balance becomes exactly this number">Set To</button>
+      </div>
+      <div class="ab-row" style="margin-top:8px">
+        <button class="btn-secondary slim admin-equilibrium" id="admin-orbs-zero">Equilibrium Button</button>
+        <span class="ab-note">Their Orbs become exactly 0, from above or below. Landing on 0 is worth something.</span>
       </div>
       ${isOwner ? `<div class="ab-row" style="margin-top:8px">
         <span class="ab-note">${u.infOrbs === true ? 'Has infinite Orbs: they show as Inf and never go down.' : 'Infinite Orbs show as Inf and never go down.'}</span>
@@ -16192,7 +16331,7 @@ async function renderAdminActions() {
         <button class="btn-secondary slim" id="admin-premium-remove">Remove</button>
       </div>
     </div>
-    <div class="admin-block">
+    ${punish ? `<div class="admin-block">
       <div class="ab-title">Mute${muteStatus(u).muted ? ' — muted' : ''}</div>
       ${muteStatus(u).muted ? `
       <div class="ab-row">
@@ -16213,8 +16352,8 @@ async function renderAdminActions() {
       <div class="ab-row" style="margin-top:8px">
         <button class="btn-danger slim" id="admin-ban-btn">Ban</button>
       </div>`}
-    </div>
-    ${isOwner ? `<div class="admin-block">
+    </div>` : ''}
+    ${isOwner && punish ? `<div class="admin-block">
       <div class="ab-title">Rank</div>
       <div class="ab-row"><select id="admin-rank-select" class="fld-input"><option value="">No rank</option>${customRanks.map(r => `<option value="${esc(r.id)}"${u.customRank === r.id ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select>
         <span class="ab-note">${customRanks.length ? 'Just a tag next to their name.' : 'Make ranks in the Ranks tab.'}</span></div>
@@ -16225,7 +16364,7 @@ async function renderAdminActions() {
       <div class="ab-note" style="margin-top:6px">Shown on their profile. Account Age, Game Time, Gifting and the rest they earn by themselves.</div>
     </div>` : ''}
     ${isOwner ? `
-    <div class="admin-block">
+    ${punish ? `<div class="admin-block">
       <div class="ab-title">Operator</div>
       <div class="ab-row">
         <span class="ab-note">${u.op ? 'This user has full admin access with no password.' : 'Not an operator.'}</span>
@@ -16240,7 +16379,7 @@ async function renderAdminActions() {
         <input id="admin-redirect-url" type="text" placeholder="https://example.com" class="fld-input">
         <button class="btn-accent-inline slim" id="admin-redirect-btn">Redirect</button>
       </div>
-    </div>
+    </div>` : ''}
     ${realOwner() ? `<div class="admin-block">
       <div class="ab-title">Password</div>
       <div class="ab-note" id="admin-pass-note" style="opacity:.7;font-size:12px"></div>
@@ -16252,15 +16391,17 @@ async function renderAdminActions() {
     </div>` : ''}
     ${adminItemsBlockHTML(u)}
     ${realOwner() ? '<div id="admin-user-devices"></div>' : ''}
-    <div class="admin-block">
+    ${punish ? `<div class="admin-block">
       <div class="ab-title">Danger Zone</div>
       <button class="btn-danger" id="admin-delete-btn">Delete Account</button>
       <button class="btn-secondary" id="admin-fake-delete-btn" style="margin-top:8px">Fake Delete (logs out)</button>
       <div class="ab-note" style="margin-top:6px;opacity:.7;font-size:12px">Delete Account sends the skull, then removes the account. Fake Delete plays the exact same thing, but only signs them out.</div>
-    </div>` : ''}`;
+    </div>` : ''}` : ''}`;
 
   $('admin-orbs-grant').onclick = () => adminAdjustOrbs(u.username, 1);
   $('admin-orbs-remove').onclick = () => adminAdjustOrbs(u.username, -1);
+  $('admin-orbs-set').onclick = () => adminSetOrbs(u, $('admin-orbs-amt').value);   // (v4.66, request 41)
+  $('admin-orbs-zero').onclick = () => adminSetOrbs(u, 0, true);                      // the Equilibrium Button (v4.66, request 55)
   // custom rank (v4.64)
   if ($('admin-rank-select')) $('admin-rank-select').onchange = async e => {
     const id = e.target.value, r = customRanks.find(x => x.id === id);
@@ -16289,17 +16430,16 @@ async function renderAdminActions() {
   };
   $('admin-premium-grant').onclick = () => adminAdjustPremium(u.username, 1);
   $('admin-premium-remove').onclick = () => adminAdjustPremium(u.username, -1);
-  if (ban.banned) $('admin-unban-btn').onclick = adminUnban;
-  else $('admin-ban-btn').onclick = adminBan;
-  if (muteStatus(u).muted) $('admin-unmute-btn').onclick = adminUnmute;
-  else $('admin-mute-btn').onclick = adminMute;
+  const hook = (id, fn) => { if ($(id)) $(id).onclick = fn; };   // (a control a same-rank target doesn't get isn't there)
+  hook('admin-unban-btn', adminUnban); hook('admin-ban-btn', adminBan);
+  hook('admin-unmute-btn', adminUnmute); hook('admin-mute-btn', adminMute);
   if (isOwner) {
-    if (u.op) $('admin-deop-btn').onclick = () => adminSetOp(u.username, false);
-    else $('admin-op-btn').onclick = () => adminSetOp(u.username, true);
-    $('admin-redirect-btn').onclick = () => adminRedirect(u.username);
+    hook('admin-deop-btn', () => adminSetOp(u.username, false));
+    hook('admin-op-btn', () => adminSetOp(u.username, true));
+    hook('admin-redirect-btn', () => adminRedirect(u.username));
     if (realOwner()) showPasswordHelp(u.username);
-    $('admin-delete-btn').onclick = adminDelete;
-    $('admin-fake-delete-btn').onclick = adminFakeDelete;
+    hook('admin-delete-btn', adminDelete);
+    hook('admin-fake-delete-btn', adminFakeDelete);
     wrap.querySelectorAll('[data-rm-item]').forEach(b => { b.onclick = () => adminRemoveItem(u.username, b.dataset.field, b.dataset.id); });
     const itemSearch = wrap.querySelector('[data-items-search]');
     if (itemSearch) itemSearch.oninput = () => {
@@ -16331,6 +16471,19 @@ async function adminAdjustPremium(username, sign) {
   } catch (e) { toast('Could not update Premium.', 'error'); }
 }
 
+// Set To (v4.66, request 41): the balance becomes exactly that number (0 and below too). The Equilibrium Button (request
+// 55) is Set To 0 with a name: whoever lands on exactly 0 Orbs finds an easter egg. It also takes away Inf, when your
+// rank may (the Owner and Co-Owners), since Inf would still show otherwise.
+async function adminSetOrbs(u, value, equilibrium) {
+  const text = String(value == null ? '' : value).trim(), n = Number(text);
+  if (!equilibrium && (!text || !Number.isFinite(n))) { toast(text && !Number.isFinite(n) ? 'That number is too big. For no limit, use Give Infinite Orbs.' : 'Enter the number of Orbs they should have.'); return; }
+  const to = equilibrium ? 0 : Math.trunc(n);
+  try {
+    await db.collection('users').doc(u.username).update({ orbs: to, ...(u.infOrbs === true && isOwner ? { infOrbs: FieldValue.delete() } : {}) });
+    toast(equilibrium ? `Equilibrium. ${u.username} has exactly 0 Orbs.` : `${u.username} has ${fmtOrbs(to)} Orbs now.`);
+    renderAdminActions();
+  } catch (e) { toast('Could not set Orbs.', 'error'); }
+}
 async function adminAdjustOrbs(username, sign) {
   const amt = parseInt($('admin-orbs-amt').value || '0', 10);
   if (!amt || amt < 1) { toast('Enter an amount.'); return; }
@@ -16679,7 +16832,7 @@ async function dbUpdateUser(uid, changes) {
     }
     Object.assign(UC, changes);
   }
-  if (spend && !(myProfile && myProfile.infOrbs === true)) {   // (infinite Orbs never go down, v4.64)
+  if (spend && !hasInfiniteOrbs(myProfile)) {   // (infinite Orbs never go down, v4.64)
     await flushEarn();   // Orbs a game just paid have to be in before they can be spent
     update.orbs = firebase.firestore.FieldValue.increment(spend);
   }
@@ -16729,7 +16882,7 @@ async function orbsCall(route, body) {
 // Orbs still on their way to the server count in the balance games show.
 function pendingOrbs() { return earnFor === myUid ? earnQueued + earnSending : 0; }
 // Enough Orbs for something that costs n? (Infinite Orbs from the Owner panel always are, v4.64.)
-function hasOrbsFor(n) { return !!(myProfile && (myProfile.infOrbs === true || (myProfile.orbs || 0) + pendingOrbs() >= n)); }
+function hasOrbsFor(n) { return !!(myProfile && (hasInfiniteOrbs(myProfile) || (myProfile.orbs || 0) + pendingOrbs() >= n)); }
 function settleOrbs() {
   if (!myProfile || gameStateOwner !== myUid) return;
   UC.coins = settledOrbs = (myProfile.orbs || 0) + pendingOrbs();
@@ -16926,6 +17079,9 @@ function fmtOrbs(n){
 }
 // what someone's Orbs say: "Inf" for infinite Orbs from the Owner or Co-Owner panel (v4.64)
 function orbsLabel(p) { return p && p.infOrbs === true ? 'Inf' : fmtOrbs(p ? p.orbs : 0); }
+// Infinite Orbs: Inf from the Owner or Co-Owner panel, or a balance grown past what a number can hold, which shows as the
+// infinity sign. Both work the same: nothing is taken (v4.66, request 51: the sign had stopped counting after the move).
+function hasInfiniteOrbs(p) { return !!p && (p.infOrbs === true || p.orbs === Infinity); }
 // ---- Staff-made Cookie Clicker content (Admin Panel -> Quests -> CC) ----
 // Upgrades are one-time buys that boost the run. Items are extra shop entries you can buy again
 // and again, like buildings. Both live in one Firestore doc, config/cookieClicker, as maps keyed by
@@ -19417,7 +19573,7 @@ const GAME_TILES = [
 // tb.mazeClr: one character per level, 1 for cleared) and its Orbs paid the same way.
 let mazeMod = null;
 function openMouseMaze(stage) {
-  if (!mazeMod) mazeMod = import('./games/maze/maze.js?v=1');
+  if (!mazeMod) mazeMod = import('./games/maze/maze.js?v=2');
   mazeMod.then(m => m.open(stage, {
     isTouchOnly: () => isMobile() || !(window.matchMedia && matchMedia('(pointer: fine)').matches),
     load: () => ({ best: Math.max(0, Math.min(125, Number(UC.mazeBest) || 0)), cleared: typeof UC.mazeClr === 'string' ? UC.mazeClr.slice(0, 125) : '' }),
@@ -19522,7 +19678,7 @@ function setGameApi() {
     premium: () => isPremium(myProfile),
     orbs: () => (myProfile && myProfile.orbs) || 0,
     // Takes n Orbs if you have them (counting ones a game just paid). Resolves true when paid.
-    spendOrbs: n => (myProfile && myProfile.infOrbs === true ? Promise.resolve(true) : flushEarn().then(() => db.runTransaction(async tx => {
+    spendOrbs: n => (hasInfiniteOrbs(myProfile) ? Promise.resolve(true) : flushEarn().then(() => db.runTransaction(async tx => {
       const ref = db.collection('users').doc(myUid), d = await tx.get(ref);
       if (((d.data() || {}).orbs || 0) < n) return false;
       tx.update(ref, { orbs: FieldValue.increment(-n) });
@@ -19637,6 +19793,11 @@ const EGGS = [
   { id: 'allbadges', t: 'h', name: 'Badge Hoarder', how: 'Own every badge in the Shop\'s Badges tab.', hint: 'Collect a whole tab of the Shop.' },
   { id: 'fxwatch', t: 'm', name: 'Stargazer', how: 'Keep a profile with a drawn effect (Northern Lights, Night Sky and the other new ones) open for 2 minutes.', hint: 'Some profile effects are worth watching.' },
   { id: 'slimepoke', t: 'e', name: 'Don\'t Touch That', how: 'Click the Toxic Ooze card in the Shop 5 times (not its buy button).', hint: 'Something in the Shop is sticky.' },
+  // v4.66
+  { id: 'equilibrium', t: 'm', name: 'Equilibrium', how: 'Land on exactly 0 Orbs: spend or bet down to nothing, or have staff press the Equilibrium Button on you.', hint: 'Nothing left, nothing owed.' },
+  { id: 'mazeflawless', t: 'h', name: 'Flawless Run', how: 'Clear 10 Mouse Maze levels in a row without touching anything, in one go.', hint: 'Ten mazes, not one touch.' },
+  { id: 'quickflip', t: 'e', name: 'Make Up Your Mind', how: 'Open and close something with its Quick Open shortcut 5 times within 10 seconds (Settings, for one).', hint: 'Open it, close it, open it...' },
+  { id: 'rainbowname', t: 'm', name: 'Full Spectrum', how: 'Save a name gradient with all 8 colors (Premium: Edit Profile).', hint: 'A name can hold eight colors now.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -19857,6 +20018,10 @@ function eggEffect(id, first) {
     case 'allbadges': eggToast('Every badge in the Shop.', 'Your profile is getting crowded.'); return;
     case 'fxwatch': eggToast('Still watching?', 'It never ends, but you can close it.'); return;
     case 'slimepoke': eggToast('Ew.', 'Now it\'s on your hands.'); return;
+    case 'equilibrium': eggToast('Equilibrium.', 'Not one Orb up or down. Perfectly even.'); return;
+    case 'mazeflawless': eggToast('Flawless.', 'Ten mazes without a single touch.'); return;
+    case 'quickflip': eggToast('Make up your mind.'); return;
+    case 'rainbowname': eggToast('Full spectrum.', 'All eight colors, one name.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
@@ -19973,6 +20138,7 @@ const EGG_GROUPS = [
   ['Casino (v4.63)', ['zerohero', 'onepointoh', 'triple', 'tenx', 'jackpot']],
   ['Maze, loans and privacy (v4.64)', ['tricked', 'mazehalf', 'ontime', 'hideorbs']],
   ['Badges and effects (v4.65)', ['badgefan', 'allbadges', 'fxwatch', 'slimepoke']],
+  ['Orbs, the maze, shortcuts and names (v4.66)', ['equilibrium', 'mazeflawless', 'quickflip', 'rainbowname']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {
@@ -20106,7 +20272,24 @@ function goHomePage(view) {
   document.querySelectorAll('#dm-rows .dm-row.active').forEach(r => r.classList.remove('active'));
   openHomeMainView(view);
 }
+// (v4.66, request 46) A shortcut for something that opens on top of Frixion (Settings, the staff panel, a game) closes
+// it again when it's pressed while that's open. For a page (the Shop, Friends, a DM...) pressing it again changes nothing.
+let qoFlips = [];
+function qoToggledShut(x) {
+  let shut = false;
+  if (x.t === 'settings' && !$('settings-modal').classList.contains('hidden')) { closeModal('settings-modal'); shut = true; }
+  else if (x.t === 'panel' && $('admin-panel-modal') && !$('admin-panel-modal').classList.contains('hidden')) { closeModal('admin-panel-modal'); shut = true; }
+  else if (x.t === 'game' && x.id === 'ocrng' && document.getElementById('ocrng') && ocrngModule) { ocrngModule.then(m => m.close()).catch(() => {}); shut = true; }
+  else if (x.t === 'game' && gameWin && !gameWin.hidden && currentGameId === x.id) { closeGame(); shut = true; }
+  if (shut) {   // (an easter egg: five times in ten seconds)
+    const now = Date.now();
+    qoFlips = qoFlips.filter(t => now - t < 10000); qoFlips.push(now);
+    if (qoFlips.length >= 5) eggFindOnce('quickflip');
+  }
+  return shut;
+}
 function qoOpen(x) {
+  if (qoToggledShut(x)) return;
   eggFind('quickopen');   // (an easter egg)
   if (x.t !== 'game' && gameWin && !gameWin.hidden) closeGame();
   if (x.t !== 'settings') closeModal('settings-modal');

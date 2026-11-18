@@ -39,7 +39,8 @@ const fieldsToFx = f => Object.fromEntries(Object.entries(f || {}).map(([k, x]) 
 function fromFx(v, prefix) {
   if (v === null || v === undefined) return { nullValue: null };
   if (typeof v === 'boolean') return { booleanValue: v };
-  if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : Number.isFinite(v) ? { doubleValue: v }
+    : { doubleValue: v > 0 ? 'Infinity' : v < 0 ? '-Infinity' : 'NaN' };   // (as Firestore's REST API writes them: JSON has no Infinity)
   if (typeof v === 'string') return { stringValue: v };
   if (Array.isArray(v)) return { arrayValue: v.length ? { values: v.map(x => fromFx(x, prefix)) } : {} };
   const keys = Object.keys(v);
@@ -82,10 +83,17 @@ function masked(data, mask) {
 // ---------- answers ----------
 function oops(status, why, message) { return Object.assign(new Error(message), { status, why }); }
 const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+// Infinity has no JSON form: JSON.stringify writes it as null, which everything reads as 0. A number far past what
+// JavaScript can hold (1e309) is kept by Postgres as it is and reads back in JavaScript as Infinity, so Orbs that are
+// infinite stay infinite on their way through the server (v4.66, request 51).
+const INF = '\u0000inf\u0000';
+const bigJson = v => JSON.stringify(v, (k, x) => (typeof x === 'number' && (x === Infinity || x === -Infinity) ? (x > 0 ? INF : '-' + INF) : x))
+  .replace(/"(-?)\\u0000inf\\u0000"/g, (m, sign) => sign + '1e309');
+export { bigJson as _bigJsonForTests };
 async function rpc(env, name, args) {
   const key = env.SUPABASE_SECRET_KEY;
   const r = await fetch(`${String(env.SUPABASE_URL).replace(/\/+$/, '')}/rest/v1/rpc/${name}`, { method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: key, Authorization: 'Bearer ' + key }, body: JSON.stringify(args) });
+    headers: { 'Content-Type': 'application/json', apikey: key, Authorization: 'Bearer ' + key }, body: bigJson(args) });
   const j = await r.json().catch(() => null);
   if (r.ok) return j;
   // the database's refusals as Firestore says them (the functions look at the status)

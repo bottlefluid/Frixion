@@ -20,7 +20,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=112">
+<link rel="stylesheet" href="style.css?v=113">
 <link rel="stylesheet" href="casino.css?v=1">
 </head>
 <body>
@@ -911,7 +911,8 @@
           </div>
           <div class="field">
             <label id="name-grad-label">Name Gradient</label>
-            <div class="grad-mix" id="name-grad-row"><input type="color" id="name-grad-1" value="#5865f2" aria-label="First name color"><input type="color" id="name-grad-2" value="#eb459e" aria-label="Second name color"><span class="grad-name-preview" id="name-grad-preview">Your Name</span><button type="button" class="btn-secondary slim" id="name-grad-toggle">Use It</button></div>
+            <!-- 2 to 8 colors (v4.66): the color boxes are made by renderNameGradientPicker() -->
+            <div class="grad-mix" id="name-grad-row"><span class="grad-colors" id="name-grad-colors"></span><button type="button" class="grad-count-btn" id="name-grad-remove" title="One color fewer" aria-label="One color fewer">&minus;</button><button type="button" class="grad-count-btn" id="name-grad-add" title="Add a color (up to 8)" aria-label="Add a color">+</button><span class="grad-name-preview" id="name-grad-preview">Your Name</span><button type="button" class="btn-secondary slim" id="name-grad-toggle">Use It</button></div>
           </div>
           <button class="btn-accent-inline" id="save-profile-btn">Save Profile</button>
         </div>
@@ -982,6 +983,8 @@
           <div class="color-swatches" id="avatar-color-swatches"></div>
         </div>
         <button class="btn-accent-inline" id="save-account-btn">Save Changes</button>
+        <!-- one-time password sign-ins on this account (v4.66): kept by the server, nobody can remove them -->
+        <div class="seclog-block hidden" id="seclog-block"></div>
         <div class="egg-block" id="egg-block"></div>
         <span class="egg-dot" id="egg-dot" aria-hidden="true"></span>
       </div>
@@ -1103,7 +1106,7 @@
 
       <div class="settings-pane hidden" id="pane-quickopen">
         <h2>Quick Open</h2>
-        <p class="desc">Make keyboard shortcuts for things you open a lot. They work anywhere in Frixion, even while you're typing or in a game.</p>
+        <p class="desc">Make keyboard shortcuts for things you open a lot. They work anywhere in Frixion, even while you're typing or in a game. Press one again to close what it opened (Settings, your staff panel, a game).</p>
         <div class="qo-list" id="qo-list"></div>
         <div class="qo-add">
           <div class="qo-add-row">
@@ -1879,7 +1882,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
 <script defer src="fdb.js?v=2"></script>
-<script defer src="script.js?v=152"></script>
-<script defer src="casino.js?v=2"></script>
+<script defer src="script.js?v=153"></script>
+<script defer src="casino.js?v=3"></script>
 </body>
 </html>

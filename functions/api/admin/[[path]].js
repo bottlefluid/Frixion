@@ -144,7 +144,7 @@ async function googleToken(env) {
 }
 const fsBase = env => env.FIRESTORE_URL || FIRESTORE;
 const authBase = env => env.AUTH_URL || IDENTITY;
-const dec = v => ('stringValue' in v ? v.stringValue : 'integerValue' in v ? Number(v.integerValue) : 'doubleValue' in v ? v.doubleValue : 'booleanValue' in v ? v.booleanValue
+const dec = v => ('stringValue' in v ? v.stringValue : 'integerValue' in v ? Number(v.integerValue) : 'doubleValue' in v ? Number(v.doubleValue) : 'booleanValue' in v ? v.booleanValue
   : 'timestampValue' in v ? Date.parse(v.timestampValue) : 'mapValue' in v ? decFields(v.mapValue.fields) : 'arrayValue' in v ? (v.arrayValue.values || []).map(dec) : 'nullValue' in v ? null : undefined);
 const decFields = f => Object.fromEntries(Object.entries(f || {}).map(([k, v]) => [k, dec(v)]));
 async function fsGet(env, path) {
@@ -155,7 +155,10 @@ async function fsGet(env, path) {
   return decFields((await r.json()).fields);
 }
 const enc = v => (v === null ? { nullValue: null } : v instanceof Date ? { timestampValue: v.toISOString() } : Array.isArray(v) ? { arrayValue: { values: v.map(enc) } } : typeof v === 'boolean' ? { booleanValue: v }
-  : typeof v === 'number' ? (Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v }) : { stringValue: String(v) });
+  : typeof v === 'number' ? (Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: Number.isFinite(v) ? v : String(v) }) : { stringValue: String(v) });
+// Infinite Orbs: the Owner's and Co-Owners' Inf (infOrbs, v4.64), or a balance that grew past what a number can hold
+// (it shows as the infinity sign). Both count as infinite: nothing is taken and nothing is added (v4.66, request 51).
+function infinite(u) { return !!u && (u.infOrbs === true || Number(u.orbs) === Infinity); }
 const docUrl = (env, path) => `${fsBase(env)}/${path.split('/').map(encodeURIComponent).join('/')}`;
 // a document's full name, as commits want it (projects/<id>/databases/(default)/documents/<path>)
 const docName = (env, path) => new URL(fsBase(env)).pathname.replace(/^\/v1\//, '') + '/' + path;
@@ -246,6 +249,14 @@ async function redeem(env, request, { username, code }) {
   if (!r.ok) fail(403, 'That one-time password doesn\'t work.');
   const target = await fsGet(env, `users/${username}`);
   if (!target || typeof target.authUid !== 'string' || !target.authUid) fail(409, 'That account has no sign-in yet.');
+  // The account keeps a log of these (v4.66, request 52: staff signing in to someone's account must never go unseen):
+  // who made the password and when it was used, the last 10. Only the server writes securityLog
+  // (supabase/sql/013_v466.sql), so whoever is signed in as the account can't hide it from its owner. A failure here
+  // doesn't stop the sign-in.
+  const entry = { kind: 'one-time password', by: typeof c.by === 'string' ? c.by : '', made: Number(c.at) || null, at: Date.now() };
+  const log = [...(Array.isArray(target.securityLog) ? target.securityLog.filter(x => x && typeof x === 'object') : []), entry].slice(-10);
+  await fetch(`${fsBase(env)}:commit`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await googleToken(env) },
+    body: JSON.stringify({ writes: [{ update: { name: docName(env, `users/${username}`), fields: { securityLog: encAny(log) } }, updateMask: { fieldPaths: ['securityLog'] }, currentDocument: { exists: true } }] }) }).catch(() => {});
   return { token: await customToken(env, target.authUid) };
 }
 // A Firebase custom token: signed with the service account's key, it lets a page sign in as that account once.
@@ -466,7 +477,7 @@ async function buy(env, { token, cat, id }) {
     const price = priceOf(cat, id, builtin, custom);
     if (price == null) fail(404, 'That item isn\'t for sale right now.');
     if ((Array.isArray(u[owned]) ? u[owned] : []).includes(id)) fail(409, 'You already own this.');
-    const inf = u.infOrbs === true;   // infinite Orbs (v4.64): nothing is taken
+    const inf = infinite(u);   // infinite Orbs (v4.64, and the infinity sign since v4.66): nothing is taken
     if (!inf && (Number(u.orbs) || 0) < price) fail(402, 'Not enough Orbs. Play games to earn more.');
     // paid, owned and worn at once (like Discord's shop), only if the profile is still what was read
     const done = await fsCommit(env, [{
@@ -489,7 +500,7 @@ async function setBanner(env, { token, url }) {
   slowDown('banner:' + me.name, 6);
   for (let i = 0; i < 6; i++) {
     const [prof] = await fsGetMany(env, [`users/${me.name}`]);
-    const u = mine(prof, me), inf = u.infOrbs === true;
+    const u = mine(prof, me), inf = infinite(u);
     if (!inf && (Number(u.orbs) || 0) < BANNER_PRICE) fail(402, 'A banner picture costs 5,000 Orbs.');
     const done = await fsCommit(env, [{
       update: { name: docName(env, `users/${me.name}`), fields: { bannerImage: enc(url) } }, updateMask: { fieldPaths: ['bannerImage'] },
@@ -509,7 +520,7 @@ async function buyAll(env, { token, cat, ids }) {
   const [owned, , coll] = SHOP[cat], want = [...new Set(ids)];
   for (let i = 0; i < 6; i++) {
     const [prof, builtin, ...docs] = await fsGetMany(env, [`users/${me.name}`, 'shopPrices/builtin', ...(coll ? want.map(id => `${coll}/${id}`) : ['config/customMusic'])]);
-    const u = mine(prof, me), have = Array.isArray(u[owned]) ? u[owned] : [], inf = u.infOrbs === true;
+    const u = mine(prof, me), have = Array.isArray(u[owned]) ? u[owned] : [], inf = infinite(u);
     let total = 0;
     const bought = [];
     want.forEach((id, k) => {
@@ -542,6 +553,7 @@ const EGGS = {
   zerohero: 'm', onepointoh: 'e', triple: 'm', tenx: 'h', jackpot: 'e',   // v4.63: the Casino
   tricked: 'e', mazehalf: 'h', ontime: 'm', hideorbs: 'e',                // v4.64
   badgefan: 'm', allbadges: 'h', fxwatch: 'm', slimepoke: 'e',           // v4.65: badges and drawn effects
+  equilibrium: 'm', mazeflawless: 'h', quickflip: 'e', rainbowname: 'm', // v4.66: 0 Orbs, the maze, Quick Open, name colors
   xyzzy: ['m', '7d76c6d11ed06a3e671afa826c4f88f4e8227fdef446cbd576a3428967e45af9'],
   codeb1: ['e', '4f3cd88dc035fd4d04dda074fd7ced1722751824644c1a27a700dfd5d06ba19e'],
   codeb2: ['e', 'c886bb737cc711b2dfcb069ea8179dc430661db13a38113ddf718b9098f653c7'],
@@ -711,7 +723,7 @@ async function casinoCommit(env, name, prof, u, { delta = 0, set = {}, stake = 0
   const fields = { at: enc(new Date()) }, paths = ['casino.at'];
   for (const [k, v] of Object.entries(set)) { paths.push('casino.' + k); if (v !== null) fields[k] = encAny(v); }
   const tf = [];
-  if (u && u.infOrbs === true) delta = 0;            // infinite Orbs (v4.64) never go up or down
+  if (infinite(u)) delta = 0;            // infinite Orbs (v4.64; the infinity sign too, v4.66) never go up or down
   if (delta) tf.push({ fieldPath: 'orbs', increment: enc(delta) });
   if (game) tf.push({ fieldPath: 'casino.games', increment: enc(1) });
   if (stake) tf.push({ fieldPath: 'casino.wagered', increment: enc(stake) });
@@ -731,7 +743,7 @@ function dayCount(c) {
 const gamesLeft = c => CASINO_DAY - (c.day === utcDay() ? Math.max(0, Number(c.n) || 0) : 0);
 async function readProfile(env, me) { const [prof] = await fsGetMany(env, [`users/${me.name}`]); return { prof, u: mine(prof, me) }; }
 const BUSY = 'Frixion is busy. Try again.';
-const hasOrbs = (u, n) => { if (u.infOrbs !== true && (Number(u.orbs) || 0) < n) fail(400, 'You don\'t have enough Orbs for that.'); };
+const hasOrbs = (u, n) => { if (!infinite(u) && (Number(u.orbs) || 0) < n) fail(400, 'You don\'t have enough Orbs for that.'); };
 
 async function casino(env, b) {
   const me = await caller(env, b.token);
@@ -1217,6 +1229,31 @@ async function fsQuery(env, coll, where, limit = 100) {
   if (!r.ok) fail(502, 'Could not read Frixion.');
   return (await r.json()).filter(x => x.document).map(x => ({ id: x.document.name.split('/').pop(), data: decFields(x.document.fields), updateTime: x.document.updateTime }));
 }
+// Accounts used on the same device (a browser), the same computer (two device records with one hardware fingerprint)
+// or from the same network: what the Owner panel's Devices and IPs tabs show. Loans between them don't move credit,
+// so nobody raises their own with an alt (v4.66, request 45).
+async function devicesOf(env, coll, name) {
+  const body = { structuredQuery: { from: [{ collectionId: coll }], where: { fieldFilter: { field: { fieldPath: 'accounts' }, op: 'ARRAY_CONTAINS', value: enc(name) } }, limit: 200 } };
+  const r = await fetch(`${fsBase(env)}:runQuery`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await googleToken(env) }, body: JSON.stringify(body) });
+  if (r.status === 429) fail(503, OUT_OF_READS);
+  if (!r.ok) fail(502, 'Could not read Frixion.');
+  return (await r.json()).filter(x => x.document).map(x => decFields(x.document.fields));
+}
+async function linkedAccounts(env, a, b) {
+  const [devA, devB, netA] = await Promise.all([devicesOf(env, 'devices', a), devicesOf(env, 'devices', b), devicesOf(env, 'ips', a)]);
+  const has = d => Array.isArray(d.accounts) && d.accounts.includes(b);
+  if (devA.some(has) || netA.some(has)) return true;
+  const hwA = new Set(devA.map(d => d.hw).filter(h => typeof h === 'string' && h));
+  return devB.some(d => typeof d.hw === 'string' && hwA.has(d.hw));
+}
+// How much paying a loan back raises credit: nothing between linked accounts, and less each time the same two people
+// (either way round) have already paid one back in the last 30 days: half the second time, a third the third, and so on.
+async function creditFactor(env, lender, borrower) {
+  if (await linkedAccounts(env, lender, borrower)) return 0;
+  const since = Date.now() - 30 * 86400000;
+  const [a, b] = await Promise.all([fsQuery(env, 'loans', [['from', lender], ['to', borrower], ['status', 'paid']]), fsQuery(env, 'loans', [['from', borrower], ['to', lender], ['status', 'paid']])]);
+  return 1 / (1 + [...a, ...b].filter(x => (Number(x.data.paidAt) || 0) >= since).length);
+}
 const loanUpdate = (env, id, fields, updateTime) => ({
   update: { name: docName(env, `loans/${id}`), fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, encAny(v)])) },
   updateMask: { fieldPaths: Object.keys(fields) }, currentDocument: { updateTime },
@@ -1270,7 +1307,7 @@ async function loanAnswer(env, me, { id, yes, time }) {
       continue;
     }
     const t = own(LOAN_TIMES, time) ? time : l.data.time, dueIn = LOAN_TIMES[t] || LOAN_TIMES['1d'];
-    const amount = Number(l.data.amount) || 0, inf = u.infOrbs === true;
+    const amount = Number(l.data.amount) || 0, inf = infinite(u);
     if (!inf && (Number(u.orbs) || 0) < amount) fail(402, `You don't have ${amount.toLocaleString('en-US')} Orbs to lend.`);
     const dueAt = Date.now() + dueIn;
     const done = await fsCommit(env, [
@@ -1293,6 +1330,7 @@ async function loanCancel(env, me, { id }) {
 }
 async function loanPay(env, me, { id, amount }) {
   if (typeof id !== 'string' || !/^l[a-z0-9]{6,30}$/.test(id)) fail(404, 'That loan isn\'t there.');
+  let factor = null;   // (creditFactor, looked up once however many tries it takes)
   for (let i = 0; i < 5; i++) {
     const [l, prof] = await fsGetMany(env, [`loans/${id}`, `users/${me.name}`]);
     const u = mine(prof, me);
@@ -1301,13 +1339,16 @@ async function loanPay(env, me, { id, amount }) {
     const total = Number(l.data.amount) || 0, paid = Number(l.data.paid) || 0, owed = total - paid;
     const want = amount == null ? owed : Math.floor(Number(amount));
     if (!(want >= 1)) fail(400, 'Pay at least 1 Orb.');
-    const pay = Math.min(owed, want), inf = u.infOrbs === true;
+    const pay = Math.min(owed, want), inf = infinite(u);
     if (!inf && (Number(u.orbs) || 0) < pay) fail(402, 'You don\'t have that many Orbs.');
     const now = Date.now(), all = paid + pay >= total, late = l.data.late === true || now > (l.data.dueAt || 0);
     const w = loanWeight(total);
     let credit = 0;
-    if (late && l.data.late !== true) credit -= 2 * w;          // it went past its due date and no check had counted that yet
-    if (all) credit += late ? Math.ceil(w / 2) : w;             // paid back: all of it on time, half after the due date
+    if ((late && l.data.late !== true) || all) {
+      if (factor === null) factor = await creditFactor(env, l.data.from, me.name);
+      if (late && l.data.late !== true && factor > 0) credit -= 2 * w;   // it went past its due date and no check had counted that yet
+      if (all) credit += Math.round((late ? Math.ceil(w / 2) : w) * factor);   // paid back: all of it on time, half after the due date
+    }
     const fields = { paid: paid + pay, ...(all ? { status: 'paid', paidAt: now } : {}), ...(late && l.data.late !== true ? { late: true } : {}) };
     const done = await fsCommit(env, [
       loanUpdate(env, id, fields, l.updateTime),
@@ -1330,9 +1371,10 @@ async function loanCheck(env, me, { with: other }) {
     const d = l.data;
     if (d.status === 'active' && !d.late && now > (d.dueAt || 0)) {
       const w = loanWeight(Number(d.amount) || 0);
+      const alt = await linkedAccounts(env, d.from, d.to);   // (between linked accounts credit doesn't move, v4.66)
       const done = await fsCommit(env, [
         loanUpdate(env, l.id, { late: true }, l.updateTime),
-        profileTransform(env, d.to, [{ fieldPath: 'credit', increment: enc(-2 * w) }]),
+        ...(alt ? [] : [profileTransform(env, d.to, [{ fieldPath: 'credit', increment: enc(-2 * w) }])]),
       ]);
       if (done) d.late = true;
     }

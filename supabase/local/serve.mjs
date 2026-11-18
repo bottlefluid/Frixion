@@ -84,7 +84,9 @@ async function runAs(who, sql, params = []) {
   }
 }
 async function takeChanges() {
-  return (await db.query('with d as (delete from fx_local.changes returning *) select * from d order by n')).rows;
+  // (rows as text, read with parseKeepBig: a number too big for JavaScript reaches the page as Postgres wrote it)
+  const rows = (await db.query('with d as (delete from fx_local.changes returning *) select n, tbl, op, rec::text as rec, old::text as old from d order by n')).rows;
+  return rows.map(r => ({ ...r, rec: r.rec == null ? null : parseKeepBig(r.rec), old: r.old == null ? null : parseKeepBig(r.old) }));
 }
 
 // ---------------- who is asking ----------------
@@ -120,6 +122,12 @@ function reply(res, status, body, extra) {
   res.end(body === undefined ? '' : JSON.stringify(body));
 }
 const readBody = req => new Promise((ok, no) => { const c = []; req.on('data', d => c.push(d)); req.on('end', () => ok(Buffer.concat(c).toString('utf8'))); req.on('error', no); });
+// Numbers too big for JavaScript (1e309: infinite Orbs since v4.66) go to Postgres as they were written, and come back
+// as Postgres writes them, the way PostgREST passes JSON through as text. (JSON.parse would make them Infinity, and
+// JSON.stringify then null.) Needs Node's JSON.parse source text (Node 21 and later).
+const BIG = '\u0000big:';
+const parseKeepBig = t => JSON.parse(t, (k, v, ctx) => (typeof v === 'number' && !Number.isFinite(v) && ctx && ctx.source ? BIG + ctx.source : v));
+const stringifyKeepBig = v => JSON.stringify(v).replace(/"\\u0000big:([-+0-9.eE]+)"/g, '$1');
 
 const stats = { rpc: 0, refused: 0, changes: 0, sent: 0 };
 async function supabaseHttp(req, res) {
@@ -134,11 +142,11 @@ async function supabaseHttp(req, res) {
     try { who = whoFrom(bearer(req)); } catch (e) { return reply(res, e.status, { code: e.code, message: e.message, details: null, hint: null }); }
     if (!RPCS.has(m[1])) return reply(res, 404, { code: 'PGRST202', message: `Could not find the function public.${m[1]} in the schema cache`, details: null, hint: null });
     let args;
-    try { const t = await readBody(req); args = t ? JSON.parse(t) : {}; } catch (e) { return reply(res, 400, { code: 'PGRST102', message: 'Empty or invalid json', details: null, hint: null }); }
+    try { const t = await readBody(req); args = t ? parseKeepBig(t) : {}; } catch (e) { return reply(res, 400, { code: 'PGRST102', message: 'Empty or invalid json', details: null, hint: null }); }
     const keys = Object.keys(args || {});
     if (keys.some(k => !/^[a-z_][a-z0-9_]*$/.test(k))) return reply(res, 400, { code: 'PGRST202', message: 'Unknown argument', details: null, hint: null });
-    const sql = `select public.${m[1]}(${keys.map((k, i) => `${k} => $${i + 1}`).join(', ')}) as r`;
-    const params = keys.map(k => (args[k] !== null && typeof args[k] === 'object' ? JSON.stringify(args[k]) : args[k]));
+    const sql = `select public.${m[1]}(${keys.map((k, i) => `${k} => $${i + 1}`).join(', ')})::text as r`;   // (as text: see BIG)
+    const params = keys.map(k => (args[k] !== null && typeof args[k] === 'object' ? stringifyKeepBig(args[k]) : args[k]));
     stats.rpc++;
     const out = await locked(async () => { const r = await runAs(who, sql, params); return { r, changes: r.ok ? await takeChanges() : [] }; });
     if (!out.r.ok) {
@@ -147,7 +155,8 @@ async function supabaseHttp(req, res) {
       if (process.env.VERBOSE) log('refused', m[1], who.claims.sub || who.role, code, e.message);
       return reply(res, statusFor(code, who), { code, message: e.message, details: e.detail || null, hint: e.hint || null });
     }
-    reply(res, 200, out.r.rows[0].r);
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...CORS });
+    res.end(out.r.rows[0].r == null ? 'null' : out.r.rows[0].r);   // (Postgres's own JSON text, as PostgREST sends it)
     if (out.changes.length) { stats.changes += out.changes.length; dispatch(out.changes).catch(e => log('realtime:', e.message)); }
     return;
   }
@@ -223,7 +232,7 @@ function wsFrame(conn, op, payload) {
   if (!conn.socket.destroyed) conn.socket.write(Buffer.concat([head, payload]));
 }
 function push(conn, m) {   // Phoenix 2.0.0 sends [join_ref, ref, topic, event, payload]; 1.0.0 an object
-  const text = conn.vsn === '2.0.0' ? JSON.stringify([m.join_ref ?? null, m.ref ?? null, m.topic, m.event, m.payload]) : JSON.stringify(m);
+  const text = conn.vsn === '2.0.0' ? stringifyKeepBig([m.join_ref ?? null, m.ref ?? null, m.topic, m.event, m.payload]) : stringifyKeepBig(m);
   wsFrame(conn, 1, Buffer.from(text, 'utf8'));
 }
 function phoenix(conn, text) {

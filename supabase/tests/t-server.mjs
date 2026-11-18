@@ -106,6 +106,37 @@ x = await call('admin', 'loan', { token: sumi, action: 'pay', id: loanId, amount
 loan = await doc('loans/' + loanId);
 check('loan: part paid back', x.status === 200 && loan.paid === 40, { x, loan });
 
+section('v4.66 on the server');
+let air = await doc('users/Air');
+check('52: the one-time password used on Air is in Air\'s securityLog, with who made it',
+  Array.isArray(air.securityLog) && air.securityLog.length === 1 && air.securityLog[0].by === 'Tester' && air.securityLog[0].at > 0, air.securityLog);
+// 45: Sumi and Tester were both seen on this network (127.0.0.1), so paying the rest back moves no credit
+await call('admin', 'seen', { token: sumi, device: 'dev_' + 'b2'.repeat(16) });
+const credit0 = (await doc('users/Sumi')).credit || 0;
+x = await call('admin', 'loan', { token: sumi, action: 'pay', id: loanId });
+check('45: a loan between accounts on the same network, paid back in full on time: no credit', x.status === 200 && x.done === true && x.credit === 0 && ((await doc('users/Sumi')).credit || 0) === credit0, x);
+// two accounts never seen together: the first loan paid back counts in full, the second between them half
+const nova = await tokenOf('Nova');
+await rpc('fx_commit', { writes: [{ path: 'users/Nova', updatePaths: [[['orbs'], 5000]] }] });
+const airTok = await tokenOf('Air'), credits = [];
+for (let i = 0; i < 2; i++) {
+  x = await call('admin', 'loan', { token: airTok, action: 'ask', to: 'Nova', amount: 1000, time: '1d' });
+  const id = x.loan && x.loan.id;
+  await call('admin', 'loan', { token: nova, action: 'answer', id, yes: true });
+  x = await call('admin', 'loan', { token: airTok, action: 'pay', id });
+  credits.push(x.credit);
+}
+check('45: Air and Nova (not linked): the first loan paid back gives 20 credit, the second between them 10', credits[0] === 20 && credits[1] === 10, credits);
+// 51: Orbs past what a number can hold (written as 1e309, read back as Infinity) count as infinite on the server
+const big = await fetch(`${SB}/rest/v1/rpc/fx_commit`, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SECRET, Authorization: 'Bearer ' + SECRET },
+  body: '{"writes":[{"path":"users/Nova","updatePaths":[[["orbs"],1e309]]}]}' });
+check('51: Nova\'s Orbs set past the largest number', big.ok && (await doc('users/Nova')).orbs === Infinity, await big.text());
+x = await call('admin', 'casino', { token: nova, game: 'coinflip', bet: 100, side: 'h' });
+check('51: the infinity sign can bet (it said "not enough Orbs" after the move)', x.status === 200 && (x.result === 'h' || x.result === 't'), x);
+check('...and stays infinite, win or lose', (await doc('users/Nova')).orbs === Infinity, await doc('users/Nova'));
+x = await call('admin', 'egg', { token: nova, egg: 'equilibrium' });
+check('the new eggs are known to the server (67 in all)', x.ok && x.total === 67, x);
+
 // ---------------- functions/api/push ----------------
 section('Push notifications (functions/api/push)');
 x = await call('push', 'info', null, 'GET');

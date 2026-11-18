@@ -941,10 +941,8 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 .btn-accent-inline { background: var(--accent); color: #fff; padding: 10px 18px; border-radius: 4px; font-weight: 600; }
 .btn-accent-inline:hover { background: var(--accent-hover); }
 
-/* Gift Premium is opened from the gift button over on the right side of
-   the composer/profile panel, so it makes more sense anchored there than
-   dead-center like the rest of the modals. */
-#gift-modal { justify-content: flex-end; padding-right: 60px; }
+/* (Gift Premium used to sit over on the right, by the composer's gift button. Since v4.66 it's in the middle like every
+   other window: opened from a profile it looked lost off to the side, request 38.) */
 
 /* ---- explore servers ---- */
 .explore-server-list { display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow-y: auto; }
@@ -1079,6 +1077,11 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 .grad-mix { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 .grad-mix input[type="color"] { width: 38px; height: 30px; padding: 0; border: 1px solid var(--border, rgba(255,255,255,.15)); border-radius: 6px; background: none; cursor: pointer; }
 .grad-mix-note { font-size: 12px; opacity: .7; }
+/* the name gradient's color boxes (2 to 8, v4.66) and its one-more / one-fewer buttons */
+.grad-colors { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.grad-colors input[type="color"] { width: 30px !important; }
+.grad-count-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border, rgba(255,255,255,.15)); background: var(--bg-tertiary); color: var(--text-primary); font: inherit; font-size: 16px; font-weight: 700; line-height: 1; cursor: pointer; }
+.grad-count-btn:disabled { opacity: .35; cursor: default; }
 .grad-name-preview { font-weight: 700; font-size: 15px; -webkit-background-clip: text; background-clip: text; color: transparent; }
 
 .status-picker { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
@@ -1517,9 +1520,10 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 }
 
 /* ============ PROFILE MODAL ============ */
-.profile-box { width: 460px; padding: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; }
+/* (v4.66, request 38: bigger than the old 460px card, with more room for the banner) */
+.profile-box { width: 600px; padding: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; }
 .profile-close { position: absolute; top: 12px; right: 12px; color: #fff; background: rgba(0,0,0,.35); border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; z-index: 2; }
-.profile-banner { height: 90px; flex-shrink: 0; }
+.profile-banner { height: 120px; flex-shrink: 0; }
 /* .profile-main used to inherit overflow:hidden from .profile-box, which
    clipped the bottom of the card instead of scrolling it — with the edit
    fields open (display name, pronouns, bio, banner colors, gradient
@@ -1812,6 +1816,16 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 /* the name box at the bottom left is narrow: with a staff tag already there, the Cracker tag would be cut off */
 #user-panel .owner-tag ~ .cracker-tag, #user-panel .coowner-tag ~ .cracker-tag, #user-panel .op-tag ~ .cracker-tag { display: none; }
 .egg-block { margin-top: 26px; padding: 14px 16px; border-radius: 10px; background: var(--bg-secondary); }
+/* one-time password sign-ins on your account (v4.66) */
+/* a newer Frixion is out and you were busy (v4.66) */
+.version-bar { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 100000; display: flex; align-items: center; gap: 12px; padding: 8px 10px 8px 16px; border-radius: 999px; background: var(--bg-floating, #111214); color: var(--text-primary, #fff); font-size: 13.5px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.08); }
+.version-bar button { border: 0; border-radius: 999px; padding: 6px 14px; background: var(--brand, #5865f2); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+/* System Hub on someone of your own rank (v4.66) */
+.admin-same-rank { display: block; margin: 10px 0 2px; padding: 8px 10px; border-radius: 8px; background: var(--bg-tertiary); line-height: 1.4; }
+.seclog-block { margin-top: 26px; padding: 14px 16px; border-radius: 10px; background: var(--bg-secondary); border-left: 3px solid var(--warning, #f0b232); }
+.seclog-title { font-weight: 700; font-size: 14px; color: var(--text-primary); }
+.seclog-sub { font-size: 12.5px; color: var(--text-muted); margin: 4px 0 8px; }
+.seclog-row { font-size: 13px; color: var(--text-normal, var(--text-primary)); padding: 4px 0; border-top: 1px solid var(--bg-modifier-accent, rgba(255,255,255,.06)); }
 .egg-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 .egg-title { font-weight: 800; color: var(--text-normal); }
 .egg-count { font-weight: 700; color: #ed4245; }
@@ -2168,7 +2182,6 @@ button.image-preview-open { background: none; border: 0; padding: 0; font: inher
   /* modals: fit the screen, stack multi-column layouts */
   .modal-box, .modal-box.wide, .admin-box, .profile-box { width: 94vw; max-width: 94vw; }
   #settings-modal .modal-box { width: 94vw; height: 88vh; flex-direction: column; }
-  #gift-modal { justify-content: center; padding-right: 0; }
   #settings-nav { width: 100%; display: flex; flex-wrap: wrap; gap: 2px; padding: 10px; }
   #settings-nav .nav-label { display: none; }
   #settings-content { padding: 20px; }
@@ -4961,7 +4974,7 @@ body.is-mobile .blocked-msgs { margin-left: 16px; }
 .pa-pill svg { color: var(--online); }
 .us-gap { display: inline-block; width: .14em; }
 /* banner pictures (v4.64) */
-.profile-banner.has-picture { height: 120px; }
+.profile-banner.has-picture { height: 160px; }
 .banner-image-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .banner-image-note { font-size: 12px; color: var(--text-faint); margin-top: 6px; }
 /* custom ranks (v4.64) */
@@ -4984,31 +4997,40 @@ body.is-mobile .blocked-msgs { margin-left: 16px; }
 .loan-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 8px; background: var(--bg-tertiary); margin-bottom: 6px; font-size: 13px; }
 .loan-row.late { box-shadow: inset 3px 0 0 var(--danger); }
 .loan-row.done { opacity: .6; }
+/* (v4.66) the rest of a long loan history, on request */
+.loan-more { display: block; width: 100%; margin-top: 2px; padding: 7px 10px; border: 1px dashed var(--bg-modifier-accent, rgba(255,255,255,.14)); border-radius: 8px; background: transparent; color: var(--text-muted); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.loan-more:hover { color: var(--text-primary); background: var(--bg-tertiary); }
 .loan-note { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
 .loan-acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .loan-acts select, .loan-pay-amt { height: 32px; border-radius: 6px; border: 1px solid var(--divider); background: var(--bg-input); color: var(--text-normal); padding: 0 8px; font: inherit; font-size: 13px; }
 .loan-pay-amt { width: 110px; }
 .loan-empty { font-size: 12.5px; color: var(--text-faint); }
 .loan-fine { font-size: 12px; color: var(--text-faint); margin: 4px 0 12px; }
-/* Mouse Maze (v4.64, games/maze/maze.js) */
-.mz-root { position: relative; width: 100%; height: min(72vh, 640px); background: #07080b; border-radius: 10px; overflow: hidden; user-select: none; }
-.mz-root:fullscreen { width: 100vw; height: 100vh; border-radius: 0; }
+/* Mouse Maze (v4.64, games/maze/maze.js; cleaner in v4.66) */
+.mz-root { position: relative; width: 100%; height: min(72vh, 640px); background: #07080b; border-radius: 14px; overflow: hidden; user-select: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+.mz-root:fullscreen { width: 100vw; height: 100vh; border-radius: 0; box-shadow: none; }
 .mz-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
-.mz-bar { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; }
-.mz-btn { padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,.15); background: rgba(20,22,28,.85); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-.mz-btn:hover { background: rgba(40,44,56,.95); }
-.mz-menu { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(7,8,11,.92); padding: 20px; overflow-y: auto; }
+.mz-bar { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; }
+.mz-btn { padding: 7px 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.12); background: rgba(20,22,30,.82); color: #e8eaf0; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; backdrop-filter: blur(6px); transition: background .15s, border-color .15s; }
+.mz-btn:hover { background: rgba(44,48,62,.95); border-color: rgba(255,255,255,.22); }
+.mz-menu { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 30%, rgba(26,30,44,.96), rgba(7,8,11,.97)); padding: 24px; overflow-y: auto; }
 .mz-menu[hidden] { display: none; }
 .mz-menu-box { max-width: 720px; width: 100%; color: #e8e9ee; text-align: center; }
-.mz-menu-box h2 { margin: 0 0 8px; font-size: 26px; }
-.mz-menu-box p { color: #aab0bd; font-size: 14px; line-height: 1.5; margin: 6px 0; }
+.mz-menu-box h2 { margin: 0 0 10px; font-size: 30px; letter-spacing: -.01em; }
+.mz-menu-box p { color: #aab0bd; font-size: 14px; line-height: 1.55; margin: 6px auto; max-width: 600px; }
 .mz-menu-box .g { color: #3ccf68; } .mz-menu-box .y { color: #e3b23c; }
 .mz-fine { font-size: 12.5px !important; }
-.mz-continue { margin: 12px 0 16px; padding: 10px 22px; border: 0; border-radius: 8px; background: #5865f2; color: #fff; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; }
-.mz-levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 5px; }
-.mz-lv { height: 34px; border-radius: 6px; border: 1px solid rgba(255,255,255,.12); background: #1a1d25; color: #dfe2ea; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
-.mz-lv.done { background: #1f5133; border-color: #2faf4e; }
-.mz-lv:disabled { opacity: .3; cursor: default; }
+.mz-progress { height: 8px; max-width: 420px; margin: 16px auto 6px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; }
+.mz-progress-fill { height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, #2faf4e, #e3b23c); transition: width .3s; }
+.mz-progress-text { font-size: 12.5px; color: #8b92a2; font-weight: 600; }
+.mz-continue { margin: 14px 0 18px; padding: 11px 26px; border: 0; border-radius: 999px; background: #5865f2; color: #fff; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: 0 6px 18px rgba(88,101,242,.35); transition: transform .12s, background .15s; }
+.mz-continue:hover { background: #4752c4; transform: translateY(-1px); }
+.mz-levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 6px; }
+.mz-lv { height: 36px; border-radius: 9px; border: 1px solid rgba(255,255,255,.1); background: #191c25; color: #dfe2ea; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background .12s, border-color .12s, transform .12s; }
+.mz-lv:not(:disabled):hover { background: #262a36; transform: translateY(-1px); }
+.mz-lv.done { background: #173d27; border-color: #2faf4e; color: #bff0cd; }
+.mz-lv.next { border-color: #e3b23c; box-shadow: 0 0 0 1px #e3b23c inset; }
+.mz-lv:disabled { opacity: .28; cursor: default; }
 .mz-note { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #e8e9ee; text-align: center; padding: 20px; }
 .mz-note span { color: #aab0bd; font-size: 14px; }
 /* any file can be sent (v4.65); risky ones say so */

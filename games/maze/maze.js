@@ -1,14 +1,22 @@
-// Mouse Maze (v4.64): guide the mouse from the green square to the gold one without touching a wall. 125 levels,
-// each built from its own fixed seed, so a level is the same for everyone and every time. Computer only: it needs a
-// mouse and fullscreen (the Fullscreen button, or F11), and pauses whenever you leave fullscreen or the window.
-// Right-click does nothing here (so it can't be used to freeze the game), and the mouse leaving the play area counts
-// as touching a wall. Moves are checked along the whole line between two mouse positions, so a fast flick can't jump
-// through a wall. Orbs: a little for every clear (replays too) and more the first time, paid the way every Frixion game
-// pays (script.js gives this file `api`).
+// Mouse Maze (v4.64; reworked in v4.66): guide the mouse from the green square to the gold one without touching a wall.
+// 125 levels, each built from its own fixed seed, so a level is the same for everyone and every time. Computer only:
+// it needs a mouse and fullscreen (the Fullscreen button, or F11), and pauses whenever you leave fullscreen or the
+// window. Right-click does nothing here (so it can't be used to freeze the game).
+// v4.66 (request 39, "users are ANGRY"): the game has its own mouse. While you play, the browser's pointer is locked
+// and hidden (the Pointer Lock API: Esc gives it back and pauses), and the game moves a mouse of its own by how far you
+// move. So touching something puts the mouse straight back on your checkpoint, a new level starts it on the green
+// square (not where the last level's gold square was), and the gold square needs a CLICK to finish. Moves are still
+// checked along the whole line between two positions, so a fast flick can't jump through a wall. Browsers without
+// Pointer Lock play the old way (move your own pointer back onto the highlighted square).
+// Orbs: a little for every clear (replays too) and more the first time, paid the way every Frixion game pays
+// (script.js gives this file `api`).
 const LEVELS = 125;
 const W = 1600, H = 900;                       // the level's own units; the canvas scales them to the screen
 let api = null, root = null, cv = null, ctx = null, raf = 0, level = null, state = 'menu', t0 = 0, deaths = 0;
 let progress = { best: 0, cleared: '' }, arm = null, last = null, paused = '', msg = '', msgUntil = 0, offFns = [];
+let pos = null, frozenUntil = 0, atEnd = false, flawless = 0, wonAt = 0;
+const canLock = () => !!(cv && cv.requestPointerLock);
+const locked = () => !!cv && document.pointerLockElement === cv;
 
 // ---------- seeded numbers ----------
 function rng(seed) {
@@ -92,6 +100,7 @@ function build(n) {
 
 // ---------- what's where at time t ----------
 const inRect = (p, r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+const middle = z => ({ x: z.x + z.w / 2, y: z.y + z.h / 2 });
 function obstacleShape(o, t) {
   const s = Math.sin(t * o.sp + o.ph);
   if (o.type === 'h') return { box: { x: o.x + s * o.amp - o.size / 2, y: o.y - o.size / 2, w: o.size, h: o.size } };
@@ -123,22 +132,39 @@ function touch(p, t) {
 }
 
 // ---------- playing ----------
+const scaleOf = () => { const b = cv.getBoundingClientRect(); return Math.min(b.width / W, b.height / H) || 1; };
 function toLevel(e) {
   const b = cv.getBoundingClientRect(), s = Math.min(b.width / W, b.height / H), ox = (b.width - W * s) / 2, oy = (b.height - H * s) / 2;
   return { x: (e.clientX - b.left - ox) / s, y: (e.clientY - b.top - oy) / s };
 }
 const isFull = () => !!document.fullscreenElement || (Math.abs(window.innerHeight - screen.height) < 3 && Math.abs(window.innerWidth - screen.width) < 3);
 function say(text, ms) { msg = text; msgUntil = performance.now() + (ms || 1600); }
+function lockPointer() {
+  if (!canLock() || locked()) return;
+  try { const p = cv.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+}
+// The mouse goes onto a square (the start, or the checkpoint after a touch), held still a moment so a hand still moving
+// doesn't carry it straight into the next wall.
+function placeOn(z, holdMs) { pos = middle(z); last = pos; atEnd = false; frozenUntil = performance.now() + (holdMs || 0); }
 function startLevel(n) {
-  level = build(n); state = 'arming'; arm = level.start; last = null; deaths = 0; t0 = performance.now();
-  say('Move the mouse onto the green square to start.', 2600);
+  level = build(n); arm = level.start; deaths = 0; t0 = performance.now(); atEnd = false;
+  if (canLock()) {
+    placeOn(level.start, 250);
+    state = 'play';
+    lockPointer();
+    say(locked() ? 'Go! Reach the gold square and click it.' : 'Click the maze to start.', 2400);
+  } else {
+    state = 'arming'; last = null; pos = null;
+    say('Move the mouse onto the green square to start.', 2600);
+  }
   showMenu(false);
 }
 function die(why) {
-  deaths++;
-  state = 'arming'; last = null;
+  deaths++; flawless = 0;
   say(why === 'trick' ? 'That one was a trick. Back to your checkpoint.' : why === 'left' ? 'You left the maze. Back to your checkpoint.' : 'You touched a wall. Back to your checkpoint.', 1800);
   if (why === 'trick') api.egg('tricked');
+  if (canLock()) placeOn(arm, 450);                // straight back onto the checkpoint (or the start)
+  else { state = 'arming'; last = null; }
 }
 function clear() {
   const n = level.n, first = progress.cleared[n - 1] !== '1';
@@ -148,82 +174,161 @@ function clear() {
   progress = { best: Math.max(progress.best, n), cleared: cl.join('') };
   api.save(progress, orbs);
   if (n >= 50) api.egg('mazehalf');
-  state = 'won';
-  say(`Level ${n} cleared${first ? ' for the first time' : ''}! +${orbs} Orbs${deaths ? ` (${deaths} ${deaths === 1 ? 'try' : 'tries'})` : ''}`, 2600);
-  setTimeout(() => { if (state === 'won') { if (n < LEVELS) startLevel(n + 1); else { showMenu(true); say('That was the last level. You beat Mouse Maze.', 4000); } } }, 2200);
+  flawless = deaths ? 0 : flawless + 1;
+  if (flawless >= 10) api.egg('mazeflawless');     // ten levels in a row without touching anything
+  state = 'won'; wonAt = performance.now(); atEnd = false;
+  say(`Level ${n} cleared${first ? ' for the first time' : ''}! +${orbs} Orbs${deaths ? ` (${deaths} ${deaths === 1 ? 'try' : 'tries'})` : ' without a single touch'}`, 2400);
+  setTimeout(() => { if (state === 'won') { if (n < LEVELS) startLevel(n + 1); else { showMenu(true); say('That was the last level. You beat Mouse Maze.', 4000); } } }, 2000);
 }
-function onMove(e) {
-  if (!level || paused || state === 'menu' || state === 'won') return;
-  const p = toLevel(e), t = (performance.now() - t0) / 1000;
-  if (state === 'arming') {                       // waiting on the start square or the last checkpoint
-    if (inRect(p, arm)) { state = 'play'; last = p; say(arm === level.start ? 'Go!' : 'Go on!', 700); }
-    return;
-  }
-  // check every few units along the move, so a fast flick can't skip over a wall
+// one step of the mouse, from where it was to `p`, checked all the way along
+function moveTo(p) {
+  const t = (performance.now() - t0) / 1000;
   const from = last || p, d = Math.hypot(p.x - from.x, p.y - from.y), steps = Math.max(1, Math.ceil(d / 3));
+  let inEnd = false;
   for (let i = 1; i <= steps; i++) {
     const q = { x: from.x + (p.x - from.x) * i / steps, y: from.y + (p.y - from.y) * i / steps }, hit = touch(q, t);
     if (!hit) continue;
     if (hit.what === 'wall') return die('wall');
     if (hit.what === 'trick') return die('trick');
-    if (hit.what === 'end') return clear();
+    if (hit.what === 'end') { inEnd = true; continue; }
     if (hit.what === 'check' && arm !== hit.c) { arm = hit.c; say('Checkpoint.', 900); }
   }
-  last = p;
+  last = p; pos = p;
+  inEnd = inEnd && inRect(p, level.end);
+  if (inEnd && !atEnd) say('Click to finish!', 1400);
+  atEnd = inEnd;
 }
-function onLeave() { if (state === 'play' && !paused) die('left'); }
+function onMove(e) {
+  if (!level || paused || state === 'menu' || state === 'won') return;
+  if (canLock()) {
+    if (!locked() || state !== 'play' || !pos) return;
+    if (performance.now() < frozenUntil) return;
+    const s = scaleOf();
+    moveTo({ x: Math.max(0, Math.min(W, pos.x + e.movementX / s)), y: Math.max(0, Math.min(H, pos.y + e.movementY / s)) });
+    return;
+  }
+  const p = toLevel(e);
+  if (state === 'arming') {                       // (no Pointer Lock) waiting on the start square or the last checkpoint
+    if (inRect(p, arm)) { state = 'play'; last = p; pos = p; say(arm === level.start ? 'Go!' : 'Go on!', 700); }
+    return;
+  }
+  moveTo(p);
+}
+function onDown(e) {
+  if (e.button !== 0 || !level || state === 'menu' || state === 'won') return;
+  if (canLock() && !locked()) { lockPointer(); return; }   // clicking the maze takes the mouse back
+  if (paused) return;
+  if (atEnd && state === 'play') clear();
+}
+function onLeave() { if (!canLock() && state === 'play' && !paused) die('left'); }
 function checkPause() {
-  const why = !isFull() ? 'full' : !document.hasFocus() ? 'focus' : '';
+  const why = !isFull() ? 'full' : !document.hasFocus() ? 'focus' : (canLock() && level && state === 'play' && !locked()) ? 'lock' : '';
   if (why === paused) return;
   paused = why;
-  if (why && state === 'play') { state = 'arming'; last = null; }   // pick up again from the square you're on
+  if (why && state === 'play' && !canLock()) { state = 'arming'; last = null; }   // pick up again from the square you're on
 }
 
 // ---------- drawing ----------
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, Math.min(r, w / 2, h / 2));
+  else ctx.rect(x, y, w, h);
+}
+function drawZone(z, fill, label, glow) {
+  ctx.save();
+  if (glow) { ctx.shadowColor = fill; ctx.shadowBlur = glow; }
+  ctx.fillStyle = fill; roundRect(z.x, z.y, z.w, z.h, z.w * 0.18); ctx.fill();
+  ctx.restore();
+  if (label && z.w > 34) {
+    ctx.fillStyle = 'rgba(10,12,16,.75)'; ctx.font = `800 ${Math.max(9, Math.min(15, z.w * 0.2))}px Inter, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, z.x + z.w / 2, z.y + z.h / 2);
+  }
+}
+// the game's mouse: a pointer arrow, white with a dark edge
+function drawPointer(p, s, blink) {
+  if (blink) return;
+  const k = 1 / s;                                // (about the same size on every screen)
+  ctx.save();
+  ctx.translate(p.x, p.y); ctx.scale(k, k);
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 19); ctx.lineTo(4.5, 14.5); ctx.lineTo(8, 22); ctx.lineTo(11, 20.6); ctx.lineTo(7.6, 13.4); ctx.lineTo(13.6, 13.4); ctx.closePath();
+  ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#0b0d12'; ctx.lineWidth = 1.6; ctx.lineJoin = 'round';
+  ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 4;
+  ctx.fill(); ctx.shadowBlur = 0; ctx.stroke();
+  ctx.restore();
+}
+function pill(text, x, y, align, strong) {
+  ctx.font = `${strong ? 700 : 600} ${strong ? 16 : 13.5}px Inter, sans-serif`;
+  const w = ctx.measureText(text).width + 24, h = strong ? 34 : 28, left = align === 'center' ? x - w / 2 : x;
+  ctx.fillStyle = strong ? 'rgba(14,16,22,.88)' : 'rgba(20,22,30,.78)';
+  roundRect(left, y, w, h, h / 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.1)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = strong ? '#ffffff' : 'rgba(232,234,240,.92)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, left + w / 2, y + h / 2 + 0.5);
+}
 function draw(now) {
   raf = requestAnimationFrame(draw);
   checkPause();
   const b = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
-  if (cv.width !== Math.round(b.width * dpr)) { cv.width = Math.round(b.width * dpr); cv.height = Math.round(b.height * dpr); }
+  if (cv.width !== Math.round(b.width * dpr) || cv.height !== Math.round(b.height * dpr)) { cv.width = Math.round(b.width * dpr); cv.height = Math.round(b.height * dpr); }
   const s = Math.min(b.width / W, b.height / H) * dpr, ox = (cv.width - W * s) / 2, oy = (cv.height - H * s) / 2;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = '#07080b'; ctx.fillRect(0, 0, cv.width, cv.height);
+  const bg = ctx.createLinearGradient(0, 0, 0, cv.height);
+  bg.addColorStop(0, '#0b0d14'); bg.addColorStop(1, '#05060a');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, cv.width, cv.height);
   if (!level) return;
   ctx.setTransform(s, 0, 0, s, ox, oy);
-  ctx.fillStyle = '#101218'; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#2b2f3a';
+  // the board, with a faint grid
+  ctx.fillStyle = '#0f1118'; roundRect(0, 0, W, H, 18); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.035)'; ctx.lineWidth = 1;
+  for (let x = 40; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 40; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  // the corridor: an edge first (every piece a little bigger), then the floor on top, so it reads as one clean path
+  const edge = Math.max(3, level.width * 0.06);
+  ctx.fillStyle = '#3a4152';
+  level.rects.forEach(r => { roundRect(r.x - edge, r.y - edge, r.w + edge * 2, r.h + edge * 2, edge * 1.5); ctx.fill(); });
+  ctx.fillStyle = '#232835';
   level.rects.forEach(r => ctx.fillRect(r.x, r.y, r.w, r.h));
-  const zoneFill = (z, color) => { ctx.fillStyle = color; ctx.fillRect(z.x, z.y, z.w, z.h); };
-  zoneFill(level.start, '#2faf4e');
-  level.checkpoints.forEach(c => zoneFill(c, arm === c ? '#5aa8ff' : '#2f6fb8'));
-  level.tricks.forEach(tr => zoneFill(tr, tr.kind === 'fakeend' ? '#e3b23c' : '#2f6fb8'));
-  zoneFill(level.end, '#e3b23c');
-  const t = (now - t0) / 1000;
-  ctx.fillStyle = '#e5484d'; ctx.strokeStyle = '#e5484d'; ctx.lineCap = 'round';
+  const t = (now - t0) / 1000, beat = 0.5 + 0.5 * Math.sin(now / 260);
+  drawZone(level.start, '#2faf4e', 'START', 0);
+  level.checkpoints.forEach(c => drawZone(c, arm === c ? '#5aa8ff' : '#2f6fb8', '', arm === c ? 14 : 0));
+  level.tricks.forEach(tr => drawZone(tr, tr.kind === 'fakeend' ? '#e3b23c' : '#2f6fb8', tr.kind === 'fakeend' ? 'FINISH' : '', 0));
+  drawZone(level.end, '#e3b23c', 'FINISH', atEnd ? 18 + 14 * beat : 0);
+  // red things
+  ctx.save();
+  ctx.fillStyle = '#ef4b55'; ctx.strokeStyle = '#ef4b55'; ctx.lineCap = 'round'; ctx.shadowColor = 'rgba(239,75,85,.55)'; ctx.shadowBlur = 10;
   level.obstacles.forEach(o => {
     const sh = obstacleShape(o, t);
-    if (sh.box) ctx.fillRect(sh.box.x, sh.box.y, sh.box.w, sh.box.h);
+    if (sh.box) { roundRect(sh.box.x, sh.box.y, sh.box.w, sh.box.h, Math.min(sh.box.w, sh.box.h) * 0.22); ctx.fill(); }
     else { ctx.lineWidth = sh.bar.th; ctx.beginPath(); ctx.moveTo(sh.bar.x1, sh.bar.y1); ctx.lineTo(sh.bar.x2, sh.bar.y2); ctx.stroke(); }
   });
+  ctx.restore();
   if (state === 'arming' && arm) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.strokeRect(arm.x - 4, arm.y - 4, arm.w + 8, arm.h + 8); ctx.setLineDash([]); }
-  // the top line: level, tries, and what's going on
+  if (pos && canLock() && state !== 'menu') drawPointer(pos, s / dpr, now < frozenUntil && Math.floor(now / 90) % 2 === 0);
+  // what's going on: level and tries at the top, messages at the bottom
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = '600 15px Inter, sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText(`Level ${level.n} of ${LEVELS}   Tries ${deaths}`, 16, 26);
-  const text = paused === 'full' ? 'Paused: Mouse Maze only plays in fullscreen. Press the Fullscreen button or F11.' : paused === 'focus' ? 'Paused: click back into Frixion.' : (now < msgUntil ? msg : state === 'arming' ? 'Move the mouse onto the highlighted square.' : '');
-  if (text) { ctx.textAlign = 'center'; ctx.font = '700 18px Inter, sans-serif'; ctx.fillText(text, b.width / 2, b.height - 24); }
+  pill(`Level ${level.n} of ${LEVELS}`, 14, 12, 'left');
+  ctx.font = '600 13.5px Inter, sans-serif';
+  pill(`Tries ${deaths}`, 14 + ctx.measureText(`Level ${level.n} of ${LEVELS}`).width + 34, 12, 'left');
+  const text = paused === 'full' ? 'Paused: Mouse Maze only plays in fullscreen. Press the Fullscreen button or F11.'
+    : paused === 'focus' ? 'Paused: click back into Frixion.'
+    : paused === 'lock' ? 'Paused. Click the maze to keep playing (Esc lets go of the mouse).'
+    : (now < msgUntil ? msg : state === 'arming' ? 'Move the mouse onto the highlighted square.' : atEnd ? 'Click to finish!' : '');
+  if (text) pill(text, b.width / 2, b.height - 54, 'center', true);
 }
 
 // ---------- the menu ----------
 function showMenu(on) {
   const m = root.querySelector('.mz-menu');
   if (!on) { m.hidden = true; return; }
-  state = 'menu';
-  const cl = progress.cleared;
+  state = 'menu'; atEnd = false;
+  if (locked()) document.exitPointerLock();
+  const cl = progress.cleared, done = [...cl].filter(c => c === '1').length;
   m.hidden = false;
+  m.querySelector('.mz-progress-fill').style.width = `${(done / LEVELS) * 100}%`;
+  m.querySelector('.mz-progress-text').textContent = `${done} of ${LEVELS} levels cleared`;
   m.querySelector('.mz-levels').innerHTML = Array.from({ length: LEVELS }, (_, i) => {
-    const n = i + 1, open = n <= progress.best + 1, done = cl[i] === '1';
-    return `<button type="button" class="mz-lv${done ? ' done' : ''}" data-lv="${n}"${open ? '' : ' disabled'}>${n}</button>`;
+    const n = i + 1, open = n <= progress.best + 1, ok = cl[i] === '1';
+    return `<button type="button" class="mz-lv${ok ? ' done' : ''}${n === progress.best + 1 ? ' next' : ''}" data-lv="${n}"${open ? '' : ' disabled'}>${n}</button>`;
   }).join('');
   m.querySelector('.mz-continue').textContent = progress.best >= LEVELS ? 'Play level 1 again' : `Play level ${progress.best + 1}`;
   m.querySelectorAll('[data-lv]').forEach(b => { b.onclick = () => go(Number(b.dataset.lv)); });
@@ -247,30 +352,35 @@ export function open(stage, frixion) {
   root.innerHTML = `<canvas class="mz-canvas"></canvas>
     <div class="mz-menu"><div class="mz-menu-box">
       <h2>Mouse Maze</h2>
-      <p>Get the mouse from the <b class="g">green</b> square to the <b class="y">gold</b> one without touching a wall or anything red. Touch something and you go back to your last checkpoint (the blue squares). Watch out: some gold and blue squares are tricks.</p>
-      <p class="mz-fine">It only plays in fullscreen, and right-click is off. Every clear pays Orbs, and a level's first clear pays more.</p>
+      <p>Get the mouse from the <b class="g">green</b> square to the <b class="y">gold</b> one, then click it. Don't touch a wall or anything red: touch something and the mouse goes straight back to your last checkpoint (the blue squares). Watch out, some gold and blue squares are tricks.</p>
+      <p class="mz-fine">It plays in fullscreen, with the game's own mouse: Esc lets go of it and pauses. Every clear pays Orbs, and a level's first clear pays more.</p>
+      <div class="mz-progress"><div class="mz-progress-fill"></div></div>
+      <div class="mz-progress-text"></div>
       <button type="button" class="mz-continue"></button>
       <div class="mz-levels"></div>
     </div></div>
     <div class="mz-bar"><button type="button" class="mz-btn" data-mz="menu">Levels</button><button type="button" class="mz-btn" data-mz="full">Fullscreen</button></div>`;
   cv = root.querySelector('.mz-canvas'); ctx = cv.getContext('2d');
   const on = (el, ev, fn, opt) => { el.addEventListener(ev, fn, opt); offFns.push(() => el.removeEventListener(ev, fn, opt)); };
-  on(cv, 'mousemove', onMove);
+  on(document, 'mousemove', onMove);              // (with the pointer locked, moves come to the document)
+  on(cv, 'mousedown', onDown);
   on(cv, 'mouseleave', onLeave);
   on(root, 'contextmenu', e => e.preventDefault());       // no right-click menu in the maze
-  on(window, 'blur', () => { if (state === 'play') { state = 'arming'; last = null; } });
+  on(window, 'blur', () => { if (state === 'play' && !canLock()) { state = 'arming'; last = null; } });
   root.querySelector('.mz-continue').onclick = () => go(progress.best >= LEVELS ? 1 : progress.best + 1);
   root.querySelector('[data-mz="menu"]').onclick = () => showMenu(true);
-  root.querySelector('[data-mz="full"]').onclick = () => { if (!document.fullscreenElement) root.requestFullscreen().catch(() => {}); else document.exitFullscreen().catch(() => {}); };
+  root.querySelector('[data-mz="full"]').onclick = () => { if (!document.fullscreenElement) root.requestFullscreen().then(() => { if (state === 'play') lockPointer(); }).catch(() => {}); else document.exitFullscreen().catch(() => {}); };
   showMenu(true);
   raf = requestAnimationFrame(draw);
 }
 export function close() {
   cancelAnimationFrame(raf); raf = 0;
   offFns.forEach(f => f()); offFns = [];
+  if (cv && document.pointerLockElement === cv) document.exitPointerLock();
   if (document.fullscreenElement && root && root.contains(document.fullscreenElement) || document.fullscreenElement === root) document.exitFullscreen().catch(() => {});
   if (root) root.remove();
-  root = cv = ctx = level = null; state = 'menu'; paused = '';
+  root = cv = ctx = level = null; state = 'menu'; paused = ''; pos = null; atEnd = false;
 }
-// (for tests: the level as built)
+// (for tests: the level as built, and where things stand)
 export const _build = build;
+export const _peek = () => ({ state, pos: pos && { ...pos }, atEnd, n: level && level.n, deaths, paused, onStart: !!(level && arm === level.start), start: level && middle(level.start) });
