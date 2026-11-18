@@ -315,3 +315,34 @@ html[data-epilepsy] .cz * { transition-duration: 0s !important; animation: none 
   .cz-keno { gap: 4px; }
 }
 .cz-egg { font-size: 12px; color: var(--text-faint); }
+
+/* v4.67: Provably Fair and Referrals panels, and each game's house edge */
+.cz-fair-link { display: inline-flex; align-items: center; gap: 4px; }
+.cz-panel { background: var(--bg-secondary); border: 1px solid var(--cz-line); border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; font-size: 13.5px; }
+.cz-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; font-size: 15px; }
+.cz-panel-text { color: var(--text-muted); line-height: 1.5; margin: 6px 0; }
+.cz-panel-sub { margin: 12px 0 6px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.cz-fine { font-size: 12px; }
+.cz-fair-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin: 8px 0; }
+.cz-fair-grid > div { background: var(--bg-tertiary); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.cz-fair-lbl { display: block; font-size: 11.5px; color: var(--text-muted); margin-bottom: 3px; }
+.cz-fair-code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; color: var(--text-normal); }
+.cz-fair-change { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.cz-fair-change input, .cz-ref-link { flex: 1 1 220px; min-width: 0; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--cz-line); background: var(--bg-input); color: var(--text-normal); font: inherit; }
+.cz-btn { border: 0; border-radius: 7px; padding: 8px 14px; font-weight: 700; cursor: pointer; background: var(--accent); color: #fff !important; }
+.cz-btn:hover { filter: brightness(1.08); }
+.cz-fair-old { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; margin: 8px 0; line-height: 1.5; }
+.cz-fair-bets { display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow-y: auto; }
+.cz-fair-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 8px; border-radius: 6px; background: var(--bg-tertiary); }
+.cz-fair-row > span:first-child { flex: 1 1 auto; }
+.cz-fair-n { color: var(--text-muted); font-size: 12px; }
+.cz-fair-res { color: var(--text-muted); font-size: 12px; }
+.cz-fair-out { font-size: 12.5px; color: var(--text-muted); }
+.cz-fair-out.good { color: var(--cz-green); font-weight: 600; }
+.cz-fair-out.bad { color: var(--cz-red); font-weight: 600; }
+.cz-ref-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin: 10px 0; }
+.cz-ref-stats > div { background: var(--bg-tertiary); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 2px; }
+.cz-ref-stats b { font-family: ui-monospace, Consolas, monospace; font-size: 18px; color: var(--cz-green); }
+.cz-ref-stats span { font-size: 12px; color: var(--text-muted); }
+.cz-ref-code { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.cz-edge { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; font-size: 12.5px; color: var(--text-muted); }

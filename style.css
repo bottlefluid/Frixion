@@ -3598,6 +3598,16 @@ body.shop-theme-active .fg-window .fg-chip { background: rgba(0,0,0,.3); }
 .gag-item.editing { box-shadow: 0 0 0 2px var(--accent) inset; }
 .gag-edit-hint { display: block; margin: 6px 0 10px; }
 .gag-wx-now { margin-top: 10px; font-size: 13px; color: var(--text-muted); }
+/* Quests, GAG, Stock (v4.67): bypass for yourself, and each item's chance of being in a restock */
+.gag-bypass { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-primary); margin: 6px 0; cursor: pointer; }
+.gag-stock-list { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
+.gag-stock-head { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 6px 0 2px; }
+.gag-stock-row { display: grid; grid-template-columns: minmax(120px, 1.4fr) minmax(110px, 1fr) 96px minmax(110px, 1fr); align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; background: var(--bg-tertiary); font-size: 13px; }
+.gag-stock-name { font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gag-stock-rar, .gag-stock-now { color: var(--text-muted); font-size: 12px; }
+.gag-stock-in { display: flex; align-items: center; gap: 4px; color: var(--text-muted); }
+.gag-stock-pct { width: 70px; padding: 4px 6px; }
+@media (max-width: 600px) { .gag-stock-row { grid-template-columns: 1fr 90px; } .gag-stock-rar, .gag-stock-now { grid-column: 1 / -1; } }
 #gag-wx-stop { margin-left: 8px; }
 
 /* Cookie Clicker additions (v4.62): Lucky Crumbs, boosts, buying several, achievements, stats */

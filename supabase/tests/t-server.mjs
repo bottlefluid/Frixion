@@ -137,6 +137,66 @@ check('...and stays infinite, win or lose', (await doc('users/Nova')).orbs === I
 x = await call('admin', 'egg', { token: nova, egg: 'equilibrium' });
 check('the new eggs are known to the server (67 in all)', x.ok && x.total === 67, x);
 
+section('v4.67 on the server: Provably Fair, bets without a top limit, referrals');
+const fairJs = await import(new URL('../../casino-fair.js', import.meta.url).href);
+await rpc('fx_commit', { writes: [{ path: 'users/Air', updatePaths: [[['orbs'], 200000], [['createdAt'], { $t: Date.now() - 3600000 }]] }] });
+x = await call('admin', 'casino', { token: airTok, game: 'info' });
+const fair0 = x.fair;
+check('56: the Casino shows your seed before you bet: its fingerprint, client seed and nonce 0', !!fair0 && /^[0-9a-f]{64}$/.test(fair0.hash) && fair0.n === 0 && typeof fair0.c === 'string', x.fair);
+const bets = [];
+for (const side of ['h', 't']) bets.push(await call('admin', 'casino', { token: airTok, game: 'coinflip', bet: 10, side }));
+check('56: each bet says which seed and nonce it used (0, then 1)', bets[0].fair && bets[0].fair.n === 0 && bets[1].fair.n === 1 && bets[0].fair.hash === fair0.hash, bets.map(b => b.fair));
+const diceBet = await call('admin', 'casino', { token: airTok, game: 'dice', bet: 10, target: 50, over: true });
+let mineBet = await call('admin', 'casino', { token: airTok, game: 'mines', action: 'start', bet: 10, mines: 3 });
+mineBet = await call('admin', 'casino', { token: airTok, game: 'mines', action: 'step', ticket: mineBet.ticket, path: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21] });
+check('56: a finished Mines game shows its board and seeds', mineBet.over === true && Array.isArray(mineBet.mines) && mineBet.fair && mineBet.fair.n === 3, mineBet);
+x = await call('admin', 'casino', { token: airTok, game: 'mines', action: 'start', bet: 10, mines: 3 });
+const rot409 = await call('admin', 'casino', { token: airTok, game: 'fair', action: 'rotate' });
+check('56: no changing seeds while a game is going', rot409.status === 409, rot409);
+await call('admin', 'casino', { token: airTok, game: 'mines', action: 'forfeit' });
+await call('admin', 'casino', { token: airTok, action: 'forfeit' });
+const bad = await call('admin', 'casino', { token: airTok, game: 'fair', action: 'rotate', client: 'not ok!' });
+check('56: a client seed is letters, digits, - and _', bad.status === 400, bad);
+const rot = await call('admin', 'casino', { token: airTok, game: 'fair', action: 'rotate', client: 'my-seed_1' });
+check('56: changing seeds shows the old server seed, which has the fingerprint shown before', !!rot.old && rot.old.hash === fair0.hash && await fairJs.sha256Hex(rot.old.seed) === fair0.hash && rot.old.n === 5, rot.old);
+check('...and starts a new one: new fingerprint, your client seed, nonce 0', rot.hash !== fair0.hash && rot.c === 'my-seed_1' && rot.n === 0 && rot.e === 1, rot);
+const seed0 = rot.old.seed, numbersFor = n => fairJs.fairStream(seed0, fair0.c, n);
+check('56: anyone can work the coinflips out again from the seeds', fairJs.DRAW.coinflip(await numbersFor(0)) === bets[0].result && fairJs.DRAW.coinflip(await numbersFor(1)) === bets[1].result, bets.map(b => b.result));
+check('...and the dice roll', fairJs.DRAW.dice(await numbersFor(2)) / 100 === diceBet.roll, { roll: diceBet.roll });
+check('...and where the mines were', fairJs.DRAW.mines(await numbersFor(3), { m: 3 }).sort((a, b) => a - b).join() === mineBet.mines.slice().sort((a, b) => a - b).join(), mineBet.mines);
+x = await call('admin', 'casino', { token: airTok, game: 'fair', action: 'reveal', e: 0 });
+check('56: an earlier seed can be shown again', x.ok && x.seed === seed0, x);
+x = await call('admin', 'casino', { token: airTok, game: 'fair', action: 'reveal', e: 1 });
+check('...but never the one in use', x.status === 400, x);
+
+x = await call('admin', 'casino', { token: airTok, game: 'coinflip', bet: 50000, side: 'h' });
+check('60: a bet over the old 10,000 limit goes through', x.status === 200 && x.stake === 50000, x);
+x = await call('admin', 'casino', { token: airTok, game: 'coinflip', bet: 10000000, side: 'h' });
+check('60: ...but never more than you have', x.status === 400 && /enough Orbs/.test(x.error), x);
+
+x = await call('admin', 'referral', { token: nova, action: 'make', code: 'nova1' });
+check('56: Nova makes a referral code (kept in capitals)', x.ok && x.code === 'NOVA1', x);
+x = await call('admin', 'referral', { token: nova, action: 'make', code: 'other' });
+check('...only one each', x.status === 409, x);
+x = await call('admin', 'referral', { token: sumi, action: 'make', code: 'NOVA1' });
+check('...and nobody else gets the same code', x.status === 409, x);
+const vee = await tokenOf('Air');
+x = await call('admin', 'referral', { token: vee, action: 'join', code: 'NOVA1' });
+check('56: Air (played Casino games already) can\'t join with a code', x.status === 403, x);
+await rpc('fx_commit', { writes: [{ path: 'users/Air', updatePaths: [[['casino', 'games'], 0]] }] });
+x = await call('admin', 'referral', { token: vee, action: 'join', code: 'nova1' });
+check('56: a new account joins with Nova\'s code', x.ok && x.referredBy === 'Nova' && (await doc('users/Nova')).referral.friends === 1, x);
+x = await call('admin', 'referral', { token: vee, action: 'join', code: 'NOVA1' });
+check('...once', x.status === 409, x);
+const earned0 = ((await doc('users/Nova')).referral || {}).earned || 0, wag0 = ((await doc('users/Air')).casino || {}).wagered || 0;
+x = await call('admin', 'casino', { token: vee, game: 'coinflip', bet: 10000, side: 'h' });
+const expect = Math.floor(10000 * 0.03 * 0.1) + Math.floor(Math.max(0, x.payout - 10000) * 0.05) + (wag0 < 10000 ? 10000 : 0);
+check('56: Nova earns from Air\'s bet: 10% of the house edge, 5% of a win, and 10,000 at 10,000 bet', ((await doc('users/Nova')).referral.earned - earned0) === expect, { expect, earned: (await doc('users/Nova')).referral, payout: x.payout, wag0 });
+await call('admin', 'referral', { token: sumi, action: 'make', code: 'SUMI1' });
+await rpc('fx_commit', { writes: [{ path: 'users/Tester', updatePaths: [[['createdAt'], { $t: Date.now() }], [['casino'], {}]] }] });
+x = await call('admin', 'referral', { token: tester, action: 'join', code: 'SUMI1' });
+check('56: a code can\'t be used on its owner\'s network (Tester and Sumi share one)', x.status === 403 && /same device or network/.test(x.error), x);
+
 // ---------------- functions/api/push ----------------
 section('Push notifications (functions/api/push)');
 x = await call('push', 'info', null, 'GET');

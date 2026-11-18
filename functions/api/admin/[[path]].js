@@ -56,6 +56,8 @@ const FIRESTORE = `https://firestore.googleapis.com/v1/projects/${PROJECT}/datab
 // Supabase instead and is answered in Firestore's shapes (functions/_lib/firestore-on-supabase.js), so the code below
 // stays as it is. ENV is the site's settings, the same for every request.
 import { firestoreFetch } from '../../_lib/firestore-on-supabase.js';
+// the Casino's results (v4.67): the same file the Casino page checks bets with
+import { DRAW, fairStream, hiloCard, sha256Hex as fairHash, hex as hexOf, stream, SLOT_SYMS } from '../../../casino-fair.js';
 let ENV = null;
 const fetch = (url, init) => firestoreFetch(ENV, url, init);
 const IDENTITY = `https://identitytoolkit.googleapis.com/v1/projects/${PROJECT}`;
@@ -82,6 +84,7 @@ export async function onRequest({ request, env, params }) {
     if (route === 'buyall' && request.method === 'POST') return json(await buyAll(env, await request.json().catch(() => ({}))));
     if (route === 'banner' && request.method === 'POST') return json(await setBanner(env, await request.json().catch(() => ({}))));
     if (route === 'loan' && request.method === 'POST') return json(await loanRoute(env, await request.json().catch(() => ({}))));
+    if (route === 'referral' && request.method === 'POST') return json(await referralRoute(env, await request.json().catch(() => ({}))));
     if (route === 'code' && request.method === 'POST') return json(await redeemCode(env, await request.json().catch(() => ({}))));
     if (route === 'egg' && request.method === 'POST') return json(await findEgg(env, await request.json().catch(() => ({}))));
     if (route === 'casino' && request.method === 'POST') return json(await casino(env, await request.json().catch(() => ({}))));
@@ -554,6 +557,7 @@ const EGGS = {
   tricked: 'e', mazehalf: 'h', ontime: 'm', hideorbs: 'e',                // v4.64
   badgefan: 'm', allbadges: 'h', fxwatch: 'm', slimepoke: 'e',           // v4.65: badges and drawn effects
   equilibrium: 'm', mazeflawless: 'h', quickflip: 'e', rainbowname: 'm', // v4.66: 0 Orbs, the maze, Quick Open, name colors
+  seedcheck: 'm', bigbet: 'h', koifeed: 'e', stockout: 'm',               // v4.67: Provably Fair, big bets, the koi, the garden
   xyzzy: ['m', '7d76c6d11ed06a3e671afa826c4f88f4e8227fdef446cbd576a3428967e45af9'],
   codeb1: ['e', '4f3cd88dc035fd4d04dda074fd7ced1722751824644c1a27a700dfd5d06ba19e'],
   codeb2: ['e', 'c886bb737cc711b2dfcb069ea8179dc430661db13a38113ddf718b9098f653c7'],
@@ -659,8 +663,10 @@ async function redeemCode(env, { token, code }) {
 //   Blackjack saves each card drawn (casino.open.a), so nobody can look at a card and then take the move back.
 //   Crash: the crash point comes from the game's id too; 'watch' waits for the round to end and settles it, and any
 //   later request settles a round nobody watched.
-// Limits: bets of 10 to 10,000 Orbs, at most 1,000,000 Orbs from one game, 200 games a day per account (UTC days).
-const CASINO_RTP = 0.97, BET_MIN = 10, BET_MAX = 10000, WIN_MAX = 1000000, CASINO_DAY = 200;
+// Limits: bets from 10 Orbs, with no top limit beyond what you have, and wins as big as they come (v4.67, request 60:
+// before, 10,000 a bet and 1,000,000 a game); 200 games a day per account (UTC days). (1e300: big enough for anyone, and
+// a bet times any multiplier here still fits in a number.)
+const CASINO_RTP = 0.97, BET_MIN = 10, BET_MAX = 1e300, WIN_MAX = Infinity, CASINO_DAY = 200;
 const CRASH_RATE = 0.17, CRASH_MAX = 1000, CRASH_LEAD = 1200;   // e^(0.17 s): 2x at 4 s, 10x at 13.5 s, 1000x at 40.6 s
 const MEGA_PRICE = 1000, MEGA_PRIZE = 97000, MEGA_CHANCE = 0.01, MEGA_WAIT = 86400000;
 
@@ -674,30 +680,25 @@ function casinoKey(env) {
   return casinoKeyP;
 }
 const hmacBytes = async (env, text) => new Uint8Array(await crypto.subtle.sign('HMAC', await casinoKey(env), new TextEncoder().encode(text)));
-// a fresh random number from 0 up to (not including) 1
-function rnd() { const a = crypto.getRandomValues(new Uint32Array(2)); return (a[0] * 2097152 + (a[1] >>> 11)) / 9007199254740992; }
-// the same numbers every time for the same bytes (sfc32)
-function stream(bytes) {
-  const v = new DataView(bytes.buffer, bytes.byteOffset, 16);
-  let a = v.getUint32(0), b = v.getUint32(4), c = v.getUint32(8), d = v.getUint32(12);
-  const next = () => {
-    const t = (((a + b) | 0) + d) | 0;
-    d = (d + 1) | 0; a = b ^ (b >>> 9); b = (c + (c << 3)) | 0; c = (c << 21) | (c >>> 11); c = (c + t) | 0;
-    return (t >>> 0) / 4294967296;
-  };
-  for (let i = 0; i < 12; i++) next();
-  return next;
-}
+// (games started before v4.67 got their numbers from a key made from the game's id; they still finish that way)
 const gameStream = async (env, id) => stream(await hmacBytes(env, 'game:' + id));
-function shuffleWith(r, list) { for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; } return list; }
 const newGameId = () => 'g' + Date.now().toString(36) + [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');
-// Crash and Limbo: 0.97 / (1 - u), so it reaches x or more with chance 0.97 / x. Under 1 (3% of rounds) is a 1.00x bust;
-// the most it can be is 1000x.
-function crashPoint(u) { const x = CASINO_RTP / (1 - u); return x < 1 ? 1 : Math.min(CRASH_MAX, Math.floor(x * 100) / 100); }
 const payOf = (bet, mult) => Math.min(WIN_MAX, Math.floor(bet * mult + 1e-9));
+
+// ---------- Provably Fair (v4.67, request 56): casino-fair.js says how every result is worked out ----------
+// casino.fair on the profile is { e: which server seed, c: your client seed, n: the next bet's nonce }. Server seed e is
+// an HMAC of the casino's secret key, your username and e, so it's never stored and can't be guessed, and it's only shown
+// once you've moved on to the next one (fairRoute). A game takes f = { u, e, c, n } when it starts and saves n + 1.
+const fairOf = u => { const f = casinoOf(u).fair; return f && Number.isInteger(f.e) && f.e >= 0 && typeof f.c === 'string' && Number.isInteger(f.n) && f.n >= 0 ? { e: f.e, c: f.c, n: f.n } : { e: 0, c: 'frixion', n: 0 }; };
+const fairFor = (name, u) => ({ u: name, ...fairOf(u) });
+const fairNext = f => ({ e: f.e, c: f.c, n: f.n + 1 });
+async function serverSeed(env, name, e) { return hexOf(await hmacBytes(env, `fair:${name}:${e}`)); }
+async function fairR(env, f) { return fairStream(await serverSeed(env, f.u, f.e), f.c, f.n); }
+// what a bet's answer says about its seeds, so the page can check it later
+async function fairShown(env, f) { return f ? { e: f.e, hash: await fairHash(await serverSeed(env, f.u, f.e)), c: f.c, n: f.n } : null; }
 function betOf(x) {
   const b = Number(x);
-  if (!Number.isInteger(b) || b < BET_MIN || b > BET_MAX) fail(400, 'Bets are 10 to 10,000 Orbs.');
+  if (!Number.isInteger(b) || b < BET_MIN || b > BET_MAX) fail(400, 'Bets start at 10 Orbs.');
   return b;
 }
 
@@ -719,17 +720,30 @@ const encAny = v => (v && typeof v === 'object' && !Array.isArray(v) && !(v inst
   : Array.isArray(v) ? { arrayValue: { values: v.map(encAny) } } : enc(v));
 // One commit on the profile, only if it hasn't changed since `prof` was read: Orbs up by `delta` (down when it's
 // negative), these casino fields set (removed when null), and the totals added to. null if the profile had changed.
-async function casinoCommit(env, name, prof, u, { delta = 0, set = {}, stake = 0, paid = 0, game = false }) {
+// Referrals (v4.67, request 56): whoever brought this player in (referredBy, set by the referral route) gets 10% of the
+// house edge on each bet, 5% of each win (the part over the bet), and 10,000 Orbs once this player has bet 10,000 Orbs
+// in all (casino.refPaid marks that it's been paid). Nothing from infinite Orbs, and nothing for an account that's gone.
+const REF_EDGE_CUT = 0.1, REF_WIN_CUT = 0.05, REF_BONUS = 10000, REF_BONUS_AT = 10000;
+async function casinoCommit(env, name, prof, u, { delta = 0, set = {}, stake = 0, paid = 0, win = 0, game = false }) {
   const fields = { at: enc(new Date()) }, paths = ['casino.at'];
   for (const [k, v] of Object.entries(set)) { paths.push('casino.' + k); if (v !== null) fields[k] = encAny(v); }
-  const tf = [];
+  const tf = [], writes = [];
+  const refName = !infinite(u) && typeof u.referredBy === 'string' && USERNAME.test(u.referredBy) && u.referredBy !== name ? u.referredBy : null;
+  if (refName) {
+    const c = casinoOf(u), before = Number(c.wagered) || 0;
+    let cut = Math.floor(stake * (1 - CASINO_RTP) * REF_EDGE_CUT) + Math.floor(Math.max(0, win) * REF_WIN_CUT);
+    if (c.refPaid !== true && before < REF_BONUS_AT && before + stake >= REF_BONUS_AT) { cut += REF_BONUS; fields.refPaid = enc(true); paths.push('casino.refPaid'); }
+    if (cut > 0 && Number.isFinite(cut) && await fsGet(env, `users/${refName}`)) {
+      writes.push({ transform: { document: docName(env, `users/${refName}`), fieldTransforms: [{ fieldPath: 'orbs', increment: enc(cut) }, { fieldPath: 'referral.earned', increment: enc(cut) }] }, currentDocument: { exists: true } });
+    }
+  }
   if (infinite(u)) delta = 0;            // infinite Orbs (v4.64; the infinity sign too, v4.66) never go up or down
   if (delta) tf.push({ fieldPath: 'orbs', increment: enc(delta) });
   if (game) tf.push({ fieldPath: 'casino.games', increment: enc(1) });
   if (stake) tf.push({ fieldPath: 'casino.wagered', increment: enc(stake) });
   if (paid) tf.push({ fieldPath: 'casino.won', increment: enc(paid) }, { fieldPath: 'casino.best', maximum: enc(paid) });
   const done = await fsCommit(env, [{ update: { name: docName(env, `users/${name}`), fields: { casino: { mapValue: { fields } } } },
-    updateMask: { fieldPaths: paths }, updateTransforms: tf, currentDocument: { updateTime: prof.updateTime } }]);
+    updateMask: { fieldPaths: paths }, updateTransforms: tf, currentDocument: { updateTime: prof.updateTime } }, ...writes]);
   if (!done) return null;
   const tr = done.writeResults && done.writeResults[0] && done.writeResults[0].transformResults;
   return { orbs: delta ? (tr && tr[0] ? dec(tr[0]) : null) : Number(u.orbs) || 0 };
@@ -750,6 +764,7 @@ async function casino(env, b) {
   slowDown('casino:' + me.name, 150);
   const game = String(b.game || ''), action = String(b.action || 'play');
   if (game === 'info') return casinoInfo(env, me);
+  if (game === 'fair') return fairRoute(env, me, action, b);
   if (action === 'forfeit') return forfeit(env, me);
   if (own(INSTANT, game)) return instantGame(env, me, game, b);
   if (game === 'mega') return megaTicket(env, me, action);
@@ -771,8 +786,6 @@ const ROULETTE_BETS = {
 };
 // Slots: three reels with the same strip (27 stops); three of a kind pays these times the bet, two cherries 1.5x, one
 // cherry 0.5x. 96.9% back.
-const SLOT_SYMS = ['cherry', 'lemon', 'grape', 'bell', 'star', 'seven', 'orb'];
-const SLOT_W = [6, 6, 5, 4, 3, 2, 1];
 const SLOT_THREE = { cherry: 10, lemon: 12, grape: 16, bell: 25, star: 50, seven: 150, orb: 800 };
 // Plinko: what each slot pays, left to right, for 8, 12 and 16 rows (96.8% to 97% back)
 const PLINKO = {
@@ -796,32 +809,32 @@ const CASES = {
   vault: { price: 10000, items: [[1000, 22323], [4000, 25000], [8000, 15000], [15000, 9000], [40000, 3500], [120000, 1000], [400000, 150], [1000000, 40]] },
 };
 const INSTANT = {
-  dice(b) {
+  dice(b, r) {
     const bet = betOf(b.bet), t = Math.round(Number(b.target) * 100), over = b.over === true;
     const chance = (over ? 10000 - t : t) / 100;
     if (!(chance >= 1 && chance <= 95)) fail(400, 'Pick a win chance from 1% to 95%.');
-    const roll = Math.floor(rnd() * 10000), mult = Math.floor(CASINO_RTP * 100 / chance * 10000) / 10000;
+    const roll = DRAW.dice(r), mult = Math.floor(CASINO_RTP * 100 / chance * 10000) / 10000;
     return { stake: bet, payout: (over ? roll >= t : roll < t) ? payOf(bet, mult) : 0, roll: roll / 100, mult };
   },
-  limbo(b) {
+  limbo(b, r) {
     const bet = betOf(b.bet), t = Math.round(Number(b.target) * 100);
     if (!(t >= 101 && t <= CRASH_MAX * 100)) fail(400, 'Pick a target from 1.01x to 1,000x.');
-    const r = crashPoint(rnd());
-    return { stake: bet, payout: Math.round(r * 100) >= t ? payOf(bet, t / 100) : 0, result: r };
+    const res = DRAW.limbo(r);
+    return { stake: bet, payout: Math.round(res * 100) >= t ? payOf(bet, t / 100) : 0, result: res };
   },
-  coinflip(b) {
+  coinflip(b, r) {
     const bet = betOf(b.bet), side = b.side;
     if (side !== 'h' && side !== 't') fail(400, 'Pick heads or tails.');
-    const res = rnd() < 0.5 ? 'h' : 't';
+    const res = DRAW.coinflip(r);
     return { stake: bet, payout: res === side ? payOf(bet, 1.94) : 0, result: res };
   },
-  rps(b) {
+  rps(b, r) {
     const bet = betOf(b.bet), pick = b.pick;
     if (!['r', 'p', 's'].includes(pick)) fail(400, 'Pick rock, paper or scissors.');
-    const house = 'rps'[Math.floor(rnd() * 3)], beats = { r: 's', p: 'r', s: 'p' };
+    const house = DRAW.rps(r), beats = { r: 's', p: 'r', s: 'p' };
     return { stake: bet, payout: pick === house ? bet : beats[pick] === house ? payOf(bet, 1.91) : 0, house };
   },
-  roulette(b) {
+  roulette(b, r) {
     const list = Array.isArray(b.bets) ? b.bets : [];
     if (!list.length || list.length > 60) fail(400, 'Put some chips on the table first.');
     let stake = 0;
@@ -837,55 +850,51 @@ const INSTANT = {
       if (!own(ROULETTE_BETS, x.t)) fail(400, 'That bet isn\'t on the table.');
       return [ROULETTE_BETS[x.t][0], ROULETTE_BETS[x.t][1], a];
     });
-    if (stake < BET_MIN || stake > BET_MAX) fail(400, 'Bets are 10 to 10,000 Orbs in all.');
-    const n = Math.floor(rnd() * 37);
+    if (stake < BET_MIN || stake > BET_MAX) fail(400, 'Bets start at 10 Orbs in all.');
+    const n = DRAW.roulette(r);
     return { stake, payout: Math.min(WIN_MAX, bets.reduce((s, [m, hit, a]) => s + (hit(n) ? m * a : 0), 0)), result: n };
   },
-  slots(b) {
+  slots(b, r) {
     const bet = betOf(b.bet);
-    const pick = () => { let x = rnd() * 27; for (let i = 0; i < SLOT_W.length; i++) { x -= SLOT_W[i]; if (x < 0) return SLOT_SYMS[i]; } return SLOT_SYMS[0]; };
-    const reels = [pick(), pick(), pick()], cherries = reels.filter(s => s === 'cherry').length;
+    const reels = DRAW.slots(r), cherries = reels.filter(s => s === 'cherry').length;
     const mult = reels[0] === reels[1] && reels[1] === reels[2] ? SLOT_THREE[reels[0]] : cherries === 2 ? 1.5 : cherries === 1 ? 0.5 : 0;
     return { stake: bet, payout: payOf(bet, mult), reels, mult };
   },
-  plinko(b) {
+  plinko(b, r) {
     const bet = betOf(b.bet), rows = Number(b.rows), risk = String(b.risk || '');
     if (!own(PLINKO, rows) || !own(PLINKO[rows], risk)) fail(400, 'Pick the rows and the risk.');
-    const path = Array.from({ length: rows }, () => (rnd() < 0.5 ? 0 : 1)), slot = path.reduce((a, x) => a + x, 0);
+    const path = DRAW.plinko(r, { rows }), slot = path.reduce((a, x) => a + x, 0);
     const mult = PLINKO[rows][risk][slot];
     return { stake: bet, payout: payOf(bet, mult), path, slot, mult };
   },
-  keno(b) {
+  keno(b, r) {
     const bet = betOf(b.bet), picks = Array.isArray(b.picks) ? b.picks.map(Number) : [];
     if (picks.length < 1 || picks.length > 10 || new Set(picks).size !== picks.length || picks.some(n => !Number.isInteger(n) || n < 1 || n > 40)) fail(400, 'Pick 1 to 10 numbers from 1 to 40.');
-    const pool = Array.from({ length: 40 }, (_, i) => i + 1);
-    for (let i = 0; i < 10; i++) { const j = i + Math.floor(rnd() * (40 - i)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
-    const drawn = pool.slice(0, 10), hits = picks.filter(n => drawn.includes(n)).length, mult = KENO[picks.length][hits];
+    const drawn = DRAW.keno(r), hits = picks.filter(n => drawn.includes(n)).length, mult = KENO[picks.length][hits];
     return { stake: bet, payout: payOf(bet, mult), drawn, hits, mult };
   },
-  cases(b) {
+  cases(b, r) {
     const c = own(CASES, b.box) ? CASES[b.box] : null;
     if (!c) fail(400, 'Pick a case.');
-    let x = rnd() * c.items.reduce((s, [, w]) => s + w, 0), i = 0;
-    for (; i < c.items.length - 1; i++) { x -= c.items[i][1]; if (x < 0) break; }
+    const i = DRAW.cases(r, c);
     return { stake: c.price, payout: Math.min(WIN_MAX, c.items[i][0]), item: i };
   },
-  upgrader(b) {
+  upgrader(b, r) {
     const bet = betOf(b.bet), t = Math.round(Number(b.target) * 100);
     if (!(t >= 110 && t <= 10000)) fail(400, 'Pick a target from 1.1x to 100x.');
-    const chance = CASINO_RTP / (t / 100), roll = rnd();
+    const chance = CASINO_RTP / (t / 100), roll = DRAW.upgrader(r);
     return { stake: bet, payout: roll < chance ? payOf(bet, t / 100) : 0, roll, chance };
   },
 };
 async function instantGame(env, me, game, b) {
-  let r = INSTANT[game](b);                         // settings checked before anything is read
+  INSTANT[game](b, () => 0);                        // settings checked before anything is read
   for (let i = 0; i < 5; i++) {
     const { prof, u } = await readProfile(env, me);
+    const f = fairFor(me.name, u), r = INSTANT[game](b, await fairR(env, f));   // this bet's numbers (Provably Fair)
     hasOrbs(u, r.stake);
     const c = casinoOf(u), count = dayCount(c);
-    const done = await casinoCommit(env, me.name, prof, u, { delta: r.payout - r.stake, set: count, stake: r.stake, paid: r.payout, game: true });
-    if (done) { const { stake, payout, ...shown } = r; return { ok: true, game, stake, payout, orbs: done.orbs, left: CASINO_DAY - count.n, ...shown }; }
-    r = INSTANT[game](b);                           // the profile changed under us: a new result for the new try
+    const done = await casinoCommit(env, me.name, prof, u, { delta: r.payout - r.stake, set: { ...count, fair: fairNext(f) }, stake: r.stake, paid: r.payout, win: r.payout - r.stake, game: true });
+    if (done) { const { stake, payout, ...shown } = r; return { ok: true, game, stake, payout, orbs: done.orbs, left: CASINO_DAY - count.n, fair: await fairShown(env, f), ...shown }; }
   }
   fail(409, BUSY);
 }
@@ -896,6 +905,8 @@ const TOWER_ROWS = 8;
 const CROSS = { easy: [0.9, 20], medium: [0.8, 20], hard: [0.7, 15], daredevil: [0.55, 12] };   // [chance to clear a lane, lanes]
 const HILO_MAX = 60;   // moves in one game
 const round4 = x => Math.floor(x * 10000) / 10000;
+// a step game's numbers: from the seeds it started with (v4.67), or from its id (games from before)
+const stepNumbers = (env, t) => (t.f ? fairR(env, t.f) : gameStream(env, t.id));
 // What each game's settings are (kept on the ticket as p), and the replay of the moves so far: { lost (the move that
 // lost, or null), k (good moves), mult (what cashing out pays per Orb bet), done (nothing left to do), shown (for the page) }
 const STEP = {
@@ -904,7 +915,7 @@ const STEP = {
     async replay(env, t, path) {
       const moves = Array.isArray(path) ? path.map(Number) : [];
       if (moves.length > 25 - t.p.m || new Set(moves).size !== moves.length || moves.some(x => !Number.isInteger(x) || x < 0 || x > 24)) fail(400, 'That isn\'t a move.');
-      const r = await gameStream(env, t.id), mines = shuffleWith(r, Array.from({ length: 25 }, (_, i) => i)).slice(0, t.p.m);
+      const mines = DRAW.mines(await stepNumbers(env, t), t.p);
       const lost = moves.findIndex(x => mines.includes(x)), k = lost < 0 ? moves.length : lost;
       let m = CASINO_RTP;
       for (let i = 0; i < k; i++) m *= (25 - i) / (25 - t.p.m - i);
@@ -916,8 +927,7 @@ const STEP = {
     async replay(env, t, path) {
       const [cols, bad] = TOWER[t.p.l], moves = Array.isArray(path) ? path.map(Number) : [];
       if (moves.length > TOWER_ROWS || moves.some(x => !Number.isInteger(x) || x < 0 || x >= cols)) fail(400, 'That isn\'t a move.');
-      const r = await gameStream(env, t.id);
-      const rows = Array.from({ length: TOWER_ROWS }, () => shuffleWith(r, Array.from({ length: cols }, (_, i) => i)).slice(0, bad));
+      const rows = DRAW.towers(await stepNumbers(env, t), { rows: TOWER_ROWS, cols, bad });
       const lost = moves.findIndex((x, i) => rows[i].includes(x)), k = lost < 0 ? moves.length : lost;
       return { lost: lost < 0 ? null : lost, k, mult: round4(CASINO_RTP * (cols / (cols - bad)) ** k), done: k === TOWER_ROWS, board: { rows } };
     },
@@ -927,7 +937,7 @@ const STEP = {
     async replay(env, t, path) {
       const [p, lanes] = CROSS[t.p.l], n = Number(path);
       if (!Number.isInteger(n) || n < 0 || n > lanes) fail(400, 'That isn\'t a move.');
-      const r = await gameStream(env, t.id), hits = Array.from({ length: lanes }, () => r() >= p);
+      const hits = DRAW.cross(await stepNumbers(env, t), { p, lanes });
       const lost = hits.slice(0, n).indexOf(true), k = lost < 0 ? n : lost;
       return { lost: lost < 0 ? null : lost, k, mult: round4(CASINO_RTP / p ** k), done: k === lanes, board: { hit: lost < 0 ? null : lost } };
     },
@@ -940,7 +950,8 @@ const STEP = {
     async replay(env, t, path) {
       const moves = String(path || '');
       if (!/^[hls]*$/.test(moves) || moves.length > HILO_MAX) fail(400, 'That isn\'t a move.');
-      const card = async key => { const h = await hmacBytes(env, 'hilo:' + t.id + ':' + key); const x = ((h[0] << 24) | (h[1] << 16) | (h[2] << 8) | h[3]) >>> 0; return { r: 1 + (x % 13), s: h[4] % 4 }; };
+      const seed = t.f ? await serverSeed(env, t.f.u, t.f.e) : null;
+      const card = async key => { if (seed) return hiloCard(seed, t.f.c, t.f.n, key); const h = await hmacBytes(env, 'hilo:' + t.id + ':' + key); const x = ((h[0] << 24) | (h[1] << 16) | (h[2] << 8) | h[3]) >>> 0; return { r: 1 + (x % 13), s: h[4] % 4 }; };
       let key = '', cur = await card(''), m = 1, k = 0;
       const cards = [cur];
       for (let i = 0; i < moves.length; i++) {
@@ -988,13 +999,13 @@ async function stepStart(env, me, game, b) {
     const c = casinoOf(u), stale = await staleCrash(env, c.open);
     if (c.open && !stale) fail(409, openNote(c.open));
     hasOrbs(u, bet - (stale ? stale.payout : 0));
-    const count = dayCount(c), id = newGameId();
-    const open = { id, g: game, b: bet, p, at: Date.now() };
+    const count = dayCount(c), id = newGameId(), f = fairFor(me.name, u);
+    const open = { id, g: game, b: bet, p, f, at: Date.now() };
     const paid = stale ? stale.payout : 0;
-    const done = await casinoCommit(env, me.name, prof, u, { delta: paid - bet, set: { ...count, open }, stake: bet, paid, game: true });
+    const done = await casinoCommit(env, me.name, prof, u, { delta: paid - bet, set: { ...count, open, fair: fairNext(f) }, stake: bet, paid, game: true });
     if (!done) continue;
-    const ticket = await seal(env, { id, g: game, b: bet, p, u: me.name });
-    const first = game === 'hilo' ? stepShown(game, await STEP.hilo.replay(env, { id, p }, ''), false) : {};
+    const ticket = await seal(env, { id, g: game, b: bet, p, u: me.name, f });
+    const first = game === 'hilo' ? stepShown(game, await STEP.hilo.replay(env, { id, p, f }, ''), false) : {};
     return { ok: true, ticket, bet, p, orbs: done.orbs, left: CASINO_DAY - count.n, ...first };
   }
   fail(409, BUSY);
@@ -1008,8 +1019,8 @@ async function closeStep(env, me, t, payout, res) {
       if (payout) fail(409, 'That game is already over.');
       return { ok: true, over: true, lost: res.lost, payout: 0, ...stepShown(t.g, res, true) };
     }
-    const done = await casinoCommit(env, me.name, prof, u, { delta: payout, set: { open: null }, paid: payout });
-    if (done) return { ok: true, over: true, lost: res.lost, k: res.k, mult: res.mult, payout, orbs: done.orbs, ...stepShown(t.g, res, true) };
+    const done = await casinoCommit(env, me.name, prof, u, { delta: payout, set: { open: null }, paid: payout, win: payout - t.b });
+    if (done) return { ok: true, over: true, lost: res.lost, k: res.k, mult: res.mult, payout, orbs: done.orbs, fair: await fairShown(env, t.f), p: t.p, ...stepShown(t.g, res, true) };
   }
   fail(409, BUSY);
 }
@@ -1021,7 +1032,7 @@ async function resumeOpen(env, me, game, u) {
   const open = casinoOf(u).open;
   if (!open || (game && open.g !== game)) return { ok: true, open: null };
   const out = { g: open.g, b: open.b, p: open.p || {}, at: open.at };
-  if (own(STEP, open.g)) out.ticket = await seal(env, { id: open.id, g: open.g, b: open.b, p: open.p || {}, u: me.name });
+  if (own(STEP, open.g)) out.ticket = await seal(env, { id: open.id, g: open.g, b: open.b, p: open.p || {}, u: me.name, f: open.f });
   if (open.g === 'blackjack') Object.assign(out, await bjShown(env, open, false));
   if (open.g === 'crash') Object.assign(out, { id: open.id, startAt: open.at, auto: open.auto || 0, now: Date.now(), rate: CRASH_RATE });
   return { ok: true, open: out };
@@ -1049,15 +1060,15 @@ async function megaTicket(env, me, action) {
     if (action === 'buy') {
       if (mega) fail(409, 'You already have a Mega ticket.');
       hasOrbs(u, MEGA_PRICE);
-      const count = dayCount(c), ticket = { id: newGameId(), at: Date.now() };
-      const done = await casinoCommit(env, me.name, prof, u, { delta: -MEGA_PRICE, set: { ...count, mega: ticket }, stake: MEGA_PRICE, game: true });
+      const count = dayCount(c), f = fairFor(me.name, u), ticket = { id: newGameId(), at: Date.now(), f };
+      const done = await casinoCommit(env, me.name, prof, u, { delta: -MEGA_PRICE, set: { ...count, mega: ticket, fair: fairNext(f) }, stake: MEGA_PRICE, game: true });
       if (done) return { ok: true, mega: ticket, drawAt: ticket.at + MEGA_WAIT, orbs: done.orbs, left: CASINO_DAY - count.n };
     } else if (action === 'claim') {
       if (!mega) fail(404, 'You don\'t have a Mega ticket.');
       if (Date.now() < mega.at + MEGA_WAIT) fail(409, 'It isn\'t drawn yet.');
-      const won = (await gameStream(env, mega.id))() < MEGA_CHANCE, payout = won ? MEGA_PRIZE : 0;
-      const done = await casinoCommit(env, me.name, prof, u, { delta: payout, set: { mega: null }, paid: payout });
-      if (done) return { ok: true, won, payout, orbs: done.orbs };
+      const won = mega.f ? DRAW.mega(await fairR(env, mega.f), { chance: MEGA_CHANCE }) : (await gameStream(env, mega.id))() < MEGA_CHANCE, payout = won ? MEGA_PRIZE : 0;
+      const done = await casinoCommit(env, me.name, prof, u, { delta: payout, set: { mega: null }, paid: payout, win: payout - MEGA_PRICE });
+      if (done) return { ok: true, won, payout, orbs: done.orbs, fair: await fairShown(env, mega.f) };
     } else fail(400, 'That isn\'t a move.');
   }
   fail(409, BUSY);
@@ -1072,7 +1083,7 @@ const bjTotal = cards => {
   return t;
 };
 async function bjDeal(env, open) {
-  const shoe = shuffleWith(await gameStream(env, open.id), Array.from({ length: 312 }, (_, i) => i % 52));
+  const shoe = DRAW.blackjack(open.f ? await fairR(env, open.f) : await gameStream(env, open.id));
   let i = 0;
   const p = [shoe[i++]], d = [shoe[i++]];
   p.push(shoe[i++]); d.push(shoe[i++]);
@@ -1099,15 +1110,15 @@ async function blackjack(env, me, action, b) {
       if (c.open && !stale) fail(409, openNote(c.open));
       const bet = betOf(b.bet);
       hasOrbs(u, bet - (stale ? stale.payout : 0));
-      const count = dayCount(c), open = { id: newGameId(), g: 'blackjack', b: bet, a: '', at: Date.now() };
+      const count = dayCount(c), open = { id: newGameId(), g: 'blackjack', b: bet, a: '', f: fairFor(me.name, u), at: Date.now() };
       const h = await bjDeal(env, open), pt = bjTotal(h.p), dt = bjTotal(h.d), extra = stale ? stale.payout : 0;
       if (pt === 21 || dt === 21) {            // a blackjack on either side ends it now
         const payout = pt === 21 && dt === 21 ? bet : pt === 21 ? Math.floor(bet * 2.5) : 0;
-        const done = await casinoCommit(env, me.name, prof, u, { delta: payout + extra - bet, set: { ...count, open: null }, stake: bet, paid: payout + extra, game: true });
-        if (done) return { ok: true, over: true, p: h.p, d: h.d, total: pt, dealer: dt, payout, orbs: done.orbs, left: CASINO_DAY - count.n };
+        const done = await casinoCommit(env, me.name, prof, u, { delta: payout + extra - bet, set: { ...count, open: null, fair: fairNext(open.f) }, stake: bet, paid: payout + extra, win: payout - bet, game: true });
+        if (done) return { ok: true, over: true, p: h.p, d: h.d, total: pt, dealer: dt, payout, orbs: done.orbs, left: CASINO_DAY - count.n, fair: await fairShown(env, open.f) };
         continue;
       }
-      const done = await casinoCommit(env, me.name, prof, u, { delta: extra - bet, set: { ...count, open }, stake: bet, paid: extra, game: true });
+      const done = await casinoCommit(env, me.name, prof, u, { delta: extra - bet, set: { ...count, open, fair: fairNext(open.f) }, stake: bet, paid: extra, game: true });
       if (done) return { ok: true, p: h.p, d: [h.d[0]], total: pt, canDouble: true, orbs: done.orbs, left: CASINO_DAY - count.n };
       continue;
     }
@@ -1125,8 +1136,8 @@ async function blackjack(env, me, action, b) {
       continue;
     }
     const stake = action === 'double' ? open.b * 2 : open.b, end = bjFinish(h), payout = Math.floor(stake * end.mult);
-    const done = await casinoCommit(env, me.name, prof, u, { delta: payout - (action === 'double' ? open.b : 0), set: { open: null }, stake: action === 'double' ? open.b : 0, paid: payout });
-    if (done) return { ok: true, over: true, p: h.p, d: end.d, total: pt, dealer: bjTotal(end.d), payout, orbs: done.orbs };
+    const done = await casinoCommit(env, me.name, prof, u, { delta: payout - (action === 'double' ? open.b : 0), set: { open: null }, stake: action === 'double' ? open.b : 0, paid: payout, win: payout - stake });
+    if (done) return { ok: true, over: true, p: h.p, d: end.d, total: pt, dealer: bjTotal(end.d), payout, orbs: done.orbs, fair: await fairShown(env, open.f) };
   }
   fail(409, BUSY);
 }
@@ -1135,7 +1146,7 @@ async function blackjack(env, me, action, b) {
 // auto cash-out first if the crash point reaches it. Cash out any time before it crashes.
 const crashMs = m => (Math.log(m) / CRASH_RATE) * 1000;          // ms after the start that the multiplier is m
 const crashMultAt = ms => Math.floor(Math.exp(CRASH_RATE * Math.max(0, ms) / 1000) * 100) / 100;
-async function crashOf(env, open) { const r = await gameStream(env, open.id); return crashPoint(r() + r() / 4294967296); }
+async function crashOf(env, open) { return DRAW.crash(open.f ? await fairR(env, open.f) : await gameStream(env, open.id)); }
 // when the round ends on its own (ms after the start), and what it pays then
 async function crashEnd(env, open) {
   const point = await crashOf(env, open), auto = Number(open.auto) || 0;
@@ -1147,6 +1158,8 @@ async function staleCrash(env, open) {
   const end = await crashEnd(env, open);
   return Date.now() >= open.at + end.ms + 250 ? end : null;
 }
+// where a round that's already settled crashed (null if that's not the last one)
+const lastCrash = (u, id) => { const l = casinoOf(u).last; return l && l.id === id ? l.point : null; };
 async function crashGame(env, me, action, b) {
   if (action === 'start') {
     const bet = betOf(b.bet), auto = b.auto ? Math.round(Number(b.auto) * 100) / 100 : 0;
@@ -1156,9 +1169,9 @@ async function crashGame(env, me, action, b) {
       const c = casinoOf(u), stale = await staleCrash(env, c.open);
       if (c.open && !stale) fail(409, openNote(c.open));
       hasOrbs(u, bet - (stale ? stale.payout : 0));
-      const count = dayCount(c), open = { id: newGameId(), g: 'crash', b: bet, auto, at: Date.now() + CRASH_LEAD };
+      const count = dayCount(c), open = { id: newGameId(), g: 'crash', b: bet, auto, f: fairFor(me.name, u), at: Date.now() + CRASH_LEAD };
       const paid = stale ? stale.payout : 0;
-      const done = await casinoCommit(env, me.name, prof, u, { delta: paid - bet, set: { ...count, open }, stake: bet, paid, game: true });
+      const done = await casinoCommit(env, me.name, prof, u, { delta: paid - bet, set: { ...count, open, fair: fairNext(open.f) }, stake: bet, paid, game: true });
       if (done) return { ok: true, id: open.id, startAt: open.at, now: Date.now(), rate: CRASH_RATE, auto, orbs: done.orbs, left: CASINO_DAY - count.n };
     }
     fail(409, BUSY);
@@ -1167,7 +1180,7 @@ async function crashGame(env, me, action, b) {
   if (action === 'watch') {
     // wait (up to 45 s at a time) for the round to end, then settle it
     const { u } = await readProfile(env, me), open = casinoOf(u).open;
-    if (!open || open.id !== id) return { ok: true, over: true, point: await crashOf(env, { id }) };
+    if (!open || open.id !== id) return { ok: true, over: true, point: lastCrash(u, id) };
     const end = await crashEnd(env, open), wait = open.at + end.ms + 60 - Date.now();
     if (wait > 45000) { await new Promise(r => setTimeout(r, 45000)); return { ok: true, over: false }; }
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
@@ -1182,7 +1195,7 @@ async function settleCrash(env, me, id, t) {
   for (let i = 0; i < 5; i++) {
     const { prof, u } = await readProfile(env, me);
     const open = casinoOf(u).open;
-    if (!open || open.id !== id || open.g !== 'crash') return { ok: true, over: true, point: await crashOf(env, { id }), gone: true };
+    if (!open || open.id !== id || open.g !== 'crash') return { ok: true, over: true, point: lastCrash(u, id), gone: true };
     const end = await crashEnd(env, open), now = Date.now() - open.at;
     let payout, at = null;
     if (now >= end.ms) {                       // it already ended on its own: crashed, or reached the auto cash-out
@@ -1195,8 +1208,8 @@ async function settleCrash(env, me, id, t) {
       at = crashMultAt(Number.isFinite(t) && t <= now && t >= now - 800 ? t : now);
       payout = payOf(open.b, at);
     }
-    const done = await casinoCommit(env, me.name, prof, u, { delta: payout, set: { open: null }, paid: payout });
-    if (done) return { ok: true, over: true, point: end.point, at, payout, orbs: done.orbs };
+    const done = await casinoCommit(env, me.name, prof, u, { delta: payout, set: { open: null, last: { id: open.id, point: end.point } }, paid: payout, win: payout - open.b });
+    if (done) return { ok: true, over: true, point: end.point, at, payout, orbs: done.orbs, fair: await fairShown(env, open.f) };
   }
   fail(409, BUSY);
 }
@@ -1206,7 +1219,83 @@ async function casinoInfo(env, me) {
   const { u } = await readProfile(env, me);
   const r = await resumeOpen(env, me, '', u);
   const c = casinoOf(u), mega = c.mega && typeof c.mega === 'object' ? { at: c.mega.at, drawAt: c.mega.at + MEGA_WAIT } : null;
-  return { ok: true, left: gamesLeft(c), open: r.open, mega, stats: { games: c.games || 0, wagered: c.wagered || 0, won: c.won || 0, best: c.best || 0 } };
+  const f = fairFor(me.name, u), fair = { ...(await fairShown(env, f)), n: f.n };
+  return { ok: true, left: gamesLeft(c), open: r.open, mega, fair, stats: { games: c.games || 0, wagered: c.wagered || 0, won: c.won || 0, best: c.best || 0 } };
+}
+// Provably Fair (v4.67): game 'fair'. info: this seed's fingerprint, your client seed and the next nonce. rotate: show the
+// server seed you've been using (so your bets on it can be checked) and start a new one, with a client seed you choose
+// (or a new random one); not while a game is going. reveal: any earlier server seed, again (one you've moved on from).
+const CLIENT_SEED = /^[A-Za-z0-9_-]{1,32}$/;
+const randomClientSeed = () => hexOf(crypto.getRandomValues(new Uint8Array(8)));
+async function fairRoute(env, me, action, b) {
+  for (let i = 0; i < 5; i++) {
+    const { prof, u } = await readProfile(env, me);
+    const f = fairFor(me.name, u);
+    if (action === 'info' || action === 'play') return { ok: true, ...(await fairShown(env, f)) };
+    if (action === 'reveal') {
+      const e = Number(b.e);
+      if (!Number.isInteger(e) || e < 0 || e >= f.e) fail(400, 'That seed is still in use. Change seeds to see it.');
+      const seed = await serverSeed(env, me.name, e);
+      return { ok: true, e, seed, hash: await fairHash(seed) };
+    }
+    if (action !== 'rotate') fail(400, 'That isn\'t a move.');
+    if (casinoOf(u).open) fail(409, 'Finish your game first.');
+    if (b.client != null && !CLIENT_SEED.test(String(b.client))) fail(400, 'A client seed is 1 to 32 letters, digits, - or _.');
+    const next = { e: f.e + 1, c: b.client != null ? String(b.client) : randomClientSeed(), n: 0 };
+    const done = await casinoCommit(env, me.name, prof, u, { set: { fair: next } });
+    if (!done) continue;
+    const seed = await serverSeed(env, me.name, f.e);
+    return { ok: true, old: { e: f.e, seed, hash: await fairHash(seed), c: f.c, n: f.n }, ...(await fairShown(env, { u: me.name, ...next })) };
+  }
+  fail(409, BUSY);
+}
+
+// ---------------- Referrals (v4.67, request 56) ----------------
+// POST /api/admin/referral { token, action }. make { code }: your own code (3 to 16 letters and digits, kept in capitals;
+// referralCodes/<CODE> = { u }, written only here). join { code }: a new account (made in the last day, no Casino games
+// yet) says who brought it, never someone on the same device, computer or network (linkedAccounts). info: your code,
+// how many joined with it and what it's earned you. What referrals pay comes in casinoCommit. refCode, referredBy and
+// referral are written only by this server (supabase/sql/014_v467.sql).
+const REF_CODE = /^[A-Za-z0-9]{3,16}$/, REF_JOIN_MS = 86400000;
+async function referralRoute(env, b) {
+  const me = await caller(env, b.token);
+  slowDown('referral:' + me.name, 20);
+  const action = String(b.action || 'info');
+  const [prof] = await fsGetMany(env, [`users/${me.name}`]);
+  const u = mine(prof, me), ref = u.referral && typeof u.referral === 'object' ? u.referral : {};
+  const isNew = Date.now() - (Number(u.createdAt) || 0) < REF_JOIN_MS && !(Number(casinoOf(u).games) > 0);
+  if (action === 'info') {
+    return { ok: true, code: typeof u.refCode === 'string' ? u.refCode : null, friends: Number(ref.friends) || 0, earned: Number(ref.earned) || 0,
+      referredBy: typeof u.referredBy === 'string' ? u.referredBy : null, canJoin: !u.referredBy && isNew };
+  }
+  if (action === 'make') {
+    if (typeof u.refCode === 'string') fail(409, 'You already have a code: ' + u.refCode + '.');
+    const code = String(b.code || '').trim().toUpperCase();
+    if (!REF_CODE.test(code)) fail(400, 'A code is 3 to 16 letters and digits.');
+    const done = await fsCommit(env, [
+      { update: { name: docName(env, `referralCodes/${code}`), fields: { u: enc(me.name), at: enc(new Date()) } }, currentDocument: { exists: false } },
+      { update: { name: docName(env, `users/${me.name}`), fields: { refCode: enc(code) } }, updateMask: { fieldPaths: ['refCode'] }, currentDocument: { updateTime: prof.updateTime } },
+    ]);
+    if (!done) fail(409, 'Someone already has that code. Try another one.');
+    return { ok: true, code };
+  }
+  if (action === 'join') {
+    if (u.referredBy) fail(409, 'You already joined with a code.');
+    if (!isNew) fail(403, 'Codes are for new accounts, on their first day and before their first Casino game.');
+    const code = String(b.code || '').trim().toUpperCase();
+    const [rc] = REF_CODE.test(code) ? await fsGetMany(env, [`referralCodes/${code}`]) : [null];
+    const owner = rc && typeof rc.data.u === 'string' && USERNAME.test(rc.data.u) ? rc.data.u : null;
+    if (!owner) fail(404, 'That code isn\'t anyone\'s.');
+    if (owner === me.name) fail(400, 'That\'s your own code.');
+    if (await linkedAccounts(env, me.name, owner)) fail(403, 'A code can\'t be used on the same device or network as its owner.');
+    const done = await fsCommit(env, [
+      { update: { name: docName(env, `users/${me.name}`), fields: { referredBy: enc(owner) } }, updateMask: { fieldPaths: ['referredBy'] }, currentDocument: { updateTime: prof.updateTime } },
+      { transform: { document: docName(env, `users/${owner}`), fieldTransforms: [{ fieldPath: 'referral.friends', increment: enc(1) }] }, currentDocument: { exists: true } },
+    ]);
+    if (!done) fail(409, BUSY);
+    return { ok: true, referredBy: owner };
+  }
+  fail(400, 'That isn\'t a referral action.');
 }
 
 // ---------------- Loans (v4.64) ----------------

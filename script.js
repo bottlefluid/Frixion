@@ -328,6 +328,15 @@ const PROFILE_EFFECTS = [
   { id: 'fx-nightsky', name: 'Night Sky', desc: 'Stars fly out from your picture and settle into a sky with a shooting star.', price: 2200, fx: 'nightsky', animated: true },
   { id: 'fx-watercolor', name: 'Watercolor', desc: 'Soft blots of paint bloom one after another and slowly wander.', price: 1800, fx: 'watercolor', animated: true },
   { id: 'fx-clouds', name: 'Cotton Clouds', desc: 'Puffy clouds float in from both sides and drift across the top.', price: 1500, fx: 'clouds', animated: true },
+  // more drawn ones (v4.67, requests 47 and 58)
+  { id: 'fx-fireworks', name: 'Fireworks', desc: 'A volley of fireworks bursts over your card, then a rocket goes up every so often.', price: 3200, fx: 'fireworks', animated: true, featured: true },
+  { id: 'fx-galaxy', name: 'Galaxy', desc: 'Stars swirl in from all over and settle into a slowly turning galaxy.', price: 3500, fx: 'galaxy', animated: true, featured: true },
+  { id: 'fx-lava', name: 'Lava Lamp', desc: 'Warm blobs rise, swell, sink and melt into each other.', price: 2400, fx: 'lava', animated: true },
+  { id: 'fx-ocean', name: 'High Tide', desc: 'The tide rolls in from the bottom, then the waves keep rolling with a little foam.', price: 2600, fx: 'ocean', animated: true },
+  { id: 'fx-sunbeams', name: 'Sunbeams', desc: 'Rays of light fan out from the corner and slowly turn, with dust drifting through.', price: 2000, fx: 'sunbeams', animated: true },
+  { id: 'fx-koi', name: 'Koi Pond', desc: 'A drop rings out across the water, then koi swim slow loops while it ripples. They look hungry.', price: 2800, fx: 'koi', animated: true },
+  { id: 'fx-storm', name: 'Thunderstorm', desc: 'Dark clouds roll in, rain falls, and a thin bolt forks now and then.', price: 3000, fx: 'storm', animated: true, featured: true },
+  { id: 'fx-soap', name: 'Soap Bubbles', desc: 'Shiny bubbles wobble up your card and pop near the top.', price: 1600, fx: 'soap', animated: true },
 ];
 let customProfileEffects = [];
 function profileEffectById(id) { return PROFILE_EFFECTS.find(d => d.id === id) || customProfileEffects.find(d => d.id === id) || null; }
@@ -712,6 +721,191 @@ const FX_DRAW = {
       c.globalAlpha = 1;
     },
   },
+  // ---- v4.67 (requests 47 and 58: more of these) ----
+  // Fireworks: a quick volley bursts over the card, then a rocket goes up every so often. Each burst only lights its own
+  // patch of sky, never the whole card.
+  fireworks: {
+    intro: 2000,
+    make: R => ({ seed: Math.floor(R() * 1e6) }),
+    draw(c, st, t, w, h) {
+      const P = 650, LIFE = 2300, RISE = 520, cols = [[255, 90, 110], [255, 200, 80], [120, 220, 255], [180, 130, 255], [120, 255, 160], [255, 150, 230]];
+      const sz = Math.max(7, Math.min(w, h) * .04), g = h / 500;
+      for (let k = Math.max(0, Math.floor((t - LIFE - 300) / P)); k <= Math.floor(t / P); k++) {
+        const r = fxRand(st.seed + k * 7919), x = (.15 + r() * .7) * w, y = (.12 + r() * .38) * h, col = cols[Math.floor(r() * cols.length)];
+        const age = t - (k * P + r() * 260);
+        if (age < 0 || age > LIFE) continue;
+        if (age < RISE) {   // the rocket on its way up
+          const ry = h + 10 + (y - h - 10) * fxEase(age / RISE);
+          c.globalAlpha = .9; c.fillStyle = fxRGBA(col, 1); c.fillRect(x - 1.2, ry, 2.4, 9);
+          c.globalAlpha = .35; c.drawImage(fxStrip(col), x - 2, ry, 4, 26);
+          continue;
+        }
+        const a = age - RISE, fade = 1 - a / (LIFE - RISE), spread = 1 - Math.pow(1 - Math.min(1, a / 900), 2.2);
+        for (let i = 0; i < 34; i++) {
+          const ang = i / 34 * 6.2832 + k, d = (.55 + .45 * Math.sin(i * 12.9898 + k)) * Math.min(w, h) * .32 * spread;
+          c.globalAlpha = .9 * fade * fade;
+          c.drawImage(fxBlob(col, 32), x + Math.cos(ang) * d - sz / 2, y + Math.sin(ang) * d + .00006 * a * a * g - sz / 2, sz, sz);
+        }
+        if (a < 160) { const f = sz * 4; c.globalAlpha = .45 * (1 - a / 160); c.drawImage(fxBlob([255, 255, 230], 64), x - f, y - f, 2 * f, 2 * f); }
+      }
+      c.globalAlpha = 1;
+    },
+  },
+  // Galaxy: stars swirl in from all over the card and settle into a slowly turning spiral with a glowing core
+  galaxy: {
+    intro: 2600,
+    make: R => ({ stars: Array.from({ length: 140 }, () => ({ arm: Math.floor(R() * 3), d: Math.pow(R(), .7), off: (R() - .5) * .5, s: .6 + R() * 1.4, tw: R() * 6.28, sx: R(), sy: R(), hue: R() })) }),
+    draw(c, st, t, w, h) {
+      const cx = w * .72, cy = Math.min(h * .2, 110), R0 = Math.min(w, h) * .42, spin = t / 9000, k = fxEase(t / 2600), core = R0 * .5;
+      c.globalAlpha = .55 * k; c.drawImage(fxBlob([210, 170, 255], 128), cx - core, cy - core, core * 2, core * 2);
+      st.stars.forEach(s => {
+        const a = s.arm * 2.094 + s.d * 5.2 + s.off + spin, r = s.d * R0, gx = cx + Math.cos(a) * r, gy = cy + Math.sin(a) * r * .55;
+        const x = s.sx * w + (gx - s.sx * w) * k, y = s.sy * h + (gy - s.sy * h) * k;
+        c.globalAlpha = (.5 + .5 * Math.sin(t / 700 + s.tw)) * .9;
+        c.fillStyle = s.hue < .5 ? 'rgb(200,220,255)' : s.hue < .8 ? 'rgb(255,210,240)' : 'rgb(255,240,200)';
+        c.fillRect(x, y, s.s, s.s);
+      });
+      c.globalAlpha = 1;
+    },
+  },
+  // Lava Lamp: warm blobs rise from the bottom, swell, sink again and run into each other
+  lava: {
+    intro: 1800,
+    make: R => ({ blobs: Array.from({ length: 7 }, (_, i) => ({ x: .1 + R() * .8, per: 9000 + R() * 9000, ph: R(), r: .09 + R() * .08, wob: R() * 6.28,
+      col: [[255, 90, 60], [255, 140, 40], [255, 70, 140], [255, 180, 60]][i % 4] })) }),
+    draw(c, st, t, w, h) {
+      const S = Math.min(w, h), k = fxEase(t / 1800);
+      c.globalCompositeOperation = 'lighter';
+      st.blobs.forEach(b => {
+        const up = .5 - .5 * Math.cos((((t / b.per) + b.ph) % 1) * 6.2832);   // 0 at the bottom, 1 at the top
+        const y = h * (1.05 - .95 * up * k), x = b.x * w + 18 * Math.sin(t / 3000 + b.wob);
+        const r = b.r * S * (1 + .25 * Math.sin(t / 1700 + b.wob)) * (.4 + .6 * k);
+        c.globalAlpha = .55; c.drawImage(fxBlob(b.col, 128), x - r * 1.5, y - r * 1.5, r * 3, r * 3);
+      });
+      c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
+    },
+  },
+  // High Tide: the tide comes in from the bottom, then three layers of waves keep rolling, with foam on the front one
+  ocean: {
+    intro: 2000,
+    make: R => ({ ph: [R() * 6.28, R() * 6.28, R() * 6.28], foam: Array.from({ length: 30 }, () => ({ x: R(), p: R() * 6.28, s: .6 + R() })) }),
+    draw(c, st, t, w, h) {
+      const k = fxEase(t / 2000), sec = t / 1000;
+      [[40, 120, 200, .35], [30, 150, 210, .45], [70, 190, 230, .55]].forEach(([r, g, b, a], i) => {
+        const base = h - h * (.16 + i * .05) * k, amp = 7 + i * 3, len = .012 - i * .002, sp = .6 + i * .35;
+        const waveY = x => base + amp * Math.sin(x * len + sec * sp + st.ph[i]) + amp * .4 * Math.sin(x * len * 2.7 - sec * sp * 1.3);
+        c.beginPath(); c.moveTo(0, h);
+        for (let x = 0; x <= w + 8; x += 8) c.lineTo(x, waveY(x));
+        c.lineTo(w, h); c.closePath();
+        c.globalAlpha = a; c.fillStyle = `rgb(${r},${g},${b})`; c.fill();
+        if (i === 2) st.foam.forEach(f => {
+          c.globalAlpha = .6 * (.5 + .5 * Math.sin(sec * 2 + f.p)); c.fillStyle = '#fff';
+          c.beginPath(); c.arc(f.x * w, waveY(f.x * w) - 1, 1.6 * f.s, 0, 6.2832); c.fill();
+        });
+      });
+      c.globalAlpha = 1;
+    },
+  },
+  // Sunbeams: rays of light fan out from the top corner and slowly turn, with dust drifting through them
+  sunbeams: {
+    intro: 1800,
+    make: R => ({ rays: Array.from({ length: 7 }, () => ({ a: R(), wid: .04 + R() * .06, sp: .02 + R() * .04, p: R() * 6.28 })),
+      motes: Array.from({ length: 40 }, () => ({ x: R(), y: R(), v: .004 + R() * .01, p: R() * 6.28, s: .6 + R() * 1.4 })) }),
+    draw(c, st, t, w, h) {
+      const k = fxEase(t / 1800), ox = w * .92, oy = -10, L = Math.hypot(w, h) * 1.1, sec = t / 1000;
+      c.globalCompositeOperation = 'lighter';
+      st.rays.forEach(r => {
+        const ang = Math.PI * (.55 + .4 * r.a) + .06 * Math.sin(sec * r.sp + r.p), half = r.wid * k;
+        const g = c.createLinearGradient(ox, oy, ox + Math.cos(ang) * L, oy + Math.sin(ang) * L);
+        g.addColorStop(0, 'rgba(255,240,190,.35)'); g.addColorStop(1, 'rgba(255,240,190,0)');
+        c.fillStyle = g; c.globalAlpha = .7 * k;
+        c.beginPath(); c.moveTo(ox, oy); c.lineTo(ox + Math.cos(ang - half) * L, oy + Math.sin(ang - half) * L); c.lineTo(ox + Math.cos(ang + half) * L, oy + Math.sin(ang + half) * L); c.closePath(); c.fill();
+      });
+      c.globalCompositeOperation = 'source-over'; c.fillStyle = 'rgb(255,245,215)';
+      st.motes.forEach(m => {
+        const x = (((m.x + .02 * Math.sin(sec * .5 + m.p)) % 1) + 1) % 1 * w, y = (((m.y - sec * m.v) % 1) + 1) % 1 * h;
+        c.globalAlpha = .55 * k * (.5 + .5 * Math.sin(sec * 1.7 + m.p));
+        c.beginPath(); c.arc(x, y, m.s, 0, 6.2832); c.fill();
+      });
+      c.globalAlpha = 1;
+    },
+  },
+  // Koi Pond: a drop rings out across the water, then koi swim lazy loops while ripples spread
+  koi: {
+    intro: 2200,
+    make: R => ({ fish: Array.from({ length: 3 }, (_, i) => ({ cx: .3 + R() * .4, cy: .55 + R() * .25, rx: .22 + R() * .12, ry: .1 + R() * .08, per: 14000 + R() * 8000, p: R(),
+      dir: i % 2 ? 1 : -1, col: [[255, 120, 40], [250, 250, 245], [255, 90, 70]][i], spots: R() < .5 })),
+      drops: Array.from({ length: 5 }, () => ({ x: R(), y: .45 + R() * .5, per: 3000 + R() * 3000, p: R() })) }),
+    draw(c, st, t, w, h) {
+      const k = fxEase(t / 2200), S = Math.min(w, h);
+      const ring = (x, y, f) => {
+        if (f < 0 || f > 1) return;
+        c.globalAlpha = .45 * (1 - f); c.strokeStyle = 'rgb(200,235,255)'; c.lineWidth = 1.2;
+        c.beginPath(); c.ellipse(x, y, f * S * .22, f * S * .09, 0, 0, 6.2832); c.stroke();
+      };
+      ring(w * .5, h * .62, t / 1800);
+      st.drops.forEach(d => ring(d.x * w, d.y * h, ((t / d.per) + d.p) % 1));
+      st.fish.forEach(f => {
+        const a = ((t / f.per) + f.p) * 6.2832 * f.dir, x = (f.cx + f.rx * Math.cos(a)) * w, y = f.cy * h + f.ry * h * Math.sin(a);
+        const heading = Math.atan2(f.ry * h * Math.cos(a) * f.dir, -f.rx * w * Math.sin(a) * f.dir), L = S * .1 * (.5 + .5 * k), sw = Math.sin(t / 260 + f.p * 9) * .35;
+        c.save(); c.translate(x, y); c.rotate(heading); c.globalAlpha = .9 * k; c.fillStyle = fxRGBA(f.col, 1);
+        c.beginPath(); c.ellipse(0, 0, L * .5, L * .2, 0, 0, 6.2832); c.fill();
+        c.beginPath(); c.moveTo(-L * .45, 0); c.lineTo(-L * .8, -L * .18 + sw * L * .2); c.lineTo(-L * .8, L * .18 + sw * L * .2); c.closePath(); c.fill();
+        if (f.spots) { c.fillStyle = 'rgb(230,60,40)'; c.beginPath(); c.arc(L * .1, -L * .03, L * .08, 0, 6.2832); c.arc(-L * .15, L * .04, L * .06, 0, 6.2832); c.fill(); }
+        c.restore();
+      });
+      c.globalAlpha = 1;
+    },
+  },
+  // Thunderstorm: dark clouds roll in over the top, rain falls, and a thin bolt forks now and then (only the bolt lights
+  // up, never the whole card)
+  storm: {
+    intro: 2000,
+    make: R => ({ seed: Math.floor(R() * 1e6), puffs: Array.from({ length: 9 }, () => ({ x: R(), y: R() * .12, r: .12 + R() * .1 })),
+      drops: Array.from({ length: 70 }, () => ({ x: R(), y: R(), v: .7 + R() * .6, l: 8 + R() * 10 })) }),
+    draw(c, st, t, w, h) {
+      const k = fxEase(t / 2000), S = Math.max(w, h), top = Math.min(h * .28, 150);
+      c.strokeStyle = 'rgba(170,200,255,.5)'; c.lineWidth = 1; c.globalAlpha = k; c.beginPath();
+      st.drops.forEach(d => { const y = ((d.y + t / 1000 * d.v) % 1) * h, x = d.x * w - y * .08; if (y > top * .6) { c.moveTo(x, y); c.lineTo(x - d.l * .1, y + d.l); } });
+      c.stroke();
+      st.puffs.forEach(p => {
+        const r = p.r * S, x = p.x * w + 10 * Math.sin(t / 4000 + p.x * 9), y = p.y * h - (1 - k) * (r + 30);
+        c.globalAlpha = .9; c.drawImage(fxBlob([88, 96, 128], 128), x - r, y - r * .7, r * 2, r * 1.4);
+      });
+      const P = 2300, n = Math.floor(t / P), age = t - n * P;
+      if (t > 1200 && age < 220) {
+        const r = fxRand(st.seed + n * 31);
+        let x = (.15 + r() * .7) * w, y = top * .45;
+        c.globalAlpha = (1 - age / 220) * .95; c.strokeStyle = 'rgb(225,235,255)'; c.lineWidth = 2; c.shadowColor = 'rgba(180,200,255,.9)'; c.shadowBlur = 10;
+        c.beginPath(); c.moveTo(x, y);
+        while (y < top + h * .25) { x += (r() - .5) * 22; y += 10 + r() * 14; c.lineTo(x, y); }
+        c.stroke(); c.shadowBlur = 0;
+      }
+      c.globalAlpha = 1;
+    },
+  },
+  // Soap Bubbles: shiny bubbles wobble up the card and pop near the top with a little ring
+  soap: {
+    intro: 1600,
+    make: R => ({ bubbles: Array.from({ length: 14 }, () => ({ x: R(), r: .025 + R() * .045, per: 5000 + R() * 5000, p: R(), wob: R() * 6.28, top: .08 + R() * .3 })) }),
+    draw(c, st, t, w, h) {
+      const S = Math.min(w, h), k = fxEase(t / 1600);
+      st.bubbles.forEach(b => {
+        const f = ((t / b.per) + b.p) % 1, popAt = 1 - b.top, r = b.r * S * (.6 + .4 * k), x = b.x * w + 10 * Math.sin(t / 900 + b.wob);
+        if (f <= popAt) {
+          const y = h + r - (h + r - b.top * h) * (f / popAt);
+          const g = c.createRadialGradient(x - r * .3, y - r * .3, r * .1, x, y, r);
+          g.addColorStop(0, 'rgba(255,255,255,.35)'); g.addColorStop(.7, 'rgba(160,220,255,.12)'); g.addColorStop(.92, 'rgba(255,170,240,.35)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+          c.globalAlpha = k; c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, 6.2832); c.fill();
+          c.globalAlpha = .7 * k; c.fillStyle = '#fff'; c.beginPath(); c.arc(x - r * .4, y - r * .4, r * .12, 0, 6.2832); c.fill();
+        } else {
+          const pf = (f - popAt) / (1 - popAt);
+          if (pf < .3) { c.globalAlpha = (1 - pf / .3) * .6; c.strokeStyle = 'rgb(220,240,255)'; c.lineWidth = 1.5; c.beginPath(); c.arc(x, b.top * h, r * (1 + pf * 3), 0, 6.2832); c.stroke(); }
+        }
+      });
+      c.globalAlpha = 1;
+    },
+  },
 };
 // The effect on an open profile, and the Shop's previews: a still picture, and the whole thing while the pointer is on it
 let profileFx = null;
@@ -735,6 +929,7 @@ function wireFxPreviews(wrap) {
     const kind = cv.dataset.fx, card = cv.closest('.shop-item-card') || cv.parentElement;
     let run = fxRun(cv, kind, { still: true, seed: 7 });
     if (kind === 'ooze') { let pokes = 0; card.addEventListener('click', e => { if (!e.target.closest('button') && ++pokes >= 5) eggFindOnce('slimepoke'); }); }
+    if (kind === 'koi') { let taps = 0; card.addEventListener('click', e => { if (!e.target.closest('button') && ++taps >= 5) eggFindOnce('koifeed'); }); }   // (v4.67)
     if (fxStill()) return;
     card.addEventListener('mouseenter', () => { if (run) run.stop(); run = fxRun(cv, kind, { seed: 7 }); });
     card.addEventListener('mouseleave', () => { if (run) run.stop(); run = fxRun(cv, kind, { still: true, seed: 7 }); });
@@ -972,6 +1167,15 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.67', date: '2026-11-18', title: 'Provably Fair, referrals and 8 new profile effects',
+    notes: [
+      '8 new profile effects in the Shop: Fireworks, Galaxy, Lava Lamp, High Tide, Sunbeams, Koi Pond, Thunderstorm and Soap Bubbles. Each plays an intro when your profile opens, then keeps going behind your text.',
+      'The Casino is Provably Fair: every result comes from seeds you can check. You see your server seed\'s fingerprint before you bet; change seeds and you get the old one, and any bet made with it can be worked out again and checked. Every game shows its house edge too.',
+      'No top limit on Casino bets: bet as many Orbs as you have (still 200 games a day), and wins aren\'t capped any more.',
+      'Referrals: make a code in the Casino, share your link, and earn from every bet your friends make: 10% of the house edge, 5% of their wins, and 10,000 Orbs once a friend has bet 10,000. New accounts only, and alts on your own device or network don\'t count.',
+      'Grow a Garden: the Owner and Co-Owners can set how likely each seed and sprinkler is to be in stock, and can bypass the stock for themselves.',
+      '4 new easter eggs. That makes 71.',
+    ] },
   { v: '4.66', date: '2026-11-17', title: 'A better Mouse Maze, and a lot of fixes',
     notes: [
       'Mouse Maze has its own mouse now. Touch something and it goes straight back to your checkpoint, every level starts on the green square, and you click the gold square to finish. It looks cleaner too. Esc lets go of the mouse and pauses.',
@@ -3404,6 +3608,20 @@ function confirmAction({ title, body, confirmLabel, danger = true, input, onConf
 // server logs each one on the account it was used on (who made the password, when it was used, the last 10), and
 // nobody can take an entry off from the site, not even whoever is signed in as that account. Its owner sees a notice
 // once on each device for anything new from the last 30 days, and the whole list under Settings, My Account.
+// A referral link (v4.67): ?ref=CODE is kept on this device until an account signs in here. A new account (its first day,
+// before its first Casino game) then joins with that code; the server decides, and the code is dropped either way.
+(function keepReferral() {
+  try { const code = new URLSearchParams(location.search).get('ref'); if (code && /^[A-Za-z0-9]{3,16}$/.test(code)) localStorage.setItem('frixion_ref', code.toUpperCase()); } catch (e) {}
+})();
+let referralTried = false;
+function maybeJoinReferral() {
+  let code = null;
+  try { code = localStorage.getItem('frixion_ref'); } catch (e) {}
+  if (!code || referralTried || !myProfile || myProfile.referredBy || OVERLAY_WINDOW) return;
+  referralTried = true;
+  orbsCall('referral', { action: 'join', code }).then(r => toast(`You joined with ${r.referredBy}'s referral code.`)).catch(() => {})
+    .finally(() => { try { localStorage.removeItem('frixion_ref'); } catch (e) {} });
+}
 function securityLogOf(p) { return (p && Array.isArray(p.securityLog) ? p.securityLog : []).filter(x => x && typeof x === 'object' && Number(x.at) > 0); }
 function securityLogLine(x) { return `${new Date(Number(x.at)).toLocaleString()}: signed in with a one-time password${x.by ? ` made by ${x.by}` : ''}`; }
 function showSecurityNotice() {
@@ -4821,6 +5039,7 @@ function initAppForUser() {
     scheduleLoanCheck();   // a loan of yours coming due (v4.64)
     if (myProfile.orbs === 0 && myProfile.infOrbs !== true && typeof eggFindOnce === 'function') eggFindOnce('equilibrium');   // exactly 0 Orbs (v4.66)
     showSecurityNotice();   // someone signed in to this account with a one-time password (v4.66)
+    maybeJoinReferral();    // came in through a friend's referral link (v4.67)
     maybeShowAppPrompt();
     refreshPushSub();
     maybeAskPush();
@@ -14739,8 +14958,45 @@ function initGagAdmin() {
     $('gag-spr-publish').onclick = () => gagPublish('sprinklers');
     $('gag-pet-publish').onclick = () => gagPublish('pets');
   }
-  loadGardenContent().then(renderGagLists);
+  loadGardenContent().then(() => { renderGagLists(); gagRenderStock(); });
   gagRenderWeatherNow();
+}
+// Quests, GAG, Stock (v4.67, requests 57 and 59): the Owner and Co-Owners only. Bypass stock for yourself, and each seed's
+// and sprinkler's chance of being in a restock (config/gardenStock; the database lets only them change it).
+function gagRenderStock() {
+  $('gag-tab-stock').classList.toggle('hidden', !isOwner);
+  if (!isOwner) return;
+  $('gag-stock-bypass').checked = ggStockBypass();
+  $('gag-stock-bypass').onchange = e => {
+    try { localStorage.setItem(GG_BYPASS_KEY(), e.target.checked ? '1' : '0'); } catch (err) {}
+    toast(e.target.checked ? 'Stock bypassed: seeds and sprinklers never sell out for you.' : 'Stock is back to normal for you.');
+  };
+  const rows = (kind, list) => `<div class="gag-stock-head">${kind === 'seeds' ? 'Seeds' : 'Sprinklers'}</div>` + list.map(it => {
+    const def = Math.round((GG_STOCK_BY_RARITY[ggRar(it.rarity)] || [1, 3, 0.5])[2] * 100), set = ggStockChances[kind][it.id];
+    const now = ggStockOf(it, kind);
+    return `<div class="gag-stock-row"><span class="gag-stock-name">${esc(it.name)}</span><span class="gag-stock-rar">${esc((GG_RARITY[ggRar(it.rarity)] || {}).n || it.rarity)}: ${def}%</span>`
+      + `<span class="gag-stock-in"><input class="fld-input gag-stock-pct" type="number" min="0" max="100" step="any" data-kind="${kind}" data-id="${esc(it.id)}" placeholder="${def}" value="${Number.isFinite(set) ? set : ''}" aria-label="Chance in stock for ${esc(it.name)}">%</span>`
+      + `<span class="gag-stock-now">${now ? now + ' in this restock' : 'not in this restock'}</span></div>`;
+  }).join('');
+  $('gag-stock-seeds').innerHTML = rows('seeds', GG_SEEDS);
+  $('gag-stock-sprinklers').innerHTML = rows('sprinklers', GG_SPRINKLERS);
+  const save = async out => {
+    try {
+      await db.collection('config').doc('gardenStock').set(out);
+      ggStockChances = out;
+      toast('Stock chances saved.');
+      gagRenderStock();
+    } catch (e) { toast(e.code === 'permission-denied' ? 'Only the Owner and Co-Owners can change the stock.' : 'Could not save the stock chances.', 'error'); }
+  };
+  $('gag-stock-save').onclick = () => {
+    const out = { seeds: {}, sprinklers: {} };
+    document.querySelectorAll('.gag-stock-pct').forEach(inp => {
+      const v = inp.value.trim(), n = Number(v);
+      if (v !== '' && Number.isFinite(n)) out[inp.dataset.kind][inp.dataset.id] = Math.max(0, Math.min(100, n));
+    });
+    save(out);
+  };
+  $('gag-stock-reset').onclick = () => save({ seeds: {}, sprinklers: {} });
 }
 function gagCommon(prefix) {
   const name = ($(prefix + '-name').value || '').trim();
@@ -17529,19 +17785,28 @@ const GG_RESTOCK_MS=5*60000;
 const GG_STOCK_BY_RARITY={ common:[8,20,1], uncommon:[5,12,0.95], rare:[2,6,0.75], epic:[1,4,0.5], legendary:[1,2,0.3],
   divine:[1,1,0.15], super:[1,1,0.08], prismatic:[1,1,0.05], transcendent:[1,1,0.03], null:[1,1,0.02] };
 function ggStockWindow(now=Date.now()){ return Math.floor(now/GG_RESTOCK_MS); }
+// the chance (0 to 1) of being in a restock: staff's setting if there is one (v4.67), else by rarity
+function ggStockChance(item,kind){
+  const set=ggStockChances[kind]&&ggStockChances[kind][item.id];
+  return Number.isFinite(set) ? Math.max(0,Math.min(1,set/100)) : (GG_STOCK_BY_RARITY[ggRar(item.rarity)]||[1,3,0.5])[2];
+}
 function ggStockOf(item,kind,w=ggStockWindow()){
-  const [lo,hi,p]=GG_STOCK_BY_RARITY[ggRar(item.rarity)]||[1,3,0.5];
-  if(ggRand('st:'+kind+':'+item.id+':'+w)>=p) return 0;
+  const [lo,hi]=GG_STOCK_BY_RARITY[ggRar(item.rarity)]||[1,3,0.5];
+  if(ggRand('st:'+kind+':'+item.id+':'+w)>=ggStockChance(item,kind)) return 0;
   return lo+Math.floor(ggRand('sn:'+kind+':'+item.id+':'+w)*(hi-lo+1));
 }
+// (v4.67, request 57) The Owner and Co-Owners can switch on "bypass stock" in their panel (Quests, GAG, Stock): seeds
+// and sprinklers never sell out for them. It's kept on that device, and only the garden's own shop looks at it.
+const GG_BYPASS_KEY=()=>'frixion_gg_bypass_'+myUid;
+function ggStockBypass(){ if(!isOwner) return false; try{ return localStorage.getItem(GG_BYPASS_KEY())==='1'; }catch(e){ return false; } }
 function ggBought(kind,id){ const s=UC&&UC.ggStock; return s&&s.w===ggStockWindow()&&s[kind]?(s[kind][id]||0):0; }
-function ggStockLeft(item,kind){ return Math.max(0, ggStockOf(item,kind)-ggBought(kind,item.id)); }
+function ggStockLeft(item,kind){ if(ggStockBypass()) return 999; return Math.max(0, ggStockOf(item,kind)-ggBought(kind,item.id)); }
 function ggTakeStock(kind,id){
   const w=ggStockWindow();
   if(!UC.ggStock||UC.ggStock.w!==w) UC.ggStock={w};
   UC.ggStock[kind]=UC.ggStock[kind]||{}; UC.ggStock[kind][id]=(UC.ggStock[kind][id]||0)+1;
 }
-function ggStockTag(item,kind){ const n=ggStockLeft(item,kind); return n?`<span class="gg-stock">${n} in stock</span>`:'<span class="gg-stock out">Sold out</span>'; }
+function ggStockTag(item,kind){ if(ggStockBypass()) return '<span class="gg-stock">No limit (staff)</span>'; const n=ggStockLeft(item,kind); return n?`<span class="gg-stock">${n} in stock</span>`:'<span class="gg-stock out">Sold out</span>'; }
 
 // ---- Garden quests (v4.62) ----
 // Three quests a day (the same three for everyone, picked from the date), an easy, a medium and a hard one, paying
@@ -17597,10 +17862,16 @@ let GG_PETS=ggSortByRarity(GG_BASE_PETS), GG_PET_MAP={};
 function ggRebuildMaps(){ GG_SEED_MAP={}; GG_SEEDS.forEach(s=>GG_SEED_MAP[s.id]=s); GG_SPRINKLER_MAP={}; GG_SPRINKLERS.forEach(s=>GG_SPRINKLER_MAP[s.id]=s); GG_PET_MAP={}; GG_PETS.forEach(s=>GG_PET_MAP[s.id]=s); }
 ggRebuildMaps();
 let ggCustomSeeds=[], ggCustomSprinklers=[], ggCustomPets=[];
+// How likely each seed and sprinkler is to be in stock at a restock, in %, where staff changed it (v4.67, request 59):
+// config/gardenStock = { seeds: { id: % }, sprinklers: { id: % } }. Anything not listed goes by its rarity.
+let ggStockChances={ seeds:{}, sprinklers:{} };
 // Custom seeds, sprinklers and pets published from the admin panel (Quests → GAG), merged on top of the built-ins.
 async function loadGardenContent(){
   const get=async coll=>{ try{ const s=await db.collection(coll).get(); return s.docs.map(d=>({ ...d.data(), id:d.id })); }catch(e){ return []; } };
-  const [seeds,spr,pets]=await Promise.all([get('gardenSeeds'),get('gardenSprinklers'),get('gardenPets')]);
+  const chances=async()=>{ try{ const s=await db.collection('config').doc('gardenStock').get(); return s.exists?s.data():{}; }catch(e){ return {}; } };
+  const [seeds,spr,pets,ch]=await Promise.all([get('gardenSeeds'),get('gardenSprinklers'),get('gardenPets'),chances()]);
+  const pcts=o=>Object.fromEntries(Object.entries(o&&typeof o==='object'?o:{}).filter(([,v])=>Number.isFinite(v)&&v>=0&&v<=100));
+  ggStockChances={ seeds:pcts(ch.seeds), sprinklers:pcts(ch.sprinklers) };
   ggCustomSeeds=seeds; ggCustomSprinklers=spr; ggCustomPets=pets;
   GG_SEEDS=ggSortByRarity(GG_BASE_SEEDS.concat(ggCustomSeeds));
   GG_SPRINKLERS=ggSortByRarity(GG_BASE_SPRINKLERS.concat(ggCustomSprinklers));
@@ -17904,6 +18175,7 @@ async function ggPlant(i){
   if((UC.ggSheckles||0)<seedCost){ showToast('Not enough Sheckles for a '+s.name+' seed.'); return; }
   UC.ggSheckles-=seedCost;
   ggTakeStock('seeds', s.id);
+  if(!ggStockBypass()&&ggStockLeft(s,'seeds')===0&&typeof eggFindOnce==='function') eggFindOnce('stockout');   // you bought the last one (v4.67, an easter egg)
   UC.ggOwnedSeeds=UC.ggOwnedSeeds||[]; if(UC.ggOwnedSeeds.indexOf(s.id)<0) UC.ggOwnedSeeds.push(s.id);
   UC.ggPlots[i]={seed:s.id, at:Date.now(), w:ggRollW(), sprinklers:[]};
   ggQuestEvent('plant',1);
@@ -17919,6 +18191,7 @@ async function ggPlaceSprinkler(i){
   if((UC.ggSheckles||0)<(s.cost||0)){ showToast('Not enough Sheckles for '+s.name+'.'); return; }
   UC.ggSheckles-=(s.cost||0);
   ggTakeStock('sprinklers', s.id);
+  if(!ggStockBypass()&&ggStockLeft(s,'sprinklers')===0&&typeof eggFindOnce==='function') eggFindOnce('stockout');
   ggQuestEvent('sprinkle',1);
   UC.ggOwnedSprinklers=UC.ggOwnedSprinklers||[]; if(UC.ggOwnedSprinklers.indexOf(s.id)<0) UC.ggOwnedSprinklers.push(s.id);
   p.sprinklers.push(s.id);
@@ -19798,6 +20071,11 @@ const EGGS = [
   { id: 'mazeflawless', t: 'h', name: 'Flawless Run', how: 'Clear 10 Mouse Maze levels in a row without touching anything, in one go.', hint: 'Ten mazes, not one touch.' },
   { id: 'quickflip', t: 'e', name: 'Make Up Your Mind', how: 'Open and close something with its Quick Open shortcut 5 times within 10 seconds (Settings, for one).', hint: 'Open it, close it, open it...' },
   { id: 'rainbowname', t: 'm', name: 'Full Spectrum', how: 'Save a name gradient with all 8 colors (Premium: Edit Profile).', hint: 'A name can hold eight colors now.' },
+  // v4.67
+  { id: 'seedcheck', t: 'm', name: 'Trust, But Verify', how: 'In the Casino, open Provably Fair, change seeds, then Check a bet and see it match.', hint: 'Checking is free, and sometimes worth it.' },
+  { id: 'bigbet', t: 'h', name: 'High Roller', how: 'Bet 1,000,000 Orbs or more on one Casino game.', hint: 'High rollers get noticed.' },
+  { id: 'koifeed', t: 'e', name: 'Feeding Time', how: 'Click the Koi Pond card in the Shop 5 times (not its buy button).', hint: 'Something in the Shop is hungry.' },
+  { id: 'stockout', t: 'm', name: 'Last One', how: 'In Grow a Garden, buy the last seed or sprinkler in stock.', hint: 'Someone always gets the last one.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -20022,6 +20300,10 @@ function eggEffect(id, first) {
     case 'mazeflawless': eggToast('Flawless.', 'Ten mazes without a single touch.'); return;
     case 'quickflip': eggToast('Make up your mind.'); return;
     case 'rainbowname': eggToast('Full spectrum.', 'All eight colors, one name.'); return;
+    case 'seedcheck': eggToast('It matches.', 'Not that you doubted it.'); return;
+    case 'bigbet': eggToast('High roller.', 'A million on one game.'); return;
+    case 'koifeed': eggToast('The koi are full.'); return;
+    case 'stockout': eggToast('Last one.', 'Sold out, thanks to you.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
@@ -20139,6 +20421,7 @@ const EGG_GROUPS = [
   ['Maze, loans and privacy (v4.64)', ['tricked', 'mazehalf', 'ontime', 'hideorbs']],
   ['Badges and effects (v4.65)', ['badgefan', 'allbadges', 'fxwatch', 'slimepoke']],
   ['Orbs, the maze, shortcuts and names (v4.66)', ['equilibrium', 'mazeflawless', 'quickflip', 'rainbowname']],
+  ['Casino, effects and the garden (v4.67)', ['seedcheck', 'bigbet', 'koifeed', 'stockout']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {

@@ -20,8 +20,8 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=113">
-<link rel="stylesheet" href="casino.css?v=1">
+<link rel="stylesheet" href="style.css?v=114">
+<link rel="stylesheet" href="casino.css?v=2">
 </head>
 <body>
 
@@ -1582,6 +1582,7 @@
           <button type="button" class="shop-mgr-tab" data-gag-section="sprinklers">Sprinklers</button>
           <button type="button" class="shop-mgr-tab" data-gag-section="pets">Pets</button>
           <button type="button" class="shop-mgr-tab" data-gag-section="weather">Weather</button>
+          <button type="button" class="shop-mgr-tab hidden" data-gag-section="stock" id="gag-tab-stock">Stock</button>
         </div>
         <small class="hint gag-edit-hint">Click one of your custom seeds, sprinklers or pets below to load it into the form and change it.</small>
 
@@ -1652,6 +1653,22 @@
             <button class="btn-accent-inline" id="gag-wx-start">Start Weather</button>
             <button class="btn-secondary" id="gag-wx-stop">End Staff Weather Now</button>
             <div class="gag-wx-now" id="gag-wx-now"></div>
+          </div>
+        </div>
+        <!-- Stock (v4.67): the Owner and Co-Owners only -->
+        <div class="gag-section hidden" data-gag-section="stock">
+          <div class="admin-block">
+            <div class="ab-title">Bypass Stock</div>
+            <label class="gag-bypass"><input type="checkbox" id="gag-stock-bypass"> Seeds and sprinklers never sell out for me</label>
+            <small class="hint">Only for you, on this device. Everyone else still sees the normal stock.</small>
+          </div>
+          <div class="admin-block">
+            <div class="ab-title">Stock Chances</div>
+            <small class="hint">How likely each seed and sprinkler is to be in the shop at a restock (every 5 minutes, the same for everyone). Leave a box empty to go by its rarity. Changes count for each player the next time they open their garden.</small>
+            <div class="gag-stock-list" id="gag-stock-seeds"></div>
+            <div class="gag-stock-list" id="gag-stock-sprinklers"></div>
+            <button class="btn-accent-inline" id="gag-stock-save">Save Stock Chances</button>
+            <button class="btn-secondary" id="gag-stock-reset">Back to Rarity</button>
           </div>
         </div>
       </div>
@@ -1882,7 +1899,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
 <script defer src="fdb.js?v=2"></script>
-<script defer src="script.js?v=153"></script>
-<script defer src="casino.js?v=3"></script>
+<script defer src="script.js?v=154"></script>
+<script defer src="casino.js?v=4"></script>
 </body>
 </html>

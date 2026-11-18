@@ -6,7 +6,7 @@
 (function () {
 'use strict';
 
-const BET_MIN = 10, BET_MAX = 10000, WIN_MAX = 1000000, DAY_GAMES = 200, RTP = 0.97;
+const BET_MIN = 10, BET_MAX = 1e300, WIN_MAX = Infinity, DAY_GAMES = 200, RTP = 0.97;   // (no top limit since v4.67: the server decides the same)
 const el = id => document.getElementById(id);
 // No spinning or rolling for Epilepsy mode or the computer's reduce-motion setting. (Reduce screen shake doesn't stop
 // these: nothing here shakes or moves the screen.)
@@ -37,12 +37,87 @@ async function call(game, action, body) {
   try {
     const j = await orbsCall('casino', Object.assign({ game, action }, body || {}));
     if (j.orbs != null && typeof myProfile !== 'undefined' && myProfile) myProfile.orbs = j.orbs;
+    if (j.fair && game !== 'fair') rememberBet(game, body, j);
+    if (body && Number(body.bet) >= 1e6 && typeof eggFind === 'function') eggFind('bigbet');   // (an easter egg: a million on one game)
     showTop();
     return j;
   } catch (x) {
     toast(x.message || 'Something went wrong.', 'error');
     throw x;
   }
+}
+
+// ---------- Provably Fair (v4.67) ----------
+// casino-fair.js (the file the server plays every bet with) checks them here. Each finished bet is kept on this device
+// with the seeds it used (its server seed's fingerprint, your client seed and its nonce); once you change seeds, the
+// server shows the old server seed, and every bet made with it can be worked out again and compared.
+const FAIR_KEEP = 60, EDGE = { roulette: '2.7%', blackjack: 'about 1% if you play well' };
+const fairKey = () => 'fair_bets_' + (typeof myUid !== 'undefined' && myUid ? myUid : '');
+let fairJs = null;
+const fairLib = () => (fairJs = fairJs || import('./casino-fair.js?v=1').catch(x => { fairJs = null; throw x; }));
+function rememberBet(game, body, j) {
+  const done = j.over === true || j.won !== undefined || (j.stake !== undefined && !j.ticket && game !== 'crash' && game !== 'mega');
+  if (!done) return;
+  const b = Object.assign({}, body || {});
+  delete b.ticket;
+  const res = {};
+  ['result', 'roll', 'house', 'reels', 'path', 'drawn', 'item', 'mines', 'rows', 'hit', 'cards', 'p', 'd', 'point', 'won', 'payout', 'stake'].forEach(k => { if (j[k] !== undefined) res[k] = j[k]; });
+  const list = store.get(fairKey(), []);
+  list.unshift({ at: Date.now(), game, body: b, res, fair: j.fair });
+  store.set(fairKey(), list.slice(0, FAIR_KEEP));
+}
+// a server seed you've seen (after changing seeds), or the server's answer for an earlier one
+async function seedFor(f) {
+  const seeds = store.get('fair_seeds', {});
+  if (seeds[f.hash]) return seeds[f.hash];
+  try {
+    const r = await orbsCall('casino', { game: 'fair', action: 'reveal', e: f.e });
+    if (r && r.seed) { seeds[r.hash] = r.seed; store.set('fair_seeds', seeds); return r.hash === f.hash ? r.seed : null; }
+  } catch (x) {}
+  return null;
+}
+// Works a bet out again from its seeds and compares it with what came back: { ok: true / false / null, text }
+async function checkBet(bet) {
+  const F = await fairLib(), f = bet.fair, seed = await seedFor(f);
+  if (!seed) return { ok: null, text: 'Its server seed is still in use. Change seeds, then check it.' };
+  if (await F.sha256Hex(seed) !== f.hash) return { ok: false, text: 'The server seed doesn\'t have the fingerprint you were shown.' };
+  const r = await F.fairStream(seed, f.c, f.n), x = bet.res, b = bet.body || {}, same = (a, c) => JSON.stringify(a) === JSON.stringify(c);
+  const sorted = a => (a || []).slice().sort((p, q) => p - q);
+  let want, got;
+  switch (bet.game) {
+    case 'dice': want = F.DRAW.dice(r) / 100; got = x.roll; break;
+    case 'limbo': want = F.DRAW.limbo(r); got = x.result; break;
+    case 'coinflip': want = F.DRAW.coinflip(r); got = x.result; break;
+    case 'rps': want = F.DRAW.rps(r); got = x.house; break;
+    case 'roulette': want = F.DRAW.roulette(r); got = x.result; break;
+    case 'slots': want = F.DRAW.slots(r); got = x.reels; break;
+    case 'plinko': want = F.DRAW.plinko(r, { rows: Number(b.rows) }); got = x.path; break;
+    case 'keno': want = F.DRAW.keno(r); got = x.drawn; break;
+    case 'cases': want = F.DRAW.cases(r, CASES[b.box] || { items: [[0, 1]] }); got = x.item; break;
+    case 'upgrader': want = F.DRAW.upgrader(r); got = x.roll; break;
+    case 'mines': want = sorted(F.DRAW.mines(r, { m: (x.mines || []).length })); got = sorted(x.mines); break;
+    case 'towers': { const [cols, bad] = TOWER[(x.p || {}).l] || [3, 1]; want = F.DRAW.towers(r, { rows: TOWER_ROWS, cols, bad }).map(sorted); got = (x.rows || []).map(sorted); break; }
+    case 'cross': {   // (the lane that got you among those you crossed, as the server worked it out; none if you cashed out)
+      const [p, lanes] = CROSS[(x.p || {}).l] || [0.8, 20], first = F.DRAW.cross(r, { p, lanes }).slice(0, Number(b.path) || 0).indexOf(true);
+      want = first < 0 ? null : first; got = x.hit == null ? null : x.hit; break;
+    }
+    case 'hilo': {
+      const moves = String(b.path || ''); let key = ''; want = [await F.hiloCard(seed, f.c, f.n, '')];
+      for (const mv of moves.slice(0, (x.cards || []).length - 1)) { key += mv === 's' ? 's' : 'g'; want.push(await F.hiloCard(seed, f.c, f.n, key)); }
+      got = (x.cards || []).map(c => ({ r: c.r, s: c.s })); break;
+    }
+    case 'blackjack': {
+      const shoe = F.DRAW.blackjack(r), p = x.p || [], d = x.d || [];
+      const extra = shoe.slice(4, 4 + Math.max(0, p.length - 2)), dealer = shoe.slice(4 + extra.length, 4 + extra.length + Math.max(0, d.length - 2));
+      want = { p: [shoe[0], shoe[2], ...extra], d: [shoe[1], shoe[3], ...dealer] }; got = { p, d }; break;
+    }
+    case 'crash': want = F.DRAW.crash(r); got = x.point; break;
+    case 'mega': want = F.DRAW.mega(r, { chance: 0.01 }); got = x.won; break;
+    default: return { ok: null, text: 'This game can\'t be checked here.' };
+  }
+  const ok = same(want, got);
+  if (ok && typeof eggFind === 'function') eggFind('seedcheck');   // (an easter egg)
+  return { ok, text: ok ? 'It matches: this result came from those seeds.' : 'It doesn\'t match.' };
 }
 
 // ---------- the games ----------
@@ -98,18 +173,107 @@ function shell() {
       <span class="cz-bal" title="Your Orbs"><svg viewBox="0 0 24 24" width="15" height="15"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg><span id="cz-bal">0</span></span>
       <span class="cz-left" id="cz-left"></span>
       <button type="button" class="cz-link" id="cz-how">How it works</button>
+      <button type="button" class="cz-link cz-fair-link" id="cz-fair-btn"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>Provably Fair</button>
+      <button type="button" class="cz-link" id="cz-ref-btn">Referrals</button>
     </div>
     <div class="cz-how hidden" id="cz-how-box">
-      <p>Every result is picked by Frixion's server, at random, the same way for everyone. Nobody can change the odds, not even staff.</p>
-      <p>The house has a small edge: most games pay back 97% of what's bet over time (Roulette 97.3%, Blackjack about 99% if you play well). Over a lot of games you'll lose a bit more than you win, so only bet what you're fine losing.</p>
-      <p>Bets are 10 to 10,000 Orbs, one game can pay up to 1,000,000 Orbs, and you can play 200 games a day. Casino wins don't count toward the 20,000 Orbs a day from other games.</p>
+      <p>Every result is picked by Frixion's server from seeds you can check afterwards (Provably Fair), the same way for everyone. Nobody can change the odds, not even staff.</p>
+      <p>The house has a small edge: most games pay back 97% of what's bet over time, a 3% house edge (Roulette 97.3%, Blackjack about 99% if you play well). Over a lot of games you'll lose a bit more than you win, so only bet what you're fine losing.</p>
+      <p>Bets start at 10 Orbs and go as high as the Orbs you have, wins are as big as they come, and you can play 200 games a day. Casino wins don't count toward the 20,000 Orbs a day from other games. High rollers get noticed.</p>
       <p class="cz-egg">There are a few easter eggs in here too.</p>
     </div>
+    <div class="cz-panel hidden" id="cz-fair-box"></div>
+    <div class="cz-panel hidden" id="cz-ref-box"></div>
     <div id="cz-open-note"></div>
     <div id="cz-page"></div>
   </div>`;
   el('cz-how').onclick = () => el('cz-how-box').classList.toggle('hidden');
+  el('cz-fair-btn').onclick = () => toggleFair();
+  el('cz-ref-btn').onclick = () => toggleRef();
   return r;
+}
+// ----- the Provably Fair panel: your seeds, changing them, and checking the bets kept on this device -----
+function toggleFair(open) {
+  const box = el('cz-fair-box');
+  if (!box) return;
+  const show = open === true || box.classList.contains('hidden');
+  box.classList.toggle('hidden', !show);
+  if (show) { el('cz-ref-box').classList.add('hidden'); renderFair(); box.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+}
+async function renderFair(old) {
+  const box = el('cz-fair-box');
+  if (!box) return;
+  let info = null;
+  try { info = await orbsCall('casino', { game: 'fair', action: 'info' }); } catch (x) {}
+  const bets = store.get(fairKey(), []);
+  const what = bt => {
+    const x = bt.res || {}, g = GAME_BY_ID[bt.game];
+    const res = x.roll !== undefined ? `rolled ${x.roll}` : x.point !== undefined ? `crashed at ${x.point}x` : x.won !== undefined ? (x.won ? 'won' : 'not a winner')
+      : x.result !== undefined ? `result ${x.result}` : x.house !== undefined ? `the house picked ${x.house}` : '';
+    return `${e(g ? g.name : bt.game)} <span class="cz-fair-n">#${bt.fair.n}</span>${res ? ` <span class="cz-fair-res">${e(res)}</span>` : ''}`;
+  };
+  box.innerHTML = `<div class="cz-panel-head"><b>Provably Fair</b><button type="button" class="cz-link" id="cz-fair-close">Close</button></div>
+    <p class="cz-panel-text">Every result comes from three things: a server seed (kept hidden, but you see its fingerprint before you bet), your client seed, and the bet's number on that seed (its nonce). Change seeds and the server shows you the old server seed, so you can work out any bet made with it again and see that it matches. Checking is free, and sometimes worth it.</p>
+    ${info ? `<div class="cz-fair-grid">
+      <div><span class="cz-fair-lbl">Server seed fingerprint</span><code class="cz-fair-code">${e(info.hash)}</code></div>
+      <div><span class="cz-fair-lbl">Your client seed</span><code class="cz-fair-code">${e(info.c)}</code></div>
+      <div><span class="cz-fair-lbl">Bets on these seeds</span><code class="cz-fair-code">${e(String(info.n))}</code></div>
+    </div>
+    <div class="cz-fair-change"><input type="text" id="cz-fair-client" maxlength="32" placeholder="New client seed (empty: a random one)" autocomplete="off"><button type="button" class="cz-btn" id="cz-fair-rotate">Change seeds</button></div>` : '<p class="cz-panel-text">Could not load your seeds.</p>'}
+    ${old ? `<div class="cz-fair-old">Your old server seed (fingerprint ${e(old.hash.slice(0, 16))}...): <code class="cz-fair-code">${e(old.seed)}</code> It was used for ${old.n} bet${old.n === 1 ? '' : 's'}, which you can check below.</div>` : ''}
+    <div class="cz-panel-sub">Your recent bets on this device</div>
+    <div class="cz-fair-bets">${bets.length ? bets.map((bt, i) => `<div class="cz-fair-row"><span>${what(bt)}</span><button type="button" class="cz-link" data-fair-check="${i}">Check</button><span class="cz-fair-out" id="cz-fair-out-${i}"></span></div>`).join('') : '<span class="cz-panel-text">No bets yet.</span>'}</div>`;
+  el('cz-fair-close').onclick = () => toggleFair();
+  if (el('cz-fair-rotate')) el('cz-fair-rotate').onclick = async () => {
+    const client = el('cz-fair-client').value.trim();
+    try {
+      const r = await orbsCall('casino', Object.assign({ game: 'fair', action: 'rotate' }, client ? { client } : {}));
+      const seeds = store.get('fair_seeds', {}); seeds[r.old.hash] = r.old.seed; store.set('fair_seeds', seeds);
+      renderFair(r.old);
+    } catch (x) { toast(x.message || 'Could not change seeds.', 'error'); }
+  };
+  box.querySelectorAll('[data-fair-check]').forEach(btn => {
+    btn.onclick = async () => {
+      const i = Number(btn.dataset.fairCheck), out = el('cz-fair-out-' + i);
+      out.textContent = 'Checking...'; out.className = 'cz-fair-out';
+      try { const r = await checkBet(bets[i]); out.textContent = r.text; out.className = 'cz-fair-out ' + (r.ok === true ? 'good' : r.ok === false ? 'bad' : ''); }
+      catch (x) { out.textContent = 'Could not check it.'; }
+    };
+  });
+}
+// ----- Referrals (v4.67): your code and link, who joined with it and what it's earned; or joining with a friend's -----
+function toggleRef() {
+  const box = el('cz-ref-box');
+  if (!box) return;
+  const show = box.classList.contains('hidden');
+  box.classList.toggle('hidden', !show);
+  if (show) { el('cz-fair-box').classList.add('hidden'); renderRef(); }
+}
+async function renderRef() {
+  const box = el('cz-ref-box');
+  if (!box) return;
+  let r = null;
+  try { r = await orbsCall('referral', { action: 'info' }); } catch (x) {}
+  const link = r && r.code ? `${location.origin}/?ref=${r.code}` : '';
+  box.innerHTML = `<div class="cz-panel-head"><b>Earn from every bet your friends make</b><button type="button" class="cz-link" id="cz-ref-close">Close</button></div>
+    <div class="cz-ref-stats"><div><b>10%</b><span>of the house edge on every bet they place</span></div><div><b>5%</b><span>of every winning bet they make</span></div><div><b>10,000 Orbs</b><span>for every friend who joins, once they've bet 10,000</span></div></div>
+    ${!r ? '<p class="cz-panel-text">Could not load your referrals.</p>' : r.code
+      ? `<div class="cz-ref-code">Your code <code class="cz-fair-code">${e(r.code)}</code> <input type="text" readonly value="${e(link)}" class="cz-ref-link" id="cz-ref-link"><button type="button" class="cz-btn" id="cz-ref-copy">Copy link</button></div>
+         <p class="cz-panel-text">${r.friends} friend${r.friends === 1 ? '' : 's'} joined with it, and it's earned you ${fmt(r.earned)} Orbs.</p>`
+      : `<div class="cz-fair-change"><input type="text" id="cz-ref-new" maxlength="16" placeholder="Make your code (3 to 16 letters and digits)" autocomplete="off"><button type="button" class="cz-btn" id="cz-ref-make">Make code</button></div>`}
+    ${r && r.canJoin ? `<div class="cz-fair-change"><input type="text" id="cz-ref-join" maxlength="16" placeholder="Joined because of a friend? Their code" autocomplete="off"><button type="button" class="cz-btn" id="cz-ref-join-btn">Use code</button></div>` : ''}
+    ${r && r.referredBy ? `<p class="cz-panel-text">You joined with ${e(r.referredBy)}'s code.</p>` : ''}
+    <p class="cz-panel-text cz-fine">New accounts can use a code on their first day, before their first Casino game. Accounts on the same device or network as the code's owner can't, so no farming with alts. Nothing is paid from infinite Orbs.</p>`;
+  el('cz-ref-close').onclick = () => toggleRef();
+  if (el('cz-ref-copy')) el('cz-ref-copy').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copied.'); } catch (x) { el('cz-ref-link').select(); } };
+  if (el('cz-ref-make')) el('cz-ref-make').onclick = async () => {
+    try { const x = await orbsCall('referral', { action: 'make', code: el('cz-ref-new').value.trim() }); toast(`Your code is ${x.code}.`); renderRef(); }
+    catch (x) { toast(x.message || 'Could not make that code.', 'error'); }
+  };
+  if (el('cz-ref-join-btn')) el('cz-ref-join-btn').onclick = async () => {
+    try { const x = await orbsCall('referral', { action: 'join', code: el('cz-ref-join').value.trim() }); toast(`You joined with ${x.referredBy}'s code.`); renderRef(); }
+    catch (x) { toast(x.message || 'That code didn\'t work.', 'error'); }
+  };
 }
 function showTop() {
   if (!el('cz-bal')) return;
@@ -146,11 +310,13 @@ function frame(id, sideHTML, stageHTML) {
   const g = GAME_BY_ID[id], page = el('cz-page');
   page.innerHTML = `<div class="cz-game cz-g-${id}">
     <div class="cz-game-head"><button type="button" class="cz-back" id="cz-back"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>All games</button>
-      <h2>${e(g.name)}</h2><span class="cz-game-blurb">${e(g.blurb)}</span></div>
+      <h2>${e(g.name)}</h2><span class="cz-game-blurb">${e(g.blurb)}</span>
+      <span class="cz-edge">House edge ${EDGE[id] || '3%'}<button type="button" class="cz-link cz-fair-link" data-cz-fair>Provably Fair</button></span></div>
     <div class="cz-game-main"><div class="cz-side">${sideHTML}<div class="cz-result" id="cz-result"></div></div><div class="cz-stage" id="cz-stage">${stageHTML}</div></div>
     <div class="cz-recent" id="cz-recent"></div>
   </div>`;
   el('cz-back').onclick = () => { if (busyNow) { toast('Wait for this round to finish.'); return; } lobby(); };
+  page.querySelectorAll('[data-cz-fair]').forEach(b => { b.onclick = () => toggleFair(true); });
   showRecent(id);
   showTop();
   return live;
@@ -179,7 +345,7 @@ function wireBet(id, onChange) {
 // the bet as a whole number of Orbs, or null (and a note) when it can't be bet
 function readBet(id, need) {
   const box = el('cz-bet'), v = Number(box && box.value);
-  if (!Number.isInteger(v) || v < BET_MIN || v > BET_MAX) { toast('Bets are 10 to 10,000 Orbs.', 'error'); return null; }
+  if (!Number.isInteger(v) || v < BET_MIN || v > BET_MAX) { toast('Bets start at 10 Orbs.', 'error'); return null; }
   if ((need || v) > balance()) { toast('You don\'t have enough Orbs for that.', 'error'); return null; }
   if (gamesLeft() <= 0) { toast('That\'s all 200 casino games for today. More after midnight UTC.', 'error'); return null; }
   store.set('bet_' + id, v);
