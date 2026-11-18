@@ -500,7 +500,12 @@ async function seed() {
   await deny('...or tacks one onto a gradient', updateDoc('Bob', 'users/Bob', { bannerColor: 'linear-gradient(135deg,#12ab34,#ffaa00),url(https://evil.example/x)' }));
   await allow('Bob sets a name gradient', updateDoc('Bob', 'users/Bob', { nameGradient: ['#5865f2', '#eb459e'] }));
   await deny('Bob puts something else in his name gradient', updateDoc('Bob', 'users/Bob', { nameGradient: ['#5865f2', 'red;background:url(https://evil.example)'] }));
-  await deny('Bob uses three colors', updateDoc('Bob', 'users/Bob', { nameGradient: ['#5865f2', '#eb459e', '#000000'] }));
+  // (v4.66, request 40: up to 8 colors, like nameplates and banners; before, exactly 2)
+  await allow('Bob uses three colors (v4.66)', updateDoc('Bob', 'users/Bob', { nameGradient: ['#5865f2', '#eb459e', '#000000'] }));
+  await allow('...or eight', updateDoc('Bob', 'users/Bob', { nameGradient: ['#111111', '#222222', '#333333', '#444444', '#555555', '#666666', '#777777', '#888888'] }));
+  await deny('...but not nine', updateDoc('Bob', 'users/Bob', { nameGradient: ['#111111', '#222222', '#333333', '#444444', '#555555', '#666666', '#777777', '#888888', '#999999'] }));
+  await deny('...nor one', updateDoc('Bob', 'users/Bob', { nameGradient: ['#111111'] }));
+  await deny('...nor something that isn\'t a color among eight', updateDoc('Bob', 'users/Bob', { nameGradient: ['#111111', '#222222', '#333333', '#444444', '#555555', '#666666', '#777777', 'url(x)'] }));
   await allow('Bob turns his name gradient off', commit('Bob', [{ update: { name: 'projects/liquidalt/databases/(default)/documents/users/Bob', fields: {} }, updateMask: { fieldPaths: ['nameGradient'] }, currentDocument: { exists: true } }]));
   await allow('Bob picks an avatar color', updateDoc('Bob', 'users/Bob', { avatarColor: '#ed4245' }));
   await updateDoc('owner', 'users/Bob', { premiumUntil: Date.now() - 1000 });

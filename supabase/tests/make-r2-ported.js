@@ -2,7 +2,7 @@
 // checks, on top of r2compat.mjs, Gavinperri's section included (that site moves to Supabase too, part 12).
 const fs = require('fs');
 const SRC = 'C:/Users/peter/AppData/Local/Temp/claude/5cb1245c0ba41c74/ab28a137-fd20-43a4-9361-bfe84f367209/scratchpad/emu/rules2.test.js';
-const OUT = 'D:/Downloads/Frixion-supabase/supabase/tests/r2-ported.mjs';
+const OUT = require('path').join(__dirname, 'r2-ported.mjs');   // (next to this file)
 const src = fs.readFileSync(SRC, 'utf8').split(/\r?\n/);
 const find = (re, from = 0) => { const i = src.findIndex((l, j) => j >= from && re.test(l)); if (i < 0) throw new Error('not found: ' + re); return i; };
 const iEvery = find(/^const EVERYONE = \[/);

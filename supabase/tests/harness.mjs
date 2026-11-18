@@ -1,12 +1,13 @@
 // A stand-in for a Supabase project on this PC: PGlite (real Postgres in Node) with Supabase's roles (anon,
 // authenticated, service_role) and its auth.uid()/auth.jwt() functions, which read the request's JWT claims the same
-// way Supabase does. Loads Frixion's SQL from the supabase branch in order, then the tests talk to it as a person.
+// way Supabase does. Loads Frixion's SQL (supabase/sql in this checkout) in order, then the tests talk to it as a person.
 // PGlite (@electric-sql/pglite 0.5.12, unpacked anywhere): set PGLITE to its package/dist/index.js as a file:// URL.
 const { PGlite } = await import(process.env.PGLITE || 'file:///C:/Users/peter/AppData/Local/Temp/claude/5cb1245c0ba41c74/75275064-7605-4192-9d72-563121202775/scratchpad/pglite-dl/package/dist/index.js');
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
-export const SQL_DIR = 'D:/Downloads/Frixion-supabase/supabase/sql';
+export const SQL_DIR = fileURLToPath(new URL('../sql', import.meta.url));   // (this checkout's own, not a fixed folder)
 const BOOT = `
 create role anon nologin noinherit;
 create role authenticated nologin noinherit;
