@@ -409,6 +409,7 @@ function fxRun(canvas, kind, opts) {
   const run = { w: 0, h: 0, stopped: false, raf: 0, t0: 0, last: 0, front: false };
   const still = !!opts.still || fxStill(), stillAt = def.still || def.intro + 6000;   // (still: a moment worth showing)
   const st = def.make(fxRand(opts.seed || 1));
+  if (typeof opts.horizon === 'function') st.horizon = opts.horizon;   // (where the card's banner ends, for Neon Grid)
   const fit = () => {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     if (!w || !h || (w === run.w && h === run.h)) return false;
@@ -654,7 +655,10 @@ const FX_DRAW = {
     intro: 2000,
     make: R => ({ trails: Array.from({ length: 4 }, () => ({ lane: Math.floor(R() * 13) - 6, per: 1800 + R() * 1800, off: R() })) }),
     draw(c, st, t, w, h) {
-      const hz = h * .38, vx = w / 2, pink = [255, 70, 200], cyan = [70, 220, 255], s0 = 5, s1 = w * .16;
+      // On a profile the floor starts right where the banner ends, so the banner is its sky and there's no empty band
+      // between them (v4.68, request 73). Anywhere else (Shop previews) the horizon sits 38% of the way down.
+      const banner = st.horizon ? st.horizon() : 0, hz = banner > 20 && banner < h * .7 ? banner : h * .38;
+      const vx = w / 2, pink = [255, 70, 200], cyan = [70, 220, 255], s0 = 5, s1 = w * .16;
       const k = fxEase(t / 1500), reach = hz + (h - hz) * k;
       const at = (i, f) => [vx + i * (s0 + (s1 - s0) * f), hz + (h - hz) * f];
       const g = c.createLinearGradient(0, hz - 50, 0, hz + 4);
@@ -917,11 +921,17 @@ function profileFxStop() {
   const b = $('profile-modal-box');
   if (b) b.classList.remove('fx-on');
 }
+// how far down the profile card its banner ends (0 when there's none showing)
+function profileBannerBottom() {
+  const cv = $('profile-fx-canvas'), b = $('profile-banner');
+  if (!cv || !b || !b.offsetHeight) return 0;
+  return b.getBoundingClientRect().bottom - cv.getBoundingClientRect().top;
+}
 function profileFxStart(effect) {
   profileFxStop();
   if (!effect || !effect.fx || !FX_DRAW[effect.fx]) return;
   $('profile-modal-box').classList.add('fx-on');
-  profileFx = fxRun($('profile-fx-canvas'), effect.fx, { seed: Math.floor(Math.random() * 1e9) });
+  profileFx = fxRun($('profile-fx-canvas'), effect.fx, { seed: Math.floor(Math.random() * 1e9), horizon: profileBannerBottom });
   fxWatchT = setTimeout(() => { if (profileFx && !$('profile-modal').classList.contains('hidden')) eggFindOnce('fxwatch'); }, 120000);
 }
 function wireFxPreviews(wrap) {
@@ -1167,6 +1177,19 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.68', date: '2026-11-18', title: 'Gift Orbs, visit gardens, and phone typing fixes',
+    notes: [
+      'Gift Orbs: open someone\'s profile and send them as many of your Orbs as you like. Gifts show under Loans and Gifts on both profiles, and you get told when someone gifts you.',
+      'Grow a Garden: visit anyone\'s garden and see it as it is right now. Use Visit a Garden in your garden, or Visit Garden on their profile.',
+      'Frixion Premium lets you earn up to 100,000 Orbs a day from games (20,000 without it). The Games page shows how many more you can still get today.',
+      'Typing on a phone: the send button keeps the keyboard up, a scroll that curves a little no longer slides the chat sideways, and on an iPhone the screen stays put instead of moving around while the keyboard is up.',
+      'Name gradients spread evenly across your name, so every color shows, however many you picked.',
+      'Shop prices get short forms like 1.50T and 10.0Qa, so huge prices fit on their button.',
+      'Editing a banner or nameplate in the Shop shows all of its colors, up to 8.',
+      'Nameplates keep the profile\'s rounded corners, and Neon Grid now starts right where your banner ends, with no empty strip between them.',
+      'Codes delete themselves once they\'ve been used up.',
+      '3 new easter eggs. That makes 74.',
+    ] },
   { v: '4.67', date: '2026-11-18', title: 'Provably Fair, referrals and 8 new profile effects',
     notes: [
       '8 new profile effects in the Shop: Fireworks, Galaxy, Lava Lamp, High Tide, Sunbeams, Koi Pond, Thunderstorm and Soap Bubbles. Each plays an intro when your profile opens, then keeps going behind your text.',
@@ -2531,10 +2554,16 @@ function nameGradientOf(p) {
   const g = p && isPremium(p) && Array.isArray(p.nameGradient) ? p.nameGradient : null;
   return g && g.length >= 2 && g.length <= NAME_GRAD_MAX && g.every(c => HEX6.test(c)) ? g : null;
 }
+// The whole name line (name, star, tags) gets the role color; a gradient goes on the name text alone (nameText), so it
+// spreads evenly over the name and every color shows (v4.68, request 62: it used to stretch over the tags too, and the
+// later colors ended up behind them).
 function nameStyle(p, roleColor) {
-  const g = nameGradientOf(p);
-  if (g) return ` style="background:linear-gradient(90deg,${g.join(',')});-webkit-background-clip:text;background-clip:text;color:transparent"`;
+  if (nameGradientOf(p)) return '';
   return roleColor ? ` style="color:${esc(cssColor(roleColor, 'inherit'))}"` : '';
+}
+function nameText(p, html) {
+  const g = nameGradientOf(p);
+  return g ? `<span class="grad-name" style="background-image:linear-gradient(90deg,${g.join(',')})">${html}</span>` : html;
 }
 function cssColor(c, fallback = 'transparent') {
   const s = typeof c === 'string' ? c.trim() : '';
@@ -4014,11 +4043,21 @@ function sameDevice(a, b) {
   if (a.hw && b.hw) return a.hw === b.hw;
   return devFp(a) === devFp(b);
 }
+// For the Owner panel's list only (v4.68, request 69: the same device kept showing up many times). Each site Frixion runs
+// on (and the app) keeps its own device ID, and the hardware fingerprint moves with browser zoom, another monitor or the
+// other graphics chip, so entries that share an account are also one device when they're the same kind of device on the
+// same system in the same time zone. (Bans still go by sameDevice() and the hardware fingerprint alone.)
+const devKind = d => (d.name && d.name !== 'Unknown device' ? [d.name, String(d.os || '').split(' ')[0], d.tz || ''].join('|') : '');
+function sameDeviceShown(a, b) {
+  if (sameDevice(a, b)) return true;
+  if (!(a.accounts || []).some(x => (b.accounts || []).includes(x))) return false;
+  return !!devKind(a) && devKind(a) === devKind(b);
+}
 // Turns the raw entries into one item per physical device. Each item lists the browsers (entries) it is made of.
 function groupDevices(devs) {
   const parent = devs.map((_, i) => i);
   const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
-  for (let i = 0; i < devs.length; i++) for (let j = i + 1; j < devs.length; j++) if (sameDevice(devs[i], devs[j])) parent[find(i)] = find(j);
+  for (let i = 0; i < devs.length; i++) for (let j = i + 1; j < devs.length; j++) if (sameDeviceShown(devs[i], devs[j])) parent[find(i)] = find(j);
   const buckets = new Map();
   devs.forEach((d, i) => { const r = find(i); if (!buckets.has(r)) buckets.set(r, []); buckets.get(r).push(d); });
   return [...buckets.values()].map(members => {
@@ -4161,7 +4200,7 @@ const hwBannable = d => !!d.hw && ['Windows PC', 'Linux PC', 'Chromebook', 'Mac'
 // address, and most home addresses change now and then.
 let adminSelectedIp = null, ipsCache = [];
 const NET_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>';
-const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const plural = (n, w, many) => `${n} ${n === 1 ? w : many || w + 's'}`;
 // Each network's own short tag, like #A3F2 (v4.61), made from its id (a scrambled code, so the tag says nothing about the
 // address either). It tells networks apart whose labels look the same, like two different "73.12.x.x". Six characters
 // where four would be the same for two networks.
@@ -4187,24 +4226,43 @@ async function renderIpsPane() {
   for (const [id, b] of Object.entries(bans)) if (!ips.some(x => x.id === id)) ips.push({ id, label: b.label || id });
   ips.forEach(x => { x.ban = bans[x.id] || null; x.seen = x.lastSeen && x.lastSeen.toMillis ? x.lastSeen.toMillis() : 0; x.accounts = x.accounts || []; x.devices = x.devices || []; });
   tagNetworks(ips);
-  ipsCache = ips;
-  const shown = ips.filter(x => !q || [x.label, x.id, x.tag, ...x.accounts].join(' ').toLowerCase().includes(q)).sort((a, b) => b.seen - a.seen);
-  list.innerHTML = shown.map(x => `<div class="admin-row ${x.id === adminSelectedIp ? 'on' : ''}" data-ip="${esc(x.id)}">
+  ipsCache = groupNetworks(ips);
+  const shown = ipsCache.filter(x => !q || [x.label, ...x.ids, ...x.members.map(m => m.tag), ...x.accounts].join(' ').toLowerCase().includes(q)).sort((a, b) => b.seen - a.seen);
+  list.innerHTML = shown.map(x => `<div class="admin-row ${x.ids.includes(adminSelectedIp) ? 'on' : ''}" data-ip="${esc(x.id)}">
       <span class="dev-ico">${NET_ICON}</span>
-      <span class="ar-name">${esc(x.label || 'Unknown')}${netTagHTML(x)}<small class="dev-sub">${plural(x.accounts.length, 'account')} · ${plural(x.devices.length, 'device')}${x.id === myIpId ? ' · yours' : ''}</small></span>
-      ${x.ban ? '<span class="ban-tag">Banned</span>' : ''}
+      <span class="ar-name">${esc(x.label || 'Unknown')}${netTagHTML(x)}<small class="dev-sub">${plural(x.accounts.length, 'account')} · ${plural(x.devices.length, 'device')}${x.ids.length > 1 ? ' · ' + plural(x.ids.length, 'address', 'addresses') : ''}${x.ids.includes(myIpId) ? ' · yours' : ''}</small></span>
+      ${x.allBanned ? '<span class="ban-tag">Banned</span>' : x.ban ? '<span class="ban-tag">Partly banned</span>' : ''}
     </div>`).join('') || '<div class="empty">No networks yet. One shows up here after someone signs in on it.</div>';
   list.querySelectorAll('.admin-row').forEach(row => { row.onclick = () => { adminSelectedIp = row.dataset.ip; renderIpsPane(); }; });
-  renderIpDetail(ipsCache.find(x => x.id === adminSelectedIp) || null);
+  renderIpDetail(ipsCache.find(x => x.ids.includes(adminSelectedIp)) || null);
+}
+// One row per network (v4.68, request 69: the same network kept showing up). Entries with the same label that share an
+// account are one network whose address changed: until v4.68 each IPv6 address got its own entry, and most homes get a
+// new one every day or so (the server now keeps IPv6 by its /64, so new ones stay together).
+function groupNetworks(list) {
+  const parent = list.map((_, i) => i);
+  const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+    const a = list[i], b = list[j];
+    if (a.label && a.label === b.label && a.accounts.some(n => b.accounts.includes(n))) parent[find(i)] = find(j);
+  }
+  const buckets = new Map();
+  list.forEach((x, i) => { const r = find(i); if (!buckets.has(r)) buckets.set(r, []); buckets.get(r).push(x); });
+  return [...buckets.values()].map(members => {
+    members.sort((a, b) => b.seen - a.seen);
+    const banned = members.filter(m => m.ban);
+    return { ...members[0], members, ids: members.map(m => m.id), accounts: [...new Set(members.flatMap(m => m.accounts))], devices: [...new Set(members.flatMap(m => m.devices))],
+      ban: banned.length ? banned[0].ban : null, bannedIds: banned.map(m => m.id), allBanned: banned.length === members.length };
+  });
 }
 async function renderIpDetail(x) {
   const wrap = $('ips-detail');
   if (!wrap) return;
   if (!x) { wrap.innerHTML = '<div class="empty">Select a network to manage.</div>'; return; }
   const devs = await Promise.all(x.devices.map(id => db.collection('devices').doc(id).get().then(s => (s.exists ? s.data() : { id })).catch(() => ({ id }))));
-  if (adminSelectedIp !== x.id) return;
-  const mine = x.id === myIpId;
-  const accounts = x.accounts.map(a => `<button type="button" class="dev-chip" data-u="${esc(a)}">${esc(a)}</button>`).join('') || '<span class="ab-note">None recorded.</span>';
+  if (!x.ids.includes(adminSelectedIp)) return;
+  const mine = x.ids.includes(myIpId);
+  const accounts = x.accounts.map(a => `<span class="dev-chip-wrap"><button type="button" class="dev-chip" data-u="${esc(a)}">${esc(a)}</button>${unlinkBtnHTML(a)}</span>`).join('') || '<span class="ab-note">None recorded.</span>';
   const devices = devs.map(d => `<button type="button" class="dev-chip" data-dev="${esc(d.id)}">${esc(d.name || 'Unknown device')}${d.browser ? ', ' + esc(d.browser) : ''}${d.banned ? '<span class="ban-tag">Banned</span>' : ''}</button>`).join('') || '<span class="ab-note">None recorded.</span>';
   wrap.innerHTML = `
     <div class="admin-sel-head"><span class="dev-ico big">${NET_ICON}</span><div>
@@ -4217,6 +4275,7 @@ async function renderIpDetail(x) {
         <dt>Tag</dt><dd>${esc(x.tag || '')} (this network's own code, to tell it apart from others that look the same)</dd>
         <dt>Last seen</dt><dd>${esc(x.seen ? fmtDeviceTime(x.seen) : 'Unknown')}</dd>
         <dt>ID</dt><dd>${esc(x.id)}</dd>
+        ${x.ids.length > 1 ? `<dt>Addresses</dt><dd>${x.ids.length} addresses this network has had (${x.members.map(m => esc(m.tag || m.id.slice(3, 9))).join(', ')}), shown as one</dd>` : ''}
       </dl>
     </div>
     <div class="admin-block"><div class="ab-title">Accounts on this network (${x.accounts.length})</div><div class="dev-accts">${accounts}</div></div>
@@ -4230,16 +4289,18 @@ async function renderIpDetail(x) {
   wrap.querySelectorAll('.dev-chip[data-dev]').forEach(b => { b.onclick = () => { adminSelectedDevice = b.dataset.dev; document.querySelector('.admin-tab[data-admin-tab="devices"]').click(); }; });
   if ($('ip-ban-btn')) $('ip-ban-btn').onclick = () => adminBanIp(x);
   if ($('ip-unban-btn')) $('ip-unban-btn').onclick = () => adminUnbanIp(x);
+  wireUnlinkBtns(wrap, 'ips', x.ids, `${x.label || 'this network'}${x.tag ? ' ' + x.tag : ''}`, renderIpsPane);
 }
 function adminBanIp(x) {
   if (!realOwner()) { toast('Only the owner can ban networks.', 'error'); return; }
-  if (x.id === myIpId) { toast('You can\'t ban the network you\'re on.', 'error'); return; }
+  if ((x.ids || [x.id]).includes(myIpId)) { toast('You can\'t ban the network you\'re on.', 'error'); return; }
   confirmAction({
     title: 'Ban Network',
     body: `Ban ${x.label || 'this network'}${x.tag ? ' ' + x.tag : ''}? Nobody on it can use Frixion, with any device or account${x.accounts.length ? '. Accounts seen on it: ' + x.accounts.join(', ') : ''}. Everyone sharing it is banned too, like a whole school or home, and most home networks get a new address now and then.`,
     confirmLabel: 'Ban Network', input: { placeholder: 'Reason (optional)', maxLength: 120 },
     onConfirm: async typed => {
-      try { await db.collection('bannedIps').doc(x.id).set({ reason: typed || 'No reason given', by: myUid, at: Date.now(), label: x.label || '' }); toast('Network banned.'); }
+      // (every address the network has had, v4.68)
+      try { await Promise.all((x.ids || [x.id]).map(id => db.collection('bannedIps').doc(id).set({ reason: typed || 'No reason given', by: myUid, at: Date.now(), label: x.label || '' }))); toast('Network banned.'); }
       catch (e) { toast(e.message || 'Could not ban it.', 'error'); }
       renderIpsPane();
     },
@@ -4247,7 +4308,7 @@ function adminBanIp(x) {
 }
 async function adminUnbanIp(x) {
   if (!realOwner()) { toast('Only the owner can unban networks.', 'error'); return; }
-  try { await db.collection('bannedIps').doc(x.id).delete(); toast('Network unbanned.'); } catch (e) { toast(e.message || 'Could not unban it.', 'error'); }
+  try { await Promise.all((x.bannedIds || [x.id]).map(id => db.collection('bannedIps').doc(id).delete())); toast('Network unbanned.'); } catch (e) { toast(e.message || 'Could not unban it.', 'error'); }
   renderIpsPane();
 }
 
@@ -4291,6 +4352,24 @@ async function renderDevicesPane() {
   renderDeviceDetail(sel, bannedAccounts);
 }
 
+// The x on an account in a device's or network's list: takes that account off it (functions/api/admin/unlink, v4.68).
+const unlinkBtnHTML = a => `<button type="button" class="dev-chip-x" data-unlink="${esc(a)}" title="Take ${esc(a)} off this list" aria-label="Take ${esc(a)} off this list">&times;</button>`;
+function wireUnlinkBtns(wrap, kind, ids, where, done) {
+  wrap.querySelectorAll('[data-unlink]').forEach(b => {
+    b.onclick = () => {
+      const a = b.dataset.unlink;
+      confirmAction({
+        title: 'Take Account Off', danger: false, confirmLabel: 'Take It Off',
+        body: `Take ${a} off ${where}? It stops counting as used there (so it isn't linked to the other accounts on it, for loans and referrals). If ${a} signs in there again, it's added back.`,
+        onConfirm: async () => {
+          try { const r = await orbsCall('unlink', { kind, ids, account: a }); toast(r.changed ? `${a} is off ${where}.` : `${a} wasn't on it any more.`); }
+          catch (e) { toast(e.message || 'Could not take it off.', 'error'); }
+          done();
+        },
+      });
+    };
+  });
+}
 async function renderDeviceDetail(g, bannedAccounts) {
   const wrap = $('devices-detail');
   if (!wrap) return;
@@ -4300,8 +4379,9 @@ async function renderDeviceDetail(g, bannedAccounts) {
   const mine = g.members.some(m => m.id === myDeviceId);
   const chips = g.accounts.map((a, i) => {
     const p = profiles[i];
-    if (!p) return `<span class="dev-chip gone" title="This account no longer exists">${esc(a)} (deleted)</span>`;
-    return `<button type="button" class="dev-chip" data-u="${esc(a)}">${esc(a)}${banStatus(p).banned ? '<span class="ban-tag">Banned</span>' : ''}</button>`;
+    const x = unlinkBtnHTML(a);
+    if (!p) return `<span class="dev-chip-wrap"><span class="dev-chip gone" title="This account no longer exists">${esc(a)} (deleted)</span>${x}</span>`;
+    return `<span class="dev-chip-wrap"><button type="button" class="dev-chip" data-u="${esc(a)}">${esc(a)}${banStatus(p).banned ? '<span class="ban-tag">Banned</span>' : ''}</button>${x}</span>`;
   }).join('') || '<span class="ab-note">No accounts recorded.</span>';
   const linkedBanned = !g.anyBanned && g.accounts.some(a => bannedAccounts && bannedAccounts.has(a));
   const banned = g.members.find(m => m.banned);
@@ -4346,6 +4426,7 @@ async function renderDeviceDetail(g, bannedAccounts) {
     b.onclick = () => { adminSelectedUser = b.dataset.u; document.querySelector('.admin-tab[data-admin-tab="systemhub"]').click(); renderAdminList(); };
   });
   wrap.querySelectorAll('[data-rm-member]').forEach(b => { b.onclick = () => adminRemoveDeviceEntry(g.members.find(m => m.id === b.dataset.rmMember)); });
+  wireUnlinkBtns(wrap, 'devices', g.members.map(m => m.id), g.name || 'this device', renderDevicesPane);
   if (g.anyBanned) $('device-unban-btn').onclick = () => adminUnbanDevice(g);
   if (!g.allBanned && !mine) $('device-ban-btn').onclick = () => adminBanDevice(g, profiles);
 }
@@ -5040,6 +5121,7 @@ function initAppForUser() {
     if (myProfile.orbs === 0 && myProfile.infOrbs !== true && typeof eggFindOnce === 'function') eggFindOnce('equilibrium');   // exactly 0 Orbs (v4.66)
     showSecurityNotice();   // someone signed in to this account with a one-time password (v4.66)
     maybeJoinReferral();    // came in through a friend's referral link (v4.67)
+    showGiftNotice();       // someone gifted you Orbs (v4.68)
     maybeShowAppPrompt();
     refreshPushSub();
     maybeAskPush();
@@ -5511,6 +5593,30 @@ function queueViewportSync() {
     wrap.scrollTop = wrap.scrollHeight - wrap.clientHeight - (distFromBottom < 80 ? 0 : distFromBottom);
   }).observe(wrap);
 })();
+// (v4.68, request 70) iPhone with the keyboard up: the page is taller than what shows, and iOS lets a drag move the whole
+// page (and everything with it) whenever the list under the finger can't scroll that way any more, or there's no list
+// there. That's what made the screen jump around while typing and the messages seem stuck. Those drags are stopped
+// now; lists, the message box (moving the caret) and sideways drags work as before.
+(function stopPagePanWhileTyping() {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (!ios) return;
+  let lx = 0, ly = 0;
+  const canScroll = (el, dy) => {
+    const oy = getComputedStyle(el).overflowY;
+    if ((oy !== 'auto' && oy !== 'scroll') || el.scrollHeight <= el.clientHeight + 1) return false;
+    return dy > 0 ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1;   // (finger down: toward the top)
+  };
+  document.addEventListener('touchstart', e => { if (e.touches.length === 1) { lx = e.touches[0].clientX; ly = e.touches[0].clientY; } }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if (e.touches.length !== 1) return;
+    const x = e.touches[0].clientX, y = e.touches[0].clientY, dx = x - lx, dy = y - ly;
+    lx = x; ly = y;
+    if (!document.body.classList.contains('keyboard-open') || !e.cancelable || !dy || Math.abs(dx) > Math.abs(dy)) return;
+    if (e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]')) return;
+    for (let el = e.target; el && el.nodeType === 1 && el !== document.body; el = el.parentElement) if (canScroll(el, dy)) return;
+    e.preventDefault();
+  }, { passive: false });
+})();
 window.addEventListener('resize', queueViewportSync);
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', queueViewportSync);
@@ -5557,7 +5663,8 @@ async function checkForNewVersion() {
   if (!live || live === RUNNING_FILES || versionBar) return;
   // (never twice for the same version: if a reload didn't bring it, something else is going on, so leave it be)
   try { if (sessionStorage.getItem('frixion_reloaded_for') === live) return; } catch (e) {}
-  const el = document.activeElement, typing = el && /^(INPUT|TEXTAREA)$/.test(el.tagName) && el.value;
+  // (v4.68, request 70: any focused box counts, even an empty one between two messages, and so does an open phone keyboard)
+  const el = document.activeElement, typing = (el && /^(INPUT|TEXTAREA)$/.test(el.tagName)) || document.body.classList.contains('keyboard-open');
   if (!typing && !currentGameId && !document.getElementById('ocrng') && !document.querySelector('.modal-overlay:not(.hidden)')) {
     try { sessionStorage.setItem('frixion_reloaded_for', live); } catch (e) {}
     location.reload(); return;
@@ -5605,7 +5712,8 @@ document.addEventListener('keydown', (e) => {
   const settle = () => requestAnimationFrame(() => { $('side-panel').style.transform = ''; $('main-col').style.transform = ''; });
 
   zone.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1 || !eligible()) { tracking = false; return; }
+    // (v4.68, request 70) not while the keyboard is up: you're typing, and a drag there is meant for the messages
+    if (e.touches.length !== 1 || !eligible() || document.body.classList.contains('keyboard-open')) { tracking = false; return; }
     // the member list has its own swipe; pickers and code blocks scroll sideways
     if (e.target.closest('.modal-overlay:not(.hidden)') || e.target.closest('textarea, input') || e.target.closest('#member-panel, #emoji-picker-panel, #sticker-picker-panel, #gif-picker-panel, pre')) { tracking = false; return; }
     startX = e.touches[0].clientX;
@@ -5621,8 +5729,10 @@ document.addEventListener('keydown', (e) => {
     dx = x - startX;
     const dy = y - startY;
     if (!dragging) {
-      if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
-      if (Math.abs(dy) > Math.abs(dx)) { tracking = false; return; }
+      if (Math.abs(dx) < 16 && Math.abs(dy) < 16) return;
+      // only a clearly sideways drag is a swipe (v4.68, request 70): a thumb's slightly curved scroll used to count as one
+      // and froze the messages while the chat slid sideways
+      if (Math.abs(dx) < 2 * Math.abs(dy)) { tracking = false; return; }
       dragging = true;
       $('app').classList.add('mobile-dragging');
     }
@@ -7000,6 +7110,44 @@ $('loan-send').onclick = async () => {
   } catch (e) { toast(e.message || 'Could not send the request.', 'error'); }
   finally { $('loan-send').disabled = false; }
 };
+// Gift Orbs (v4.68, request 68): any amount you have, to anyone. The server moves them and keeps the gift with your loans.
+let orbGiftTo = null;
+function openOrbGiftModal(username) {
+  orbGiftTo = username;
+  $('orb-gift-desc').textContent = `Send ${displayNameOf(profileCache[username] || { username })} some of your Orbs. You have ${orbsLabel(myProfile)}.`;
+  $('orb-gift-amount').value = ''; $('orb-gift-note').value = '';
+  openModal('orb-gift-modal');
+  setTimeout(() => $('orb-gift-amount').focus(), 50);
+}
+$('orb-gift-send').onclick = async () => {
+  const amount = Math.floor(Number($('orb-gift-amount').value)), to = orbGiftTo;
+  if (!to) return;
+  if (!(amount >= 1)) { toast('Gift at least 1 Orb.'); return; }
+  if (!hasOrbsFor(amount)) { toast('You don\'t have that many Orbs.', 'error'); return; }
+  $('orb-gift-send').disabled = true;
+  try {
+    const r = await orbsCall('loan', { action: 'gift', to, amount, note: $('orb-gift-note').value });
+    if (r.orbs != null && !hasInfiniteOrbs(myProfile)) myProfile.orbs = r.orbs;
+    myProfile.loanWith = [...new Set([...(myProfile.loanWith || []), to])];
+    settleOrbs();
+    closeModal('orb-gift-modal');
+    toast(`Sent ${fmtOrbs(amount)} Orbs to ${displayNameOf(profileCache[to] || { username: to })}.`);
+    if (amount === 67) eggFind('sixseven');   // (an easter egg)
+  } catch (e) { toast(e.message || 'Could not send the Orbs.', 'error'); }
+  finally { $('orb-gift-send').disabled = false; }
+};
+// Someone gifted you Orbs (giftIn on your profile, which the server writes with the gift): said once per gift on each
+// device, for gifts from the last 3 days.
+function showGiftNotice() {
+  const g = myProfile && myProfile.giftIn;
+  if (!g || typeof g !== 'object' || typeof g.from !== 'string' || !(Number(g.at) > Date.now() - 3 * 86400000)) return;
+  const key = 'frixion_gift_seen_' + myUid;
+  let seen = 0;
+  try { seen = Number(localStorage.getItem(key)) || 0; } catch (e) {}
+  if (Number(g.at) <= seen) return;
+  try { localStorage.setItem(key, String(g.at)); } catch (e) {}
+  toast(`${displayNameOf(profileCache[g.from] || { username: g.from })} gifted you ${fmtOrbs(Number(g.amount) || 0)} Orbs.`);
+}
 async function renderProfileLoans(username, isSelf, isBot) {
   const box = $('profile-loans'), label = $('profile-loans-label'), withList = Array.isArray(myProfile.loanWith) ? myProfile.loanWith : [];
   const show = !isBot && (isSelf ? withList.length > 0 : withList.includes(username));
@@ -7030,14 +7178,15 @@ async function renderProfileLoans(username, isSelf, isBot) {
       if (!lender) act = `<input type="number" class="loan-pay-amt" data-loan-amt min="1" max="${owed}" value="${owed}"><button class="pa-btn primary" data-loan-pay>Pay Back</button>`;
     } else {
       cls = 'done';
-      text = l.status === 'paid' ? `${name(l.to)} paid back ${fmtOrbs(l.amount)} Orbs to ${name(l.from)}${l.late ? ', late' : ''}.`
+      text = l.status === 'gift' ? `${name(l.from)} gifted ${fmtOrbs(l.amount)} Orbs to ${name(l.to)}.`
+        : l.status === 'paid' ? `${name(l.to)} paid back ${fmtOrbs(l.amount)} Orbs to ${name(l.from)}${l.late ? ', late' : ''}.`
         : l.status === 'denied' ? `${name(l.from)} said no to ${fmtOrbs(l.amount)} Orbs.` : `${name(l.to)} took back a request for ${fmtOrbs(l.amount)} Orbs.`;
     }
     return `<div class="loan-row ${cls}" data-loan="${esc(l.id)}"><div class="loan-text">${text}${note}</div>${act ? `<div class="loan-acts">${act}</div>` : ''}</div>`;
   });
   const rows = rowsFor([...loans.filter(going), ...(showAll ? past : past.slice(0, 5))]);
-  box.innerHTML = (rows.join('') || '<div class="loan-empty">No loans between you yet.</div>')
-    + (past.length > 5 ? `<button type="button" class="loan-more" data-loan-more>${showAll ? 'Show fewer' : `Show all ${past.length} finished loans`}</button>` : '');
+  box.innerHTML = (rows.join('') || '<div class="loan-empty">No loans or gifts between you yet.</div>')
+    + (past.length > 5 ? `<button type="button" class="loan-more" data-loan-more>${showAll ? 'Show fewer' : `Show all ${past.length} past loans and gifts`}</button>` : '');
   if (box.querySelector('[data-loan-more]')) box.querySelector('[data-loan-more]').onclick = () => {
     box.dataset.all = showAll ? '' : username;
     renderProfileLoans(username, isSelf, isBot);
@@ -7219,6 +7368,8 @@ async function openProfileModal(username) {
     const blocked = myBlocks.includes(username);
     // (v4.64: one set of matching buttons instead of a bright Message button and a loose "Friends" label)
     const PA_ICON = {
+      orb: '<svg viewBox="0 0 24 24" width="15" height="15"><circle cx="12" cy="12" r="8.5" fill="currentColor"/><circle cx="9.2" cy="9.2" r="2.4" fill="var(--bg-floating, #111)" opacity=".55"/></svg>',
+      leaf: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14z"/><path d="M5 19l7-7"/></svg>',
       msg: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.4A8 8 0 1 1 21 12z"/></svg>',
       check: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
       add: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
@@ -7238,9 +7389,13 @@ async function openProfileModal(username) {
       <button class="pa-btn primary" id="profile-message-btn">${PA_ICON.msg}Message</button>
       ${friendBtn}
       <button class="pa-btn" id="profile-gift-btn">${PA_ICON.gift}Gift Premium</button>
+      ${isBot ? '' : `<button class="pa-btn" id="profile-orbgift-btn">${PA_ICON.orb}Gift Orbs</button>`}
+      ${!isBot && p && ((Number(p.ggUnlocked) || 0) > 0 || (Array.isArray(p.ggPlots) && p.ggPlots.some(Boolean))) ? `<button class="pa-btn" id="profile-garden-btn">${PA_ICON.leaf}Visit Garden</button>` : ''}
       ${isBot ? '' : `<button class="pa-btn" id="profile-loan-btn">${PA_ICON.loan}Ask for a Loan</button>`}
       ${blockBtn}
     </div>`;
+    if ($('profile-orbgift-btn')) $('profile-orbgift-btn').onclick = () => { closeModal('profile-modal'); openOrbGiftModal(username); };
+    if ($('profile-garden-btn')) $('profile-garden-btn').onclick = () => { closeModal('profile-modal'); ggVisitGarden(username); };   // (v4.68, request 64)
     // (v4.66, request 38) a button that opens a window of its own closes the profile first, as Message always did,
     // instead of opening behind or on top of it
     if ($('profile-loan-btn')) $('profile-loan-btn').onclick = () => { closeModal('profile-modal'); openLoanModal(username); };
@@ -10131,7 +10286,7 @@ async function renderMemberPanel(members, ownerId, server) {
     return `
     <div class="member-row" data-u="${esc(uid)}">
       ${avatarHTML(32, p.avatarColor, initials(p.username), disp, p.avatarUrl, p.equippedDecoration, uid, p.equippedMask)}
-      <span class="mname${disp !== 'offline' ? ' online-name' : ''}"${nameStyle(p, roleColor)}>${gapUnderscores(esc(displayNameOf(p)))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}${vanishedListFor(vanishData).includes(uid) && (uid === myUid || isOwner) ? `<span class="vanish-tag" title="${uid === myUid ? 'Only you and other owners can see you here' : 'Vanished. Only owners and co-owners can see this'}">Vanished</span>` : ''}</span>
+      <span class="mname${disp !== 'offline' ? ' online-name' : ''}"${nameStyle(p, roleColor)}>${nameText(p, gapUnderscores(esc(displayNameOf(p))))}${premiumStar(p)}${roleTag(p)}${botTag(p)}${ownerCrown(uid, ownerId)}${vanishedListFor(vanishData).includes(uid) && (uid === myUid || isOwner) ? `<span class="vanish-tag" title="${uid === myUid ? 'Only you and other owners can see you here' : 'Vanished. Only owners and co-owners can see this'}">Vanished</span>` : ''}</span>
       ${topRole && topRole.color ? roleChipHTML(topRole) : ''}
       ${showGear ? `<span class="member-manage-btn" title="Manage Member" data-manage-uid="${esc(uid)}">${icon('gear')}</span>` : ''}
     </div>`;
@@ -10681,7 +10836,7 @@ async function renderMessages(rawMsgs) {
       const meta = document.createElement('div');
       meta.className = 'msg-meta';
       const roleColor = (currentView === 'channel' && currentServerData) ? roleColorFor(currentServerData, m.uid) : null;
-      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}"${nameStyle(p, roleColor)}>${gapUnderscores(esc((currentView === 'channel' && serverNickFor(m.uid)) || displayNameOf(p)))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
+      meta.innerHTML = `<span class="author${m.uid === myUid ? ' own' : ''}"${nameStyle(p, roleColor)}>${nameText(p, gapUnderscores(esc((currentView === 'channel' && serverNickFor(m.uid)) || displayNameOf(p))))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="time">${timeStr(m.createdAt)}</span>`;
       body.appendChild(meta);
       body.appendChild(buildMessageLineEl(m, canDelete));
       groupEl.innerHTML = avatarHTML(40, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration, undefined, p.equippedMask);
@@ -11666,6 +11821,19 @@ function updateComposerSendBtn() {
 }
 $('composer-send-btn').onmousedown = e => e.preventDefault();   // keep the keyboard up
 $('composer-send-btn').onclick = () => { ckWordBoundaryCheck($('composer-input')); sendMessage(); };
+// (v4.68, request 70) The phone's send button never takes the focus from the message box. On an iPhone, tapping it moved
+// the focus to the button, which put the keyboard away after every message. So a touch sends on lifting the finger
+// (if it's still on the button) and cancels the tap that would have moved the focus; a mouse keeps the focus the same way.
+(function keepKeyboardOnSend() {
+  const btn = $('composer-send-btn');
+  btn.addEventListener('mousedown', e => e.preventDefault());
+  btn.addEventListener('touchend', e => {
+    const t = e.changedTouches && e.changedTouches[0], r = btn.getBoundingClientRect();
+    e.preventDefault();
+    if (!t || t.clientX < r.left - 8 || t.clientX > r.right + 8 || t.clientY < r.top - 8 || t.clientY > r.bottom + 8) return;
+    ckWordBoundaryCheck($('composer-input')); sendMessage();
+  }, { passive: false });
+})();
 
 // ---------- typing indicator ----------
 // Presence is a small doc per-user under a `typing` subcollection on
@@ -14360,12 +14528,14 @@ function shopItemCardHTML(key, item) {
   const noEquip = key === 'badges';
   const equipped = !noEquip && myProfile[def.equipField] === item.id;
   const action = equipped ? 'unequip' : owned ? (noEquip ? 'none' : 'equip') : 'buy';
-  const label = equipped ? 'Unequip' : owned ? (noEquip ? 'Owned' : 'Equip') : `${orbIconSVG(13)}<span>${Number(item.price).toLocaleString()}</span>`;
+  // big prices get letters like everywhere else (1.50T, 10.0Qa; v4.68, request 71); the full number is in the tooltip
+  const label = equipped ? 'Unequip' : owned ? (noEquip ? 'Owned' : 'Equip') : `${orbIconSVG(13)}<span>${fmtOrbs(Number(item.price))}</span>`;
+  const priceTip = action === 'buy' && Number(item.price) >= 1e6 ? ` title="${esc(Number(item.price).toLocaleString())} Orbs"` : '';
   return `<div class="shop-item-card${key === 'themes' ? ' is-theme-card' : ''}${key === 'music' ? ' is-music-card' : ''}${item.hero ? ' is-hero' : ''}" data-item="${esc(item.id)}" data-cat="${key}">
     <div class="sic-preview">${shopItemPreviewHTML(key, item)}</div>
     ${(key === 'themes' || key === 'music') ? '' : `<div class="sic-name">${esc(item.name)}${item.animated && key !== 'profile_effects' ? '<span class="sic-animated-tag">Animated</span>' : ''}</div>`}
     ${item.desc ? `<div class="sic-desc">${esc(item.desc)}</div>` : ''}
-    <button class="sic-btn${equipped ? ' is-equipped' : owned ? ' is-owned' : ''}" data-action="${action}"${action === 'none' ? ' disabled' : ''}>${label}</button>
+    <button class="sic-btn${equipped ? ' is-equipped' : owned ? ' is-owned' : ''}" data-action="${action}"${action === 'none' ? ' disabled' : ''}${priceTip}>${label}</button>
     ${owned && itemCutscenes(item).length ? `<div class="sic-replay" role="group" aria-label="Replay cutscenes">${itemCutscenes(item).map((c, n) => `<button type="button" class="sic-replay-seg" data-seg="${n}">Replay ${esc(c.label)}</button>`).join('')}</div>` : ''}
   </div>`;
 }
@@ -14616,7 +14786,7 @@ function openShopThemes() {
   if (tab) switchShopTab('themes', tab);
 }
 
-function renderQuests() { mountGameHubs(); }
+function renderQuests() { mountGameHubs(); loadEarnLeft(); }
 
 $('save-account-btn').onclick = async () => {
   const uname = $('set-username').value.trim();
@@ -15312,8 +15482,11 @@ async function renderAdminCodesList() {
   wrap.innerHTML = '<div class="empty">Loading...</div>';
   try {
     const snap = await db.collection('redeemCodes').orderBy('createdAt', 'desc').limit(50).get();
-    const rows = [];
-    snap.forEach(d => rows.push(d.data()));
+    const rows = [], usedUp = [];
+    snap.forEach(d => { if (codeUsage(d.data()).usedUp) usedUp.push(d.id); else rows.push(d.data()); });
+    // A code is deleted once it's used up (v4.68, request 66). The server does that on the last use; codes used up
+    // before then go now.
+    usedUp.forEach(id => db.collection('redeemCodes').doc(id).delete().catch(() => {}));
     const usageLabel = r => {
       const u = codeUsage(r);
       if (u.maxUses === 1) return u.uses ? 'Used by ' + esc(u.usedBy[0] || r.redeemedBy || '?') : 'Unused';
@@ -16135,7 +16308,7 @@ function renderAdminMusicList() {
   wrap.innerHTML = '';
   if (customMusicTracks.length) {
     wrap.insertAdjacentHTML('beforeend', `<div class="admin-builtin-label">Added by staff</div>` + customMusicTracks.map(t =>
-      `<div class="admin-emoji-chip editable" data-id="${esc(t.id)}"><span>${esc(t.name)}</span><span class="admin-chip-tag">${esc(Number(t.price).toLocaleString())}${t.featured ? ' · Featured' : ''}${(t.cutscenes || []).length ? ` · ${t.cutscenes.length} anim` : ''}${t.disabled ? ' · Disabled' : ''}</span></div>`).join(''));
+      `<div class="admin-emoji-chip editable" data-id="${esc(t.id)}"><span>${esc(t.name)}</span><span class="admin-chip-tag">${esc(fmtOrbs(Number(t.price)))}${t.featured ? ' · Featured' : ''}${(t.cutscenes || []).length ? ` · ${t.cutscenes.length} anim` : ''}${t.disabled ? ' · Disabled' : ''}</span></div>`).join(''));
   }
   finishAdminShopList(wrap, 'music');
 }
@@ -16151,8 +16324,9 @@ const SHOP_EDIT_EXTRA_FIELDS = {
     { path: 'mask', label: 'Full avatar mask (untick to move it back to Decorations)', type: 'checkbox' },
   ],
   themes: () => [colorField('bg.0', 'Color 1'), colorField('bg.1', 'Color 2'), colorField('bg.2', 'Color 3'), colorField('accent', 'Accent'), colorField('accent2', 'Accent 2')],
-  banners: () => [colorField('colors.0', 'Color 1'), colorField('colors.1', 'Color 2'), colorField('colors.2', 'Color 3'), { path: 'angle', label: 'Angle', type: 'number' }, { path: 'animated', label: 'Animated', type: 'checkbox' }],
-  nameplates: () => [colorField('colors.0', 'Color 1'), colorField('colors.1', 'Color 2'), { path: 'animated', label: 'Shimmer', type: 'checkbox' }],
+  // every color the item has, 2 to 8, like the makers (v4.68, request 61: this showed only the first 3, or 2)
+  banners: () => [{ path: 'colors', label: 'Colors (2 to 8)', type: 'color-list', full: true }, { path: 'angle', label: 'Angle', type: 'number' }, { path: 'animated', label: 'Animated', type: 'checkbox' }],
+  nameplates: () => [{ path: 'colors', label: 'Colors (2 to 8)', type: 'color-list', full: true }, { path: 'animated', label: 'Shimmer', type: 'checkbox' }],
   profile_effects: () => [colorField('color', 'Particle Color'), { path: 'style', label: 'Movement', type: 'select', options: ['falling', 'rising', 'floating', 'twinkling'] }],
   profile_frames: () => [colorField('color', 'Border Color'), { path: 'glow', label: 'Glowing', type: 'checkbox' }],
 };
@@ -16238,7 +16412,7 @@ function finishAdminShopList(wrap, type) {
   });
   if (def.builtins.length) {
     wrap.insertAdjacentHTML('beforeend', `<div class="admin-builtin-label">Built-in</div>` + def.builtins.map(item =>
-      `<div class="admin-emoji-chip editable" data-id="${esc(item.id)}" data-builtin="1">${builtinChipVisual(type, item)}<span>${esc(item.name)}</span><span class="admin-chip-tag">${esc(Number(item.price).toLocaleString())}${item.featured ? ' · Featured' : ''}</span></div>`
+      `<div class="admin-emoji-chip editable" data-id="${esc(item.id)}" data-builtin="1">${builtinChipVisual(type, item)}<span>${esc(item.name)}</span><span class="admin-chip-tag">${esc(fmtOrbs(Number(item.price)))}${item.featured ? ' · Featured' : ''}</span></div>`
     ).join(''));
   }
   wrap.querySelectorAll('.admin-emoji-chip.editable').forEach(chip => {
@@ -16278,11 +16452,17 @@ async function openShopItemEditor(type, id) {
     const val = getByPath(item, f.path);
     const inputId = `shop-edit-x${i}`;
     if (f.type === 'emoji-layout') return `<div class="field full"><label>${esc(f.label)}</label><div id="${inputId}" class="eml-host" data-path="${f.path}" data-type="emoji-layout"></div></div>`;
+    if (f.type === 'color-list') return `<div class="field full"><label>${esc(f.label)}</label><div class="color-list" id="${inputId}" data-path="${f.path}" data-type="color-list"></div></div>`;
     if (f.type === 'checkbox') return `<label class="shop-edit-check field full"><input type="checkbox" id="${inputId}" data-path="${f.path}" data-type="checkbox"${val ? ' checked' : ''}> ${esc(f.label)}</label>`;
     if (f.type === 'select') return `<div class="field full"><label for="${inputId}">${esc(f.label)}</label><select id="${inputId}" data-path="${f.path}" data-type="select">${f.options.map(o => `<option value="${o}"${o === val ? ' selected' : ''}>${o[0].toUpperCase() + o.slice(1)}</option>`).join('')}</select></div>`;
     const safeVal = f.type === 'color' ? (/^#[0-9a-f]{6}$/i.test(val || '') ? val : '#ffffff') : (val ?? '');
     return `<div class="field${f.full ? ' full' : ''}"><label for="${inputId}">${esc(f.label)}</label><input type="${f.type}" id="${inputId}" data-path="${f.path}" data-type="${f.type}" value="${esc(String(safeVal))}"${f.type === 'number' ? ' min="0" max="360"' : ''}></div>`;
   }).join('');
+  $('shop-edit-extra').querySelectorAll('[data-type="color-list"]').forEach(box => {
+    const cs = (Array.isArray(item[box.dataset.path]) ? item[box.dataset.path] : []).filter(c => HEX6.test(c)).slice(0, 8);
+    while (cs.length < 2) cs.push(cs[0] || '#5865f2');
+    colorListSet(box.id, cs);
+  });
   $('shop-edit-extra').querySelectorAll('.eml-host').forEach(h => {
     h._editor = createEmojiLayoutEditor(h, decoEmojiLayers(item), { mask: !!item.mask });
     const maskBox = $('shop-edit-extra').querySelector('[data-path="mask"]');
@@ -16393,7 +16573,7 @@ $('shop-edit-save-btn').onclick = async () => {
       const item = def.custom().find(x => x.id === id) || {};
       $('shop-edit-extra').querySelectorAll('[data-path]').forEach(input => {
         const kind = input.dataset.type;
-        let val = kind === 'checkbox' ? input.checked : kind === 'emoji-layout' ? input._editor.getLayers() : input.value;
+        let val = kind === 'checkbox' ? input.checked : kind === 'emoji-layout' ? input._editor.getLayers() : kind === 'color-list' ? colorListValues(input.id) : input.value;
         if (kind === 'number') val = Math.max(0, Math.min(360, parseInt(val, 10) || 0));
         const [root, idx] = input.dataset.path.split('.');
         if (idx !== undefined) {
@@ -17116,6 +17296,7 @@ function stopGameEngines() {
 
 function refreshCaps() {
   document.querySelectorAll('.fg-orbs').forEach(e => { e.textContent = fmtOrbs(UC.coins); });
+  updateEarnLeft();
 }
 
 // ---------- Orbs through the server (v4.57) ----------
@@ -17123,7 +17304,9 @@ function refreshCaps() {
 // functions/api/admin, which works the amounts out itself: earn (what games pay, up to 20,000 Orbs a day per account),
 // buy (Shop items, at the database's prices) and code (Orbs and Premium codes). Taking Orbs away (a game's costs, Quick
 // Roll, buying a Premium code) still happens right in the page.
-const EARN_CAP = 20000;
+const EARN_CAP = 20000, EARN_CAP_PREMIUM = 100000;   // a day; with Frixion Premium 100,000 (v4.68, request 67)
+const earnCap = () => (isPremium(myProfile) ? EARN_CAP_PREMIUM : EARN_CAP);
+let earnGotKnown = null;   // { day, got, at }: what games have paid you today, as the server last said (v4.68)
 let earnQueued = 0, earnSending = 0, earnFor = null, earnTimer = 0, earnTries = 0, earnChain = Promise.resolve(), earnCapDay = '', lastIdToken = '';
 async function orbsCall(route, body) {
   if (!auth.currentUser) throw new Error('Sign in again, then try once more.');
@@ -17165,6 +17348,7 @@ async function sendEarn() {
   try {
     const res = await orbsCall('earn', { n });
     earnTries = 0;
+    if (Number.isFinite(res.cap) && Number.isFinite(res.left)) earnGotKnown = { day: new Date().toISOString().slice(0, 10), got: Math.max(0, res.cap - res.left), at: Date.now() };
     if (res.added < n) earnCapped();
   } catch (e) {
     // no connection: tried again a few times, a little later each time; anything else (signed out, banned) drops it
@@ -17180,21 +17364,41 @@ function earnResetText() {
   const d = new Date();
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
-function earnCapText() { return `You've reached today's limit of ${fmtOrbs(EARN_CAP)} Orbs from games. It starts over at ${earnResetText()}.`; }
+function earnCapText() { return `You've reached today's limit of ${fmtOrbs(earnCap())} Orbs from games. It starts over at ${earnResetText()}.`; }
 function earnCapped() {
   const day = new Date().toISOString().slice(0, 10);
   if (earnCapDay === day) return;   // once a day is enough
   earnCapDay = day;
   toast(earnCapText());
+  eggFind('maxedout');   // (an easter egg)
 }
 // How many more Orbs games can pay today: orbDays/<you> (only the server writes it), less what's on its way.
 async function earnRoom() {
   let got = 0;
   try {
-    const d = (await db.collection('orbDays').doc(myUid).get()).data();
-    if (d && d.day === new Date().toISOString().slice(0, 10)) got = Math.max(0, Number(d.got) || 0);
+    const day = new Date().toISOString().slice(0, 10), d = (await db.collection('orbDays').doc(myUid).get()).data();
+    if (d && d.day === day) got = Math.max(0, Number(d.got) || 0);
+    earnGotKnown = { day, got, at: Date.now() };
   } catch (e) {}
-  return Math.max(0, EARN_CAP - got - pendingOrbs());
+  updateEarnLeft();
+  return Math.max(0, earnCap() - got - pendingOrbs());
+}
+// The Games page says how many more Orbs games can pay you today, above Overcontrol RNG (v4.68, request 63). It reads
+// orbDays/<you> when the page opens (at most once a minute) and keeps up from the server's answers after that.
+function updateEarnLeft() {
+  const els = document.querySelectorAll('.fg-left-text');
+  if (!els.length || !myProfile) return;
+  const day = new Date().toISOString().slice(0, 10), cap = earnCap();
+  const got = earnGotKnown && earnGotKnown.day === day ? earnGotKnown.got : 0, left = Math.max(0, cap - got - pendingOrbs());
+  const html = left > 0
+    ? `You can still get <b>${fmtOrbs(left)}</b> Orbs from games today <span class="fg-left-cap">(${isPremium(myProfile) ? `${fmtOrbs(EARN_CAP_PREMIUM)} a day with your Premium` : `${fmtOrbs(EARN_CAP)} a day, ${fmtOrbs(EARN_CAP_PREMIUM)} with Premium`})</span>`
+    : `You've got all ${fmtOrbs(cap)} Orbs from games for today. It starts over at ${earnResetText()}.`;
+  els.forEach(e => { e.innerHTML = html; });
+}
+function loadEarnLeft() {
+  const day = new Date().toISOString().slice(0, 10);
+  if (earnGotKnown && earnGotKnown.day === day && Date.now() - earnGotKnown.at < 60000) { updateEarnLeft(); return; }
+  if (myUid) earnRoom().catch(() => {});
 }
 // Leaving: what's waiting goes now, and on the way out (pagehide) by beacon, which needs no answer.
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && earnQueued) flushEarn(); });
@@ -18013,6 +18217,7 @@ function renderGardenAll(){
         <button class="gg-btn gg-harvest" onclick="ggHarvestAll()">🧺 Harvest All</button>
         <button class="gg-btn gg-shovel-btn${ggShovel?' on':''}" onclick="ggToggleShovel()">🪏 Shovel</button>
         <button class="gg-btn gg-cash" onclick="ggCashOut()">Cash Out (${fmtNum(GG_CASH_RATE)} ${SHK} = 1 <span class="orb-ic"></span>)</button>
+        <button class="gg-btn gg-visit-btn" onclick="ggVisitAsk()">Visit a Garden</button>
         
         
       </div>
@@ -18081,6 +18286,78 @@ function renderGGPlots(){
       <span class="gg-plant" style="${ready?'':'opacity:'+(0.4+0.6*prog).toFixed(2)+';transform:scale('+(0.7+0.3*prog).toFixed(2)+')'}">${s?s.ic:'🌱'}</span>
       ${ready?`<span class="gg-ready-tag">${fmtWeight(ggPlotWeight(p))}${muts.length?' &middot; x'+fmtNum(ggMutMult(muts)):''}</span>`:`<div class="gg-grow"><div class="gg-grow-bar" style="width:${pct}%"></div></div>`}</div>`;
   }
+  wrap.innerHTML=html;
+}
+// ---- Visiting someone else's garden (v4.68, request 64) ----
+// Their garden as it is right now, read from their profile (one read), drawn like yours with nothing to tap or buy. It
+// replaces your garden on the screen until Back to My Garden; your garden keeps growing (and saving) meanwhile.
+let ggVisit=null, ggVisitTimer=0;   // { name, display, data } while you're looking at someone's garden
+const ggVisitedNames=new Set();
+function ggVisitAsk(){
+  confirmAction({ title:'Visit a Garden', body:'Whose garden do you want to see? Type their username.', danger:false, confirmLabel:'Visit',
+    input:{ placeholder:'Username', maxLength:40 }, onConfirm: typed=>ggVisitGarden(String(typed||'').trim()) });
+}
+async function ggVisitGarden(username){
+  if(!username||!myUid) return;
+  if(username===myUid){ showToast('That\'s your own garden.'); return; }
+  if(currentGameId!=='growgarden') openGame('growgarden');
+  const g=document.getElementById('gg-game'); if(!g) return;
+  g.innerHTML='<div class="gg-visit-loading">Loading the garden...</div>';
+  let d=null;
+  try{ const s=await db.collection('users').doc(username).get(); d=s.exists?s.data():null; }catch(e){}
+  if(currentGameId!=='growgarden') return;
+  if(!d||d.terminated){ ggVisitEnd(); showToast('No account has that username.'); return; }
+  ggVisit={ name:username, display:displayNameOf({ ...d, username }), data:d };
+  ggVisitedNames.add(username); if(ggVisitedNames.size>=3) eggFind('gardentour');   // (an easter egg)
+  ggVisitRender();
+  clearInterval(ggVisitTimer); ggVisitTimer=setInterval(()=>{ if(document.getElementById('gg-visit-plots')) ggVisitRenderPlots(); else { clearInterval(ggVisitTimer); ggVisit=null; } }, 5000);
+}
+function ggVisitEnd(){
+  clearInterval(ggVisitTimer); ggVisit=null;
+  if(currentGameId==='growgarden'&&document.getElementById('gg-game')) renderGardenAll();
+}
+function ggVisitRender(){
+  const g=document.getElementById('gg-game'); if(!g||!ggVisit) return;
+  const d=ggVisit.data, unlocked=Math.max(0,Math.min(GG_MAX_PLOTS,Math.floor(Number(d.ggUnlocked)||0))), plots=Array.isArray(d.ggPlots)?d.ggPlots:[];
+  const pets=(Array.isArray(d.ggPets)?d.ggPets:[]).map(id=>GG_PET_MAP[id]).filter(Boolean);
+  const started=unlocked>0||plots.some(Boolean);
+  g.innerHTML=`
+    <div class="gg-top">
+      <div class="gg-bank">
+        <div class="gg-bank-amt">${SHK} ${fmtNum(Number(d.ggSheckles)||0)}</div>
+        <div class="gg-bank-sub">${escapeHtml(ggVisit.display)}'s Sheckles &middot; ${unlocked} of ${GG_MAX_PLOTS} plots</div>
+      </div>
+      <div class="gg-actions">
+        <button class="gg-btn" onclick="ggVisitAsk()">Visit Another</button>
+        <button class="gg-btn gg-harvest" onclick="ggVisitEnd()">Back to My Garden</button>
+      </div>
+    </div>
+    <div class="gg-visit-note">You're looking at <b>${escapeHtml(ggVisit.display)}</b>'s garden as it is right now. You can look, but not touch.</div>
+    ${started?`<div class="gg-garden gg-visit-garden"><div class="gg-plots" id="gg-visit-plots"></div></div>
+    <div class="gg-visit-pets">${pets.length?`<b>Pets:</b> ${pets.map(p=>`<span class="gg-visit-pet">${p.ic||''} ${escapeHtml(p.name)}</span>`).join('')}`:'No pets yet.'}</div>`
+      :`<div class="gg-visit-empty">${escapeHtml(ggVisit.display)} hasn't started a garden yet.</div>`}`;
+  ggVisitRenderPlots();
+}
+// their plots, read-only (the same look as renderGGPlots); their pets count toward how fast things grow, like at home
+function ggVisitRenderPlots(){
+  const wrap=document.getElementById('gg-visit-plots'); if(!wrap||!ggVisit||!UC) return;
+  const d=ggVisit.data, unlocked=Math.max(0,Math.min(GG_MAX_PLOTS,Math.floor(Number(d.ggUnlocked)||0))), plots=Array.isArray(d.ggPlots)?d.ggPlots:[];
+  const mine=UC.ggPets;
+  let html='';
+  try{
+    UC.ggPets=Array.isArray(d.ggPets)?d.ggPets:[];   // (put back below, before anything can save)
+    for(let i=0;i<GG_MAX_PLOTS;i++){
+      if(i>=unlocked){ html+='<div class="gg-plot locked"><span class="gg-lock">🔒</span></div>'; continue; }
+      const p=plots[i];
+      if(!p||!GG_SEED_MAP[p.seed]){ html+='<div class="gg-plot empty"><span class="gg-soil"></span></div>'; continue; }
+      const s=GG_SEED_MAP[p.seed], ready=ggPlotReady(p), prog=ggPlotProgress(p), sprs=ggPlotSprs(p), muts=ggPlotMuts(p,i);
+      html+=`<div class="gg-plot planted${ready?' ready':''}${muts.length?' mutated':''}" title="${escapeHtml(s.name)}${ready?' (ready)':` (${Math.round(prog*100)}% grown)`}">
+        ${sprs.length?`<span class="gg-plot-spr" title="${sprs.map(x=>escapeHtml(x.name)).join(', ')}">${sprs.map(x=>x.ic).join('')}</span>`:''}
+        ${muts.length?`<span class="gg-plot-muts" title="${escapeHtml(ggMutNames(muts).join(', '))} (x${fmtNum(ggMutMult(muts))})">${muts.map(id=>`<i class="gm-${id}"></i>`).join('')}</span>`:''}
+        <span class="gg-plant" style="${ready?'':'opacity:'+(0.4+0.6*prog).toFixed(2)+';transform:scale('+(0.7+0.3*prog).toFixed(2)+')'}">${s.ic}</span>
+        ${ready?`<span class="gg-ready-tag">${fmtWeight(ggPlotWeight(p))}${muts.length?' &middot; x'+fmtNum(ggMutMult(muts)):''}</span>`:`<div class="gg-grow"><div class="gg-grow-bar" style="width:${Math.round(prog*100)}%"></div></div>`}</div>`;
+    }
+  } finally { UC.ggPets=mine; }
   wrap.innerHTML=html;
 }
 async function ggPlotTap(i){
@@ -19912,6 +20189,7 @@ function mountGameHubs() {
       '<div class="fg-head"><div><h3 class="fg-heading">Play games, earn Orbs</h3>' +
       '<p class="fg-sub">Every game pays out in Orbs when a run ends. Spend them on Frixion Premium.</p></div>' +
       '<span class="fg-chip"><span class="orb-ic"></span><b class="fg-orbs">0</b></span></div>' +
+      '<div class="fg-left"><span class="orb-ic"></span><span class="fg-left-text"></span></div>' +   // (v4.68, request 63)
       '<div class="fg-grid">' +
       // Overcontrol RNG: the big multiplayer game gets a banner as wide as three games
       '<button type="button" class="fg-feature" data-ocrng="1"><span class="fgf-sky" aria-hidden="true"><span class="fgf-orb a"></span><span class="fgf-orb b"></span><span class="fgf-ring"></span></span>' +
@@ -20076,6 +20354,10 @@ const EGGS = [
   { id: 'bigbet', t: 'h', name: 'High Roller', how: 'Bet 1,000,000 Orbs or more on one Casino game.', hint: 'High rollers get noticed.' },
   { id: 'koifeed', t: 'e', name: 'Feeding Time', how: 'Click the Koi Pond card in the Shop 5 times (not its buy button).', hint: 'Something in the Shop is hungry.' },
   { id: 'stockout', t: 'm', name: 'Last One', how: 'In Grow a Garden, buy the last seed or sprinkler in stock.', hint: 'Someone always gets the last one.' },
+  // v4.68
+  { id: 'sixseven', t: 'e', name: 'Six Seven', how: 'Gift someone exactly 67 Orbs (Gift Orbs on their profile).', hint: 'Some numbers just make people laugh.' },
+  { id: 'gardentour', t: 'm', name: 'Garden Tour', how: 'Visit 3 different people\'s gardens in Grow a Garden (Visit a Garden, or Visit Garden on a profile).', hint: 'The neighbors grow things too.' },
+  { id: 'maxedout', t: 'h', name: 'Maxed Out', how: 'Get every Orb games can give you in one day (20,000, or 100,000 with Premium).', hint: 'There\'s a limit. Find it.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -20304,6 +20586,9 @@ function eggEffect(id, first) {
     case 'bigbet': eggToast('High roller.', 'A million on one game.'); return;
     case 'koifeed': eggToast('The koi are full.'); return;
     case 'stockout': eggToast('Last one.', 'Sold out, thanks to you.'); return;
+    case 'sixseven': eggToast('Six seven.', 'You know what you did.'); return;
+    case 'gardentour': eggToast('Garden tour.', 'Yours is still the best one.'); return;
+    case 'maxedout': eggToast('Maxed out.', 'That\'s every game Orb for today.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
@@ -20422,6 +20707,7 @@ const EGG_GROUPS = [
   ['Badges and effects (v4.65)', ['badgefan', 'allbadges', 'fxwatch', 'slimepoke']],
   ['Orbs, the maze, shortcuts and names (v4.66)', ['equilibrium', 'mazeflawless', 'quickflip', 'rainbowname']],
   ['Casino, effects and the garden (v4.67)', ['seedcheck', 'bigbet', 'koifeed', 'stockout']],
+  ['Gifts, gardens and game Orbs (v4.68)', ['sixseven', 'gardentour', 'maxedout']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {

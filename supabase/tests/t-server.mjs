@@ -135,7 +135,7 @@ x = await call('admin', 'casino', { token: nova, game: 'coinflip', bet: 100, sid
 check('51: the infinity sign can bet (it said "not enough Orbs" after the move)', x.status === 200 && (x.result === 'h' || x.result === 't'), x);
 check('...and stays infinite, win or lose', (await doc('users/Nova')).orbs === Infinity, await doc('users/Nova'));
 x = await call('admin', 'egg', { token: nova, egg: 'equilibrium' });
-check('the new eggs are known to the server (67 in all)', x.ok && x.total === 67, x);
+check('the new eggs are known to the server (74 in all since v4.68)', x.ok && x.total === 74, x);
 
 section('v4.67 on the server: Provably Fair, bets without a top limit, referrals');
 const fairJs = await import(new URL('../../casino-fair.js', import.meta.url).href);
@@ -196,6 +196,70 @@ await call('admin', 'referral', { token: sumi, action: 'make', code: 'SUMI1' });
 await rpc('fx_commit', { writes: [{ path: 'users/Tester', updatePaths: [[['createdAt'], { $t: Date.now() }], [['casino'], {}]] }] });
 x = await call('admin', 'referral', { token: tester, action: 'join', code: 'SUMI1' });
 check('56: a code can\'t be used on its owner\'s network (Tester and Sumi share one)', x.status === 403 && /same device or network/.test(x.error), x);
+
+section('v4.68 on the server: the Premium game limit, used-up codes, Orb gifts, networks, taking accounts off');
+const today = new Date().toISOString().slice(0, 10);
+await put('orbDays/Nova', { day: today, got: 19990, at: now() });
+x = await call('admin', 'earn', { token: nova, n: 100 });
+check('67: without Premium, games still stop at 20,000 a day', x.added === 10 && x.cap === 20000 && x.left === 0, x);
+await rpc('fx_commit', { writes: [{ path: 'users/Nova', updatePaths: [[['premiumUntil'], Date.now() + 86400000]] }] });
+x = await call('admin', 'earn', { token: nova, n: 100 });
+check('67: with Premium the limit is 100,000', x.added === 100 && x.cap === 100000 && x.left === 100000 - 20100, x);
+await put('redeemCodes/ONCE68', { code: 'ONCE68', type: 'orbs', value: 5, maxUses: 1, createdBy: 'Tester', createdAt: now() });
+await put('redeemCodes/TWICE68', { code: 'TWICE68', type: 'orbs', value: 5, maxUses: 2, createdBy: 'Tester', createdAt: now() });
+x = await call('admin', 'code', { token: sumi, code: 'ONCE68' });
+check('66: a one-use code pays, then it\'s deleted', x.ok && (await doc('redeemCodes/ONCE68')) === null, x);
+x = await call('admin', 'code', { token: sumi, code: 'TWICE68' });
+const twice = await doc('redeemCodes/TWICE68');
+check('66: a two-use code stays after its first use', x.ok && !!twice && twice.uses === 1, { x, twice });
+x = await call('admin', 'code', { token: nova, code: 'TWICE68' });
+check('66: ...and is deleted by its second', x.ok && (await doc('redeemCodes/TWICE68')) === null, x);
+const sumi68 = (await doc('users/Sumi')).orbs, nova68 = (await doc('users/Nova')).orbs;
+x = await call('admin', 'loan', { token: sumi, action: 'gift', to: 'Nova', amount: 67, note: 'six seven' });
+const giftDoc = x.gift && await doc('loans/' + x.gift.id), novaG = await doc('users/Nova');
+check('68: a gift moves the Orbs at once', x.ok && x.orbs === sumi68 - 67 && (await doc('users/Sumi')).orbs === sumi68 - 67 && novaG.orbs === nova68 + 67, { x, sumi68, nova68, after: novaG.orbs });
+check('68: ...is kept with the loans, for both histories', !!giftDoc && giftDoc.status === 'gift' && giftDoc.from === 'Sumi' && giftDoc.to === 'Nova' && giftDoc.amount === 67 && giftDoc.note === 'six seven', giftDoc);
+check('68: ...and tells Nova (giftIn), with both in each other\'s loanWith', novaG.giftIn && novaG.giftIn.from === 'Sumi' && novaG.giftIn.amount === 67 && novaG.loanWith.includes('Sumi') && (await doc('users/Sumi')).loanWith.includes('Nova'), novaG);
+x = await call('admin', 'loan', { token: sumi, action: 'check', with: 'Nova' });
+check('68: the gift comes back in the loan list', x.ok && x.loans.some(l => l.status === 'gift' && l.amount === 67), x);
+x = await call('admin', 'loan', { token: sumi, action: 'gift', to: 'Nova', amount: sumi68 });
+check('68: never more than you have', x.status === 402, x);
+x = await call('admin', 'loan', { token: sumi, action: 'gift', to: 'Sumi', amount: 5 });
+const self68 = x.status;
+x = await call('admin', 'loan', { token: sumi, action: 'gift', to: 'Nova', amount: 1.5 });
+check('68: not to yourself, and only whole Orbs', self68 === 400 && x.status === 400, { self68, x });
+x = await call('admin', 'loan', { token: sumi, action: 'gift', to: 'NoSuchPerson', amount: 5 });
+check('68: not to an account that isn\'t there', x.status === 404, x);
+await rpc('fx_commit', { writes: [{ path: 'users/Tester', updatePaths: [[['infOrbs'], true]] }] });
+const testerOrbs = (await doc('users/Tester')).orbs, air68 = (await doc('users/Air')).orbs;
+x = await call('admin', 'loan', { token: tester, action: 'gift', to: 'Air', amount: 1e12 });
+check('68: infinite Orbs give without running out', x.ok && (await doc('users/Tester')).orbs === testerOrbs && (await doc('users/Air')).orbs === air68 + 1e12, x);
+await rpc('fx_commit', { writes: [{ path: 'users/Tester', updatePaths: [[['infOrbs'], false]] }] });
+
+const seenFrom = async (addr, tok = tester) => (await (await fetch(`${API}/admin/seen`, { method: 'POST', headers: { 'Content-Type': 'text/plain', 'X-Test-IP': addr }, body: JSON.stringify({ token: tok }) })).json()).id;
+const v6a = await seenFrom('2601:abc:def:1:aaaa:bbbb:cccc:1'), v6b = await seenFrom('2601:abc:def:1::77'), v6c = await seenFrom('2601:abc:def:2::1');
+check('69: two addresses in one IPv6 network are one entry (its /64)', !!v6a && v6a === v6b && v6c !== v6a, { v6a, v6b, v6c });
+check('69: an IPv4 address keeps the id it always had', (await seenFrom('203.0.113.9')) === 'ip_' + crypto.createHmac('sha256', crypto.createHash('sha256').update('frixion-ip:test-ip-key').digest()).update('203.0.113.9').digest('hex').slice(0, 24));
+const oldId = 'ip_' + crypto.createHmac('sha256', crypto.createHash('sha256').update('frixion-ip:test-ip-key').digest()).update('2601:abc:def:9::5').digest('hex').slice(0, 24);
+await put('bannedIps/' + oldId, { reason: 'old ban', at: Date.now() });
+x = await (await fetch(`${API}/admin/ip`, { headers: { 'X-Test-IP': '2601:abc:def:9::5' } })).json();
+check('69: a ban made on one IPv6 address before v4.68 still counts for it', x.banned === true && x.reason === 'old ban', x);
+
+const devBoth = 'dev_' + 'c3'.repeat(16), devOnly = 'dev_' + 'c4'.repeat(16), devBanned = 'dev_' + 'c5'.repeat(16), netBoth = 'ip_' + 'ab'.repeat(12);
+await put('devices/' + devBoth, { id: devBoth, accounts: ['Tester', 'Sumi'], name: 'Windows PC' });
+await put('devices/' + devOnly, { id: devOnly, accounts: ['Sumi'], name: 'Windows PC' });
+await put('devices/' + devBanned, { id: devBanned, accounts: ['Sumi'], name: 'Windows PC', banned: true });
+await put('ips/' + netBoth, { accounts: ['Sumi', 'Tester'], label: '198.51.x.x' });
+x = await call('admin', 'unlink', { token: sumi, kind: 'devices', ids: [devBoth], account: 'Tester' });
+check('69: only the Owner can take accounts off', x.status === 403, x);
+x = await call('admin', 'unlink', { token: tester, kind: 'devices', ids: [devBoth, devOnly, devBanned], account: 'Sumi' });
+const [dBoth, dOnly, dBanned] = [await doc('devices/' + devBoth), await doc('devices/' + devOnly), await doc('devices/' + devBanned)];
+check('69: Sumi is taken off the devices; an entry left empty goes, a banned one stays (with its ban)',
+  x.ok && x.changed === 3 && dBoth.accounts.join() === 'Tester' && dOnly === null && !!dBanned && dBanned.banned === true && dBanned.accounts.length === 0, { x, dBoth, dOnly, dBanned });
+x = await call('admin', 'unlink', { token: tester, kind: 'ips', ids: [netBoth], account: 'Sumi' });
+check('69: ...and off a network', x.ok && (await doc('ips/' + netBoth)).accounts.join() === 'Tester', x);
+x = await call('admin', 'unlink', { token: tester, kind: 'ips', ids: ['not-an-id'], account: 'Sumi' });
+check('69: nothing happens with ids that aren\'t ids', x.status === 400, x);
 
 // ---------------- functions/api/push ----------------
 section('Push notifications (functions/api/push)');

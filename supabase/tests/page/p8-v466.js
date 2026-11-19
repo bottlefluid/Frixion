@@ -61,7 +61,7 @@ check('40: the picker goes up to 8 colors and stops there', nameGradColors().len
 await $('save-profile-btn').onclick();
 const grad = await until(async () => { const g = (await doc('users/Tester')).nameGradient; return Array.isArray(g) && g.length === 8 ? g : null; });
 check('40: saved with all 8', !!grad, grad);
-check('40: a name shows all 8 in its gradient', (nameStyle(myProfile).match(/#[0-9a-f]{6}/gi) || []).length === 8, nameStyle(myProfile));
+check('40: a name shows all 8 in its gradient', (nameText(myProfile, 'x').match(/#[0-9a-f]{6}/gi) || []).length === 8, nameText(myProfile, 'x'));   // (on the name text since v4.68)
 check('egg: Full Spectrum (8 colors)', !!(await until(() => eggFoundSet.has('rainbowname'))));
 $('name-grad-remove').click();
 check('40: one fewer works too (7)', nameGradColors().length === 7);

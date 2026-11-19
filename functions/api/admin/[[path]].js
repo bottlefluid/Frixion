@@ -89,6 +89,7 @@ export async function onRequest({ request, env, params }) {
     if (route === 'egg' && request.method === 'POST') return json(await findEgg(env, await request.json().catch(() => ({}))));
     if (route === 'casino' && request.method === 'POST') return json(await casino(env, await request.json().catch(() => ({}))));
     if (route === 'move' && request.method === 'POST') return json(await move(env, await request.json().catch(() => ({}))));
+    if (route === 'unlink' && request.method === 'POST') return json(await unlink(env, await request.json().catch(() => ({}))));
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
     if (e instanceof Fail) return json({ error: e.message }, e.status);
@@ -287,23 +288,44 @@ function callerIp(env, request) {
   return ip;
 }
 let ipKey = null;
-async function ipId(env, ip) {
+async function ipIdOf(env, text) {
   if (!ipKey) {
     const secret = env.IP_KEY || (env.FIREBASE_SERVICE_ACCOUNT ? JSON.parse(env.FIREBASE_SERVICE_ACCOUNT).private_key : 'test-ip-key');
     const raw = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('frixion-ip:' + secret));
     ipKey = await crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   }
-  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', ipKey, new TextEncoder().encode(ip.toLowerCase())));
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', ipKey, new TextEncoder().encode(text.toLowerCase())));
   return 'ip_' + [...mac.slice(0, 12)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
+// The 8 groups of an IPv6 address (null if it isn't one)
+function v6Groups(ip) {
+  const s = String(ip).toLowerCase().split('%')[0], halves = s.split('::');
+  if (halves.length > 2 || /[^0-9a-f:]/.test(s)) return null;
+  const a = halves[0] ? halves[0].split(':') : [], b = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const fill = halves.length === 2 ? 8 - a.length - b.length : 0, all = [...a, ...Array(Math.max(0, fill)).fill('0'), ...b];
+  return fill >= 0 && all.length === 8 && all.every(g => /^[0-9a-f]{1,4}$/.test(g)) ? all.map(g => g.replace(/^0+(?=.)/, '')) : null;
+}
+// The network an address belongs to (v4.68, request 69). An IPv6 address changes every day or so inside one home or
+// school network (privacy addresses), which made the same network show up again and again, so IPv6 goes by its first
+// half (its /64), which stays put. An IPv4 address is the whole network already (a home's one outside address).
+function ipNetwork(ip) {
+  const v4 = String(ip).match(/^(?:::ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/i);
+  if (v4) return v4[1];
+  const g = v6Groups(ip);
+  return g ? g.slice(0, 4).join(':') + '::/64' : String(ip);
+}
+const ipId = (env, ip) => ipIdOf(env, ipNetwork(ip));
+// (before v4.68 an IPv6 address was its own entry, so a ban made on one of those still counts for that address)
+const ipOldId = (env, ip) => (ipNetwork(ip) === String(ip).toLowerCase() ? null : ipIdOf(env, ip));
 const ipLabel = ip => (ip.includes(':') ? ip.split(':').slice(0, 2).join(':') + ':…' : ip.split('.').slice(0, 2).join('.') + '.x.x');
 // Is this address banned? Asked on every page load, so the answer is kept for a minute.
 const banLooks = new Map();   // id -> { at, ban }
 async function ipCheck(env, request) {
-  const id = await ipId(env, callerIp(env, request));
+  const ip = callerIp(env, request), id = await ipId(env, ip), old = await ipOldId(env, ip);
   let hit = banLooks.get(id);
   if (!hit || Date.now() - hit.at > 60000) {
-    hit = { at: Date.now(), ban: await fsGet(env, `bannedIps/${id}`) };
+    const [net, addr] = await fsGetMany(env, [`bannedIps/${id}`, ...(old ? [`bannedIps/${old}`] : [])]);
+    hit = { at: Date.now(), ban: net ? net.data : addr ? addr.data : null };
     banLooks.set(id, hit);
     if (banLooks.size > 5000) banLooks.clear();
   }
@@ -322,6 +344,32 @@ async function ipSeen(env, request, { token, device }) {
       updateTransforms: Object.entries(add).map(([f, v]) => ({ fieldPath: f, appendMissingElements: { values: v.map(enc) } })) }] }) });
   if (!r.ok) fail(502, 'Could not save that.');
   return { ok: true, id };
+}
+
+// The Owner panel's Devices and IP tabs: take an account off devices or networks (v4.68, request 69), like accounts the
+// Owner signed in to on their own computer, so they stop counting as linked there. It's added back if that account
+// signs in there again. An entry left with no accounts goes too, unless it's a banned device (that keeps the ban).
+async function unlink(env, { token, kind, ids, account }) {
+  await requireOwner(env, token);
+  if (kind !== 'devices' && kind !== 'ips') fail(400, 'Pick devices or networks.');
+  if (typeof account !== 'string' || !USERNAME.test(account)) fail(400, 'That isn\'t a username.');
+  const idRe = kind === 'devices' ? /^dev_[a-f0-9]{32}$/ : /^ip_[a-f0-9]{24}$/;
+  const list = [...new Set(Array.isArray(ids) ? ids : [])].filter(id => typeof id === 'string' && idRe.test(id)).slice(0, 200);
+  if (!list.length) fail(400, 'Nothing to change.');
+  for (let i = 0; i < 4; i++) {
+    const docs = await fsGetMany(env, list.map(id => `${kind}/${id}`)), writes = [];
+    docs.forEach((d, n) => {
+      const accounts = d && Array.isArray(d.data.accounts) ? d.data.accounts : [];
+      if (!accounts.includes(account)) return;
+      const path = `${kind}/${list[n]}`;
+      writes.push(accounts.length === 1 && d.data.banned !== true
+        ? { delete: docName(env, path), currentDocument: { updateTime: d.updateTime } }
+        : { transform: { document: docName(env, path), fieldTransforms: [{ fieldPath: 'accounts', removeAllFromArray: { values: [enc(account)] } }] }, currentDocument: { updateTime: d.updateTime } });
+    });
+    if (!writes.length) return { ok: true, changed: 0 };
+    if (await fsCommit(env, writes)) return { ok: true, changed: writes.length };
+  }
+  fail(409, 'Frixion is busy. Try again.');
 }
 
 // ---------- who someone is, for the Realtime Database ----------
@@ -362,6 +410,8 @@ async function putClaims(env, localId, want) {
 // that only lands if what it read hasn't changed since (otherwise it reads again and retries), so two requests at once
 // can't spend the same Orbs or use the same code twice.
 const EARN_CAP = 20000;   // Orbs a day from games, per account
+const EARN_CAP_PREMIUM = 100000;   // ...or with Frixion Premium (v4.68, request 67)
+const earnCapOf = u => (Number(u && u.premiumUntil) > Date.now() ? EARN_CAP_PREMIUM : EARN_CAP);
 const utcDay = () => new Date().toISOString().slice(0, 10);
 const nextUtcDay = () => { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1); };
 const own = (o, k) => !!o && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k);
@@ -421,7 +471,7 @@ function slowDown(key, most) {
   if (asks.size > 5000) asks.clear();
 }
 
-// Orbs from games: up to EARN_CAP a day per account; whatever is past that isn't added.
+// Orbs from games: up to EARN_CAP a day per account (EARN_CAP_PREMIUM with Premium); whatever is past that isn't added.
 async function earn(env, { token, n }) {
   const me = await caller(env, token);
   const want = Math.floor(Number(n));
@@ -429,16 +479,16 @@ async function earn(env, { token, n }) {
   slowDown('earn:' + me.name, 40);
   for (let i = 0; i < 6; i++) {
     const [prof, day] = await fsGetMany(env, [`users/${me.name}`, `orbDays/${me.name}`]);
-    mine(prof, me);
+    const cap = earnCapOf(mine(prof, me));
     const today = utcDay(), got = day && day.data.day === today ? Math.max(0, Number(day.data.got) || 0) : 0;
-    const add = Math.min(want, EARN_CAP - got);
-    if (add <= 0) return { added: 0, left: 0, cap: EARN_CAP, resetsAt: nextUtcDay() };
+    const add = Math.min(want, cap - got);
+    if (add <= 0) return { added: 0, left: 0, cap, resetsAt: nextUtcDay() };
     const done = await fsCommit(env, [
       { update: { name: docName(env, `orbDays/${me.name}`), fields: { day: enc(today), got: enc(got + add), at: enc(new Date()) } },
         currentDocument: day ? { updateTime: day.updateTime } : { exists: false } },
       { transform: { document: docName(env, `users/${me.name}`), fieldTransforms: [{ fieldPath: 'orbs', increment: enc(add) }] }, currentDocument: { exists: true } },
     ]);
-    if (done) return { added: add, left: EARN_CAP - got - add, cap: EARN_CAP, resetsAt: nextUtcDay(), orbs: orbsAfter(done, 1) };
+    if (done) return { added: add, left: cap - got - add, cap, resetsAt: nextUtcDay(), orbs: orbsAfter(done, 1) };
   }
   fail(409, 'Frixion is busy. Try again.');
 }
@@ -558,6 +608,7 @@ const EGGS = {
   badgefan: 'm', allbadges: 'h', fxwatch: 'm', slimepoke: 'e',           // v4.65: badges and drawn effects
   equilibrium: 'm', mazeflawless: 'h', quickflip: 'e', rainbowname: 'm', // v4.66: 0 Orbs, the maze, Quick Open, name colors
   seedcheck: 'm', bigbet: 'h', koifeed: 'e', stockout: 'm',               // v4.67: Provably Fair, big bets, the koi, the garden
+  sixseven: 'e', gardentour: 'm', maxedout: 'h',                          // v4.68: Orb gifts, garden visits, the daily game limit
   xyzzy: ['m', '7d76c6d11ed06a3e671afa826c4f88f4e8227fdef446cbd576a3428967e45af9'],
   codeb1: ['e', '4f3cd88dc035fd4d04dda074fd7ced1722751824644c1a27a700dfd5d06ba19e'],
   codeb2: ['e', 'c886bb737cc711b2dfcb069ea8179dc430661db13a38113ddf718b9098f653c7'],
@@ -630,7 +681,9 @@ async function redeemCode(env, { token, code }) {
     if (usage.usedUp) fail(409, usage.maxUses === 1 ? 'That code has already been redeemed.' : 'That code has been used up.');
     if (type !== 'orbs' && type !== 'premium') fail(404, 'That code is invalid.');
     const value = Math.max(0, Math.floor(Number(c.data.value) || 0));
-    const writes = [{
+    // the use that reaches the code's limit deletes it (v4.68, request 66); before that, it's counted
+    const lastUse = usage.maxUses > 0 && usage.uses + 1 >= usage.maxUses;
+    const writes = [lastUse ? { delete: docName(env, `redeemCodes/${id}`), currentDocument: { updateTime: c.updateTime } } : {
       update: { name: docName(env, `redeemCodes/${id}`), fields: { uses: enc(usage.uses + 1), usedBy: enc([...usage.usedBy, me.name]), redeemedBy: enc(me.name), redeemedAt: enc(new Date()) } },
       updateMask: { fieldPaths: ['uses', 'usedBy', 'redeemedBy', 'redeemedAt'] }, currentDocument: { updateTime: c.updateTime },
     }];
@@ -1361,7 +1414,35 @@ async function loanRoute(env, b) {
   if (action === 'cancel') return loanCancel(env, me, b);
   if (action === 'pay') return loanPay(env, me, b);
   if (action === 'check') return loanCheck(env, me, b);
+  if (action === 'gift') return orbGift(env, me, b);
   fail(400, 'That isn\'t a loan action.');
+}
+// Orb gifts (v4.68, request 68): any amount to anyone, alts included (the Owner's choice, 2026-11-18, the same as loans),
+// never more than you have (infinite Orbs give without running out). A gift is kept with the loans (status 'gift'), so
+// both people see it in the history on their profiles, and it never moves credit.
+const GIFT_MAX = 1e300;
+async function orbGift(env, me, { to, amount, note }) {
+  const n = Number(amount);
+  if (typeof to !== 'string' || !USERNAME.test(to) || to === me.name) fail(400, 'Pick someone to gift Orbs to.');
+  if (!Number.isInteger(n) || n < 1 || n > GIFT_MAX) fail(400, 'Gift at least 1 Orb.');
+  const text = String(note || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  for (let i = 0; i < 5; i++) {
+    const [prof, them] = await fsGetMany(env, [`users/${me.name}`, `users/${to}`]);
+    const u = mine(prof, me), inf = infinite(u);
+    if (!them || them.data.terminated === true) fail(404, 'No account has that username.');
+    if (!inf && (Number(u.orbs) || 0) < n) fail(402, 'You don\'t have that many Orbs.');
+    const id = 'l' + Date.now().toString(36) + [...crypto.getRandomValues(new Uint8Array(4))].map(x => x.toString(16).padStart(2, '0')).join('');
+    const gift = { from: me.name, to, amount: n, paid: n, time: 'gift', note: text, status: 'gift', at: Date.now() };
+    const done = await fsCommit(env, [
+      { update: { name: docName(env, `loans/${id}`), fields: Object.fromEntries(Object.entries(gift).map(([k, v]) => [k, encAny(v)])) }, currentDocument: { exists: false } },
+      profileTransform(env, me.name, [...(inf ? [] : [{ fieldPath: 'orbs', increment: enc(-n) }]), { fieldPath: 'loanWith', appendMissingElements: { values: [enc(to)] } }], prof.updateTime),
+      // (giftIn: the newest gift they got, so their app can say so once)
+      { update: { name: docName(env, `users/${to}`), fields: { giftIn: encAny({ id, from: me.name, amount: n, at: gift.at }) } }, updateMask: { fieldPaths: ['giftIn'] },
+        updateTransforms: [{ fieldPath: 'orbs', increment: enc(n) }, { fieldPath: 'loanWith', appendMissingElements: { values: [enc(me.name)] } }], currentDocument: { exists: true } },
+    ]);
+    if (done) return { ok: true, gift: loanShown({ id, data: gift }), orbs: inf ? Number(u.orbs) || 0 : orbsAfter(done, 1) };
+  }
+  fail(409, 'Frixion is busy. Try again.');
 }
 async function loanAsk(env, me, { to, amount, time, note }) {
   const n = Number(amount);

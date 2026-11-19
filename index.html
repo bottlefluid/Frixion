@@ -20,7 +20,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=114">
+<link rel="stylesheet" href="style.css?v=115">
 <link rel="stylesheet" href="casino.css?v=2">
 </head>
 <body>
@@ -817,6 +817,21 @@
   </div>
 </div>
 
+<!-- ============ MODAL: gift Orbs (v4.68, request 68) ============ -->
+<div class="modal-overlay hidden" id="orb-gift-modal">
+  <div class="modal-box">
+    <div class="modal-header-row"><h2>Gift Orbs</h2><span class="x" data-close="orb-gift-modal">✕</span></div>
+    <p class="desc" id="orb-gift-desc"></p>
+    <div class="field"><label for="orb-gift-amount">How many Orbs</label><input type="number" id="orb-gift-amount" min="1" step="1" placeholder="1000"></div>
+    <div class="field"><label for="orb-gift-note">Note (optional)</label><input type="text" id="orb-gift-note" maxlength="120" placeholder="What it's for"></div>
+    <p class="loan-fine">A gift can't be taken back. You'll both see it on your profiles, under Loans and Gifts.</p>
+    <div class="modal-actions">
+      <button class="btn-secondary" data-close="orb-gift-modal">Cancel</button>
+      <button class="btn-accent-inline" id="orb-gift-send">Send Orbs</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL: ask for a loan (v4.64) ============ -->
 <div class="modal-overlay hidden" id="loan-modal">
   <div class="modal-box">
@@ -880,7 +895,7 @@
         <div class="profile-section profile-orbs hidden" id="profile-orbs"></div>
         <div class="profile-section-label hidden" id="profile-credit-label">Credit</div>
         <div class="profile-section profile-credit hidden" id="profile-credit"></div>
-        <div class="profile-section-label hidden" id="profile-loans-label">Loans</div>
+        <div class="profile-section-label hidden" id="profile-loans-label">Loans and Gifts</div>
         <div class="profile-section hidden" id="profile-loans"></div>
         <div class="profile-section-label">Member Since</div>
         <div class="profile-section" id="profile-member-since"></div>
@@ -1090,8 +1105,9 @@
         <div class="perk-list">
           <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2.5l2.95 6.4 7 .63-5.3 4.66 1.6 6.86-6.25-3.78-6.25 3.78 1.6-6.86-5.3-4.66 7-.63z"/></svg></span><div><div class="t">Premium Badge</div><div class="d">A star badge next to your name everywhere</div></div></div>
           <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5l7-7a3.5 3.5 0 0 1 5 5l-8.5 8.5a5 5 0 0 1-7-7l7.5-7.5"/></svg></span><div><div class="t">Bigger Uploads</div><div class="d">10 MB files and 100 MB videos (5 MB and 50 MB without Premium)</div></div></div>
-          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20"><defs><linearGradient id="pkName" x1="0" x2="1"><stop offset="0" stop-color="#5865f2"/><stop offset="1" stop-color="#eb459e"/></linearGradient></defs><path d="M4 20L10.5 4h3L20 20h-3.2l-1.5-4H8.7l-1.5 4zm5.8-7h4.4L12 7.3z" fill="url(#pkName)"/></svg></span><div><div class="t">Gradient Name</div><div class="d">Your name in two colors you pick, on messages and member lists</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20"><defs><linearGradient id="pkName" x1="0" x2="1"><stop offset="0" stop-color="#5865f2"/><stop offset="1" stop-color="#eb459e"/></linearGradient></defs><path d="M4 20L10.5 4h3L20 20h-3.2l-1.5-4H8.7l-1.5 4zm5.8-7h4.4L12 7.3z" fill="url(#pkName)"/></svg></span><div><div class="t">Gradient Name</div><div class="d">Your name in up to 8 colors you pick, on messages and member lists</div></div></div>
           <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span><div><div class="t">Longer Messages</div><div class="d">Up to 4,000 characters per message (1,000 without Premium)</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg></span><div><div class="t">More Orbs from Games</div><div class="d">Up to 100,000 Orbs a day from games (20,000 without Premium)</div></div></div>
           <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2l1.8 5.6L19.5 9l-5.7 1.5L12 16l-1.8-5.5L4.5 9l5.7-1.4zM18.5 14l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9z"/></svg></span><div><div class="t">Overcontrol RNG Perks</div><div class="d">1.25x luck, auto-roll and the premium pass</div></div></div>
           <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg></span><div><div class="t">Top-Speed Messages</div><div class="d">Your messages load and send instantly</div></div></div>
         </div>
@@ -1229,8 +1245,9 @@
     <div class="perk-list">
       <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2.5l2.95 6.4 7 .63-5.3 4.66 1.6 6.86-6.25-3.78-6.25 3.78 1.6-6.86-5.3-4.66 7-.63z"/></svg></span><div><div class="t">Premium Badge</div><div class="d">A star badge next to your name everywhere</div></div></div>
       <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5l7-7a3.5 3.5 0 0 1 5 5l-8.5 8.5a5 5 0 0 1-7-7l7.5-7.5"/></svg></span><div><div class="t">Bigger Uploads</div><div class="d">10 MB files and 100 MB videos (5 MB and 50 MB without Premium)</div></div></div>
-          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20"><defs><linearGradient id="pkName" x1="0" x2="1"><stop offset="0" stop-color="#5865f2"/><stop offset="1" stop-color="#eb459e"/></linearGradient></defs><path d="M4 20L10.5 4h3L20 20h-3.2l-1.5-4H8.7l-1.5 4zm5.8-7h4.4L12 7.3z" fill="url(#pkName)"/></svg></span><div><div class="t">Gradient Name</div><div class="d">Your name in two colors you pick, on messages and member lists</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20"><defs><linearGradient id="pkName" x1="0" x2="1"><stop offset="0" stop-color="#5865f2"/><stop offset="1" stop-color="#eb459e"/></linearGradient></defs><path d="M4 20L10.5 4h3L20 20h-3.2l-1.5-4H8.7l-1.5 4zm5.8-7h4.4L12 7.3z" fill="url(#pkName)"/></svg></span><div><div class="t">Gradient Name</div><div class="d">Your name in up to 8 colors you pick, on messages and member lists</div></div></div>
           <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span><div><div class="t">Longer Messages</div><div class="d">Up to 4,000 characters per message (1,000 without Premium)</div></div></div>
+          <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg></span><div><div class="t">More Orbs from Games</div><div class="d">Up to 100,000 Orbs a day from games (20,000 without Premium)</div></div></div>
           <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2l1.8 5.6L19.5 9l-5.7 1.5L12 16l-1.8-5.5L4.5 9l5.7-1.4zM18.5 14l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9z"/></svg></span><div><div class="t">Overcontrol RNG Perks</div><div class="d">1.25x luck, auto-roll and the premium pass</div></div></div>
           <div class="perk"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg></span><div><div class="t">Top-Speed Messages</div><div class="d">Your messages load and send instantly</div></div></div>
     </div>
@@ -1899,7 +1916,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
 <script defer src="fdb.js?v=2"></script>
-<script defer src="script.js?v=154"></script>
+<script defer src="script.js?v=155"></script>
 <script defer src="casino.js?v=4"></script>
 </body>
 </html>

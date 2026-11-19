@@ -1558,7 +1558,11 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 /* Nameplate bleeds to the card's edges (negative margin cancels .profile-body's
    own padding) since that's how it actually reads visually — a background
    plate behind just the name/status block, not the whole card. */
-.profile-name-block { position: relative; margin: -16px -16px 12px; padding: 16px 16px 12px; overflow: hidden; }
+/* a Premium name gradient, on the name text only (v4.68) */
+.grad-name { -webkit-background-clip: text; background-clip: text; color: transparent; }
+.profile-name-block { position: relative; margin: -16px -16px 12px; padding: 16px 16px 12px; overflow: hidden;
+  /* keeps the card's rounded top corners when a nameplate is on (v4.68, request 72) */
+  border-top-left-radius: inherit; border-top-right-radius: inherit; }
 .profile-nameplate-bg { position: absolute; inset: 0; z-index: 0; }
 .profile-name-block > *:not(.profile-nameplate-bg) { position: relative; z-index: 1; }
 .profile-name-row { display: flex; align-items: center; gap: 6px; }
@@ -2984,6 +2988,12 @@ body.quick-delete-armed #messages .msg-line:hover .msg-hover-actions { display: 
 .fg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
 .fg-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-size: 16px; color: var(--text-normal); background: var(--bg-secondary); border: 1px solid var(--divider); border-radius: 999px; }
 .fg-chip b { font-weight: 700; }
+/* how many more Orbs games can pay today, just above Overcontrol RNG (v4.68) */
+.fg-left { display: flex; align-items: center; gap: 8px; margin: -10px 0 14px; padding: 8px 12px; font-size: 14px; color: var(--text-muted);
+  background: var(--bg-secondary); border: 1px solid var(--divider); border-radius: 8px; }
+.fg-left b { color: var(--text-normal); font-weight: 700; }
+.fg-left-cap { opacity: .8; }
+.fg-left-text:empty, .fg-left:has(.fg-left-text:empty) { display: none; }
 .fg-tile { display: flex; flex-direction: column; text-align: left; overflow: hidden; color: var(--text-normal); background: var(--bg-secondary); border: 1px solid var(--divider); border-radius: 12px; transition: border-color .12s ease, transform .12s ease; }
 .fg-tile:hover { border-color: var(--accent); transform: translateY(-2px); }
 .fg-thumb { display: flex; align-items: center; justify-content: center; height: 112px; }
@@ -3259,6 +3269,14 @@ body.quick-delete-armed #messages .msg-line:hover .msg-hover-actions { display: 
 .fg-window .gg-pet-body{display:inline-block;font-size:1.5rem;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,.55));animation:ggPetBob .9s ease-in-out infinite}
 @keyframes ggPetBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
 .fg-window .gg-plots{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+/* someone else's garden, to look at (v4.68, request 64) */
+.fg-window .gg-visit-garden .gg-plot{cursor:default}
+.fg-window .gg-visit-garden .gg-plot:hover{transform:none}
+.fg-window .gg-visit-note,.fg-window .gg-visit-pets,.fg-window .gg-visit-empty,.fg-window .gg-visit-loading{background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--text-muted)}
+.fg-window .gg-visit-note b,.fg-window .gg-visit-pets b{color:var(--text-normal)}
+.fg-window .gg-visit-pets{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.fg-window .gg-visit-pet{padding:3px 10px;border-radius:999px;background:var(--bg-tertiary);color:var(--text-normal)}
+.fg-window .gg-visit-empty,.fg-window .gg-visit-loading{padding:28px;text-align:center}
 .fg-window .gg-plot{position:relative;aspect-ratio:1/1;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;border:1px solid rgba(120,80,45,.4);background:linear-gradient(160deg,#2c1c10,#1a1009);transition:.13s;user-select:none}
 .fg-window .gg-plot.empty{border-style:dashed;border-color:rgba(120,80,45,.55);background:repeating-linear-gradient(135deg,rgba(120,80,45,.12) 0 8px,transparent 8px 16px),linear-gradient(160deg,#241608,#170d06)}
 .fg-window .gg-plot.empty:hover{border-color:var(--buy);background:rgba(2,183,87,.1)}
@@ -3873,6 +3891,12 @@ body.is-mobile .ov-setting, body.is-mobile .ov-help-row { display: none; }
 .dev-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--divider); background: var(--bg-tertiary); color: var(--text-normal, inherit); font: inherit; font-size: 13px; cursor: pointer; }
 button.dev-chip:hover { background: var(--bg-modifier-hover); }
 .dev-chip.gone { opacity: .55; cursor: default; }
+/* an account chip with its x (take it off this device or network, v4.68) */
+.dev-chip-wrap { display: inline-flex; align-items: stretch; }
+.dev-chip-wrap .dev-chip { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.dev-chip-x { padding: 0 9px; border: 1px solid var(--divider); border-left: 0; border-radius: 0 999px 999px 0; background: var(--bg-tertiary);
+  color: var(--text-muted); font-size: 15px; line-height: 1; cursor: pointer; }
+.dev-chip-x:hover { background: var(--bg-modifier-hover); color: var(--text-danger, #f23f43); }
 .dev-line { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; }
 .dev-line .dl-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
