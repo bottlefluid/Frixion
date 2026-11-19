@@ -3,6 +3,8 @@
 // (56), and the 8 new drawn profile effects (47, 58).
 const { check, until, doc, patch, wait } = T;
 const shown = id => !$(id).classList.contains('hidden');
+// (this browser may remember bets and revealed seeds from an earlier run; a reseed starts the seeds over, so forget them)
+Object.keys(localStorage).filter(k => k.startsWith('frx_cz_fair')).forEach(k => localStorage.removeItem(k));
 check('Tester logs in', await T.login('Tester'));
 
 // ---------- 57 and 59: the garden's stock ----------

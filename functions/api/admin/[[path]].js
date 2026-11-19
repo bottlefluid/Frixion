@@ -90,6 +90,8 @@ export async function onRequest({ request, env, params }) {
     if (route === 'casino' && request.method === 'POST') return json(await casino(env, await request.json().catch(() => ({}))));
     if (route === 'move' && request.method === 'POST') return json(await move(env, await request.json().catch(() => ({}))));
     if (route === 'unlink' && request.method === 'POST') return json(await unlink(env, await request.json().catch(() => ({}))));
+    if (route === 'gagtrade' && request.method === 'POST') return json(await gardenTrade(env, await request.json().catch(() => ({}))));
+    if (route.startsWith('hook/')) return json(await webhookPost(env, request, route.split('/').slice(1)));   // (from functions/api/webhooks)
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
     if (e instanceof Fail) return json({ error: e.message }, e.status);
@@ -609,6 +611,7 @@ const EGGS = {
   equilibrium: 'm', mazeflawless: 'h', quickflip: 'e', rainbowname: 'm', // v4.66: 0 Orbs, the maze, Quick Open, name colors
   seedcheck: 'm', bigbet: 'h', koifeed: 'e', stockout: 'm',               // v4.67: Provably Fair, big bets, the koi, the garden
   sixseven: 'e', gardentour: 'm', maxedout: 'h',                          // v4.68: Orb gifts, garden visits, the daily game limit
+  longwinded: 'h', midnightevent: 'm', secretclub: 'm', firsttrade: 'e',  // v4.69: voice messages, events, private threads, trades
   xyzzy: ['m', '7d76c6d11ed06a3e671afa826c4f88f4e8227fdef446cbd576a3428967e45af9'],
   codeb1: ['e', '4f3cd88dc035fd4d04dda074fd7ced1722751824644c1a27a700dfd5d06ba19e'],
   codeb2: ['e', 'c886bb737cc711b2dfcb069ea8179dc430661db13a38113ddf718b9098f653c7'],
@@ -1557,6 +1560,129 @@ async function loanCheck(env, me, { with: other }) {
   }
   const shown = all.filter(l => !other || l.data.from === other || l.data.to === other).map(loanShown).sort((a, b) => b.at - a.at).slice(0, 40);
   return { ok: true, loans: shown };
+}
+
+// ---------------- Grow a Garden trades (v4.69, request 65) ----------------
+// POST /api/admin/gagtrade { token, action, ... }. gardenTrades/<id> = { from, to, give, want, note, status, at, fromDone }
+// (give and want: { seeds: { id: count }, sprinklers: { id: count } }); only this route writes them, and the two people
+// in a trade can read it (supabase/sql/015). The items themselves stay in each person's backpack (tb.ggBackpack on their
+// profile, which their own app saves), so two apps never write one backpack at once:
+//   offer   the sender's app takes the give items out of its backpack once this says yes (the trade holds them);
+//   accept  the receiver's app swaps both sides in its own backpack once this says yes;
+//   decline / cancel   nothing moves on the receiver's side;
+//   collect the sender's app gets what the trade owes it, once: the want items (accepted) or its own back (declined),
+//           and fromDone stops a second app collecting again. A cancel is collected at once.
+// Each person's app is told through ggTradeIn on their profile ({ at, from, kind }). Checks against the saved backpacks
+// are only as good as the backpacks (a page can write its own), as with the rest of the garden.
+const TRADE_KINDS = ['seeds', 'sprinklers'];
+const TRADE_OPEN_MAX = 20;
+function tradeItems(x) {
+  const out = { seeds: {}, sprinklers: {} };
+  if (x == null) return out;
+  if (typeof x !== 'object' || Array.isArray(x)) return null;
+  let n = 0;
+  for (const kind of TRADE_KINDS) {
+    const m = x[kind] == null ? {} : x[kind];
+    if (typeof m !== 'object' || Array.isArray(m)) return null;
+    for (const [id, c] of Object.entries(m)) {
+      if (!/^[A-Za-z0-9_-]{1,40}$/.test(id) || !Number.isInteger(c) || c < 1 || c > 999 || ++n > 20) return null;
+      out[kind][id] = c;
+    }
+  }
+  return out;
+}
+const tradeEmpty = t => TRADE_KINDS.every(k => !Object.keys(t[k]).length);
+const backpackOf = u => { const b = u && u.tb && u.tb.ggBackpack; return b && typeof b === 'object' ? b : {}; };
+const hasItems = (bp, t) => TRADE_KINDS.every(k => Object.entries(t[k]).every(([id, c]) => (Number((bp[k] || {})[id]) || 0) >= c));
+const tradeShown = (id, d) => ({ id, from: d.from, to: d.to, give: d.give || {}, want: d.want || {}, note: d.note || '', status: d.status, at: d.at, fromDone: d.fromDone === true });
+const tradeNote = (env, name, from, kind) => ({ update: { name: docName(env, `users/${name}`), fields: { ggTradeIn: encAny({ at: Date.now(), from, kind }) } },
+  updateMask: { fieldPaths: ['ggTradeIn'] }, currentDocument: { exists: true } });
+const tradeSet = (env, id, fields, updateTime) => ({ update: { name: docName(env, `gardenTrades/${id}`), fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, encAny(v)])) },
+  updateMask: { fieldPaths: Object.keys(fields) }, currentDocument: { updateTime } });
+async function gardenTrade(env, b) {
+  const me = await caller(env, b.token);
+  slowDown('gagtrade:' + me.name, 30);
+  const action = String(b.action || '');
+  if (action === 'offer') {
+    const to = b.to, give = tradeItems(b.give), want = tradeItems(b.want), note = String(b.note || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (typeof to !== 'string' || !USERNAME.test(to) || to === me.name) fail(400, 'Pick someone to trade with.');
+    if (!give || !want || (tradeEmpty(give) && tradeEmpty(want))) fail(400, 'Pick what to give and what you want.');
+    const [prof, them] = await fsGetMany(env, [`users/${me.name}`, `users/${to}`]);
+    const u = mine(prof, me);
+    if (!them || them.data.terminated === true) fail(404, 'No account has that username.');
+    if (!hasItems(backpackOf(u), give)) fail(409, 'Your backpack doesn\'t have all of that.');
+    const open = await fsQuery(env, 'gardenTrades', [['from', me.name], ['status', 'open']], TRADE_OPEN_MAX + 1);
+    if (open.length >= TRADE_OPEN_MAX) fail(429, `You have ${TRADE_OPEN_MAX} offers waiting already. Cancel one first.`);
+    const id = 't' + Date.now().toString(36) + [...crypto.getRandomValues(new Uint8Array(4))].map(x => x.toString(16).padStart(2, '0')).join('');
+    const d = { from: me.name, to, give, want, note, status: 'open', at: Date.now(), fromDone: false };
+    const done = await fsCommit(env, [
+      { update: { name: docName(env, `gardenTrades/${id}`), fields: Object.fromEntries(Object.entries(d).map(([k, v]) => [k, encAny(v)])) }, currentDocument: { exists: false } },
+      tradeNote(env, to, me.name, 'offer'),
+    ]);
+    if (!done) fail(409, 'Frixion is busy. Try again.');
+    return { ok: true, trade: tradeShown(id, d) };
+  }
+  const id = String(b.id || '');
+  if (!/^t[a-z0-9]{6,30}$/.test(id)) fail(404, 'That trade isn\'t there.');
+  for (let i = 0; i < 4; i++) {
+    const [t, prof] = await fsGetMany(env, [`gardenTrades/${id}`, `users/${me.name}`]);
+    const u = mine(prof, me);
+    if (!t || (t.data.from !== me.name && t.data.to !== me.name)) fail(404, 'That trade isn\'t there.');
+    const d = t.data, mineOut = d.from === me.name;
+    let fields, note = null;
+    if (action === 'accept' || action === 'decline') {
+      if (mineOut) fail(403, 'Only the other person can answer it.');
+      if (d.status !== 'open') fail(409, 'That trade was already answered.');
+      if (action === 'accept' && !hasItems(backpackOf(u), tradeItems(d.want) || { seeds: {}, sprinklers: {} })) fail(409, 'Your backpack doesn\'t have what they want any more.');
+      fields = { status: action === 'accept' ? 'accepted' : 'declined', decidedAt: Date.now() };
+      note = tradeNote(env, d.from, me.name, fields.status);
+    } else if (action === 'cancel') {
+      if (!mineOut) fail(403, 'Only who sent it can take it back.');
+      if (d.status !== 'open') fail(409, 'They already answered it.');
+      fields = { status: 'cancelled', decidedAt: Date.now(), fromDone: true };
+    } else if (action === 'collect') {
+      if (!mineOut) fail(403, 'That trade isn\'t yours to collect.');
+      if (d.status !== 'accepted' && d.status !== 'declined') fail(409, 'Nothing to collect yet.');
+      if (d.fromDone === true) fail(409, 'Already collected.');
+      fields = { fromDone: true };
+    } else fail(400, 'That isn\'t a trade action.');
+    const done = await fsCommit(env, [tradeSet(env, id, fields, t.updateTime), ...(note ? [note] : [])]);
+    if (done) return { ok: true, trade: tradeShown(id, { ...d, ...fields }) };
+  }
+  fail(409, 'Frixion is busy. Try again.');
+}
+
+// ---------------- webhooks (v4.69, request 50) ----------------
+// POST /api/webhooks/<server>/<webhook>/<token> (functions/api/webhooks) with JSON shaped like Discord's, { content,
+// username, avatar_url }, posts a message in the webhook's channel as the webhook. The webhook lives at
+// servers/<sid>/webhooks/<id>, made by someone with Manage Webhooks (supabase/sql/015); only the SHA-256 of its token
+// is kept, so nobody reading the database can post with it. 30 posts a minute per webhook.
+const HOOK_ID = /^[A-Za-z0-9_-]{1,64}$/;
+async function webhookPost(env, request, parts) {
+  if (request.method !== 'POST') fail(405, 'Post to it with a message: {"content": "hi"}.');
+  const [sid, wid, token, extra] = parts;
+  if (!HOOK_ID.test(sid || '') || !HOOK_ID.test(wid || '') || !/^[0-9a-f]{64}$/.test(token || '') || extra) fail(404, 'Unknown webhook.');
+  slowDown('hook:' + sid + '/' + wid, 30);
+  const body = await request.json().catch(() => null);
+  const text = body && typeof body.content === 'string' ? body.content.trim().slice(0, 4000) : '';
+  if (!text) fail(400, 'Send some content: {"content": "hi"}.');
+  const hook = await fsGet(env, `servers/${sid}/webhooks/${wid}`);
+  if (!hook || hook.tokenHash !== await sha256Hex(token)) fail(404, 'Unknown webhook.');
+  const cid = String(hook.channelId || '');
+  if (!HOOK_ID.test(cid) || !(await fsGet(env, `servers/${sid}/channels/${cid}`))) fail(404, 'The webhook\'s channel is gone.');
+  const named = body && typeof body.username === 'string' ? body.username.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 80) : '';
+  const pic = body && typeof body.avatar_url === 'string' && /^https:\/\/\S{1,490}$/.test(body.avatar_url) ? body.avatar_url : '';
+  const name = named || String(hook.name || 'Webhook').slice(0, 80);
+  const avatar = pic || (/^https:\/\//.test(hook.avatarUrl || '') ? hook.avatarUrl : '');
+  const mid = 'wh' + Date.now().toString(36) + [...crypto.getRandomValues(new Uint8Array(5))].map(x => x.toString(16).padStart(2, '0')).join('');
+  const m = { uid: 'webhook:' + wid, username: name, ext: { src: 'webhook', id: wid, name, avatar }, createdAt: new Date(), text };
+  const done = await fsCommit(env, [
+    { update: { name: docName(env, `servers/${sid}/channels/${cid}/messages/${mid}`), fields: Object.fromEntries(Object.entries(m).map(([k, v]) => [k, encAny(v)])) }, currentDocument: { exists: false } },
+    { update: { name: docName(env, `servers/${sid}/channels/${cid}`), fields: { lastMessageAt: enc(new Date()), lastMessage: encAny({ uid: m.uid, text: text.slice(0, 200), everyone: false, mid }) } },
+      updateMask: { fieldPaths: ['lastMessageAt', 'lastMessage'] }, currentDocument: { exists: true } },
+  ]);
+  if (!done) fail(409, 'Frixion is busy. Try again.');
+  return { ok: true, id: mid, channel_id: cid };
 }
 
 // ---------------- moving to Supabase (the switch, 2026-11) ----------------

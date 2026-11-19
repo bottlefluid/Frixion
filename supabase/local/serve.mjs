@@ -320,7 +320,7 @@ const ENVS = {
 async function api(fns, req, res) {
   const body = ['GET', 'HEAD', 'OPTIONS'].includes(req.method) ? undefined : await readBody(req);
   const url = `http://127.0.0.1:${PORT_API}${req.url}`, u = new URL(url);
-  const m = /^\/api\/(admin|push|discord)(?:\/(.*))?$/.exec(u.pathname);
+  const m = /^\/api\/(admin|push|discord|webhooks)(?:\/(.*))?$/.exec(u.pathname);
   if (!m) { res.writeHead(404, CORS); return res.end(); }
   const rest = m[2] || '';
   const r = await fns[m[1]].onRequest({ request: new Request(url, { method: req.method, headers: req.headers, body }), env: ENVS[m[1]], params: { path: rest ? rest.split('/') : [] } });
@@ -336,7 +336,8 @@ const fns = {};
 // --admin-from=<folder>: the admin routes from another checkout (main's, to try its Supabase tab against the Firestore
 // emulator: its routes still read Firestore there, and only its copy tool writes to this stand-in)
 const ADMIN_FROM = (process.argv.find(a => a.startsWith('--admin-from=')) || '').slice('--admin-from='.length) || ROOT;
-for (const name of ['admin', 'push', 'discord']) fns[name] = await import(pathToFileURL(path.join(name === 'admin' ? ADMIN_FROM : ROOT, `functions/api/${name}/[[path]].js`)).href);
+for (const name of ['admin', 'push', 'discord', 'webhooks']) fns[name] = await import(pathToFileURL(path.join(name === 'admin' ? ADMIN_FROM : ROOT, `functions/api/${name}/[[path]].js`)).href);
+ENVS.webhooks = ENVS.admin;   // (functions/api/webhooks hands its requests to the admin routes, v4.69)
 if (ADMIN_FROM !== ROOT) log('admin routes from ' + ADMIN_FROM);
 // a push key for this run (the real one, VAPID_PRIVATE_KEY, is a Cloudflare secret)
 const vapid = await crypto.webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);

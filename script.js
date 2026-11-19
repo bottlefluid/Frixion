@@ -1177,6 +1177,18 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.69', date: '2026-11-18', title: 'Private threads, voice messages, webhooks, events and garden trades',
+    notes: [
+      'Every permission in the role editor works now. The voice and Stage channel ones are hidden until Frixion has voice channels, and nothing says "Coming soon" any more.',
+      'Private threads: tick Private when you make a thread, and only the people you add can see it (mention someone in it, or use Thread Settings). People who can manage threads can see them all.',
+      'Thread Settings, in a thread\'s top bar: rename it, lock it (then only people who can manage threads can post), add or remove people in a private thread, leave one, or delete it.',
+      'Voice messages: press the microphone in the message box, talk (up to 3 minutes), and send. In a server it takes the Send Voice Messages permission.',
+      'Webhooks: Server Settings, Integrations. Make one for a channel and post to its link from another app or site, the same way as Discord\'s webhooks. Its messages show its name with an APP tag.',
+      'Events: Events at the top of a server\'s channels. Make one, say when and where, and everyone can mark themselves interested. Create Events and Manage Events decide who can.',
+      'Grow a Garden has a backpack: Buy puts a seed or sprinkler in it for later, and planting uses it first.',
+      'Grow a Garden trades: offer someone seeds or sprinklers from your backpack for some of theirs, from the Trades tab or from their garden. They accept or turn it down, and nothing moves until they answer.',
+      '4 new easter eggs. That makes 78.',
+    ] },
   { v: '4.68', date: '2026-11-18', title: 'Gift Orbs, visit gardens, and phone typing fixes',
     notes: [
       'Gift Orbs: open someone\'s profile and send them as many of your Orbs as you like. Gifts show under Loans and Gifts on both profiles, and you get told when someone gifts you.',
@@ -2905,7 +2917,7 @@ const SERVER_PERMISSIONS = [
   { key: 'sendMessages', group: 'text', label: 'Send Messages and Create Posts', desc: 'Allows members to send messages in text channels and create posts in forum channels.' },
   { key: 'sendMessagesInThreads', group: 'text', label: 'Send Messages in Threads and Posts', desc: 'Allows members to send messages in threads and in posts on forum channels.' },
   { key: 'createPublicThreads', group: 'text', label: 'Create Public Threads', desc: 'Allows members to create threads that everyone in a channel can view.' },
-  { key: 'createPrivateThreads', group: 'text', label: 'Create Private Threads', desc: 'Allows members to create invite-only threads.' },
+  { key: 'createPrivateThreads', group: 'text', label: 'Create Private Threads', desc: 'Allows members to create invite-only threads: only the people in them (and anyone who can manage threads) can see them.' },
   { key: 'embedLinks', group: 'text', label: 'Embed Links', desc: 'Allows links that members share to show embedded content in text channels.' },
   { key: 'attachFiles', group: 'text', label: 'Attach Files', desc: 'Allows members to upload files or media in text channels.' },
   { key: 'addReactions', group: 'text', label: 'Add Reactions', desc: 'Allows members to add new emoji reactions to a message.' },
@@ -2915,7 +2927,7 @@ const SERVER_PERMISSIONS = [
   { key: 'manageMessages', group: 'text', label: 'Manage Messages', desc: 'Allows members to delete messages by other members or pin any message.' },
   { key: 'pinMessages', group: 'text', label: 'Pin Messages', desc: 'Allows members to pin or unpin any message.' },
   { key: 'bypassSlowmode', group: 'text', label: 'Bypass Slowmode', desc: 'Allows members to send messages without being affected by slowmode.' },
-  { key: 'manageThreads', group: 'text', label: 'Manage Threads and Posts', desc: 'Allows members to rename, delete, close, and turn on slow mode for threads and posts.' },
+  { key: 'manageThreads', group: 'text', label: 'Manage Threads and Posts', desc: 'Allows members to rename, lock, and delete threads, see every private thread, and add or remove people in them.' },
   { key: 'readMessageHistory', group: 'text', label: 'Read Message History', desc: 'Allows members to read previous messages sent in channels.' },
   { key: 'sendTTS', group: 'text', label: 'Send Text-to-Speech Messages', desc: 'Allows members to send text-to-speech messages by starting a message with /tts.' },
   { key: 'sendVoiceMessages', group: 'text', label: 'Send Voice Messages', desc: 'Allows members to send voice messages.' },
@@ -3098,14 +3110,14 @@ async function logAudit(serverId, action) {
     await ref.update({ auditLog: log.slice(-100) });
   } catch (e) { console.warn('Audit log write failed', e); }
 }
-// Permissions that exist in the editor for Discord parity but map to
-// features Frixion doesn't have yet (voice, stage, events, threads...).
-const UNUSED_PERMISSIONS = new Set([
-  'manageWebhooks', 'sendMessagesInThreads', 'createPublicThreads', 'createPrivateThreads', 'manageThreads',
-  'sendVoiceMessages', 'connect', 'speak', 'video', 'useSoundboard', 'useExternalSounds', 'useVAD',
-  'prioritySpeaker', 'muteMembers', 'deafenMembers', 'moveMembers', 'setVoiceChannelStatus',
-  'useActivities', 'useExternalApps', 'requestToSpeak', 'createEvents', 'manageEvents',
+// Permissions for things Frixion doesn't have (voice and Stage channels, Activities, apps you add to your account) stay
+// out of the role and channel editors until those exist (v4.69, request 50). Everything the editors show works: threads,
+// private threads, voice messages, webhooks and events joined the rest in v4.69, so nothing says "Coming soon" now.
+const HIDDEN_PERMISSIONS = new Set([
+  'connect', 'speak', 'video', 'useSoundboard', 'useExternalSounds', 'useVAD', 'prioritySpeaker', 'muteMembers',
+  'deafenMembers', 'moveMembers', 'setVoiceChannelStatus', 'useActivities', 'useExternalApps', 'requestToSpeak',
 ]);
+const shownPermissions = group => SERVER_PERMISSIONS.filter(p => (!group || p.group === group) && !HIDDEN_PERMISSIONS.has(p.key));
 // The username itself is permanent (it's the Firestore doc ID), but anyone
 // can set a separate Display Name that's shown instead almost everywhere.
 // Names made of underscores (v4.64): a hair of space between two underscores, so '________' doesn't read as one line.
@@ -3126,6 +3138,7 @@ function dayStr(ts) {
 async function getProfile(uid) {
   if (profileCache[uid]) return profileCache[uid];
   if (String(uid).startsWith('discord:')) return discordProfile({});   // someone on Discord (see DISCORD BRIDGE): no Frixion profile
+  if (String(uid).startsWith('webhook:')) return webhookProfile({});   // a webhook (v4.69): no profile either
   try {
     const snap = await db.collection('users').doc(uid).get();
     const data = snap.exists ? snap.data() : { username: uid, avatarColor: '#5865f2', status: 'offline', premiumUntil: null };
@@ -4872,6 +4885,7 @@ function cleanupAllListeners() {
   if (unsub.typing) unsub.typing();
   if (unsub.mentions) unsub.mentions();
   if (unsub.threads) unsub.threads();
+  if (unsub.events) { unsub.events(); unsub.events = null; }
   if (unsub.blocks) unsub.blocks();
   myBlocks = []; revealedBlocked.clear();
   stopServerChannelListeners();
@@ -5122,6 +5136,7 @@ function initAppForUser() {
     showSecurityNotice();   // someone signed in to this account with a one-time password (v4.66)
     maybeJoinReferral();    // came in through a friend's referral link (v4.67)
     showGiftNotice();       // someone gifted you Orbs (v4.68)
+    ggTradeNotice();        // a Grow a Garden trade offer, or an answer to yours (v4.69)
     maybeShowAppPrompt();
     refreshPushSub();
     maybeAskPush();
@@ -5925,6 +5940,7 @@ function previewForMessage(message, includeAuthor = false) {
   if (!message) return 'No messages yet';
   if (typeof message === 'string') return message;
   let text = mdPlain((message.text || '').replace(MASKED_LINK_RE, '$1')).trim();
+  if (!text && message.attachments && message.attachments.length === 1 && message.attachments[0].voice) text = 'Sent a voice message';   // (v4.69)
   if (!text && message.attachments && message.attachments.length) {
     text = message.attachments.length > 1
       ? `Sent ${message.attachments.length} photos`
@@ -7264,6 +7280,11 @@ function openGiftModal(username) {
 }
 
 async function openProfileModal(username) {
+  if (String(username).startsWith('webhook:')) {   // a webhook's post (v4.69)
+    const p = profileCache[username] || {};
+    toast(`${p.username || 'This'} is a webhook: an app or site posting here through a link. Server staff manage it under Server Settings, Integrations.`);
+    return;
+  }
   if (String(username).startsWith('discord:')) {   // someone on Discord, through a linked channel
     const p = profileCache[username] || {};
     toast(`${p.username || 'This person'}${p.discordTag ? ` (@${p.discordTag})` : ''} is on Discord. Their messages come through this channel's link.`);
@@ -8461,9 +8482,9 @@ $('server-menu').addEventListener('keydown', (e) => {
 function openServerSettings(tab) {
   if (!currentServerId || !currentServerData) return;
   const can = (p) => hasServerPerm(currentServerData, myUid, p);
-  const canManage = can('manageServer') || can('manageRoles') || can('banMembers');
-  if (!canManage) { toast('You need Manage Server, Manage Roles, or Ban Members permission to open Server Settings.'); return; }
-  const tabPerm = { overview: 'manageServer', roles: 'manageRoles', invites: 'manageServer', bans: 'banMembers' };
+  const canManage = can('manageServer') || can('manageRoles') || can('banMembers') || can('manageWebhooks');
+  if (!canManage) { toast('You need Manage Server, Manage Roles, Manage Webhooks, or Ban Members permission to open Server Settings.'); return; }
+  const tabPerm = { overview: 'manageServer', roles: 'manageRoles', webhooks: 'manageWebhooks', invites: 'manageServer', bans: 'banMembers' };
   document.querySelectorAll('.ss-tab').forEach(t => t.classList.toggle('hidden', !can(tabPerm[t.dataset.ssTab])));
   document.querySelector('.ss-nav-mod').classList.toggle('hidden', !can('manageServer') && !can('banMembers'));
   $('edit-server-desc').value = currentServerData.description || '';
@@ -8479,9 +8500,69 @@ function openServerSettings(tab) {
   // Only the server's owner (or the Frixion owner) ever sees Delete Server —
   // Manage Server / Administrator alone can't erase it out from under its owner.
   $('delete-server-btn').classList.toggle('hidden', !isServerOwnerLevel(currentServerData, myUid));
-  openServerSettingsTab(tab || (can('manageServer') ? 'overview' : can('manageRoles') ? 'roles' : 'bans'));
+  openServerSettingsTab(tab || (can('manageServer') ? 'overview' : can('manageRoles') ? 'roles' : can('banMembers') ? 'bans' : 'webhooks'));
   openModal('server-settings-modal');
 }
+
+// ---- webhooks (v4.69, request 50): Server Settings, Integrations ----
+// servers/<sid>/webhooks/<id> keeps only the SHA-256 of a webhook's secret (supabase/sql/015), so its link is shown once,
+// when it's made or given a new one; functions/api/webhooks checks a post against it.
+const WEBHOOK_API = ADMIN_API.replace(/\/admin$/, '/webhooks');
+const randomHex = n => [...crypto.getRandomValues(new Uint8Array(n))].map(b => b.toString(16).padStart(2, '0')).join('');
+async function sha256HexOf(text) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, '0')).join(''); }
+const webhooksRef = () => db.collection('servers').doc(currentServerId).collection('webhooks');
+function webhookShowLink(id, token) {
+  $('wh-url').value = `${WEBHOOK_API}/${currentServerId}/${id}/${token}`;
+  $('wh-made').classList.remove('hidden');
+  $('wh-url').select();
+}
+async function renderWebhooksPane() {
+  const list = $('wh-list');
+  if (!currentServerData) return;
+  const chans = lastChannelsList.filter(c => !c.type || c.type === 'text');
+  $('wh-channel').innerHTML = chans.map(c => `<option value="${esc(c.id)}">#${esc(c.name)}</option>`).join('');
+  list.innerHTML = '<div class="empty">Loading...</div>';
+  let hooks = [];
+  try { const snap = await webhooksRef().get(); snap.forEach(d => hooks.push({ id: d.id, ...d.data() })); }
+  catch (e) { list.innerHTML = '<div class="empty">Could not load webhooks.</div>'; return; }
+  const chName = id => { const c = lastChannelsList.find(x => x.id === id); return c ? '#' + c.name : 'a deleted channel'; };
+  list.innerHTML = hooks.length ? hooks.map(h => `<div class="wh-row" data-wh="${esc(h.id)}">
+      <div class="wh-info"><b>${esc(h.name)}</b><small>Posts in ${esc(chName(h.channelId))} &middot; made by ${esc(displayNameOf(profileCache[h.createdBy] || { username: h.createdBy || '?' }))}</small></div>
+      <button type="button" class="ds-btn" data-wh-new>New Link</button>
+      <button type="button" class="ds-btn ds-btn-danger" data-wh-del>Delete</button>
+    </div>`).join('') : '<div class="empty">No webhooks yet.</div>';
+  list.querySelectorAll('.wh-row').forEach(row => {
+    const id = row.dataset.wh, h = hooks.find(x => x.id === id);
+    row.querySelector('[data-wh-new]').onclick = () => confirmAction({ title: 'New Link', danger: false, confirmLabel: 'Make a New Link',
+      body: `Make a new link for ${h.name}? Its old link stops working right away.`,
+      onConfirm: async () => {
+        const token = randomHex(32);
+        try { await webhooksRef().doc(id).update({ tokenHash: await sha256HexOf(token) }); webhookShowLink(id, token); }
+        catch (e) { toast(e.message || 'Could not change it.', 'error'); }
+      } });
+    row.querySelector('[data-wh-del]').onclick = () => confirmAction({ title: 'Delete Webhook', confirmLabel: 'Delete',
+      body: `Delete ${h.name}? Anything posting to its link stops getting through. Messages it already posted stay.`,
+      onConfirm: async () => { try { await webhooksRef().doc(id).delete(); $('wh-made').classList.add('hidden'); renderWebhooksPane(); } catch (e) { toast(e.message || 'Could not delete it.', 'error'); } } });
+  });
+}
+$('wh-create').onclick = async () => {
+  const name = $('wh-name').value.replace(/\s+/g, ' ').trim().slice(0, 80), channelId = $('wh-channel').value;
+  if (!name) { toast('Give the webhook a name.'); return; }
+  if (!channelId) { toast('Pick the channel it posts in.'); return; }
+  const token = randomHex(32);
+  $('wh-create').disabled = true;
+  try {
+    const ref = await webhooksRef().add({ name, channelId, avatarUrl: '', tokenHash: await sha256HexOf(token), createdBy: myUid, createdAt: FieldValue.serverTimestamp() });
+    $('wh-name').value = '';
+    webhookShowLink(ref.id, token);
+    renderWebhooksPane();
+    logAudit(currentServerId, `made the webhook ${name}`);
+  } catch (e) { toast(e.message || 'Could not make the webhook.', 'error'); }
+  finally { $('wh-create').disabled = false; }
+};
+$('wh-copy').onclick = () => copyText($('wh-url').value, 'Webhook link copied. Keep it secret.');
+// a message a webhook posted: its name and picture come with it, with an APP tag
+const webhookProfile = ext => ({ username: ext.name || 'Webhook', displayName: ext.name || 'Webhook', avatarUrl: ext.avatar || '', avatarColor: '#5865f2', status: 'offline', premiumUntil: null, bot: true, webhook: true });
 
 async function renderBansList() {
   const list = $('bans-list');
@@ -8629,9 +8710,11 @@ document.querySelectorAll('.ss-tab').forEach(btn => {
 });
 function openServerSettingsTab(tab) {
   if (tab === 'overview' && currentServerData && !hasServerPerm(currentServerData, myUid, 'manageServer')) { toast('You need Manage Server permission to view this.'); return; }
+  if (tab === 'webhooks' && currentServerData && !hasServerPerm(currentServerData, myUid, 'manageWebhooks')) { toast('You need Manage Webhooks permission to view this.'); return; }
   document.querySelectorAll('.ss-tab').forEach(t => t.classList.toggle('on', t.dataset.ssTab === tab));
-  ['overview', 'roles', 'invites', 'bans'].forEach(p => $('ss-pane-' + p).classList.toggle('hidden', tab !== p));
+  ['overview', 'roles', 'webhooks', 'invites', 'bans'].forEach(p => $('ss-pane-' + p).classList.toggle('hidden', tab !== p));
   if (tab === 'bans') { $('bans-search').value = ''; renderBansList(); }
+  if (tab === 'webhooks') { $('wh-made').classList.add('hidden'); renderWebhooksPane(); }
   if (tab === 'roles') {
     rolesView = 'list'; selectedRoleId = null; roleListSearch = '';
     resetRoleEditorState();
@@ -8869,13 +8952,13 @@ function renderRoleEditView(root) {
       <label class="dr-search dr-grow"><span class="sr-only">Search permissions</span><input type="text" id="dr-perm-search" placeholder="Search permissions" value="${esc(rolePermSearch)}" autocomplete="off"><span class="dr-search-icon">${ROLE_ICONS.search}</span></label>
       <button type="button" class="ds-link-btn" id="dr-clear-perms">Clear permissions</button>
     </div>
-    ${SERVER_PERMISSION_GROUPS.map(g => `
+    ${SERVER_PERMISSION_GROUPS.filter(g => shownPermissions(g.key).length).map(g => `
       <div class="dr-perm-group" data-group="${g.key}">
         <div class="dr-section-title">${esc(g.label)}</div>
-        ${SERVER_PERMISSIONS.filter(p => p.group === g.key).map(p => `
+        ${shownPermissions(g.key).map(p => `
           <div class="dr-perm-row" data-search="${esc((p.label + ' ' + p.desc).toLowerCase())}">
             <div class="dr-toggle-row">
-              <div class="dr-toggle-title">${esc(p.label)}${UNUSED_PERMISSIONS.has(p.key) ? ' <span class="perm-soon-tag" title="Saved now, takes effect once this feature exists in Frixion">Coming soon</span>' : ''}</div>
+              <div class="dr-toggle-title">${esc(p.label)}</div>
               <label class="toggle-switch"><input type="checkbox" data-perm="${p.key}" ${v.permissions.includes(p.key) ? 'checked' : ''} aria-label="${esc(p.label)}"><span class="toggle-slider"></span></label>
             </div>
             <p class="dr-perm-desc">${esc(p.desc)}</p>
@@ -9268,6 +9351,7 @@ function subscribeChannels(serverId) {
       } else if (currentView === 'channel') refreshChannelComposerState();
     });
   subscribeThreads(serverId);
+  subscribeEvents(serverId);   // (v4.69)
   unsub.categories = db.collection('servers').doc(serverId).collection('categories').orderBy('createdAt', 'asc')
     .onSnapshot(snap => {
       const cats = [];
@@ -9332,7 +9416,9 @@ function renderChannelRows(channels) {
       const row = document.createElement('div');
       row.className = 'thread-row' + (currentThreadId === t.id ? ' active' : '');
       row.dataset.tid = t.id; row.dataset.cid = c.id;
-      row.innerHTML = `<span class="thread-curve" aria-hidden="true"></span><span class="tname">${esc(t.name)}</span>`;
+      row.innerHTML = `<span class="thread-curve" aria-hidden="true"></span><span class="tname">${esc(t.name)}</span>`
+        + (t.private ? `<span class="thread-flag" title="Private thread">${THREAD_LOCK_ICON}</span>` : '')
+        + (t.locked ? '<span class="thread-flag thread-locked" title="Locked: only people who can manage threads can post">Locked</span>' : '');
       row.onclick = () => selectThread(t);
       wrap.appendChild(row);
     });
@@ -9424,6 +9510,8 @@ function refreshChannelComposerState() {
     $('attach-btn').classList.remove('hidden');
     $('sticker-btn').classList.remove('hidden');
     $('gif-btn').classList.remove('hidden');
+    $('thread-menu-btn').classList.add('hidden');
+    $('voice-btn').classList.toggle('hidden', !voiceMessagesOk() || isSiteMuted());   // (DMs and groups: always, v4.69)
     $('slowmode-indicator').classList.add('hidden'); $('chat-header-topic').classList.add('hidden'); $('chat-header-discord').classList.add('hidden');
     updateComposerSendBtn();
     bridgeWatch();
@@ -9432,13 +9520,18 @@ function refreshChannelComposerState() {
   const channel = currentChannelObj();
   if (!channel) return;
   const thread = currentThreadId ? currentThreadData : null;
-  const canSend = hasChannelPerm(channel, currentServerData, myUid, thread ? 'sendMessagesInThreads' : 'sendMessages');
+  // a locked thread (v4.69): only who can manage threads posts in it
+  const lockedOut = !!(thread && thread.locked && !hasChannelPerm(channel, currentServerData, myUid, 'manageThreads'));
+  const canSend = hasChannelPerm(channel, currentServerData, myUid, thread ? 'sendMessagesInThreads' : 'sendMessages') && !lockedOut;
   const tUntil = isTimedOutHere() ? timeoutUntil(currentServerData, myUid) : 0;
   const muted = isSiteMuted();
   input.disabled = !canSend || !!tUntil || muted;
   input.placeholder = muted ? siteMuteText() : tUntil ? `You are timed out for ${timeoutLeftText(tUntil)}.`
     : canSend ? (thread ? `Message ${thread.name}` : `Message #${channel.name}`)
+    : lockedOut ? 'This thread is locked. Only people who can manage threads can post here.'
     : thread ? 'You do not have permission to send messages in threads here.' : 'You do not have permission to send messages in this channel.';
+  $('thread-menu-btn').classList.toggle('hidden', !thread);
+  $('voice-btn').classList.toggle('hidden', !voiceMessagesOk() || !canSend || !!tUntil || muted || !hasChannelPerm(channel, currentServerData, myUid, 'sendVoiceMessages'));
   $('attach-btn').classList.toggle('hidden', !canSend || !!tUntil || muted);
   $('sticker-btn').classList.toggle('hidden', !canHere('useExternalStickers'));
   $('gif-btn').classList.toggle('hidden', !canHere('embedLinks'));
@@ -9530,7 +9623,7 @@ function renderChannelPermsPane() {
 
   const o = csOverwrites[csTarget] || { allow: [], deny: [] };
   const byGroup = {};
-  SERVER_PERMISSIONS.filter(p => CHANNEL_PERMISSION_KEYS.includes(p.key)).forEach(p => { (byGroup[p.group] = byGroup[p.group] || []).push(p); });
+  shownPermissions().filter(p => CHANNEL_PERMISSION_KEYS.includes(p.key)).forEach(p => { (byGroup[p.group] = byGroup[p.group] || []).push(p); });
   const labels = { general: 'General Channel Permissions', membership: 'Membership Permissions', text: 'Text Channel Permissions', apps: 'Apps Permissions' };
   $('cs-perm-list').innerHTML = Object.keys(byGroup).map(g => `<div class="cs-group-label">${labels[g] || g}</div>` + byGroup[g].map(p => {
     const state = (o.allow || []).includes(p.key) ? 'allow' : (o.deny || []).includes(p.key) ? 'deny' : 'inherit';
@@ -9747,6 +9840,7 @@ function subscribeThreads(serverId) {
     lastThreadsList = snap.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }));
     const open = currentThreadId && lastThreadsList.find(t => t.id === currentThreadId);
     if (open) currentThreadData = open;
+    if (open && open.private && Array.isArray(open.members) && open.members.length >= 5 && open.members.includes(myUid)) eggFindOnce('secretclub');   // (an easter egg)
     renderChannelRows(lastChannelsList);
   }, () => {});
 }
@@ -9782,17 +9876,24 @@ function openThreadById(tid) {
   threadRef(tid).get().then(d => { if (d.exists) selectThread({ id: d.id, ...d.data() }); }).catch(() => {});
 }
 let threadDraftMsg = null;
+const THREAD_LOCK_ICON = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+const canStartThread = () => canHere('createPublicThreads') || canHere('createPrivateThreads');
 function openCreateThread(msgId) {
   const m = lastRawMessages.find(x => x.id === msgId);
   if (!m || currentView !== 'channel' || currentThreadId) return;
   if (m.thread && m.thread.id) { openThreadById(m.thread.id); return; }
-  if (!canHere('createPublicThreads')) { toast('You do not have permission to create threads here.', 'error'); return; }
+  if (!canStartThread()) { toast('You do not have permission to create threads here.', 'error'); return; }
   closeActionSheet();
   threadDraftMsg = m;
   const from = (profileCache[m.uid] && displayNameOf(profileCache[m.uid])) || m.username || 'someone';
   $('thread-modal-from').textContent = `From ${from}: ${previewForMessage(m).slice(0, 120)}`;
   $('thread-name').value = (mdPlain(m.text || '').replace(/\s+/g, ' ').trim().slice(0, 40)) || 'New thread';
   $('thread-error').textContent = '';
+  // Private threads (v4.69): only with Create Private Threads; without Create Public Threads it's the only kind
+  const pub = canHere('createPublicThreads'), priv = canHere('createPrivateThreads');
+  $('thread-private-row').classList.toggle('hidden', !priv);
+  $('thread-private').checked = priv && !pub;
+  $('thread-private').disabled = !pub;
   openModal('thread-modal');
   setTimeout(() => { $('thread-name').focus(); $('thread-name').select(); }, 50);
 }
@@ -9802,16 +9903,20 @@ async function createThreadFromModal() {
   if (!m || currentView !== 'channel') { closeModal('thread-modal'); return; }
   if (!name) { $('thread-error').textContent = 'Give the thread a name.'; return; }
   const sid = currentServerId, cid = currentChannelId;
+  const priv = !$('thread-private-row').classList.contains('hidden') && $('thread-private').checked;
   $('thread-create-btn').disabled = true;
   try {
     const now = FieldValue.serverTimestamp();
+    const extra = priv ? { private: true, members: [myUid] } : {};
     const ref = await db.collection('servers').doc(sid).collection('threads').add({
-      channelId: cid, name, starterId: m.id, starterUid: m.uid || null, createdBy: myUid, createdAt: now, lastMessageAt: now, messageCount: 0,
+      channelId: cid, name, starterId: m.id, starterUid: m.uid || null, createdBy: myUid, createdAt: now, lastMessageAt: now, messageCount: 0, ...extra,
     });
-    await db.collection('servers').doc(sid).collection('channels').doc(cid).collection('messages').doc(m.id).update({ thread: { id: ref.id, name, count: 0 } }).catch(() => {});
+    // (a private thread doesn't show on the message it started from: everyone sees that message)
+    if (!priv) await db.collection('servers').doc(sid).collection('channels').doc(cid).collection('messages').doc(m.id).update({ thread: { id: ref.id, name, count: 0 } }).catch(() => {});
     closeModal('thread-modal');
     threadDraftMsg = null;
-    if (currentServerId === sid) selectThread({ id: ref.id, channelId: cid, name, starterId: m.id, lastMessageAt: Date.now() });
+    if (priv) toast('Private thread made. Mention people in it (or use Thread Settings) to add them.');
+    if (currentServerId === sid) selectThread({ id: ref.id, channelId: cid, name, starterId: m.id, lastMessageAt: Date.now(), createdBy: myUid, ...extra });
   } catch (e) { $('thread-error').textContent = e.message || 'Could not create the thread.'; }
   finally { $('thread-create-btn').disabled = false; }
 }
@@ -9823,6 +9928,192 @@ function goToThreadParent() {
 }
 $('chat-header-topic').addEventListener('click', () => { if (currentThreadId) goToThreadParent(); });
 $('thread-create-btn').onclick = createThreadFromModal;
+
+// ============================================================
+// SERVER EVENTS (v4.69, request 50)
+// servers/<sid>/events/<id> = { name, description, startAt, endAt (ms or null), place, channelId, createdBy, createdAt,
+// interested: [names] }. Create Events makes one (and edits or cancels your own), Manage Events edits or cancels any,
+// and anyone in the server can say they're interested (supabase/sql/015). "Events" at the top of the channel list
+// counts the ones still to come or going on now; one with no end is over 2 hours after it starts.
+// ============================================================
+let serverEvents = [], editingEventId = null;
+function subscribeEvents(serverId) {
+  if (unsub.events) unsub.events();
+  serverEvents = [];
+  renderEventsCount();
+  unsub.events = db.collection('servers').doc(serverId).collection('events').orderBy('startAt').limit(50).onSnapshot(snap => {
+    serverEvents = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderEventsCount();
+    if (!$('events-modal').classList.contains('hidden') && $('ev-form').classList.contains('hidden')) renderEventsList();
+  }, () => {});
+}
+const eventEnd = e => Number(e.endAt) || (Number(e.startAt) + 2 * 3600000);
+const eventLive = e => Date.now() >= Number(e.startAt) && Date.now() < eventEnd(e);
+const eventsAhead = () => serverEvents.filter(e => eventEnd(e) > Date.now()).sort((a, b) => a.startAt - b.startAt);
+const canCreateEvents = () => !!currentServerData && (hasServerPerm(currentServerData, myUid, 'createEvents') || hasServerPerm(currentServerData, myUid, 'manageEvents'));
+const canEditEvent = e => !!currentServerData && (hasServerPerm(currentServerData, myUid, 'manageEvents') || (e.createdBy === myUid && hasServerPerm(currentServerData, myUid, 'createEvents')));
+function renderEventsCount() {
+  const n = eventsAhead().length, live = serverEvents.some(eventLive);
+  $('server-events-count').textContent = live ? 'Now' : String(n);
+  $('server-events-count').classList.toggle('hidden', !n);
+  $('server-events-count').classList.toggle('live', live);
+}
+function eventWhen(e) {
+  if (eventLive(e)) return `Happening now${e.endAt ? ', until ' + new Date(Number(e.endAt)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}`;
+  const s = new Date(Number(e.startAt)), sameDay = new Date().toDateString() === s.toDateString();
+  return (sameDay ? 'Today at ' + s.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : s.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))
+    + (e.endAt ? ' to ' + new Date(Number(e.endAt)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '');
+}
+function openEvents() {
+  if (!currentServerData) return;
+  $('events-title').textContent = `Events in ${currentServerData.name}`;
+  $('ev-form').classList.add('hidden');
+  renderEventsList();
+  openModal('events-modal');
+}
+function renderEventsList() {
+  const list = $('events-list'), ahead = eventsAhead();
+  $('ev-new-btn').parentElement.classList.toggle('hidden', !canCreateEvents());
+  $('events-list').classList.remove('hidden');
+  list.innerHTML = ahead.length ? ahead.map(e => {
+    const ch = e.channelId && lastChannelsList.find(c => c.id === e.channelId), going = Array.isArray(e.interested) ? e.interested : [];
+    const where = ch ? `#${esc(ch.name)}` : e.place ? esc(e.place) : '';
+    return `<div class="ev-card${eventLive(e) ? ' live' : ''}" data-ev="${esc(e.id)}">
+      <div class="ev-when">${esc(eventWhen(e))}</div>
+      <div class="ev-name">${esc(e.name)}</div>
+      ${e.description ? `<div class="ev-desc">${esc(e.description)}</div>` : ''}
+      ${where ? `<div class="ev-where">${ch ? `<button type="button" class="ev-go" data-ev-go="${esc(ch.id)}">${where}</button>` : where}</div>` : ''}
+      <div class="ev-foot">
+        <button type="button" class="ev-int${going.includes(myUid) ? ' on' : ''}" data-ev-int>${going.includes(myUid) ? 'Interested' : 'I\'m Interested'} &middot; ${going.length}</button>
+        <span class="ev-by">by ${esc(displayNameOf(profileCache[e.createdBy] || { username: e.createdBy || '?' }))}</span>
+        ${canEditEvent(e) ? '<button type="button" class="ev-small" data-ev-edit>Edit</button><button type="button" class="ev-small danger" data-ev-del>Cancel Event</button>' : ''}
+      </div></div>`;
+  }).join('') : `<div class="empty">No events coming up.${canCreateEvents() ? ' Make one!' : ''}</div>`;
+  list.querySelectorAll('.ev-card').forEach(card => {
+    const e = serverEvents.find(x => x.id === card.dataset.ev);
+    if (!e) return;
+    const ref = db.collection('servers').doc(currentServerId).collection('events').doc(e.id);
+    card.querySelector('[data-ev-int]').onclick = () => {
+      const on = (e.interested || []).includes(myUid);
+      ref.update({ interested: on ? FieldValue.arrayRemove(myUid) : FieldValue.arrayUnion(myUid) }).catch(err => toast(err.message || 'Could not change that.', 'error'));
+    };
+    const go = card.querySelector('[data-ev-go]');
+    if (go) go.onclick = () => { const c = lastChannelsList.find(x => x.id === go.dataset.evGo); if (c) { closeModal('events-modal'); selectChannel(c); } };
+    if (card.querySelector('[data-ev-edit]')) card.querySelector('[data-ev-edit]').onclick = () => openEventForm(e);
+    if (card.querySelector('[data-ev-del]')) card.querySelector('[data-ev-del]').onclick = () => confirmAction({ title: 'Cancel Event', confirmLabel: 'Cancel Event',
+      body: `Cancel "${e.name}"? It's taken off the list for everyone.`, onConfirm: () => ref.delete().then(() => toast('Event cancelled.')).catch(err => toast(err.message || 'Could not cancel it.', 'error')) });
+  });
+}
+const toLocalInput = ms => { const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
+function openEventForm(e) {
+  editingEventId = e ? e.id : null;
+  const chans = lastChannelsList.filter(c => canViewChannel(c, currentServerData, myUid));
+  $('ev-channel').innerHTML = '<option value="">No channel</option>' + chans.map(c => `<option value="${esc(c.id)}">#${esc(c.name)}</option>`).join('');
+  const start = e ? Number(e.startAt) : Math.ceil((Date.now() + 3600000) / 1800000) * 1800000;   // (the next half hour, an hour out)
+  $('ev-name').value = e ? e.name : '';
+  $('ev-desc').value = e ? e.description || '' : '';
+  $('ev-start').value = toLocalInput(start);
+  $('ev-end').value = e && e.endAt ? toLocalInput(Number(e.endAt)) : '';
+  $('ev-channel').value = e && e.channelId ? e.channelId : '';
+  $('ev-place').value = e ? e.place || '' : '';
+  $('ev-save').textContent = e ? 'Save Changes' : 'Create Event';
+  $('events-list').classList.add('hidden');
+  $('ev-new-btn').parentElement.classList.add('hidden');
+  $('ev-form').classList.remove('hidden');
+  setTimeout(() => $('ev-name').focus(), 50);
+}
+$('server-events-row').onclick = openEvents;
+$('server-events-row').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEvents(); } });
+$('ev-new-btn').onclick = () => openEventForm(null);
+$('ev-form-cancel').onclick = () => { $('ev-form').classList.add('hidden'); renderEventsList(); };
+$('ev-save').onclick = async () => {
+  const name = $('ev-name').value.replace(/\s+/g, ' ').trim().slice(0, 100);
+  const startAt = Date.parse($('ev-start').value), endAt = $('ev-end').value ? Date.parse($('ev-end').value) : null;
+  if (!name) { toast('Give the event a name.'); return; }
+  if (!Number.isFinite(startAt)) { toast('Pick when it starts.'); return; }
+  if (endAt !== null && !(endAt > startAt)) { toast('It has to end after it starts.'); return; }
+  const fields = { name, description: $('ev-desc').value.trim().slice(0, 1000), startAt, endAt, place: $('ev-place').value.replace(/\s+/g, ' ').trim().slice(0, 100), channelId: $('ev-channel').value || null };
+  const coll = db.collection('servers').doc(currentServerId).collection('events');
+  $('ev-save').disabled = true;
+  try {
+    if (editingEventId) await coll.doc(editingEventId).update(fields);
+    else await coll.add({ ...fields, createdBy: myUid, createdAt: FieldValue.serverTimestamp(), interested: [myUid] });
+    toast(editingEventId ? 'Event saved.' : 'Event created.');
+    if (!editingEventId && new Date(startAt).getHours() === 0 && new Date(startAt).getMinutes() === 0) eggFind('midnightevent');   // (an easter egg)
+    $('ev-form').classList.add('hidden');
+    renderEventsList();
+  } catch (e) { toast(e.message || 'Could not save the event.', 'error'); }
+  finally { $('ev-save').disabled = false; }
+};
+
+// ---- thread settings (v4.69, request 50) ----
+// Who made a thread renames it or deletes it; Manage Threads also locks it (then only they post) and sees and manages
+// every private thread. People in a private thread add others from the server; anyone in one can leave it.
+function threadCanManage(t) {
+  const ch = t && lastChannelsList.find(c => c.id === t.channelId);
+  return !!(ch && currentServerData && hasChannelPerm(ch, currentServerData, myUid, 'manageThreads'));
+}
+function openThreadSettings() {
+  const t = currentThreadId && currentThreadData;
+  if (!t || !currentServerData) return;
+  const mods = threadCanManage(t), mine = t.createdBy === myUid, priv = !!t.private;
+  const members = Array.isArray(t.members) ? t.members : [], inIt = members.includes(myUid);
+  const ch = lastChannelsList.find(c => c.id === t.channelId), who = u => displayNameOf(profileCache[u] || { username: u });
+  $('ts-desc').textContent = `${priv ? 'A private thread' : 'A thread'} in #${ch ? ch.name : 'channel'}${t.createdBy ? `, started by ${who(t.createdBy)}` : ''}.`
+    + (t.locked ? ' It\'s locked: only people who can manage threads can post.' : '');
+  $('ts-name').value = t.name || '';
+  $('ts-name').disabled = !(mine || mods);
+  $('ts-rename').classList.toggle('hidden', !(mine || mods));
+  $('ts-members-wrap').classList.toggle('hidden', !priv);
+  $('ts-members').innerHTML = members.map(u => `<span class="dev-chip-wrap"><span class="dev-chip">${esc(who(u))}</span>${(mods || mine) && u !== myUid
+    ? `<button type="button" class="dev-chip-x" data-ts-rm="${esc(u)}" title="Take ${esc(who(u))} out of this thread" aria-label="Take ${esc(who(u))} out">&times;</button>` : ''}</span>`).join('') || '<span class="ab-note">Nobody yet.</span>';
+  $('ts-add-row').classList.toggle('hidden', !(inIt || mods || mine));
+  $('ts-lock').classList.toggle('hidden', !mods);
+  $('ts-lock').textContent = t.locked ? 'Unlock Thread' : 'Lock Thread';
+  $('ts-leave').classList.toggle('hidden', !(priv && inIt));
+  $('ts-delete').classList.toggle('hidden', !(mine || mods));
+  $('ts-members').querySelectorAll('[data-ts-rm]').forEach(b => { b.onclick = () => threadSettingsSave({ members: FieldValue.arrayRemove(b.dataset.tsRm) }, `${who(b.dataset.tsRm)} is out of the thread.`); });
+  openModal('thread-settings-modal');
+}
+async function threadSettingsSave(change, said, after) {
+  const t = currentThreadId && currentThreadData;
+  if (!t) return;
+  try { await threadRef(t.id).update(change); if (said) toast(said); if (after) after(); else setTimeout(openThreadSettings, 300); }
+  catch (e) { toast(e.message || 'Could not change the thread.', 'error'); }
+}
+$('thread-menu-btn').onclick = openThreadSettings;
+$('thread-menu-btn').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openThreadSettings(); } });
+$('ts-rename').onclick = () => {
+  const name = $('ts-name').value.replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (!name) { toast('Give the thread a name.'); return; }
+  threadSettingsSave({ name }, 'Thread renamed.', () => { $('chat-header-title').textContent = name; if (currentThreadData) currentThreadData.name = name; });
+};
+$('ts-lock').onclick = () => { const t = currentThreadData; if (t) threadSettingsSave({ locked: !t.locked }, t.locked ? 'Thread unlocked.' : 'Thread locked.'); };
+$('ts-add-btn').onclick = () => {
+  const u = $('ts-add').value.trim().replace(/^@/, '');
+  if (!u) return;
+  if (!((currentServerData && currentServerData.members) || []).includes(u)) { toast('Only people in this server can be added.', 'error'); return; }
+  $('ts-add').value = '';
+  threadSettingsSave({ members: FieldValue.arrayUnion(u) }, `${u} can see the thread now.`);
+};
+$('ts-add').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('ts-add-btn').click(); } });
+$('ts-leave').onclick = () => threadSettingsSave({ members: FieldValue.arrayRemove(myUid) }, 'You left the thread.', () => { closeModal('thread-settings-modal'); goToThreadParent(); });
+$('ts-delete').onclick = () => {
+  const t = currentThreadData;
+  if (!t) return;
+  confirmAction({ title: 'Delete Thread', body: `Delete "${t.name}" and everything in it? This can't be undone.`, confirmLabel: 'Delete Thread',
+    onConfirm: async () => {
+      const sid = currentServerId, cid = t.channelId;
+      try {
+        await threadRef(t.id).delete();
+        if (!t.private && t.starterId) db.collection('servers').doc(sid).collection('channels').doc(cid).collection('messages').doc(t.starterId).update({ thread: FieldValue.delete() }).catch(() => {});
+        closeModal('thread-settings-modal');
+        toast('Thread deleted.');
+        goToThreadParent();
+      } catch (e) { toast(e.message || 'Could not delete the thread.', 'error'); }
+    } });
+};
 $('thread-name').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); createThreadFromModal(); } });
 
 // ============================================================
@@ -10051,7 +10342,7 @@ function openMessageActionSheet(msgId, heldImg) {
 
   const canDel = m.uid === myUid;
   const canEditThis = m.uid === myUid && !m.sticker;
-  const threadAct = currentView === 'channel' && !currentThreadId && !m.system && (m.thread && m.thread.id ? 'Open Thread' : canHere('createPublicThreads') ? 'Create Thread' : '');
+  const threadAct = currentView === 'channel' && !currentThreadId && !m.system && (m.thread && m.thread.id ? 'Open Thread' : canStartThread() ? 'Create Thread' : '');
   const pinnable = canPin();
 
   const backdrop = document.createElement('div');
@@ -10500,6 +10791,12 @@ function attachmentHTML(m, canDelete) {
       if (!url) return '';
       const delBtn = canDelete ? `<button type="button" class="msg-att-del" data-attidx="${i}" title="Delete this image">${icon('trash')}</button>` : '';
       if (a.type === 'image') return `<div class="msg-att-item"><img src="${esc(url)}" alt="${esc(a.name)}" loading="lazy">${delBtn}</div>`;
+      // a voice message (v4.69): a play button, how far along it is, and how long it is
+      if (a.voice) return `<div class="msg-att-item is-voice"><div class="voice-msg" data-vurl="${esc(url)}" data-vdur="${Number(a.duration) || 0}">
+          <button type="button" class="vm-play" aria-label="Play voice message">${VOICE_PLAY_SVG}</button>
+          <div class="vm-bar" aria-hidden="true"><div class="vm-fill"></div></div>
+          <span class="vm-time">${voiceClock(Number(a.duration) || 0)}</span>
+        </div>${delBtn}</div>`;
       const dlHref = esc(attachmentDownloadUrl(url)), dlName = esc(a.name || 'file');
       const kind = attachmentMediaKind(a);
       // Audio and video play right here. The file name and a download button sit under the player.
@@ -10625,7 +10922,7 @@ function buildMessageLineEl(m, canDelete) {
   }
   const pinnable = canPin();
   const canEditThis = m.uid === myUid && !m.sticker && !m.poll && !m.purgeResult && !m.wordle;
-  const canThread = currentView === 'channel' && !currentThreadId && !m.thread && !m.system && canHere('createPublicThreads');
+  const canThread = currentView === 'channel' && !currentThreadId && !m.thread && !m.system && canStartThread();
   const line = document.createElement('div');
   line.className = 'msg-line' + (m.pinned ? ' is-pinned' : '');
   line.dataset.mid = m.id;
@@ -10746,7 +11043,10 @@ async function renderMessages(rawMsgs) {
   if (searching) $('search-count').textContent = q ? `${msgs.length} result${msgs.length === 1 ? '' : 's'}` : '';
 
   // a message from Discord brings its author's name and picture with it
-  msgs.forEach(m => { if (m.ext && m.ext.src === 'discord' && m.uid) profileCache[m.uid] = discordProfile(m.ext); });
+  msgs.forEach(m => {
+    if (m.ext && m.ext.src === 'discord' && m.uid) profileCache[m.uid] = discordProfile(m.ext);
+    else if (m.ext && m.ext.src === 'webhook' && m.uid) profileCache[m.uid] = webhookProfile(m.ext);   // (a webhook's post, v4.69)
+  });
   const uids = [...new Set(msgs.flatMap(m => [m.uid, m.replyTo && m.replyTo.uid, ...(m.targets || [])]).filter(Boolean))];
   if (uids.some(u => !profileCache[u])) await Promise.all(uids.map(u => getProfile(u)));
   if (seq !== messagesRenderSeq) return;
@@ -11270,7 +11570,14 @@ async function sendToCurrentConversation(payload) {
   let ref;
   if (currentView === 'channel' && currentThreadId) {
     if (!canHere('sendMessagesInThreads')) throw new Error('You do not have permission to send messages in threads here.');
-    const tid = currentThreadId, starter = currentThreadData && currentThreadData.starterId;
+    const tid = currentThreadId, priv = !!(currentThreadData && currentThreadData.private);
+    const starter = !priv && currentThreadData && currentThreadData.starterId;   // (a private thread shows nothing on it)
+    // In a private thread, mentioning someone from the server adds them to it first, like Discord (v4.69)
+    if (priv && payload.text) {
+      const inServer = new Set((currentServerData && currentServerData.members) || []), inIt = new Set(currentThreadData.members || []);
+      const add = [...new Set([...payload.text.matchAll(/@([A-Za-z0-9_]{1,40})/g)].map(x => x[1]))].filter(u => inServer.has(u) && !inIt.has(u)).slice(0, 20);
+      if (add.length) await threadRef(tid).update({ members: FieldValue.arrayUnion(...add) }).then(() => { currentThreadData.members = [...inIt, ...add]; }).catch(() => {});
+    }
     ref = await threadRef(tid).collection('messages').add(payload);
     threadRef(tid).update({ lastMessageAt: FieldValue.serverTimestamp(), messageCount: FieldValue.increment(1) }).catch(() => {});
     // the message the thread started from shows how many replies it has
@@ -11754,6 +12061,110 @@ async function sendMessage() {
     else toast(e.message || 'Failed to send message.', 'error');
   }
 }
+// ---------- voice messages (v4.69, request 50) ----------
+// The microphone button records (up to 3 minutes), Send uploads it to Cloudinary like any file, and the message carries
+// one attachment with voice: true and how long it is. In a server it takes Send Voice Messages there; DMs and groups
+// always allow it. Any browser that can record (MediaRecorder) shows the button: Safari records audio/mp4, the others
+// audio/webm.
+const VOICE_MAX_MS = 180000;
+const VOICE_PLAY_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg>';
+const VOICE_PAUSE_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"/><rect x="14" y="4.5" width="4" height="15" rx="1"/></svg>';
+const voiceClock = s => { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+function voiceMessagesOk() { return !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia); }
+let voiceRec = null;   // { rec, chunks, stream, started, timer, mime }
+async function startVoiceRecording() {
+  if (voiceRec) return;
+  if (!voiceMessagesOk()) { toast('This browser can\'t record audio.', 'error'); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { toast('Frixion needs your microphone for a voice message. Allow it for this site, then try again.', 'error'); return; }
+  const types = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg;codecs=opus'];
+  const mime = types.find(t => typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(t)) || '';
+  let rec;
+  try { rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); }
+  catch (e) { stream.getTracks().forEach(t => t.stop()); toast('Could not start recording.', 'error'); return; }
+  const chunks = [];
+  rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  voiceRec = { rec, chunks, stream, started: Date.now(), mime: rec.mimeType || mime || 'audio/webm' };
+  rec.start(250);
+  $('voice-rec').classList.remove('hidden');
+  $('voice-rec-time').textContent = '0:00';
+  $('voice-rec-note').textContent = 'Recording...';
+  voiceRec.timer = setInterval(() => {
+    const ms = voiceRec ? Date.now() - voiceRec.started : 0;
+    $('voice-rec-time').textContent = voiceClock(ms / 1000);
+    if (ms >= VOICE_MAX_MS) stopVoiceRecording(true);
+    else if (ms >= VOICE_MAX_MS - 15000) $('voice-rec-note').textContent = 'Sends by itself at 3:00';
+  }, 250);
+}
+function stopVoiceRecording(send) {
+  const v = voiceRec;
+  if (!v) return;
+  voiceRec = null;
+  clearInterval(v.timer);
+  $('voice-rec').classList.add('hidden');
+  const ms = Date.now() - v.started;
+  v.rec.onstop = () => {
+    v.stream.getTracks().forEach(t => t.stop());
+    if (!send) return;
+    if (ms < 800) { toast('That was too short to send.'); return; }
+    sendVoiceMessage(new Blob(v.chunks, { type: v.mime }), ms, v.mime);
+  };
+  try { v.rec.stop(); } catch (e) { v.stream.getTracks().forEach(t => t.stop()); }
+}
+async function sendVoiceMessage(blob, ms, mime) {
+  if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') return;
+  if (currentView === 'channel' && !canHere('sendVoiceMessages')) { toast('You do not have permission to send voice messages here.', 'error'); return; }
+  const type = String(mime || 'audio/webm').split(';')[0], ext = /mp4|m4a|aac/.test(type) ? 'm4a' : /ogg/.test(type) ? 'ogg' : 'webm';
+  const file = new File([blob], `voice-message.${ext}`, { type });
+  const bar = $('upload-progress');
+  bar.classList.remove('hidden');
+  bar.innerHTML = '<div class="spinner small"></div><span>Sending your voice message...</span>';
+  try {
+    const url = await uploadFileGeneric(file, false, pct => { const s = bar.querySelector('span'); if (s) s.textContent = `Sending your voice message... ${pct}%`; });
+    const payload = { text: '', uid: myUid, username: myProfile.username, createdAt: FieldValue.serverTimestamp(),
+      attachments: [{ url, type: 'file', name: file.name, size: file.size, voice: true, duration: Math.round(ms / 100) / 10 }] };
+    if (replyTarget) payload.replyTo = { id: replyTarget.id, uid: replyTarget.uid, username: replyTarget.username, text: replyTarget.text };
+    await sendToCurrentConversation(payload);
+    clearReplyTarget();
+    if (ms >= VOICE_MAX_MS - 1000) eggFind('longwinded');   // talked until the recorder stopped (an easter egg)
+  } catch (e) { toast(e.message || 'Could not send the voice message.', 'error'); }
+  finally { bar.classList.add('hidden'); }
+}
+$('voice-btn').onclick = () => { if (voiceRec) stopVoiceRecording(true); else startVoiceRecording(); };
+$('voice-btn').addEventListener('mousedown', e => e.preventDefault());   // (keeps a phone's keyboard where it is)
+$('voice-rec-send').onclick = () => stopVoiceRecording(true);
+$('voice-rec-cancel').onclick = () => stopVoiceRecording(false);
+// playing one: one at a time, with its bar and time moving along
+let voicePlaying = null;   // { audio, box }
+function toggleVoiceMessage(box) {
+  if (voicePlaying && voicePlaying.box === box) {
+    const a = voicePlaying.audio;
+    if (a.paused) a.play().catch(() => {}); else a.pause();
+    return;
+  }
+  if (voicePlaying) { voicePlaying.audio.pause(); voiceShow(voicePlaying.box, voicePlaying.audio, true); }
+  const audio = new Audio(box.dataset.vurl), dur = Number(box.dataset.vdur) || 0;
+  voicePlaying = { audio, box };
+  audio.ontimeupdate = () => voiceShow(box, audio);
+  audio.onplay = audio.onpause = () => voiceShow(box, audio);
+  audio.onended = () => { voiceShow(box, audio, true); if (voicePlaying && voicePlaying.audio === audio) voicePlaying = null; };
+  audio.onerror = () => { toast('Could not play that voice message.', 'error'); voiceShow(box, audio, true); voicePlaying = null; };
+  box.dataset.vdur = dur;
+  audio.play().catch(() => { toast('Could not play that voice message.', 'error'); voicePlaying = null; });
+}
+function voiceShow(box, audio, reset) {
+  if (!box.isConnected) return;
+  const dur = Number(box.dataset.vdur) || (isFinite(audio.duration) ? audio.duration : 0);
+  const playing = !reset && !audio.paused;
+  box.classList.toggle('playing', playing);
+  box.querySelector('.vm-play').innerHTML = playing ? VOICE_PAUSE_SVG : VOICE_PLAY_SVG;
+  box.querySelector('.vm-play').setAttribute('aria-label', playing ? 'Pause voice message' : 'Play voice message');
+  box.querySelector('.vm-fill').style.width = reset || !dur ? '0%' : Math.min(100, audio.currentTime / dur * 100) + '%';
+  box.querySelector('.vm-time').textContent = voiceClock(reset ? dur : Math.max(0, dur - audio.currentTime));
+}
+$('messages').addEventListener('click', e => { const b = e.target.closest('.vm-play'); if (b) { e.stopPropagation(); toggleVoiceMessage(b.closest('.voice-msg')); } });
+
 // No explicit Send button — matches Discord's real composer (Enter to send).
 $('composer-input').addEventListener('keydown', (e) => {
   if (slashHandleKey(e)) { e.preventDefault(); return; }
@@ -17230,7 +17641,7 @@ let gameStateOwner = null;
 
 const gameDefaults = () => ({
   cookies: 0, cookiesAllTime: 0, cookiesRun: null, cookieRunSecs: 0, cookieBuildings: {}, cookieUpgrades: [], cookieLastSave: null,
-  ggSheckles: 50, ggShecklesAllTime: 0, ggPlots: [], ggUnlocked: 4, ggInventory: [], ggPets: [], ggOwnedSeeds: [], ggOwnedSprinklers: [],
+  ggSheckles: 50, ggShecklesAllTime: 0, ggPlots: [], ggUnlocked: 4, ggInventory: [], ggPets: [], ggOwnedSeeds: [], ggOwnedSprinklers: [], ggBackpack: { seeds: {}, sprinklers: {} },
   gamePlay: {}, typingBest: 0, aimBest: 0, dwDate: null, dwRows: [], dwDone: null, dwHints: [],
   blastBest: 0, suDate: null, suProgress: null, suDone: null, stackBest: 0, memoryBest: 0, crushBest: 0, brickBest: 0, simonBest: 0,
 });
@@ -18174,7 +18585,7 @@ function ggRollMut(bonus){ const k=1+(bonus||0), r=Math.random(); if(r<0.02*k) r
 // The garden is saved only when something in it changed (v4.62). It used to write the whole profile every 20 seconds
 // while the game was open, changed or not, which used up the free daily database allowance.
 let _ggSavedSig='';
-function ggSaveData(){ return {ggSheckles:UC.ggSheckles, ggShecklesAllTime:UC.ggShecklesAllTime, ggPlots:UC.ggPlots, ggUnlocked:UC.ggUnlocked, ggInventory:UC.ggInventory, ggPets:UC.ggPets, ggOwnedSeeds:UC.ggOwnedSeeds||[], ggOwnedSprinklers:UC.ggOwnedSprinklers||[], ggStock:UC.ggStock||null, ggQuests:UC.ggQuests||null}; }
+function ggSaveData(){ return {ggSheckles:UC.ggSheckles, ggShecklesAllTime:UC.ggShecklesAllTime, ggPlots:UC.ggPlots, ggUnlocked:UC.ggUnlocked, ggInventory:UC.ggInventory, ggPets:UC.ggPets, ggOwnedSeeds:UC.ggOwnedSeeds||[], ggOwnedSprinklers:UC.ggOwnedSprinklers||[], ggStock:UC.ggStock||null, ggQuests:UC.ggQuests||null, ggBackpack:ggBp()}; }
 async function saveGarden(){
   if(!UC) return; _ggSaveAt=Date.now();
   const data=ggSaveData(), sig=JSON.stringify(data);
@@ -18238,6 +18649,8 @@ function renderGardenAll(){
           <button class="gg-shoptab${ggShopTab==='pets'?' on':''}" data-tab="pets" onclick="ggSetShopTab('pets')">🐾 Pets</button>
           <button class="gg-shoptab${ggShopTab==='sell'?' on':''}" data-tab="sell" onclick="ggSetShopTab('sell')">🧺 Sell</button>
           <button class="gg-shoptab${ggShopTab==='quests'?' on':''}" data-tab="quests" onclick="ggSetShopTab('quests')">Quests</button>
+          <button class="gg-shoptab${ggShopTab==='backpack'?' on':''}" data-tab="backpack" onclick="ggSetShopTab('backpack')">Backpack</button>
+          <button class="gg-shoptab${ggShopTab==='trades'?' on':''}" data-tab="trades" onclick="ggSetShopTab('trades')">Trades<span class="gg-trade-badge hidden" id="gg-trade-badge"></span></button>
         </div>
         <div id="gg-shopbody"></div>
       </div>
@@ -18328,6 +18741,7 @@ function ggVisitRender(){
         <div class="gg-bank-sub">${escapeHtml(ggVisit.display)}'s Sheckles &middot; ${unlocked} of ${GG_MAX_PLOTS} plots</div>
       </div>
       <div class="gg-actions">
+        <button class="gg-btn" onclick="ggOpenTrade('${escapeHtml(ggVisit.name)}')">Offer a Trade</button>
         <button class="gg-btn" onclick="ggVisitAsk()">Visit Another</button>
         <button class="gg-btn gg-harvest" onclick="ggVisitEnd()">Back to My Garden</button>
       </div>
@@ -18360,6 +18774,181 @@ function ggVisitRenderPlots(){
   } finally { UC.ggPets=mine; }
   wrap.innerHTML=html;
 }
+// ---- the backpack and trades (v4.69, request 65) ----
+// The backpack holds seeds and sprinklers you've bought but not used (tb.ggBackpack, saved with the garden): Buy puts one
+// in it, planting or placing a sprinkler takes from it first (and buys one only when there's none), and trades move
+// things between backpacks. A trade is an offer (what you give, what you want) that the other person accepts or turns
+// down, through functions/api/admin (gagtrade): sending one takes the give items out of your backpack (the trade holds
+// them), accepting swaps both sides in the accepter's backpack, and the sender's app collects its side once: the
+// things it wanted, or its own things back after a no or a cancel.
+const GG_KINDS=['seeds','sprinklers'];
+const ggOkId=id=>/^[A-Za-z0-9_-]{1,40}$/.test(String(id));
+function ggBp(){
+  if(!UC.ggBackpack||typeof UC.ggBackpack!=='object') UC.ggBackpack={seeds:{},sprinklers:{}};
+  GG_KINDS.forEach(k=>{ if(!UC.ggBackpack[k]||typeof UC.ggBackpack[k]!=='object') UC.ggBackpack[k]={}; });
+  return UC.ggBackpack;
+}
+function ggBpCount(kind,id){ return Math.max(0, Math.floor(Number(ggBp()[kind][id])||0)); }
+function ggBpAdd(kind,id,n){ if(!ggOkId(id)) return; const c=ggBpCount(kind,id)+n; if(c>0) ggBp()[kind][id]=c; else delete ggBp()[kind][id]; }
+const ggBpBuyBtn=(kind,id)=>ggOkId(id)?`<button type="button" class="gg-bp-buy" onclick="event.stopPropagation();ggBuyToBackpack('${kind}','${id}')" title="Buy one for your backpack">Buy</button>`:'';
+function ggItem(kind,id){ return kind==='seeds'?GG_SEED_MAP[id]:GG_SPRINKLER_MAP[id]; }
+function ggBuyToBackpack(kind,id){
+  const it=ggItem(kind,id); if(!it||!UC) return;
+  const cost=kind==='seeds'?ggSeedCost(it):(it.cost||0);
+  if(ggStockLeft(it,kind)<1){ showToast(it.name+' is sold out. The shop restocks in '+ggClock(GG_RESTOCK_MS-(Date.now()%GG_RESTOCK_MS))+'.'); return; }
+  if((UC.ggSheckles||0)<cost){ showToast('Not enough Sheckles for '+it.name+'.'); return; }
+  UC.ggSheckles-=cost;
+  ggTakeStock(kind,id);
+  if(!ggStockBypass()&&ggStockLeft(it,kind)===0&&typeof eggFindOnce==='function') eggFindOnce('stockout');
+  ggBpAdd(kind,id,1);
+  renderGGShop(); updateGGBank(); saveGarden();
+  showToast(it.name+' is in your backpack ('+ggBpCount(kind,id)+').');
+}
+function ggBackpackHtml(){
+  const bp=ggBp(), rows=[];
+  GG_KINDS.forEach(kind=>Object.entries(bp[kind]).forEach(([id,n])=>{
+    if(!(n>0)||!ggOkId(id)) return;
+    const it=ggItem(kind,id);
+    rows.push(`<div class="gg-seed" onclick="ggBpPick('${kind}','${id}')"><span class="gg-seed-ic">${it?it.ic:'?'}</span><span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(it?it.name:id)} &times;${n}</span><span class="gg-seed-meta">${kind==='seeds'?'Seed: pick it, then tap an empty plot':'Sprinkler: pick it, then tap one of your plants'}</span></span></div>`);
+  }));
+  return `<div class="gg-spr-note">Seeds and sprinklers you bought with Buy or got in a trade. Planting uses these before buying more. Trade them with other people in the Trades tab.</div>`
+    +(rows.length?`<div class="gg-seedlist">${rows.join('')}</div>`:'<div class="gg-empty">Your backpack is empty. Use Buy in the Seeds or Sprinklers tab.</div>');
+}
+function ggBpPick(kind,id){ if(kind==='seeds'){ ggSel=id; ggSetShopTab('seeds'); } else { ggSprSel=id; ggSetShopTab('sprinklers'); } }
+function ggTradeText(items){
+  const parts=[];
+  GG_KINDS.forEach(kind=>Object.entries((items&&items[kind])||{}).forEach(([id,n])=>{ const it=ggItem(kind,id); parts.push(`${n} ${it?it.name:id}${kind==='sprinklers'?(n>1?' sprinklers':' sprinkler'):(n>1?' seeds':' seed')}`); }));
+  return parts.length?parts.join(', '):'nothing';
+}
+function ggHas(items){ return GG_KINDS.every(kind=>Object.entries((items&&items[kind])||{}).every(([id,n])=>ggBpCount(kind,id)>=n)); }
+function ggMove(items,sign){ GG_KINDS.forEach(kind=>Object.entries((items&&items[kind])||{}).forEach(([id,n])=>ggBpAdd(kind,id,sign*n))); }
+// the trade window: your backpack on the left, theirs on the right
+let ggTradeWith=null;
+async function ggOpenTrade(name){
+  name=String(name||'').trim().replace(/^@/,'');
+  if(!name||!UC) return;
+  if(name===myUid){ showToast('You can\'t trade with yourself.'); return; }
+  let d=null;
+  try{ const s=await db.collection('users').doc(name).get(); d=s.exists?withGameState(s.data()):null; }catch(e){}
+  if(!d||d.terminated){ showToast('No account has that username.'); return; }
+  ggTradeWith=name;
+  const theirs=d.ggBackpack&&typeof d.ggBackpack==='object'?d.ggBackpack:{};
+  const col=(bp,side)=>{
+    const rows=[];
+    GG_KINDS.forEach(kind=>Object.entries((bp&&bp[kind])||{}).forEach(([id,n])=>{
+      n=Math.floor(Number(n)||0); if(!(n>0)||!ggOkId(id)) return;
+      const it=ggItem(kind,id);
+      rows.push(`<label class="gg-trade-row"><span class="gg-seed-ic">${it?it.ic:'?'}</span><span class="gg-trade-name">${escapeHtml(it?it.name:id)}<small>${n} ${side==='give'?'in your backpack':'in theirs'}</small></span>
+        <input type="number" min="0" max="${n}" value="0" data-trade="${side}" data-kind="${kind}" data-id="${id}" aria-label="How many ${escapeHtml(it?it.name:id)}"></label>`);
+    }));
+    return rows.join('')||`<div class="gg-empty">${side==='give'?'Your backpack is empty. Buy seeds or sprinklers first.':'Their backpack is empty right now.'}</div>`;
+  };
+  $('gg-trade-title').textContent=`Trade with ${displayNameOf({...d, username:name})}`;
+  $('gg-trade-give').innerHTML=col(ggBp(),'give');
+  $('gg-trade-want').innerHTML=col(theirs,'want');
+  $('gg-trade-note').value='';
+  openModal('gg-trade-modal');
+}
+function ggTradePicked(side){
+  const out={seeds:{},sprinklers:{}};
+  document.querySelectorAll(`#gg-trade-modal [data-trade="${side}"]`).forEach(inp=>{
+    const n=Math.floor(Number(inp.value)||0), max=Number(inp.max)||0;
+    if(n>0) out[inp.dataset.kind][inp.dataset.id]=Math.min(n,max);
+  });
+  return out;
+}
+$('gg-trade-send').onclick=async()=>{
+  const give=ggTradePicked('give'), want=ggTradePicked('want'), to=ggTradeWith;
+  if(ggTradeText(give)==='nothing'&&ggTradeText(want)==='nothing'){ showToast('Pick what you give or what you want.'); return; }
+  if(!ggHas(give)){ showToast('Your backpack doesn\'t have all of that.'); return; }
+  $('gg-trade-send').disabled=true;
+  try{
+    _ggSavedSig=''; await saveGarden();   // (so the server sees your backpack as it is now)
+    await orbsCall('gagtrade',{action:'offer', to, give, want, note:$('gg-trade-note').value});
+    ggMove(give,-1); _ggSavedSig=''; await saveGarden();   // the trade holds them now
+    closeModal('gg-trade-modal');
+    showToast(`Offer sent to ${to}. It's in your Trades tab until they answer.`);
+    if(currentGameId==='growgarden'){ if(!ggVisit) renderGGShop(); }
+  }catch(e){ showToast(e.message||'Could not send the offer.'); }
+  finally{ $('gg-trade-send').disabled=false; }
+};
+async function ggLoadTrades(){
+  const mine=[], theirs=[];
+  const [a,b]=await Promise.all([db.collection('gardenTrades').where('from','==',myUid).get(), db.collection('gardenTrades').where('to','==',myUid).get()]);
+  a.forEach(d=>mine.push({id:d.id,...d.data()})); b.forEach(d=>theirs.push({id:d.id,...d.data()}));
+  return {mine, theirs};
+}
+// what the sender is owed from trades that were answered: collected once (fromDone), then into the backpack
+let ggCollecting=false;
+async function ggCollectTrades(list){
+  if(ggCollecting||!UC||!myUid) return 0;
+  ggCollecting=true;
+  let n=0;
+  try{
+    const mine=list||(await ggLoadTrades()).mine;
+    for(const t of mine.filter(x=>(x.status==='accepted'||x.status==='declined')&&x.fromDone!==true)){
+      try{ const r=await orbsCall('gagtrade',{action:'collect', id:t.id}); ggMove(r.trade.status==='accepted'?r.trade.want:r.trade.give, 1); n++; if(r.trade.status==='accepted') eggFind('firsttrade'); }
+      catch(e){}
+    }
+    if(n){ _ggSavedSig=''; await saveGarden(); if(currentGameId==='growgarden'&&!ggVisit) renderGGShop(); }
+  }catch(e){}
+  finally{ ggCollecting=false; }
+  return n;
+}
+async function ggRenderTrades(){
+  const body=document.getElementById('gg-shopbody'); if(!body) return;
+  body.innerHTML='<div class="gg-empty">Loading trades...</div>';
+  let got;
+  try{ got=await ggLoadTrades(); }catch(e){ if(ggShopTab==='trades') body.innerHTML='<div class="gg-empty">Could not load trades.</div>'; return; }
+  if(ggShopTab!=='trades'||!document.getElementById('gg-shopbody')) return;
+  if(got.mine.some(x=>(x.status==='accepted'||x.status==='declined')&&x.fromDone!==true)){ ggCollectTrades(got.mine).then(n=>{ if(n) ggRenderTrades(); }); }
+  const who=u=>escapeHtml(displayNameOf(profileCache[u]||{username:u}));
+  const card=(t,acts)=>`<div class="gg-trade" data-tr="${escapeHtml(t.id)}"><div class="gg-trade-line">${t.from===myUid?`You offer <b>${who(t.to)}</b>`:`<b>${who(t.from)}</b> offers you`} ${escapeHtml(ggTradeText(t.give))}, for ${escapeHtml(ggTradeText(t.want))}.</div>${t.note?`<div class="gg-trade-note">"${escapeHtml(t.note)}"</div>`:''}${acts?`<div class="gg-trade-acts">${acts}</div>`:''}</div>`;
+  const incoming=got.theirs.filter(t=>t.status==='open'), outgoing=got.mine.filter(t=>t.status==='open');
+  const past=[...got.mine,...got.theirs].filter(t=>t.status!=='open').sort((x,y)=>(Number(y.decidedAt)||Number(y.at)||0)-(Number(x.decidedAt)||Number(x.at)||0)).slice(0,8);
+  const said={accepted:'Done', declined:'Turned down', cancelled:'Taken back'};
+  body.innerHTML=`<div class="gg-spr-note">Offer seeds and sprinklers from your backpack for some from someone else's. They accept or turn it down. You can also offer a trade from someone's garden when you visit it.</div>
+    <button class="gg-btn gg-trade-new" onclick="ggTradeAsk()">Offer a Trade</button>
+    ${incoming.length?`<div class="gg-trade-h">Offers for you</div>`+incoming.map(t=>card(t,`<button class="gg-btn gg-harvest" data-tr-do="accept">Accept</button><button class="gg-btn" data-tr-do="decline">No Thanks</button>`)).join(''):''}
+    ${outgoing.length?`<div class="gg-trade-h">Waiting for an answer</div>`+outgoing.map(t=>card(t,`<button class="gg-btn" data-tr-do="cancel">Take It Back</button>`)).join(''):''}
+    ${past.length?`<div class="gg-trade-h">Before</div>`+past.map(t=>card(t,`<span class="gg-trade-said">${said[t.status]||escapeHtml(t.status)}</span>`)).join(''):''}
+    ${!incoming.length&&!outgoing.length&&!past.length?'<div class="gg-empty">No trades yet.</div>':''}`;
+  ggTradeBadge(incoming.length);
+  body.querySelectorAll('[data-tr-do]').forEach(b=>{ b.onclick=()=>{ const id=b.closest('[data-tr]').dataset.tr; ggTradeAction(b.dataset.trDo, [...got.mine,...got.theirs].find(t=>t.id===id)); }; });
+}
+function ggTradeBadge(n){ const e=document.getElementById('gg-trade-badge'); if(e){ e.textContent=n||''; e.classList.toggle('hidden',!n); } }
+function ggTradeAsk(){
+  confirmAction({ title:'Offer a Trade', body:'Who do you want to trade with? Type their username.', danger:false, confirmLabel:'Next',
+    input:{ placeholder:'Username', maxLength:40 }, onConfirm: typed=>ggOpenTrade(typed) });
+}
+async function ggTradeAction(what,t){
+  if(!t) return;
+  if(what==='accept'&&!ggHas(t.want)){ showToast('Your backpack doesn\'t have what they want any more.'); return; }
+  try{
+    if(what==='accept'){ _ggSavedSig=''; await saveGarden(); }
+    const r=await orbsCall('gagtrade',{action:what, id:t.id});
+    if(what==='accept'){ ggMove(r.trade.want,-1); ggMove(r.trade.give,1); _ggSavedSig=''; await saveGarden(); showToast('Trade done. Check your backpack.'); eggFind('firsttrade'); }
+    else if(what==='cancel'){ ggMove(r.trade.give,1); _ggSavedSig=''; await saveGarden(); showToast('Offer taken back. Your things are in your backpack again.'); }
+    else showToast('Offer turned down.');
+  }catch(e){ showToast(e.message||'That didn\'t work.'); }
+  if(currentGameId==='growgarden'&&ggShopTab==='trades') ggRenderTrades();
+}
+// someone offered you a trade, or answered yours (ggTradeIn on your profile, which the server writes): said once per
+// device, and what you're owed comes in at once
+function ggTradeNotice(){
+  const n=myProfile&&myProfile.ggTradeIn;
+  if(!n||typeof n!=='object'||typeof n.from!=='string'||!(Number(n.at)>0)) return;
+  const key='frixion_trade_seen_'+myUid;
+  let seen=0; try{ seen=Number(localStorage.getItem(key))||0; }catch(e){}
+  if(Number(n.at)<=seen) return;
+  try{ localStorage.setItem(key,String(n.at)); }catch(e){}
+  if(Date.now()-Number(n.at)>3*86400000) return;
+  const who=displayNameOf(profileCache[n.from]||{username:n.from});
+  toast(n.kind==='offer'?`${who} sent you a Grow a Garden trade offer. It's in the garden's Trades tab.`:n.kind==='accepted'?`${who} accepted your Grow a Garden trade.`:`${who} turned down your Grow a Garden trade. Your things are back in your backpack.`);
+  if(n.kind!=='offer') ggCollectTrades();
+  if(currentGameId==='growgarden'&&ggShopTab==='trades') ggRenderTrades();
+  else if(n.kind==='offer') ggTradeBadge(1);
+}
 async function ggPlotTap(i){
   if(!UC||i>=UC.ggUnlocked) return;
   const p=UC.ggPlots[i];
@@ -18374,15 +18963,18 @@ function renderGGShop(){
   if(ggShopTab==='pets'){ body.innerHTML=ggPetShopHtml(); return; }
   if(ggShopTab==='sell'){ body.innerHTML=ggSellShopHtml(); return; }
   if(ggShopTab==='quests'){ body.innerHTML=ggQuestsHtml(); return; }
+  if(ggShopTab==='backpack'){ body.innerHTML=ggBackpackHtml(); return; }
+  if(ggShopTab==='trades'){ ggRenderTrades(); return; }
     const rows=GG_SEEDS.map(s=>{
     const sel=ggSel===s.id;
     const left=ggStockLeft(s,'seeds');
-    const afford=(UC.ggSheckles||0)>=ggSeedCost(s)&&left>0;
+    const have=ggBpCount('seeds',s.id);
+    const afford=((UC.ggSheckles||0)>=ggSeedCost(s)&&left>0)||have>0;
     const priceStr=SHK+' '+fmtNum(ggSeedCost(s));
     return `<div class="gg-seed${sel?' sel':''}${afford?'':' poor'}" onclick="ggSelect('${s.id}')">
       <span class="gg-seed-ic">${s.ic}</span>
-      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)} ${ggStockTag(s,'seeds')}</span><span class="gg-seed-meta">${priceStr} · ${ggGrowLabel(s.grow)} · sells ${SHK} ${fmtNum(s.sell)}${ggSeedFnText(s)?' · '+ggSeedFnText(s):''}</span></span>
-      ${sel?'<span class="gg-seed-sel">✓</span>':''}</div>`;
+      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)} ${ggStockTag(s,'seeds')}${have?`<span class="gg-bp-have">${have} in backpack</span>`:''}</span><span class="gg-seed-meta">${priceStr} · ${ggGrowLabel(s.grow)} · sells ${SHK} ${fmtNum(s.sell)}${ggSeedFnText(s)?' · '+ggSeedFnText(s):''}</span></span>
+      ${ggBpBuyBtn('seeds',s.id)}${sel?'<span class="gg-seed-sel">✓</span>':''}</div>`;
   }).join('');
   body.innerHTML=`<div class="gg-spr-note gg-restock-note"><b id="gg-restock">Restocks in ${ggClock(GG_RESTOCK_MS-(Date.now()%GG_RESTOCK_MS))}</b> &middot; The shop restocks for everyone at the same time. Rare seeds don't always come back.</div><div class="gg-seedlist">${rows}</div>`;
 }
@@ -18397,12 +18989,13 @@ function ggSprinklerShopHtml(){
     const note=`<div class="gg-spr-note">Pick a sprinkler, then tap one of your plants to place it. You can stack several different sprinklers on the same plant and their boosts add up. They stay until you dig the plant up.<br><b id="gg-restock">Restocks in ${ggClock(GG_RESTOCK_MS-(Date.now()%GG_RESTOCK_MS))}</b></div>`;
   const rows=GG_SPRINKLERS.map(s=>{
     const sel=ggSprSel===s.id;
-    const afford=(UC.ggSheckles||0)>=(s.cost||0)&&ggStockLeft(s,'sprinklers')>0;
+    const have=ggBpCount('sprinklers',s.id);
+    const afford=((UC.ggSheckles||0)>=(s.cost||0)&&ggStockLeft(s,'sprinklers')>0)||have>0;
     const priceStr=SHK+' '+fmtNum(s.cost||0);
     return `<div class="gg-seed gg-spr${sel?' sel':''}${afford?'':' poor'}" onclick="ggSelectSpr('${s.id}')">
       <span class="gg-seed-ic">${s.ic}</span>
-      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)} ${ggStockTag(s,'sprinklers')}</span><span class="gg-seed-meta">${priceStr} · +${Math.round((s.speed||0)*100)}% speed · +${Math.round((s.weight||0)*100)}% weight${s.mutation?(' · +'+Math.round(s.mutation*100)+'% mutation'):''}${s.sellBoost?(' · +'+Math.round(s.sellBoost*100)+'% sell'):''}</span></span>
-      ${sel?'<span class="gg-seed-sel">✓</span>':''}</div>`;
+      <span class="gg-seed-mid"><span class="gg-seed-name">${escapeHtml(s.name)} ${rarBadge(s.rarity)} ${ggStockTag(s,'sprinklers')}${have?`<span class="gg-bp-have">${have} in backpack</span>`:''}</span><span class="gg-seed-meta">${priceStr} · +${Math.round((s.speed||0)*100)}% speed · +${Math.round((s.weight||0)*100)}% weight${s.mutation?(' · +'+Math.round(s.mutation*100)+'% mutation'):''}${s.sellBoost?(' · +'+Math.round(s.sellBoost*100)+'% sell'):''}</span></span>
+      ${ggBpBuyBtn('sprinklers',s.id)}${sel?'<span class="gg-seed-sel">✓</span>':''}</div>`;
   }).join('');
   return note+`<div class="gg-seedlist">${rows}</div>`;
 }
@@ -18447,12 +19040,15 @@ function ggSelectSpr(id){ if(!GG_SPRINKLER_MAP[id]) return; ggSprSel=id; renderG
 async function ggPlant(i){
   if(!UC||i>=UC.ggUnlocked||UC.ggPlots[i]) return;
   const s=GG_SEED_MAP[ggSel]; if(!s){ showToast('Pick a seed first.'); return; }
-  const seedCost=ggSeedCost(s);
-  if(ggStockLeft(s,'seeds')<1){ showToast(s.name+' seeds are sold out. The shop restocks in '+ggClock(GG_RESTOCK_MS-(Date.now()%GG_RESTOCK_MS))+'.'); return; }
-  if((UC.ggSheckles||0)<seedCost){ showToast('Not enough Sheckles for a '+s.name+' seed.'); return; }
-  UC.ggSheckles-=seedCost;
-  ggTakeStock('seeds', s.id);
-  if(!ggStockBypass()&&ggStockLeft(s,'seeds')===0&&typeof eggFindOnce==='function') eggFindOnce('stockout');   // you bought the last one (v4.67, an easter egg)
+  if(ggBpCount('seeds',s.id)>0) ggBpAdd('seeds',s.id,-1);   // one from your backpack first (v4.69)
+  else {
+    const seedCost=ggSeedCost(s);
+    if(ggStockLeft(s,'seeds')<1){ showToast(s.name+' seeds are sold out. The shop restocks in '+ggClock(GG_RESTOCK_MS-(Date.now()%GG_RESTOCK_MS))+'.'); return; }
+    if((UC.ggSheckles||0)<seedCost){ showToast('Not enough Sheckles for a '+s.name+' seed.'); return; }
+    UC.ggSheckles-=seedCost;
+    ggTakeStock('seeds', s.id);
+    if(!ggStockBypass()&&ggStockLeft(s,'seeds')===0&&typeof eggFindOnce==='function') eggFindOnce('stockout');   // you bought the last one (v4.67, an easter egg)
+  }
   UC.ggOwnedSeeds=UC.ggOwnedSeeds||[]; if(UC.ggOwnedSeeds.indexOf(s.id)<0) UC.ggOwnedSeeds.push(s.id);
   UC.ggPlots[i]={seed:s.id, at:Date.now(), w:ggRollW(), sprinklers:[]};
   ggQuestEvent('plant',1);
@@ -18464,11 +19060,14 @@ async function ggPlaceSprinkler(i){
   if(!Array.isArray(p.sprinklers)) p.sprinklers=[];
   const s=GG_SPRINKLER_MAP[ggSprSel]; if(!s){ showToast('Pick a sprinkler first.'); return; }
   if(p.sprinklers.indexOf(s.id)>=0){ showToast('This plant already has a '+s.name+'. Add a different one for more boost.'); return; }
-  if(ggStockLeft(s,'sprinklers')<1){ showToast('The '+s.name+' is sold out. The shop restocks in '+ggClock(GG_RESTOCK_MS-(Date.now()%GG_RESTOCK_MS))+'.'); return; }
-  if((UC.ggSheckles||0)<(s.cost||0)){ showToast('Not enough Sheckles for '+s.name+'.'); return; }
-  UC.ggSheckles-=(s.cost||0);
-  ggTakeStock('sprinklers', s.id);
-  if(!ggStockBypass()&&ggStockLeft(s,'sprinklers')===0&&typeof eggFindOnce==='function') eggFindOnce('stockout');
+  if(ggBpCount('sprinklers',s.id)>0) ggBpAdd('sprinklers',s.id,-1);   // one from your backpack first (v4.69)
+  else {
+    if(ggStockLeft(s,'sprinklers')<1){ showToast('The '+s.name+' is sold out. The shop restocks in '+ggClock(GG_RESTOCK_MS-(Date.now()%GG_RESTOCK_MS))+'.'); return; }
+    if((UC.ggSheckles||0)<(s.cost||0)){ showToast('Not enough Sheckles for '+s.name+'.'); return; }
+    UC.ggSheckles-=(s.cost||0);
+    ggTakeStock('sprinklers', s.id);
+    if(!ggStockBypass()&&ggStockLeft(s,'sprinklers')===0&&typeof eggFindOnce==='function') eggFindOnce('stockout');
+  }
   ggQuestEvent('sprinkle',1);
   UC.ggOwnedSprinklers=UC.ggOwnedSprinklers||[]; if(UC.ggOwnedSprinklers.indexOf(s.id)<0) UC.ggOwnedSprinklers.push(s.id);
   p.sprinklers.push(s.id);
@@ -20358,6 +20957,11 @@ const EGGS = [
   { id: 'sixseven', t: 'e', name: 'Six Seven', how: 'Gift someone exactly 67 Orbs (Gift Orbs on their profile).', hint: 'Some numbers just make people laugh.' },
   { id: 'gardentour', t: 'm', name: 'Garden Tour', how: 'Visit 3 different people\'s gardens in Grow a Garden (Visit a Garden, or Visit Garden on a profile).', hint: 'The neighbors grow things too.' },
   { id: 'maxedout', t: 'h', name: 'Maxed Out', how: 'Get every Orb games can give you in one day (20,000, or 100,000 with Premium).', hint: 'There\'s a limit. Find it.' },
+  // v4.69
+  { id: 'longwinded', t: 'h', name: 'Long-Winded', how: 'Record a voice message until the recorder stops you (3 minutes).', hint: 'Say everything. The recorder will tell you when.' },
+  { id: 'midnightevent', t: 'm', name: 'Midnight Meetup', how: 'Make a server event that starts at exactly midnight.', hint: 'The best events start at 12:00 sharp. The other 12:00.' },
+  { id: 'secretclub', t: 'm', name: 'Secret Club', how: 'Be in a private thread with at least 5 people in it.', hint: 'The more, the secret-er.' },
+  { id: 'firsttrade', t: 'e', name: 'Fair Trade', how: 'Finish a Grow a Garden trade (offer one and have it accepted, or accept one).', hint: 'Seeds for seeds.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -20589,6 +21193,10 @@ function eggEffect(id, first) {
     case 'sixseven': eggToast('Six seven.', 'You know what you did.'); return;
     case 'gardentour': eggToast('Garden tour.', 'Yours is still the best one.'); return;
     case 'maxedout': eggToast('Maxed out.', 'That\'s every game Orb for today.'); return;
+    case 'longwinded': eggToast('Long-winded.', 'Three whole minutes.'); return;
+    case 'midnightevent': eggToast('Midnight meetup.', 'Bring snacks.'); return;
+    case 'secretclub': eggToast('Secret club.', 'Don\'t tell anyone.'); return;
+    case 'firsttrade': eggToast('Fair trade.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
@@ -20708,6 +21316,7 @@ const EGG_GROUPS = [
   ['Orbs, the maze, shortcuts and names (v4.66)', ['equilibrium', 'mazeflawless', 'quickflip', 'rainbowname']],
   ['Casino, effects and the garden (v4.67)', ['seedcheck', 'bigbet', 'koifeed', 'stockout']],
   ['Gifts, gardens and game Orbs (v4.68)', ['sixseven', 'gardentour', 'maxedout']],
+  ['Voice, events, threads and trades (v4.69)', ['longwinded', 'midnightevent', 'secretclub', 'firsttrade']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {

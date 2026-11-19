@@ -5070,3 +5070,94 @@ body.is-mobile .blocked-msgs { margin-left: 16px; }
 /* any file can be sent (v4.65); risky ones say so */
 .msg-att-item.is-risky .msg-file-card { box-shadow: inset 3px 0 0 var(--idle); }
 .mfc-warn { color: var(--idle); }
+
+/* ============ v4.69: private and locked threads, voice messages, webhooks, events (request 50) ============ */
+.thread-private-row { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 10px; padding: 10px 12px; border-radius: 8px;
+  background: var(--bg-secondary); cursor: pointer; }
+.thread-private-row input { margin-top: 3px; }
+.thread-private-row span { display: flex; flex-direction: column; gap: 2px; }
+.thread-private-row small { color: var(--text-muted); font-size: 12.5px; }
+.thread-flag { display: inline-flex; align-items: center; margin-left: 6px; color: var(--text-muted); flex: none; }
+.thread-flag.thread-locked { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 0 5px; border-radius: 4px; background: var(--bg-modifier-selected); }
+.ts-row { display: flex; gap: 8px; align-items: center; }
+.ts-row input { flex: 1; min-width: 0; }
+#ts-members { margin-bottom: 8px; }
+.ts-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+/* voice messages */
+.voice-rec { display: flex; align-items: center; gap: 10px; margin: 0 16px 8px; padding: 8px 12px; border-radius: 8px; background: var(--bg-secondary); }
+.voice-rec.hidden { display: none; }
+.vr-dot { width: 10px; height: 10px; border-radius: 50%; background: #f23f43; animation: vrBlink 1.2s ease-in-out infinite; flex: none; }
+@keyframes vrBlink { 50% { opacity: .3; } }
+.vr-time { font-variant-numeric: tabular-nums; font-weight: 700; }
+.vr-note { flex: 1; color: var(--text-muted); font-size: 13px; }
+.msg-att-item.is-voice { max-width: 320px; }
+.voice-msg { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 999px; background: var(--bg-secondary); border: 1px solid var(--divider); }
+.vm-play { width: 32px; height: 32px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--accent); color: #fff; }
+.vm-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--bg-modifier-selected); overflow: hidden; min-width: 120px; }
+.vm-fill { height: 100%; width: 0; background: var(--accent); transition: width .2s linear; }
+.vm-time { font-size: 12.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
+/* webhooks (Server Settings, Integrations) */
+.ss-sub { color: var(--text-muted); margin: -6px 0 14px; }
+.wh-new { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.wh-new input { flex: 1; min-width: 160px; }
+.wh-made { padding: 12px; margin-bottom: 12px; border-radius: 8px; background: var(--bg-secondary); border: 1px solid var(--accent); display: flex; flex-direction: column; gap: 8px; }
+.wh-made.hidden { display: none; }
+.wh-made small { color: var(--text-muted); }
+.wh-url-row { display: flex; gap: 8px; }
+.wh-url-row input { flex: 1; min-width: 0; font-family: monospace; font-size: 12.5px; }
+.wh-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 8px; background: var(--bg-secondary); margin-bottom: 8px; }
+.wh-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.wh-info small { color: var(--text-muted); }
+/* events */
+.server-events-row { display: flex; align-items: center; gap: 8px; margin: 6px 8px 2px; padding: 7px 8px; border-radius: 6px; color: var(--text-muted); cursor: pointer; font-weight: 600; }
+.server-events-row:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
+.se-label { flex: 1; }
+.se-count { min-width: 18px; padding: 0 6px; border-radius: 9px; background: var(--bg-modifier-selected); color: var(--text-normal); font-size: 12px; text-align: center; }
+.se-count.live { background: #23a55a; color: #fff; }
+.events-box { width: min(560px, 94vw); }
+#events-list { display: flex; flex-direction: column; gap: 10px; max-height: 56vh; overflow-y: auto; }
+#events-list.hidden { display: none; }
+.ev-card { padding: 12px 14px; border-radius: 10px; background: var(--bg-secondary); border: 1px solid var(--divider); }
+.ev-card.live { border-color: #23a55a; }
+.ev-when { font-size: 12.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .02em; }
+.ev-card.live .ev-when { color: #23a55a; }
+.ev-name { font-size: 17px; font-weight: 700; margin: 2px 0 4px; }
+.ev-desc { color: var(--text-normal); white-space: pre-wrap; margin-bottom: 6px; }
+.ev-where { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+.ev-go { color: var(--text-link); }
+.ev-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ev-int { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--divider); background: var(--bg-tertiary); font-weight: 600; }
+.ev-int.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ev-by { flex: 1; font-size: 12.5px; color: var(--text-muted); }
+.ev-small { font-size: 13px; color: var(--text-link); }
+.ev-small.danger { color: #f23f43; }
+.ev-actions { margin-top: 12px; display: flex; justify-content: flex-end; }
+.ev-actions.hidden { display: none; }
+.ev-form.hidden { display: none; }
+.ev-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.ev-row .field { flex: 1; min-width: 180px; }
+#ev-place { margin-top: 6px; }
+
+/* ============ v4.69: Grow a Garden's backpack and trades (request 65) ============ */
+.fg-window .gg-bp-buy { flex: none; margin-left: 6px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-bg-2, var(--bg-tertiary)); color: var(--text-normal); font-size: 12px; font-weight: 700; cursor: pointer; }
+.fg-window .gg-bp-buy:hover { border-color: var(--accent); }
+.fg-window .gg-bp-have { margin-left: 6px; padding: 0 6px; border-radius: 6px; background: rgba(35,165,90,.18); color: #3ba55d; font-size: 11px; font-weight: 700; }
+.fg-window .gg-empty { padding: 16px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.fg-window .gg-trade-new { width: 100%; margin: 4px 0 10px; }
+.gg-trade-h { margin: 12px 0 6px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
+.fg-window .gg-trade { padding: 10px 12px; border-radius: 10px; background: var(--card-bg-2, var(--bg-tertiary)); border: 1px solid var(--border); margin-bottom: 8px; font-size: 13px; }
+.fg-window .gg-trade-note { color: var(--text-muted); margin-top: 4px; }
+.fg-window .gg-trade-acts { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+.fg-window .gg-trade-said { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.gg-trade-badge { display: inline-block; min-width: 16px; margin-left: 5px; padding: 0 5px; border-radius: 8px; background: #f23f43; color: #fff; font-size: 11px; line-height: 16px; }
+.gg-trade-badge.hidden { display: none; }
+#gg-trade-modal { z-index: 300; }   /* (over the game window, which sits at 200) */
+.gg-trade-box { width: min(620px, 94vw); }
+.gg-trade-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 10px; }
+@media (max-width: 560px) { .gg-trade-cols { grid-template-columns: 1fr; } }
+.gg-trade-cols > div > div:last-child { max-height: 40vh; overflow-y: auto; }
+.gg-trade-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--bg-secondary); margin-bottom: 6px; }
+.gg-trade-row .gg-seed-ic { font-size: 20px; }
+.gg-trade-name { flex: 1; min-width: 0; display: flex; flex-direction: column; font-weight: 600; }
+.gg-trade-name small { color: var(--text-muted); font-weight: 400; }
+.gg-trade-row input { width: 64px; }

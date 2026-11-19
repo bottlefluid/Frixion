@@ -135,7 +135,7 @@ x = await call('admin', 'casino', { token: nova, game: 'coinflip', bet: 100, sid
 check('51: the infinity sign can bet (it said "not enough Orbs" after the move)', x.status === 200 && (x.result === 'h' || x.result === 't'), x);
 check('...and stays infinite, win or lose', (await doc('users/Nova')).orbs === Infinity, await doc('users/Nova'));
 x = await call('admin', 'egg', { token: nova, egg: 'equilibrium' });
-check('the new eggs are known to the server (74 in all since v4.68)', x.ok && x.total === 74, x);
+check('the new eggs are known to the server (78 in all since v4.69)', x.ok && x.total === 78, x);
 
 section('v4.67 on the server: Provably Fair, bets without a top limit, referrals');
 const fairJs = await import(new URL('../../casino-fair.js', import.meta.url).href);
@@ -260,6 +260,68 @@ x = await call('admin', 'unlink', { token: tester, kind: 'ips', ids: [netBoth], 
 check('69: ...and off a network', x.ok && (await doc('ips/' + netBoth)).accounts.join() === 'Tester', x);
 x = await call('admin', 'unlink', { token: tester, kind: 'ips', ids: ['not-an-id'], account: 'Sumi' });
 check('69: nothing happens with ids that aren\'t ids', x.status === 400, x);
+
+section('v4.69 on the server: Grow a Garden trades, webhooks');
+await rpc('fx_commit', { writes: [
+  { path: 'users/Sumi', updatePaths: [[['tb', 'ggBackpack'], { seeds: { carrot: 3 }, sprinklers: { basic: 1 } }]] },
+  { path: 'users/Nova', updatePaths: [[['tb', 'ggBackpack'], { seeds: { tomato: 2 }, sprinklers: {} }]] }] });
+const trade = (tok, body) => call('admin', 'gagtrade', { token: tok, ...body });
+x = await trade(sumi, { action: 'offer', to: 'Nova', give: { seeds: { carrot: 5 } }, want: {} });
+check('65: no offering more than your backpack holds', x.status === 409, x);
+x = await trade(sumi, { action: 'offer', to: 'Sumi', give: { seeds: { carrot: 1 } } });
+const selfOffer = x.status;
+x = await trade(sumi, { action: 'offer', to: 'Nova', give: {}, want: {} });
+const emptyOffer = x.status;
+x = await trade(sumi, { action: 'offer', to: 'Nova', give: { seeds: { carrot: 1.5 } } });
+check('65: not to yourself, not empty, whole numbers only', selfOffer === 400 && emptyOffer === 400 && x.status === 400, { selfOffer, emptyOffer, x });
+x = await trade(sumi, { action: 'offer', to: 'Nova', give: { seeds: { carrot: 2 } }, want: { seeds: { tomato: 1 } }, note: 'carrots for a tomato' });
+const t1 = x.trade && x.trade.id, t1doc = t1 && await doc('gardenTrades/' + t1);
+check('65: Sumi offers 2 carrots for a tomato', x.ok && t1doc && t1doc.status === 'open' && t1doc.give.seeds.carrot === 2 && t1doc.want.seeds.tomato === 1 && t1doc.note === 'carrots for a tomato', { x, t1doc });
+check('65: ...and Nova is told (ggTradeIn)', (await doc('users/Nova')).ggTradeIn.kind === 'offer' && (await doc('users/Nova')).ggTradeIn.from === 'Sumi');
+x = await trade(sumi, { action: 'accept', id: t1 });
+check('65: Sumi can\'t accept her own offer', x.status === 403, x);
+x = await trade(airTok, { action: 'accept', id: t1 });
+check('65: nobody else can either', x.status === 404, x);
+x = await trade(nova, { action: 'accept', id: t1 });
+check('65: Nova accepts', x.ok && x.trade.status === 'accepted' && (await doc('gardenTrades/' + t1)).status === 'accepted', x);
+check('65: ...and Sumi is told', (await doc('users/Sumi')).ggTradeIn.kind === 'accepted');
+x = await trade(nova, { action: 'accept', id: t1 });
+check('65: only once', x.status === 409, x);
+x = await trade(sumi, { action: 'collect', id: t1 });
+check('65: Sumi collects what she\'s owed', x.ok && x.trade.fromDone === true && x.trade.want.seeds.tomato === 1, x);
+x = await trade(sumi, { action: 'collect', id: t1 });
+check('65: ...once', x.status === 409, x);
+x = await trade(sumi, { action: 'offer', to: 'Nova', give: { sprinklers: { basic: 1 } }, want: { seeds: { tomato: 9 } } });
+const t2 = x.trade && x.trade.id;
+x = await trade(nova, { action: 'accept', id: t2 });
+check('65: Nova can\'t accept what her backpack can\'t pay', x.status === 409, x);
+x = await trade(nova, { action: 'decline', id: t2 });
+const declined = x.ok && x.trade.status === 'declined';
+x = await trade(sumi, { action: 'collect', id: t2 });
+check('65: a declined offer goes back to Sumi once she collects', declined && x.ok && x.trade.give.sprinklers.basic === 1, x);
+x = await trade(sumi, { action: 'offer', to: 'Nova', give: { seeds: { carrot: 1 } }, want: {} });
+const t3 = x.trade && x.trade.id;
+x = await trade(sumi, { action: 'cancel', id: t3 });
+check('65: Sumi takes an offer back (collected at once)', x.ok && x.trade.status === 'cancelled' && x.trade.fromDone === true, x);
+x = await trade(nova, { action: 'accept', id: t3 });
+check('65: ...and then it can\'t be accepted', x.status === 409, x);
+
+const hookToken = crypto.randomBytes(32).toString('hex');
+await put('servers/pcs01/webhooks/wh1', { name: 'Builds', channelId: 'general', avatarUrl: '', tokenHash: crypto.createHash('sha256').update(hookToken).digest('hex'), createdBy: 'Tester', createdAt: now() });
+const hook = (tokenPart, body, method = 'POST') => fetch(`${API}/webhooks/pcs01/wh1/${tokenPart}`, { method, headers: { 'Content-Type': 'application/json' }, ...(method === 'POST' ? { body: JSON.stringify(body) } : {}) })
+  .then(async r => ({ status: r.status, ...(await r.json().catch(() => ({}))) }));
+x = await hook(hookToken, { content: 'Build 42 passed', username: 'CI', avatar_url: 'https://example.com/ci.png' });
+const hm = x.id && await doc(`servers/pcs01/channels/general/messages/${x.id}`);
+check('50: a webhook posts in its channel, as itself', x.ok && hm && hm.uid === 'webhook:wh1' && hm.text === 'Build 42 passed' && hm.ext.src === 'webhook' && hm.ext.name === 'CI' && hm.ext.avatar === 'https://example.com/ci.png', { x, hm });
+check('50: ...and the channel knows its newest message (unread dots)', (await doc('servers/pcs01/channels/general')).lastMessage.mid === x.id);
+x = await hook(hookToken, { content: 'no name given' });
+check('50: without a username it goes by the webhook\'s own name', x.ok && (await doc(`servers/pcs01/channels/general/messages/${x.id}`)).ext.name === 'Builds', x);
+x = await hook('b'.repeat(64), { content: 'hi' });
+check('50: a wrong token posts nothing', x.status === 404, x);
+x = await hook(hookToken, { content: '   ' });
+const blank = x.status;
+x = await hook(hookToken, null, 'GET');
+check('50: nothing to post, or not a POST: refused', blank === 400 && x.status === 405, { blank, x });
 
 // ---------------- functions/api/push ----------------
 section('Push notifications (functions/api/push)');
