@@ -87,7 +87,8 @@ check('68: both gifts show under Loans and Gifts', !!(await until(() => /gifted 
 check('68: Sumi is told once she\'s on (giftIn: the newest gift)', (await doc('users/Sumi')).giftIn.amount === 67);
 
 // ---------- 64: visiting gardens ----------
-await patch('users/Sumi', { ggUnlocked: 4, ggSheckles: 1234, ggPlots: [{ seed: 'carrot', at: Date.now() - 1e9, w: 1, sprinklers: [] }, { seed: 'carrot', at: Date.now(), w: 1, sprinklers: [] }, null, null], ggPets: [] });
+// (games keep their state under tb on the profile, the way dbUpdateUser saves it)
+await patch('users/Sumi', { 'tb.ggUnlocked': 4, 'tb.ggSheckles': 1234, 'tb.ggPlots': [{ seed: 'carrot', at: Date.now() - 1e9, w: 1, sprinklers: [] }, { seed: 'carrot', at: Date.now(), w: 1, sprinklers: [] }, null, null], 'tb.ggPets': [] });
 closeModal('profile-modal');
 await openProfileModal('Sumi');
 check('64: a profile with a garden has Visit Garden', !!(await until(() => $('profile-garden-btn'), 6000)));

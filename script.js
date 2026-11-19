@@ -1180,7 +1180,7 @@ const UPDATES = [
   { v: '4.68', date: '2026-11-18', title: 'Gift Orbs, visit gardens, and phone typing fixes',
     notes: [
       'Gift Orbs: open someone\'s profile and send them as many of your Orbs as you like. Gifts show under Loans and Gifts on both profiles, and you get told when someone gifts you.',
-      'Grow a Garden: visit anyone\'s garden and see it as it is right now. Use Visit a Garden in your garden, or Visit Garden on their profile.',
+      'Grow a Garden: visit anyone\'s garden and see it as it is right now. Use Visit a Garden in your garden, or Visit Garden on their profile. (Fixed soon after: at first every garden looked like it hadn\'t been started.)',
       'Frixion Premium lets you earn up to 100,000 Orbs a day from games (20,000 without it). The Games page shows how many more you can still get today.',
       'Typing on a phone: the send button keeps the keyboard up, a scroll that curves a little no longer slides the chat sideways, and on an iPhone the screen stays put instead of moving around while the keyboard is up.',
       'Name gradients spread evenly across your name, so every color shows, however many you picked.',
@@ -7390,7 +7390,7 @@ async function openProfileModal(username) {
       ${friendBtn}
       <button class="pa-btn" id="profile-gift-btn">${PA_ICON.gift}Gift Premium</button>
       ${isBot ? '' : `<button class="pa-btn" id="profile-orbgift-btn">${PA_ICON.orb}Gift Orbs</button>`}
-      ${!isBot && p && ((Number(p.ggUnlocked) || 0) > 0 || (Array.isArray(p.ggPlots) && p.ggPlots.some(Boolean))) ? `<button class="pa-btn" id="profile-garden-btn">${PA_ICON.leaf}Visit Garden</button>` : ''}
+      ${!isBot && p && p.tb && ((Number(p.tb.ggUnlocked) || 0) > 0 || (Array.isArray(p.tb.ggPlots) && p.tb.ggPlots.some(Boolean))) ? `<button class="pa-btn" id="profile-garden-btn">${PA_ICON.leaf}Visit Garden</button>` : ''}
       ${isBot ? '' : `<button class="pa-btn" id="profile-loan-btn">${PA_ICON.loan}Ask for a Loan</button>`}
       ${blockBtn}
     </div>`;
@@ -18307,7 +18307,7 @@ async function ggVisitGarden(username){
   try{ const s=await db.collection('users').doc(username).get(); d=s.exists?s.data():null; }catch(e){}
   if(currentGameId!=='growgarden') return;
   if(!d||d.terminated){ ggVisitEnd(); showToast('No account has that username.'); return; }
-  ggVisit={ name:username, display:displayNameOf({ ...d, username }), data:d };
+  ggVisit={ name:username, display:displayNameOf({ ...d, username }), data:withGameState(d) };   // (a garden is saved under tb)
   ggVisitedNames.add(username); if(ggVisitedNames.size>=3) eggFind('gardentour');   // (an easter egg)
   ggVisitRender();
   clearInterval(ggVisitTimer); ggVisitTimer=setInterval(()=>{ if(document.getElementById('gg-visit-plots')) ggVisitRenderPlots(); else { clearInterval(ggVisitTimer); ggVisit=null; } }, 5000);
