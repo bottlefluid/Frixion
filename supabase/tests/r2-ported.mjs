@@ -346,7 +346,9 @@ async function seed() {
   await deny('Kid changes the Discord link', commit('Kid', [write('servers/s1/channels/c2', { set: { discord: { channel: '999999999999999999' } }, merge: ['discord.channel'] })]));
   await deny('Kid deletes a channel', delDoc('Kid', 'servers/s1/channels/c9'));
   await deny('Kid makes a category', setDoc('Kid', 'servers/s1/categories/k1', { name: 'x' }));
-  await allow('Bob starts a thread', setDoc('Bob', 'servers/s1/threads/t2', { channelId: 'c1', name: 'x', starterId: 'm1', createdBy: 'Bob', messageCount: 0 }));
+  // (v4.69: starting a thread takes Create Public Threads, which @everyone here lost when Ad remade the roles above)
+  await deny('Bob can\'t start a thread without Create Public Threads', setDoc('Bob', 'servers/s1/threads/t2', { channelId: 'c1', name: 'x', starterId: 'm1', createdBy: 'Bob', messageCount: 0 }));
+  await allow('Ad (Administrator) starts one', setDoc('Ad', 'servers/s1/threads/t2', { channelId: 'c1', name: 'x', starterId: 'm1', createdBy: 'Ad', messageCount: 0 }));
   await deny('Kid starts a thread "by Bob"', setDoc('Kid', 'servers/s1/threads/t3', { channelId: 'c1', name: 'x', starterId: 'm1', createdBy: 'Bob', messageCount: 0 }));
   await allow('Kid counts a reply in Bob\'s thread', commit('Kid', [write('servers/s1/threads/t1', { inc: { messageCount: 1 }, serverTime: ['lastMessageAt'] })]));
   await deny('Kid renames Bob\'s thread', updateDoc('Kid', 'servers/s1/threads/t1', { name: 'pwned' }));
