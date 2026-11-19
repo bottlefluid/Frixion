@@ -186,6 +186,10 @@ a { color: var(--text-link); text-decoration: none; }
   width: 56px; height: 56px; border-radius: 16px; background: var(--accent);
   display: flex; align-items: center; justify-content: center;
 }
+/* after 12 seconds on the boot screen (v4.70) */
+.boot-slow { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 280px; text-align: center; color: var(--text-muted); font-size: 14px; }
+.boot-slow.hidden { display: none; }
+.boot-slow button { padding: 8px 18px; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; }
 .spinner {
   width: 26px; height: 26px; border-radius: 50%;
   border: 3px solid var(--bg-input); border-top-color: var(--accent);
@@ -3620,12 +3624,16 @@ body.shop-theme-active .fg-window .fg-chip { background: rgba(0,0,0,.3); }
 .gag-bypass { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-primary); margin: 6px 0; cursor: pointer; }
 .gag-stock-list { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
 .gag-stock-head { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 6px 0 2px; }
-.gag-stock-row { display: grid; grid-template-columns: minmax(120px, 1.4fr) minmax(110px, 1fr) 96px minmax(110px, 1fr); align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; background: var(--bg-tertiary); font-size: 13px; }
+.gag-stock-row { display: grid; grid-template-columns: minmax(120px, 1.4fr) minmax(100px, 1fr) auto 96px minmax(110px, 1fr); align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; background: var(--bg-tertiary); font-size: 13px; }
+/* Add stock / Reset to 0 (v4.70) */
+.gag-stock-tools { display: flex; align-items: center; gap: 4px; }
+.gag-stock-add { width: 64px; padding: 4px 6px; }
+.gag-stock-tools .btn-secondary.slim { padding: 4px 8px; font-size: 12px; white-space: nowrap; }
 .gag-stock-name { font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gag-stock-rar, .gag-stock-now { color: var(--text-muted); font-size: 12px; }
 .gag-stock-in { display: flex; align-items: center; gap: 4px; color: var(--text-muted); }
 .gag-stock-pct { width: 70px; padding: 4px 6px; }
-@media (max-width: 600px) { .gag-stock-row { grid-template-columns: 1fr 90px; } .gag-stock-rar, .gag-stock-now { grid-column: 1 / -1; } }
+@media (max-width: 600px) { .gag-stock-row { grid-template-columns: 1fr 90px; } .gag-stock-rar, .gag-stock-now, .gag-stock-tools { grid-column: 1 / -1; } }
 #gag-wx-stop { margin-left: 8px; }
 
 /* Cookie Clicker additions (v4.62): Lucky Crumbs, boosts, buying several, achievements, stats */
@@ -4286,7 +4294,8 @@ html[data-liquid-glass] .shop-browse-menu,
 html[data-liquid-glass] .toast,
 html[data-liquid-glass] #mention-popup,
 html[data-liquid-glass] .mht-menu,
-html[data-liquid-glass] #user-panel {
+html[data-liquid-glass] #user-panel,
+html[data-liquid-glass] body.is-mobile #mobile-user-pill {
   background:
     radial-gradient(120% 90% at 0% 0%, rgba(255,255,255,calc(.30 * var(--glass-hl, 1))) 0%, rgba(255,255,255,0) 55%),
     radial-gradient(100% 80% at 100% 100%, rgba(255,255,255,calc(.16 * var(--glass-hl, 1))) 0%, rgba(255,255,255,0) 60%),
@@ -4320,13 +4329,18 @@ html[data-liquid-glass] .shop-browse-menu,
 html[data-liquid-glass] .toast,
 html[data-liquid-glass] #mention-popup,
 html[data-liquid-glass] .mht-menu,
-html[data-liquid-glass] #user-panel { background: rgba(44, 46, 56, .92) !important; }
+html[data-liquid-glass] #user-panel,
+html[data-liquid-glass] body.is-mobile #mobile-user-pill { background: rgba(44, 46, 56, .92) !important; }
 }
 html[data-liquid-glass] .server-menu, html[data-liquid-glass] .composer-action-menu, html[data-liquid-glass] #emoji-picker-panel,
 html[data-liquid-glass] #sticker-picker-panel, html[data-liquid-glass] #gif-picker-panel, html[data-liquid-glass] .ck-quicktext-popover,
 html[data-liquid-glass] #inbox-popover, html[data-liquid-glass] #help-popover, html[data-liquid-glass] .react-popover,
 html[data-liquid-glass] .full-react-popover, html[data-liquid-glass] .shop-browse-menu, html[data-liquid-glass] #mention-popup { border-radius: 22px; }
 html[data-liquid-glass] .modal-overlay:not(.ds-settings-layer) > .modal-box { border-radius: 28px; }
+/* The phone layout (v4.70, request 78): its floating profile bar is glass too (it stands in for #user-panel there), and
+   windows that slide up from the bottom keep their square bottom edge. */
+html[data-liquid-glass] body.is-mobile #mobile-user-pill { border-radius: 28px; }
+html[data-liquid-glass] body.is-mobile .modal-overlay:not(.ds-settings-layer):not(#confirm-modal) > .modal-box { border-radius: 26px 26px 0 0; }
 html[data-liquid-glass] .toast { border-radius: 24px; }
 html[data-liquid-glass] #user-panel { border-radius: 26px; margin: 8px; height: 56px; }
 html[data-liquid-glass] .modal-overlay:not(.ds-settings-layer) { background: rgba(10, 12, 20, .32); }

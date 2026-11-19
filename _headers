@@ -1,0 +1,20 @@
+# Cloudflare Pages headers (v4.70, request 79: "sometimes frx takes forever to load").
+# These files are always loaded with a ?v= version (index.html, casino.js and script.js bump it whenever one changes),
+# so a browser can keep them instead of asking the server about each one on every open. A new version is a new
+# address, so nobody is left with an old file. Everything else (index.html, sw.js, the games' own modules) keeps
+# Cloudflare's default: checked with the server every time.
+# NEVER add a file here unless everything that loads it puts a ?v= on it, and that ?v= goes up whenever it changes.
+/script.js
+  Cache-Control: public, max-age=31536000, immutable
+/style.css
+  Cache-Control: public, max-age=31536000, immutable
+/fdb.js
+  Cache-Control: public, max-age=31536000, immutable
+/casino.js
+  Cache-Control: public, max-age=31536000, immutable
+/casino.css
+  Cache-Control: public, max-age=31536000, immutable
+/casino-fair.js
+  Cache-Control: public, max-age=31536000, immutable
+/games/maze/maze.js
+  Cache-Control: public, max-age=31536000, immutable

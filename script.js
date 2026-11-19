@@ -1177,6 +1177,15 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.70', date: '2026-11-19', title: 'Faster opening, a private garden, and phone fixes',
+    notes: [
+      'Frixion opens faster: your browser keeps its files between visits instead of checking each one again every time, and it gets in touch with the database and sign-in sooner. If it ever takes long anyway, it says so after a few seconds and offers to reload.',
+      'Phones: logging out and back in keeps the new phone layout (it used to switch to the old one until you reloaded), and Liquid glass now covers the floating profile bar at the bottom.',
+      'Settings, Privacy: turn off "Let people visit my garden" and nobody else can open your Grow a Garden or offer you a trade.',
+      'Premium that never ends says "Premium until... forever" instead of "Invalid Date".',
+      'Grow a Garden, for the Owner and Co-Owners: the Stock tab can add stock or reset it to 0, for everyone, until the next restock.',
+      '3 new easter eggs. That makes 81.',
+    ] },
   { v: '4.69', date: '2026-11-18', title: 'Private threads, voice messages, webhooks, events and garden trades',
     notes: [
       'Every permission in the role editor works now. The voice and Stage channel ones are hidden until Frixion has voice channels, and nothing says "Coming soon" any more.',
@@ -2829,7 +2838,8 @@ function badgesFor(p, self) {
   const out = [], rank = p.sfMode ? 0 : platformRank(p);
   if (rank >= 1) out.push({ key: 'staff', color: rank === 3 ? '#ff4d6d' : rank === 2 ? '#ff8a4c' : '#5865f2', title: 'Frixion Staff', tier: rank === 3 ? 'OWNER' : rank === 2 ? 'CO-OWNER' : 'ADMIN', text: rank === 3 ? 'Runs Frixion' : rank === 2 ? 'Helps run Frixion' : 'Keeps Frixion tidy' });
   Object.entries(STAFF_BADGES).forEach(([id, b]) => { if ((p.staffBadges || []).includes(id)) out.push({ key: id, color: b.color, title: 'Given by staff', tier: b.name.toUpperCase(), text: b.text }); });
-  if (isPremium(p)) out.push({ key: 'premium', color: '#f4a4ff', title: 'Frixion Premium', tier: 'SUBSCRIBER', text: `Premium until ${new Date(p.premiumUntil).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}` });
+  // (Premium that never ends said "Premium until Invalid Date": v4.70, request 75)
+  if (isPremium(p)) out.push({ key: 'premium', color: '#f4a4ff', title: 'Frixion Premium', tier: 'SUBSCRIBER', text: premiumUntilText(p.premiumUntil, { month: 'long', day: 'numeric' }) ? `Premium until ${premiumUntilText(p.premiumUntil, { month: 'long', day: 'numeric' })}` : 'Premium until... forever' });
   const born = p.createdAt && p.createdAt.toDate ? p.createdAt.toDate() : null;
   if (born) {
     const days = Math.floor((Date.now() - born.getTime()) / 86400000), t = tierOf(BADGE_AGE_TIERS, days);
@@ -3572,6 +3582,7 @@ function populateRpc() {
   if (!$('rpc-share-toggle') || !myProfile) return;
   if ($('dnd-toggle')) $('dnd-toggle').checked = dndOn();
   if ($('privacy-orbs-toggle')) $('privacy-orbs-toggle').checked = myProfile.hideOrbs !== true;   // Settings > Privacy (v4.64)
+  if ($('privacy-garden-toggle')) $('privacy-garden-toggle').checked = myProfile.hideGarden !== true;   // (v4.70)
   $('rpc-share-toggle').checked = rpcEnabled();
   if ($('rpc-detect-row')) {
     $('rpc-detect-row').classList.toggle('hidden', !DESKTOP);
@@ -3590,6 +3601,15 @@ if ($('privacy-orbs-toggle')) $('privacy-orbs-toggle').onchange = async (e) => {
     await db.collection('users').doc(myUid).update({ hideOrbs: e.target.checked ? FieldValue.delete() : true });
     toast(e.target.checked ? 'Your Orbs show on your profile.' : 'Your Orbs are hidden from your profile.');
     if (!e.target.checked) eggFind('hideorbs');   // (an easter egg)
+  }
+  catch (err) { e.target.checked = !e.target.checked; toast('Could not save that.', 'error'); }
+};
+// Settings > Privacy (v4.70, request 80): let people visit your garden (and offer you trades), or not
+if ($('privacy-garden-toggle')) $('privacy-garden-toggle').onchange = async (e) => {
+  try {
+    await db.collection('users').doc(myUid).update({ hideGarden: e.target.checked ? FieldValue.delete() : true });
+    toast(e.target.checked ? 'People can visit your garden again.' : 'Your garden is private now: nobody else can visit it or offer you trades.');
+    if (!e.target.checked) eggFind('keepout');   // (an easter egg)
   }
   catch (err) { e.target.checked = !e.target.checked; toast('Could not save that.', 'error'); }
 };
@@ -4868,6 +4888,9 @@ $('logout-btn').onclick = async () => {
   currentServerId = null; currentServerData = null; currentChannelId = null; currentThreadId = null; currentThreadData = null;
   currentDMId = null; currentDMOtherUid = null; currentView = 'none';
   document.body.className = '';
+  // ...but is-mobile and is-touch say what this device is, not who's signed in: without them the next account got the
+  // old phone layout until a reload (v4.70, request 77)
+  syncDeviceClasses();
   closeModal('settings-modal');
   showAuthScreen();
 };
@@ -7304,6 +7327,7 @@ async function openProfileModal(username) {
       profileCache[username] = p;
     } catch (e) { toast('Could not load profile.', 'error'); return; }
   }
+  if (isPremium(p) && !premiumUntilText(p.premiumUntil)) eggFindOnce('forever');   // Premium that never ends (v4.70, an easter egg)
 
   const shopBanner = bannerById(p.equippedBanner), bannerPic = bannerImageUrl(p);
   // (v4.64: no more gradient banners, so an old one shows as its first color)
@@ -7411,7 +7435,7 @@ async function openProfileModal(username) {
       ${friendBtn}
       <button class="pa-btn" id="profile-gift-btn">${PA_ICON.gift}Gift Premium</button>
       ${isBot ? '' : `<button class="pa-btn" id="profile-orbgift-btn">${PA_ICON.orb}Gift Orbs</button>`}
-      ${!isBot && p && p.tb && ((Number(p.tb.ggUnlocked) || 0) > 0 || (Array.isArray(p.tb.ggPlots) && p.tb.ggPlots.some(Boolean))) ? `<button class="pa-btn" id="profile-garden-btn">${PA_ICON.leaf}Visit Garden</button>` : ''}
+      ${!isBot && p && p.hideGarden !== true && p.tb && ((Number(p.tb.ggUnlocked) || 0) > 0 || (Array.isArray(p.tb.ggPlots) && p.tb.ggPlots.some(Boolean))) ? `<button class="pa-btn" id="profile-garden-btn">${PA_ICON.leaf}Visit Garden</button>` : ''}
       ${isBot ? '' : `<button class="pa-btn" id="profile-loan-btn">${PA_ICON.loan}Ask for a Loan</button>`}
       ${blockBtn}
     </div>`;
@@ -14578,6 +14602,7 @@ function setLiquidGlass(on) {
   try { localStorage.setItem(GLASS_KEY, on ? '1' : '0'); } catch (e) {}
   applyLiquidGlass();
   if (myUid) db.collection('users').doc(myUid).update({ a11yLiquidGlass: on }).catch(() => {});
+  if (on && isMobile() && myUid) eggFind('glassphone');   // glass on a phone, now that it works there (v4.70, an easter egg)
 }
 let glassTuneSaveT = 0;
 function setGlassTune(patch, save) {
@@ -15555,20 +15580,43 @@ function gagRenderStock() {
   const rows = (kind, list) => `<div class="gag-stock-head">${kind === 'seeds' ? 'Seeds' : 'Sprinklers'}</div>` + list.map(it => {
     const def = Math.round((GG_STOCK_BY_RARITY[ggRar(it.rarity)] || [1, 3, 0.5])[2] * 100), set = ggStockChances[kind][it.id];
     const now = ggStockOf(it, kind);
-    return `<div class="gag-stock-row"><span class="gag-stock-name">${esc(it.name)}</span><span class="gag-stock-rar">${esc((GG_RARITY[ggRar(it.rarity)] || {}).n || it.rarity)}: ${def}%</span>`
+    const tools = `<span class="gag-stock-tools"><input class="fld-input gag-stock-add" type="number" min="1" max="9999" step="1" placeholder="5" data-kind="${kind}" data-id="${esc(it.id)}" aria-label="How many to add for ${esc(it.name)}">`
+      + `<button type="button" class="btn-secondary slim" data-stock-add="${kind}:${esc(it.id)}">Add stock</button><button type="button" class="btn-secondary slim" data-stock-zero="${kind}:${esc(it.id)}">Reset to 0</button></span>`;
+    return `<div class="gag-stock-row"><span class="gag-stock-name">${esc(it.name)}</span><span class="gag-stock-rar">${esc((GG_RARITY[ggRar(it.rarity)] || {}).n || it.rarity)}: ${def}%</span>${tools}`
       + `<span class="gag-stock-in"><input class="fld-input gag-stock-pct" type="number" min="0" max="100" step="any" data-kind="${kind}" data-id="${esc(it.id)}" placeholder="${def}" value="${Number.isFinite(set) ? set : ''}" aria-label="Chance in stock for ${esc(it.name)}">%</span>`
       + `<span class="gag-stock-now">${now ? now + ' in this restock' : 'not in this restock'}</span></div>`;
   }).join('');
   $('gag-stock-seeds').innerHTML = rows('seeds', GG_SEEDS);
   $('gag-stock-sprinklers').innerHTML = rows('sprinklers', GG_SPRINKLERS);
-  const save = async out => {
+  // (the whole document each time: the chances, plus this restock's added or reset stock while it lasts, v4.70)
+  const write = async (chances, now, said) => {
     try {
-      await db.collection('config').doc('gardenStock').set(out);
-      ggStockChances = out;
-      toast('Stock chances saved.');
+      const keep = now && now.w === ggStockWindow() ? now : null;
+      await db.collection('config').doc('gardenStock').set({ seeds: chances.seeds, sprinklers: chances.sprinklers, now: keep });
+      ggStockChances = chances; ggStockNow = keep;
+      toast(said);
       gagRenderStock();
-    } catch (e) { toast(e.code === 'permission-denied' ? 'Only the Owner and Co-Owners can change the stock.' : 'Could not save the stock chances.', 'error'); }
+      if (currentGameId === 'growgarden' && !ggVisit) renderGGShop();
+    } catch (e) { toast(e.code === 'permission-denied' ? 'Only the Owner and Co-Owners can change the stock.' : 'Could not save the stock.', 'error'); }
   };
+  const save = out => write(out, ggStockNow, 'Stock chances saved.');
+  // Add stock / Reset to 0 (v4.70, request 74): for everyone, until the next restock
+  const setNow = (kind, id, n) => {
+    const w = ggStockWindow(), now = ggStockNow && ggStockNow.w === w ? JSON.parse(JSON.stringify(ggStockNow)) : { w, seeds: {}, sprinklers: {} };
+    now[kind][id] = Math.max(0, Math.min(9999, Math.floor(n)));
+    const it = kind === 'seeds' ? GG_SEED_MAP[id] : GG_SPRINKLER_MAP[id];
+    write(ggStockChances, now, n > 0 ? `${it ? it.name : id}: ${now[kind][id]} in stock now, for everyone, until the next restock.` : `${it ? it.name : id} is sold out for everyone until the next restock.`);
+  };
+  document.querySelectorAll('[data-stock-add]').forEach(b => {
+    b.onclick = () => {
+      const [kind, id] = b.dataset.stockAdd.split(':'), inp = b.parentElement.querySelector('.gag-stock-add');
+      const add = Math.floor(Number(inp.value) || 0), it = kind === 'seeds' ? GG_SEED_MAP[id] : GG_SPRINKLER_MAP[id];
+      if (!(add >= 1)) { toast('Type how many to add first.'); inp.focus(); return; }
+      if (!it) return;
+      setNow(kind, id, ggStockOf(it, kind) + add);
+    };
+  });
+  document.querySelectorAll('[data-stock-zero]').forEach(b => { b.onclick = () => { const [kind, id] = b.dataset.stockZero.split(':'); setNow(kind, id, 0); }; });
   $('gag-stock-save').onclick = () => {
     const out = { seeds: {}, sprinklers: {} };
     document.querySelectorAll('.gag-stock-pct').forEach(inp => {
@@ -18406,6 +18454,7 @@ function ggStockChance(item,kind){
   return Number.isFinite(set) ? Math.max(0,Math.min(1,set/100)) : (GG_STOCK_BY_RARITY[ggRar(item.rarity)]||[1,3,0.5])[2];
 }
 function ggStockOf(item,kind,w=ggStockWindow()){
+  const set=ggStockNowFor(item,kind,w); if(set!==null) return set;   // staff's Add stock / Reset to 0 for this restock (v4.70)
   const [lo,hi]=GG_STOCK_BY_RARITY[ggRar(item.rarity)]||[1,3,0.5];
   if(ggRand('st:'+kind+':'+item.id+':'+w)>=ggStockChance(item,kind)) return 0;
   return lo+Math.floor(ggRand('sn:'+kind+':'+item.id+':'+w)*(hi-lo+1));
@@ -18480,13 +18529,27 @@ let ggCustomSeeds=[], ggCustomSprinklers=[], ggCustomPets=[];
 // How likely each seed and sprinkler is to be in stock at a restock, in %, where staff changed it (v4.67, request 59):
 // config/gardenStock = { seeds: { id: % }, sprinklers: { id: % } }. Anything not listed goes by its rarity.
 let ggStockChances={ seeds:{}, sprinklers:{} };
+// What staff set for the restock going on now (v4.70, request 74): config/gardenStock.now = { w: restock number, seeds:
+// { id: how many }, sprinklers: {...} }, from Add stock and Reset to 0 in the admin panel's Stock tab. It counts for
+// everyone until the next restock (every 5 minutes), then the shop goes back to its chances.
+let ggStockNow=null;
+function ggApplyStockConfig(ch){
+  ch=ch&&typeof ch==='object'?ch:{};
+  const pcts=o=>Object.fromEntries(Object.entries(o&&typeof o==='object'?o:{}).filter(([,v])=>Number.isFinite(v)&&v>=0&&v<=100));
+  ggStockChances={ seeds:pcts(ch.seeds), sprinklers:pcts(ch.sprinklers) };
+  const n=ch.now, counts=o=>Object.fromEntries(Object.entries(o&&typeof o==='object'?o:{}).filter(([,v])=>Number.isFinite(v)&&v>=0&&v<=9999));
+  ggStockNow=n&&typeof n==='object'&&Number.isInteger(n.w)?{ w:n.w, seeds:counts(n.seeds), sprinklers:counts(n.sprinklers) }:null;
+}
+function ggStockNowFor(item,kind,w){
+  const n=ggStockNow&&ggStockNow.w===w&&ggStockNow[kind]?ggStockNow[kind][item.id]:undefined;
+  return Number.isFinite(n)?Math.floor(n):null;
+}
 // Custom seeds, sprinklers and pets published from the admin panel (Quests → GAG), merged on top of the built-ins.
 async function loadGardenContent(){
   const get=async coll=>{ try{ const s=await db.collection(coll).get(); return s.docs.map(d=>({ ...d.data(), id:d.id })); }catch(e){ return []; } };
   const chances=async()=>{ try{ const s=await db.collection('config').doc('gardenStock').get(); return s.exists?s.data():{}; }catch(e){ return {}; } };
   const [seeds,spr,pets,ch]=await Promise.all([get('gardenSeeds'),get('gardenSprinklers'),get('gardenPets'),chances()]);
-  const pcts=o=>Object.fromEntries(Object.entries(o&&typeof o==='object'?o:{}).filter(([,v])=>Number.isFinite(v)&&v>=0&&v<=100));
-  ggStockChances={ seeds:pcts(ch.seeds), sprinklers:pcts(ch.sprinklers) };
+  ggApplyStockConfig(ch);
   ggCustomSeeds=seeds; ggCustomSprinklers=spr; ggCustomPets=pets;
   GG_SEEDS=ggSortByRarity(GG_BASE_SEEDS.concat(ggCustomSeeds));
   GG_SPRINKLERS=ggSortByRarity(GG_BASE_SPRINKLERS.concat(ggCustomSprinklers));
@@ -18602,8 +18665,17 @@ function ggWatchStaffWeather(){
     ggStaffWeather=ev.filter(x=>x&&GG_WEATHERS[x.w]&&isFinite(+x.from)&&isFinite(+x.until)).map(x=>({w:x.w, from:+x.from, until:+x.until})).slice(-20);
     if(currentGameId==='growgarden'){ renderGGPlots(); ggWeatherTick(true); }
   },()=>{}); }catch(e){}
+  // and the stock staff set for this restock, so Add stock or Reset to 0 shows up in an open shop at once (v4.70)
+  try{ ggStockUnsub=db.collection('config').doc('gardenStock').onSnapshot(s=>{
+    ggApplyStockConfig(s.exists?s.data():{});
+    if(currentGameId==='growgarden'&&!ggVisit&&(ggShopTab==='seeds'||ggShopTab==='sprinklers')) renderGGShop();
+  },()=>{}); }catch(e){}
 }
-function ggStopStaffWeather(){ if(ggWxUnsub){ try{ ggWxUnsub(); }catch(e){} ggWxUnsub=null; } }
+let ggStockUnsub=null;
+function ggStopStaffWeather(){
+  if(ggWxUnsub){ try{ ggWxUnsub(); }catch(e){} ggWxUnsub=null; }
+  if(ggStockUnsub){ try{ ggStockUnsub(); }catch(e){} ggStockUnsub=null; }
+}
 function renderGrowGarden(){
   const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
   ggInitState();
@@ -18720,6 +18792,7 @@ async function ggVisitGarden(username){
   try{ const s=await db.collection('users').doc(username).get(); d=s.exists?s.data():null; }catch(e){}
   if(currentGameId!=='growgarden') return;
   if(!d||d.terminated){ ggVisitEnd(); showToast('No account has that username.'); return; }
+  if(d.hideGarden===true){ ggVisitEnd(); showToast(`${displayNameOf({ ...d, username })} keeps their garden private.`); return; }   // (Settings > Privacy, v4.70)
   ggVisit={ name:username, display:displayNameOf({ ...d, username }), data:withGameState(d) };   // (a garden is saved under tb)
   ggVisitedNames.add(username); if(ggVisitedNames.size>=3) eggFind('gardentour');   // (an easter egg)
   ggVisitRender();
@@ -18831,6 +18904,7 @@ async function ggOpenTrade(name){
   let d=null;
   try{ const s=await db.collection('users').doc(name).get(); d=s.exists?withGameState(s.data()):null; }catch(e){}
   if(!d||d.terminated){ showToast('No account has that username.'); return; }
+  if(d.hideGarden===true){ showToast(`${displayNameOf({...d, username:name})} keeps their garden private, so they can't be offered trades. They can still offer you one.`); return; }   // (v4.70)
   ggTradeWith=name;
   const theirs=d.ggBackpack&&typeof d.ggBackpack==='object'?d.ggBackpack:{};
   const col=(bp,side)=>{
@@ -20962,6 +21036,10 @@ const EGGS = [
   { id: 'midnightevent', t: 'm', name: 'Midnight Meetup', how: 'Make a server event that starts at exactly midnight.', hint: 'The best events start at 12:00 sharp. The other 12:00.' },
   { id: 'secretclub', t: 'm', name: 'Secret Club', how: 'Be in a private thread with at least 5 people in it.', hint: 'The more, the secret-er.' },
   { id: 'firsttrade', t: 'e', name: 'Fair Trade', how: 'Finish a Grow a Garden trade (offer one and have it accepted, or accept one).', hint: 'Seeds for seeds.' },
+  // v4.70
+  { id: 'keepout', t: 'e', name: 'Keep Out', how: 'Turn off "Let people visit my garden" in Settings, Privacy.', hint: 'Some gardens have a fence.' },
+  { id: 'glassphone', t: 'm', name: 'Glass Phone', how: 'Turn on Liquid glass on a phone.', hint: 'Glass looks better in your hand.' },
+  { id: 'forever', t: 'm', name: 'To Infinity', how: 'Open the profile of someone whose Premium never ends.', hint: 'Some Premium never runs out.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -21197,6 +21275,9 @@ function eggEffect(id, first) {
     case 'midnightevent': eggToast('Midnight meetup.', 'Bring snacks.'); return;
     case 'secretclub': eggToast('Secret club.', 'Don\'t tell anyone.'); return;
     case 'firsttrade': eggToast('Fair trade.'); return;
+    case 'keepout': eggToast('Keep out.', 'Your garden, your rules.'); return;
+    case 'glassphone': eggToast('Glass phone.', 'Don\'t drop it.'); return;
+    case 'forever': eggToast('To infinity.', 'And beyond.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
@@ -21317,6 +21398,7 @@ const EGG_GROUPS = [
   ['Casino, effects and the garden (v4.67)', ['seedcheck', 'bigbet', 'koifeed', 'stockout']],
   ['Gifts, gardens and game Orbs (v4.68)', ['sixseven', 'gardentour', 'maxedout']],
   ['Voice, events, threads and trades (v4.69)', ['longwinded', 'midnightevent', 'secretclub', 'firsttrade']],
+  ['Privacy, glass and Premium (v4.70)', ['keepout', 'glassphone', 'forever']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {

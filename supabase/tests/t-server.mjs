@@ -135,7 +135,7 @@ x = await call('admin', 'casino', { token: nova, game: 'coinflip', bet: 100, sid
 check('51: the infinity sign can bet (it said "not enough Orbs" after the move)', x.status === 200 && (x.result === 'h' || x.result === 't'), x);
 check('...and stays infinite, win or lose', (await doc('users/Nova')).orbs === Infinity, await doc('users/Nova'));
 x = await call('admin', 'egg', { token: nova, egg: 'equilibrium' });
-check('the new eggs are known to the server (78 in all since v4.69)', x.ok && x.total === 78, x);
+check('the new eggs are known to the server (81 in all since v4.70)', x.ok && x.total === 81, x);
 
 section('v4.67 on the server: Provably Fair, bets without a top limit, referrals');
 const fairJs = await import(new URL('../../casino-fair.js', import.meta.url).href);
@@ -305,6 +305,10 @@ x = await trade(sumi, { action: 'cancel', id: t3 });
 check('65: Sumi takes an offer back (collected at once)', x.ok && x.trade.status === 'cancelled' && x.trade.fromDone === true, x);
 x = await trade(nova, { action: 'accept', id: t3 });
 check('65: ...and then it can\'t be accepted', x.status === 409, x);
+await rpc('fx_commit', { writes: [{ path: 'users/Nova', updatePaths: [[['hideGarden'], true]] }] });
+x = await trade(sumi, { action: 'offer', to: 'Nova', give: { seeds: { carrot: 1 } }, want: {} });
+check('80 (v4.70): nobody can offer a trade to someone whose garden is private', x.status === 403, x);
+await rpc('fx_commit', { writes: [{ path: 'users/Nova', updatePaths: [[['hideGarden'], false]] }] });
 
 const hookToken = crypto.randomBytes(32).toString('hex');
 await put('servers/pcs01/webhooks/wh1', { name: 'Builds', channelId: 'general', avatarUrl: '', tokenHash: crypto.createHash('sha256').update(hookToken).digest('hex'), createdBy: 'Tester', createdAt: now() });
