@@ -1635,10 +1635,21 @@ label.re-member-addable input[type="checkbox"] { margin-left: auto; }
 @keyframes cybergridScan { 0% { top: 0%; } 100% { top: 96%; } }
 .sic-nameplate-preview {
   position: relative; width: 100%; height: 56px; border-radius: 8px; overflow: hidden;
-  display: flex; align-items: center; justify-content: center; background: var(--bg-tertiary);
+  display: flex; align-items: center; justify-content: center;
   border: 1px solid rgba(255,255,255,.08);
 }
+/* The plain backing goes under a built-in nameplate's own colors. As a normal rule it came later in this file than
+   the first six (Blazing to Cybergrid) and hid their colors in the Shop (v4.71). */
+:where(.sic-nameplate-preview) { background: var(--bg-tertiary); }
 .sic-nameplate-preview span { position: relative; z-index: 1; color: #fff; font-weight: 700; font-size: 13px; }
+/* Round corners on every nameplate in every browser (v4.71, request 81). Safari can draw an animated layer, like the
+   built-in nameplates' glows and stars, with square corners inside a rounded box unless that box starts its own
+   stacking context. So each box that holds a nameplate isolates, and the art and its full-size layers round
+   themselves too. */
+.dm-row.has-nameplate, .profile-name-block, .mup-plate, .sic-nameplate-preview { isolation: isolate; }
+.dm-row-nameplate-bg, .profile-nameplate-bg, .mup-plate-art { border-radius: inherit; overflow: hidden; }
+.nameplate-blazing::before, .nameplate-starfall::before, .nameplate-ocean::before, .nameplate-aurora::before,
+.nameplate-blossom::before, .nameplate-galaxy::before, .nameplate-shimmer::after { border-radius: inherit; }
 
 /* ============ PROFILE EFFECTS ============
    Falling/rising particles animate `top` (a % of the card) rather than

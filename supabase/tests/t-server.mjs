@@ -135,7 +135,9 @@ x = await call('admin', 'casino', { token: nova, game: 'coinflip', bet: 100, sid
 check('51: the infinity sign can bet (it said "not enough Orbs" after the move)', x.status === 200 && (x.result === 'h' || x.result === 't'), x);
 check('...and stays infinite, win or lose', (await doc('users/Nova')).orbs === Infinity, await doc('users/Nova'));
 x = await call('admin', 'egg', { token: nova, egg: 'equilibrium' });
-check('the new eggs are known to the server (81 in all since v4.70)', x.ok && x.total === 81, x);
+check('the new eggs are known to the server (84 in all since v4.71)', x.ok && x.total === 84, x);
+x = await call('admin', 'egg', { token: nova, egg: 'matchingset' });
+check('v4.71: Matching Set (a nameplate and a theme with the same name) is one of them', x.ok && x.total === 84, x);
 
 section('v4.67 on the server: Provably Fair, bets without a top limit, referrals');
 const fairJs = await import(new URL('../../casino-fair.js', import.meta.url).href);

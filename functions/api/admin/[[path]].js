@@ -613,6 +613,7 @@ const EGGS = {
   sixseven: 'e', gardentour: 'm', maxedout: 'h',                          // v4.68: Orb gifts, garden visits, the daily game limit
   longwinded: 'h', midnightevent: 'm', secretclub: 'm', firsttrade: 'e',  // v4.69: voice messages, events, private threads, trades
   keepout: 'e', glassphone: 'm', forever: 'm',                            // v4.70: a private garden, glass on a phone, forever Premium
+  smoothplate: 'e', freshpaint: 'm', matchingset: 'm',                    // v4.71: a built-in nameplate, 3 themes, a matching set
   xyzzy: ['m', '7d76c6d11ed06a3e671afa826c4f88f4e8227fdef446cbd576a3428967e45af9'],
   codeb1: ['e', '4f3cd88dc035fd4d04dda074fd7ced1722751824644c1a27a700dfd5d06ba19e'],
   codeb2: ['e', 'c886bb737cc711b2dfcb069ea8179dc430661db13a38113ddf718b9098f653c7'],

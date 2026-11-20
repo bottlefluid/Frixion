@@ -968,31 +968,31 @@ function profileFrameById(id) { return PROFILE_FRAMES.find(d => d.id === id) || 
 // the only approach that scales without hand-writing a CSS class per theme.
 const SHOP_THEMES = [
   { id: 'plasma', name: 'Plasma', desc: 'Electric violet — a rare, high-value theme.', price: 2500, bg: ['#0a0018', '#160a32', '#271152'], accent: '#b06bff', accent2: '#e3c9ff' },
-  { id: 'disco', name: 'Disco', desc: 'Hot pink and cyan on deep purple.', price: 200, bg: ['#0a001a', '#00001a', '#11052b'], accent: '#ff00ff', accent2: '#00ffff', anim: 'hue', featured: true },
+  { id: 'disco', name: 'Disco', desc: 'Hot pink and cyan on deep purple.', price: 200, bg: ['#110114', '#370a4d', '#014954'], accent: '#ff00ff', accent2: '#00ffff', anim: 'hue', featured: true },
   { id: 'ocean', name: 'Ocean Deep', desc: 'Deep blue underwater vibes.', price: 150, bg: ['#000e1a', '#001a33', '#06314f'], accent: '#00aaff', accent2: '#33ccff' },
-  { id: 'synthwave', name: 'Synthwave', desc: 'Retro purple neon nights.', price: 200, bg: ['#0d0020', '#1a0030', '#27094a'], accent: '#ff00cc', accent2: '#cc00ff' },
-  { id: 'midnight', name: 'Midnight Blue', desc: 'Dark navy with soft purple.', price: 150, bg: ['#05050f', '#080820', '#12123a'], accent: '#6666ff', accent2: '#8888ff' },
-  { id: 'toxic', name: 'Toxic', desc: 'Radioactive green on black.', price: 250, bg: ['#001400', '#001a00', '#063306'], accent: '#00ff44', accent2: '#33ff66' },
-  { id: 'sunset', name: 'Sunset', desc: 'Orange and deep purple dusk.', price: 200, bg: ['#120005', '#1a0010', '#2a0a2a'], accent: '#ff6600', accent2: '#ff9900' },
+  { id: 'synthwave', name: 'Synthwave', desc: 'Retro purple neon nights.', price: 200, bg: ['#030116', '#001b52', '#800062'], accent: '#ff00cc', accent2: '#cc00ff' },
+  { id: 'midnight', name: 'Midnight Blue', desc: 'Dark navy with soft purple.', price: 150, bg: ['#05050f', '#06091f', '#001832'], accent: '#6666ff', accent2: '#8888ff' },
+  { id: 'toxic', name: 'Toxic', desc: 'Radioactive green on black.', price: 250, bg: ['#050d00', '#0e1b05', '#3d6409'], accent: '#00ff44', accent2: '#33ff66' },
+  { id: 'sunset', name: 'Sunset', desc: 'Orange and deep purple dusk.', price: 200, bg: ['#170514', '#390b39', '#8b3409'], accent: '#ff6600', accent2: '#ff9900' },
   { id: 'blood', name: 'Blood', desc: 'Deep crimson red on black.', price: 150, bg: ['#0d0000', '#1a0000', '#350606'], accent: '#ff0000', accent2: '#ff3333' },
-  { id: 'arctic', name: 'Arctic', desc: 'Cold icy blue tones.', price: 150, bg: ['#050d14', '#0a1a24', '#143047'], accent: '#aaddff', accent2: '#cceeff' },
-  { id: 'lava', name: 'Lava', desc: 'Molten orange lava flow.', price: 200, bg: ['#0d0800', '#1a0e00', '#33200a'], accent: '#ff6600', accent2: '#ff8800' },
-  { id: 'galaxy', name: 'Galaxy', desc: 'Deep space purple nebula.', price: 250, bg: ['#02000f', '#05001a', '#11063a'], accent: '#9933ff', accent2: '#bb55ff' },
+  { id: 'arctic', name: 'Arctic', desc: 'Cold icy blue tones.', price: 150, bg: ['#000e17', '#002030', '#005554'], accent: '#aaddff', accent2: '#cceeff' },
+  { id: 'lava', name: 'Lava', desc: 'Molten orange lava flow.', price: 200, bg: ['#0f0a07', '#1d1613', '#842500'], accent: '#ff6600', accent2: '#ff8800' },
+  { id: 'galaxy', name: 'Galaxy', desc: 'Deep space purple nebula.', price: 250, bg: ['#001019', '#001c2b', '#591460'], accent: '#9933ff', accent2: '#bb55ff' },
   { id: 'forest', name: 'Forest', desc: 'Olive woodland and moss.', price: 150, bg: ['#0b1408', '#17230f', '#2e3d1b'], accent: '#7cb342', accent2: '#9ccc65' },
   { id: 'cherry', name: 'Cherry', desc: 'Deep cherry red.', price: 200, bg: ['#1a0204', '#2e0508', '#5a0c14'], accent: '#e11d48', accent2: '#fb7185' },
   { id: 'gold', name: 'Gold', desc: 'Luxurious gold on black.', price: 300, bg: ['#0d0900', '#1a1200', '#352706'], accent: '#ccaa00', accent2: '#ffcc00' },
   { id: 'matrix', name: 'Matrix', desc: 'Green code on black.', price: 200, bg: ['#000800', '#001000', '#062806'], accent: '#00ff00', accent2: '#33ff33' },
-  { id: 'copper', name: 'Copper', desc: 'Warm metallic copper tones.', price: 175, bg: ['#0d0700', '#1a0e00', '#33200a'], accent: '#cc6622', accent2: '#ee8844' },
+  { id: 'copper', name: 'Copper', desc: 'Warm metallic copper tones.', price: 175, bg: ['#120903', '#28180b', '#6b3b10'], accent: '#cc6622', accent2: '#ee8844' },
   { id: 'rose', name: 'Rose', desc: 'Dusty rose and mauve.', price: 175, bg: ['#1a0e12', '#2a161d', '#4a2834'], accent: '#e8a0b4', accent2: '#f4c2d0' },
-  { id: 'ice', name: 'Ice', desc: 'Crisp pale ice blue.', price: 150, bg: ['#050f18', '#081a28', '#123347'], accent: '#88ddff', accent2: '#aaeeff' },
-  { id: 'ash', name: 'Ash', desc: 'Minimal grey on black.', price: 100, bg: ['#0a0a0a', '#111111', '#262626'], accent: '#aaaaaa', accent2: '#cccccc' },
-  { id: 'neonpink', name: 'Neon Pink', desc: 'Electric hot pink neon.', price: 225, bg: ['#0d000d', '#150015', '#310531'], accent: '#ff00aa', accent2: '#ff33cc' },
-  { id: 'neonblue', name: 'Neon Blue', desc: 'Electric cobalt neon.', price: 225, bg: ['#00050f', '#000a1a', '#06183a'], accent: '#0066ff', accent2: '#2288ff' },
-  { id: 'amber', name: 'Amber', desc: 'Warm amber orange glow.', price: 175, bg: ['#0d0700', '#180e00', '#33240a'], accent: '#ff9900', accent2: '#ffaa22' },
-  { id: 'wine', name: 'Wine', desc: 'Deep crimson wine red.', price: 175, bg: ['#0d0005', '#18000a', '#33061f'], accent: '#990033', accent2: '#cc0044' },
-  { id: 'coffee', name: 'Coffee', desc: 'Rich warm brown tones.', price: 125, bg: ['#0d0800', '#1a1000', '#332306'], accent: '#aa7744', accent2: '#cc9966' },
-  { id: 'storm', name: 'Storm', desc: 'Dark stormy blue grey.', price: 175, bg: ['#050810', '#080d18', '#142036'], accent: '#4466aa', accent2: '#5577cc' },
-  { id: 'fire', name: 'Fire', desc: 'Intense fire red and orange.', price: 200, bg: ['#100000', '#1a0400', '#331206'], accent: '#ff3300', accent2: '#ff5500' },
+  { id: 'ice', name: 'Ice', desc: 'Crisp pale ice blue.', price: 150, bg: ['#051014', '#10242c', '#466177'], accent: '#88ddff', accent2: '#aaeeff' },
+  { id: 'ash', name: 'Ash', desc: 'Minimal grey on black.', price: 100, bg: ['#0e0e0e', '#1b1b1b', '#393939'], accent: '#aaaaaa', accent2: '#cccccc' },
+  { id: 'neonpink', name: 'Neon Pink', desc: 'Electric hot pink neon.', price: 225, bg: ['#1c0611', '#340720', '#810060'], accent: '#ff00aa', accent2: '#ff33cc' },
+  { id: 'neonblue', name: 'Neon Blue', desc: 'Electric cobalt neon.', price: 225, bg: ['#060619', '#000f35', '#003989'], accent: '#0066ff', accent2: '#2288ff' },
+  { id: 'amber', name: 'Amber', desc: 'Warm amber orange glow.', price: 175, bg: ['#100a01', '#251a03', '#654600'], accent: '#ff9900', accent2: '#ffaa22' },
+  { id: 'wine', name: 'Wine', desc: 'Deep crimson wine red.', price: 175, bg: ['#18050d', '#300d1c', '#4b0930'], accent: '#990033', accent2: '#cc0044' },
+  { id: 'coffee', name: 'Coffee', desc: 'Rich warm brown tones.', price: 125, bg: ['#100a05', '#241912', '#4e3c2e'], accent: '#aa7744', accent2: '#cc9966' },
+  { id: 'storm', name: 'Storm', desc: 'Dark stormy blue grey.', price: 175, bg: ['#00040e', '#151c28', '#394259'], accent: '#4466aa', accent2: '#5577cc' },
+  { id: 'fire', name: 'Fire', desc: 'Intense fire red and orange.', price: 200, bg: ['#1a0500', '#460c00', '#944b00'], accent: '#ff3300', accent2: '#ff5500' },
   { id: 'void', name: 'Void', desc: 'Pure black with white.', price: 150, bg: ['#000000', '#030303', '#161616'], accent: '#ffffff', accent2: '#dddddd' },
   { id: 'sakura', name: 'Sakura', desc: 'Cherry blossom pink on lavender.', price: 200, bg: ['#1c1220', '#2d1a33', '#55305e'], accent: '#ffb7d5', accent2: '#ffd6e8' },
   { id: 'rust', name: 'Rust', desc: 'Dark burnt rust orange.', price: 150, bg: ['#0d0500', '#1a0a00', '#331806'], accent: '#cc4400', accent2: '#ee5500' },
@@ -1000,21 +1000,21 @@ const SHOP_THEMES = [
   { id: 'emerald', name: 'Emerald', desc: 'Polished emerald teal.', price: 225, bg: ['#011713', '#04261f', '#0b4a3c'], accent: '#10b981', accent2: '#34d399' },
   { id: 'violet', name: 'Violet', desc: 'Deep violet purple.', price: 200, bg: ['#060010', '#0a0018', '#1e0639'], accent: '#8800ff', accent2: '#aa33ff' },
   { id: 'steel', name: 'Steel', desc: 'Cool metallic steel blue.', price: 175, bg: ['#060a0d', '#0a1018', '#16242f'], accent: '#4488aa', accent2: '#55aacc' },
-  { id: 'coral', name: 'Coral', desc: 'Warm coral red-orange.', price: 175, bg: ['#0d0500', '#1a0800', '#331606'], accent: '#ff5533', accent2: '#ff7755' },
-  { id: 'mint', name: 'Mint', desc: 'Soft aqua mint.', price: 150, bg: ['#0f1f1c', '#163029', '#2a5248'], accent: '#7fffd4', accent2: '#a7ffe4' },
-  { id: 'lavender', name: 'Lavender', desc: 'Soft dreamy lavender.', price: 150, bg: ['#080010', '#0d0018', '#200639'], accent: '#bb88ff', accent2: '#ccaaff' },
-  { id: 'cyber', name: 'Cyber', desc: 'Cyberpunk yellow-green.', price: 250, bg: ['#000d00', '#001100', '#063306'], accent: '#ddff00', accent2: '#eeff33' },
-  { id: 'bloodmoon', name: 'Blood Moon', desc: 'Dark crimson lunar glow.', price: 275, bg: ['#080000', '#140400', '#331206'], accent: '#ff4400', accent2: '#ff6622' },
-  { id: 'neonorange', name: 'Neon Orange', desc: 'Blazing electric orange.', price: 225, bg: ['#0d0500', '#150800', '#331806'], accent: '#ff6600', accent2: '#ff8800' },
-  { id: 'deepsea', name: 'Deep Sea', desc: 'Abyssal dark ocean blue.', price: 200, bg: ['#000008', '#000012', '#0a0a3a'], accent: '#0033aa', accent2: '#0044cc' },
-  { id: 'solar', name: 'Solar', desc: 'Brilliant solar gold.', price: 225, bg: ['#0d0900', '#1a1200', '#352706'], accent: '#ffcc00', accent2: '#ffdd33' },
-  { id: 'terminal', name: 'Terminal', desc: 'Old school CRT green.', price: 175, bg: ['#000800', '#000d00', '#063306'], accent: '#00bb00', accent2: '#00dd00' },
-  { id: 'purplerain', name: 'Purple Rain', desc: 'Deep purple rainstorm.', price: 225, bg: ['#050010', '#0a0020', '#1e063a'], accent: '#7700cc', accent2: '#9922ee' },
-  { id: 'holographic', name: 'Holographic', desc: 'Pink and cyan holo shine.', price: 400, bg: ['#050508', '#08080d', '#16161e'], accent: '#ff66ff', accent2: '#66ffff', anim: 'holo', featured: true },
-  { id: 'obsidian', name: 'Obsidian', desc: 'Black volcanic glass.', price: 200, bg: ['#000000', '#050508', '#16161e'], accent: '#6644ff', accent2: '#8866ff' },
+  { id: 'coral', name: 'Coral', desc: 'Warm coral red-orange.', price: 175, bg: ['#150803', '#2c150e', '#904b3a'], accent: '#ff5533', accent2: '#ff7755' },
+  { id: 'mint', name: 'Mint', desc: 'Soft aqua mint.', price: 150, bg: ['#05100d', '#162923', '#2b6955'], accent: '#7fffd4', accent2: '#a7ffe4' },
+  { id: 'lavender', name: 'Lavender', desc: 'Soft dreamy lavender.', price: 150, bg: ['#080113', '#241e37', '#534e85'], accent: '#bb88ff', accent2: '#ccaaff' },
+  { id: 'cyber', name: 'Cyber', desc: 'Cyberpunk yellow-green.', price: 250, bg: ['#080518', '#13183b', '#3b5300'], accent: '#ddff00', accent2: '#eeff33' },
+  { id: 'bloodmoon', name: 'Blood Moon', desc: 'Dark crimson lunar glow.', price: 275, bg: ['#030b17', '#001326', '#590000'], accent: '#ff4400', accent2: '#ff6622' },
+  { id: 'neonorange', name: 'Neon Orange', desc: 'Blazing electric orange.', price: 225, bg: ['#011018', '#001c2a', '#7a3900'], accent: '#ff6600', accent2: '#ff8800' },
+  { id: 'deepsea', name: 'Deep Sea', desc: 'Abyssal dark ocean blue.', price: 200, bg: ['#000507', '#001115', '#002d34'], accent: '#0033aa', accent2: '#0044cc' },
+  { id: 'solar', name: 'Solar', desc: 'Brilliant solar gold.', price: 225, bg: ['#170700', '#371600', '#7d5f00'], accent: '#ffcc00', accent2: '#ffdd33' },
+  { id: 'terminal', name: 'Terminal', desc: 'Old school CRT green.', price: 175, bg: ['#060d07', '#0a190c', '#2b5939'], accent: '#00bb00', accent2: '#00dd00' },
+  { id: 'purplerain', name: 'Purple Rain', desc: 'Deep purple rainstorm.', price: 225, bg: ['#100c14', '#1e1927', '#3e354f'], accent: '#7700cc', accent2: '#9922ee' },
+  { id: 'holographic', name: 'Holographic', desc: 'Pink and cyan holo shine.', price: 400, bg: ['#16030c', '#3b1f2c', '#0d5958'], accent: '#ff66ff', accent2: '#66ffff', anim: 'holo', featured: true },
+  { id: 'obsidian', name: 'Obsidian', desc: 'Black volcanic glass.', price: 200, bg: ['#040307', '#09060f', '#1b1737'], accent: '#6644ff', accent2: '#8866ff' },
   { id: 'aurora', name: 'Aurora', desc: 'Northern lights: teal into purple.', price: 300, bg: ['#06071a', '#0b2a2a', '#3a1450'], accent: '#2de2b4', accent2: '#b16cff', anim: 'aurora', featured: true },
-  { id: 'candy', name: 'Candy', desc: 'Sweet neon candy pink.', price: 200, bg: ['#0d0010', '#150018', '#310539'], accent: '#ff44cc', accent2: '#ff66dd' },
-  { id: 'infrared', name: 'Infrared', desc: 'Deep infrared heat red.', price: 225, bg: ['#080000', '#110000', '#330606'], accent: '#ff0055', accent2: '#ff2266' },
+  { id: 'candy', name: 'Candy', desc: 'Cotton candy pink into blue.', price: 200, bg: ['#17050f', '#400829', '#1b4878'], accent: '#ff44cc', accent2: '#ff66dd' },
+  { id: 'infrared', name: 'Infrared', desc: 'Deep infrared heat red.', price: 225, bg: ['#090015', '#201640', '#920128'], accent: '#ff0055', accent2: '#ff2266' },
 ];
 let customThemes = [];
 let customThemesLoaded = false;
@@ -1067,6 +1067,14 @@ function hexToRgbTuple(hex) {
 function hexToRgbaStr(hex, a) { const [r, g, b] = hexToRgbTuple(hex); return `rgba(${r},${g},${b},${a})`; }
 function lightenHex(hex, amt) { const [r, g, b] = hexToRgbTuple(hex); const f = v => Math.min(255, v + amt).toString(16).padStart(2, '0'); return `#${f(r)}${f(g)}${f(b)}`; }
 function darkenHex(hex, amt) { const [r, g, b] = hexToRgbTuple(hex); const f = v => Math.max(0, v - amt).toString(16).padStart(2, '0'); return `#${f(r)}${f(g)}${f(b)}`; }
+// The same color made no brighter than maxY (relative brightness, 0 to 1). Some themes' last color is bright since v4.71
+// (request 82), and text boxes are made from it, so this keeps them as dark as the brightest ones were before.
+function dimHexTo(hex, maxY) {
+  const lin = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const out = v => Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055)).toString(16).padStart(2, '0');
+  const c = hexToRgbTuple(hex).map(lin), y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  return y <= maxY ? hex : '#' + c.map(v => out(v * maxY / y)).join('');
+}
 
 // Applies (or clears) a Shop theme on top of whatever Settings > Themes
 // preference is active — Shop themes are a separate, independent layer,
@@ -1119,7 +1127,7 @@ function applyShopTheme(themeId) {
   body.style.setProperty('--bg-tertiary', hexToRgbaStr(c1, 0.62));
   body.style.setProperty('--bg-floating', hexToRgbaStr(c1, 0.75));
   body.style.setProperty('--bg-primary', hexToRgbaStr(c2, 0.62));
-  body.style.setProperty('--bg-input', hexToRgbaStr(lightenHex(c3, 12), 0.8));
+  body.style.setProperty('--bg-input', hexToRgbaStr(lightenHex(dimHexTo(c3, 0.07), 12), 0.8));
   body.style.setProperty('--accent', t.accent);
   body.style.setProperty('--accent-hover', darkenHex(t.accent, 24));
   body.style.setProperty('--accent-soft', hexToRgbaStr(t.accent, 0.15));
@@ -1177,6 +1185,13 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.71', date: '2026-11-20', title: 'Round nameplates and themes that don\'t look alike',
+    notes: [
+      'Frixion\'s own nameplates keep their round corners on every device now. Safari could draw the animated ones with square corners.',
+      'The Shop shows the real colors of the Blazing, Starfall, Aurora, Cybergrid, Ocean and Blossom nameplates. They used to show up gray there.',
+      '32 Shop themes have new colors, so no two look the same any more. Each keeps its name and color family: Sunset fades from purple into orange, Blood Moon from a night sky into red, Candy from pink into blue, and so on. Text boxes stay as dark as before.',
+      '3 new easter eggs. That makes 84.',
+    ] },
   { v: '4.70', date: '2026-11-19', title: 'Faster opening, a private garden, and phone fixes',
     notes: [
       'Frixion opens faster: your browser keeps its files between visits instead of checking each one again every time, and it gets in touch with the database and sign-in sooner. If it ever takes long anyway, it says so after a few seconds and offers to reload.',
@@ -15177,7 +15192,22 @@ async function equipShopItem(key, id) {
     await db.collection('users').doc(myUid).update(change);
     toast(id ? 'Equipped.' : 'Unequipped.');
     refreshOpenShopPanes();
+    if (id) shopEquipEggs(key, id);   // (easter eggs)
   } catch (e) { toast('Could not update.', 'error'); }
+}
+// Easter eggs for putting things on (v4.71): one of Frixion's own nameplates, 3 different bought themes within 2
+// minutes, and a nameplate and a theme with the same name (Ocean, Aurora, Sunset, Galaxy or Lava).
+let freshPaintLog = [];
+function shopEquipEggs(key, id) {
+  const builtinPlate = x => NAMEPLATES.some(n => n.id === x);
+  if (key === 'nameplates' && builtinPlate(id)) eggFind('smoothplate');
+  if (key === 'themes') {
+    const now = Date.now();
+    freshPaintLog = freshPaintLog.filter(x => now - x.at < 120000 && x.id !== id).concat({ id, at: now });
+    if (freshPaintLog.length >= 3) eggFind('freshpaint');
+  }
+  const plate = key === 'nameplates' ? id : myProfile.equippedNameplate, theme = key === 'themes' ? id : myProfile.equippedTheme;
+  if (plate && plate === theme && builtinPlate(plate) && SHOP_THEMES.some(t => t.id === theme)) eggFind('matchingset');
 }
 
 function openShop() {
@@ -21040,6 +21070,10 @@ const EGGS = [
   { id: 'keepout', t: 'e', name: 'Keep Out', how: 'Turn off "Let people visit my garden" in Settings, Privacy.', hint: 'Some gardens have a fence.' },
   { id: 'glassphone', t: 'm', name: 'Glass Phone', how: 'Turn on Liquid glass on a phone.', hint: 'Glass looks better in your hand.' },
   { id: 'forever', t: 'm', name: 'To Infinity', how: 'Open the profile of someone whose Premium never ends.', hint: 'Some Premium never runs out.' },
+  // v4.71
+  { id: 'smoothplate', t: 'e', name: 'Smooth Edges', how: 'Equip one of Frixion\'s own nameplates (not a staff-made one) in the Shop.', hint: 'Round corners suit everyone.' },
+  { id: 'freshpaint', t: 'm', name: 'Fresh Paint', how: 'Equip 3 different bought themes within 2 minutes.', hint: 'Try a few coats before the paint dries.' },
+  { id: 'matchingset', t: 'm', name: 'Matching Set', how: 'Wear a nameplate and a theme with the same name: Ocean, Aurora, Sunset, Galaxy or Lava.', hint: 'Some nameplates and themes share a name.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -21278,6 +21312,9 @@ function eggEffect(id, first) {
     case 'keepout': eggToast('Keep out.', 'Your garden, your rules.'); return;
     case 'glassphone': eggToast('Glass phone.', 'Don\'t drop it.'); return;
     case 'forever': eggToast('To infinity.', 'And beyond.'); return;
+    case 'smoothplate': eggToast('Smooth edges.', 'Not a sharp corner in sight.'); return;
+    case 'freshpaint': eggToast('Fresh paint.', 'Mind the wet walls.'); return;
+    case 'matchingset': eggToast('Matching set.', 'You and your name, dressed alike.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
@@ -21399,6 +21436,7 @@ const EGG_GROUPS = [
   ['Gifts, gardens and game Orbs (v4.68)', ['sixseven', 'gardentour', 'maxedout']],
   ['Voice, events, threads and trades (v4.69)', ['longwinded', 'midnightevent', 'secretclub', 'firsttrade']],
   ['Privacy, glass and Premium (v4.70)', ['keepout', 'glassphone', 'forever']],
+  ['Nameplates and themes (v4.71)', ['smoothplate', 'freshpaint', 'matchingset']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {
