@@ -1261,6 +1261,7 @@ const UPDATES = [
   { v: '4.73', date: '2026-11-22', title: 'Owner Game Bot and arcade fixes',
     notes: [
       'Games, for the Owner: a BOT toggle in the game bar that auto-plays all 19 mini-games at top speed and accuracy (from Liquid Dash, Snake, Blox Merge and Block Blast to Connect Four, Mouse Maze, Cookie Clicker and Grow a Garden).',
+      'Turning BOT on locks out manual controls until you turn it off, and Snake, Block Blast, Brick Breaker, Blox Merge and Mouse Maze bots were hardened to stay immortal unless mathematically impossible.',
       'Fixed Aim Trainer\'s end-of-round reward screen and Orb Sweeper\'s win message.',
       '3 new easter eggs. That makes 90.',
     ] },
@@ -19506,7 +19507,7 @@ function gdInit(){
   gdCleanupListeners();
   gdKeyHandler=function(e){ if((e.code==='Space'||e.key===' '||e.key==='ArrowUp'||e.key==='Up')&&currentGameId==='geodash'){ e.preventDefault(); if(e.repeat){ if(gdState) gdState.holding=true; } else gdDown(); } };
   gdKeyUpHandler=function(e){ if((e.code==='Space'||e.key===' '||e.key==='ArrowUp'||e.key==='Up')&&gdState) gdState.holding=false; };
-  gdPointerUp=function(){ if(gdState) gdState.holding=false; };
+  gdPointerUp=function(){ if(gdState && !gameBotActive('geodash')) gdState.holding=false; };
   document.addEventListener('keydown', gdKeyHandler);
   document.addEventListener('keyup', gdKeyUpHandler);
   window.addEventListener('pointerup', gdPointerUp);
@@ -19703,7 +19704,9 @@ function renderSnake(){
 function snakeInit(){
   const cv=document.getElementById('sn-canvas'); if(!cv) return;
   const W=Math.max(300,(cv.parentElement&&cv.parentElement.clientWidth)||640);
-  const cell=Math.max(16, Math.floor(W/26)), cols=Math.floor(W/cell), rows=Math.max(12, Math.floor(340/cell));
+  const cell=Math.max(16, Math.floor(W/26)), cols=Math.floor(W/cell);
+  let rows=Math.max(12, Math.floor(340/cell));
+  if((cols&1)&&(rows&1)) rows++;
   cv.width=cols*cell; cv.height=rows*cell;
   snakeState={ cv, ctx:cv.getContext('2d'), cell, cols, rows, body:[], dir:{x:1,y:0}, nextDir:{x:1,y:0}, food:null, eaten:0, alive:false, started:false, colors:snakeColors(), touch:null, prev:null, stepAt:0, stepMs:130, raf:0, fx:[], eatAt:0, foodAt:0, dyingAt:0 };
   if(snakeKeyHandler) document.removeEventListener('keydown', snakeKeyHandler);
@@ -19716,13 +19719,21 @@ function snakeInit(){
   cv.onpointerup=function(e){ if(!snakeState||!snakeState.touch) return; const dx=e.clientX-snakeState.touch.x, dy=e.clientY-snakeState.touch.y; snakeState.touch=null; if(Math.abs(dx)<12&&Math.abs(dy)<12) return; const d=Math.abs(dx)>Math.abs(dy)?{x:dx>0?1:-1,y:0}:{x:0,y:dy>0?1:-1}; const cur=snakeState.dir; if(d.x===-cur.x&&d.y===-cur.y) return; snakeState.nextDir=d; };
   snakeDraw();
 }
-function snakeSpawnFood(){ const s=snakeState; let p, tries=0; do{ p={x:Math.floor(Math.random()*s.cols), y:Math.floor(Math.random()*s.rows)}; tries++; }while(tries<300 && s.body.some(b=>b.x===p.x&&b.y===p.y)); s.food=p; s.foodAt=performance.now(); }
+function snakeSpawnFood(){
+  const s=snakeState;
+  const occ=new Uint8Array(s.cols*s.rows);
+  for(let i=0;i<s.body.length;i++) occ[s.body[i].y*s.cols+s.body[i].x]=1;
+  const empty=[];
+  for(let y=0;y<s.rows;y++) for(let x=0;x<s.cols;x++) if(!occ[y*s.cols+x]) empty.push({x,y});
+  s.food=empty.length?empty[Math.floor(Math.random()*empty.length)]:null;
+  s.foodAt=performance.now();
+}
 function snakeStart(){
   if(!snakeState) snakeInit(); const s=snakeState;
   const ov=document.getElementById('sn-overlay'); if(ov) ov.style.display='none';
   const cx=Math.floor(s.cols/2), cy=Math.floor(s.rows/2);
   s.body=[{x:cx,y:cy},{x:cx-1,y:cy},{x:cx-2,y:cy}]; s.dir={x:1,y:0}; s.nextDir={x:1,y:0}; s.eaten=0; s.alive=true; s.started=true; s.revive=false; s.colors=snakeColors();
-  s.prev=s.body.map(b=>({x:b.x,y:b.y})); s.stepMs=gameBotActive('snake')?40:130; s.stepAt=performance.now(); s.fx=[]; s.dyingAt=0; s.eatAt=0;
+  s.prev=s.body.map(b=>({x:b.x,y:b.y})); s.stepMs=gameBotActive('snake')?25:130; s.stepAt=performance.now(); s.fx=[]; s.dyingAt=0; s.eatAt=0;
   snakeSpawnFood();
   const e=document.getElementById('sn-eaten'); if(e) e.textContent='0';
   if(snakeTimer) clearInterval(snakeTimer);
@@ -19743,7 +19754,10 @@ function snakeStep(){
   if(gameBotActive('snake')) gameBotSnake(s);
   s.dir=s.nextDir;
   const head={x:s.body[0].x+s.dir.x, y:s.body[0].y+s.dir.y};
-  if(head.x<0||head.y<0||head.x>=s.cols||head.y>=s.rows || s.body.some(b=>b.x===head.x&&b.y===head.y)){
+  const willEat=!!(s.food && head.x===s.food.x && head.y===s.food.y);
+  const checkLen=willEat ? s.body.length : Math.max(0, s.body.length-1);
+  let hitSelf=false; for(let i=0;i<checkLen;i++){ if(s.body[i].x===head.x&&s.body[i].y===head.y){ hitSelf=true; break; } }
+  if(head.x<0||head.y<0||head.x>=s.cols||head.y>=s.rows || hitSelf){
     if(s.revive){ s.revive=false; const cx=Math.floor(s.cols/2), cy=Math.floor(s.rows/2); s.body=[{x:cx,y:cy},{x:cx-1,y:cy},{x:cx-2,y:cy}]; s.dir={x:1,y:0}; s.nextDir={x:1,y:0}; s.prev=s.body.map(b=>({x:b.x,y:b.y})); s.stepAt=performance.now(); snakeSpawnFood(); showToast('Extra life used!'); return; }
     s.dyingAt=performance.now(); snakeDie(); s.raf=requestAnimationFrame(snakeLoop); return;
   }
@@ -19936,7 +19950,7 @@ function tsStart(){
   const ov=document.getElementById('ts-overlay'); if(ov) ov.style.display='none';
   s.words.forEach(w=>w.el.remove()); s.words=[]; s.lives=3; s.cleared=0; s.speed=1.1; s.spawnT=15; s.running=true;
   tsUpdateHud();
-  const inp=document.getElementById('ts-input'); if(inp){ inp.value=''; inp.focus(); }
+  const inp=document.getElementById('ts-input'); if(inp){ inp.value=''; if(!gameBotActive('typing')) inp.focus(); }
   tsLoop();
 }
 function tsSpawn(){
@@ -20688,12 +20702,12 @@ function bkStart(){
 function bkLoop(){
   const s=bkState; if(!s||!s.running) return;
   if(currentGameId!=='brick'||!document.body.contains(s.cv)){ bkCleanup(); return; }
-  const b=s.ball; b.x+=b.vx; b.y+=b.vy;
+  const b=s.ball, prevY=b.y; b.x+=b.vx; b.y+=b.vy;
   if(b.x-b.r<0){ b.x=b.r; b.vx=Math.abs(b.vx); } else if(b.x+b.r>s.W){ b.x=s.W-b.r; b.vx=-Math.abs(b.vx); }
   if(b.y-b.r<0){ b.y=b.r; b.vy=Math.abs(b.vy); }
   if(gameBotActive('brick')) gameBotBrick(s);
   const p=s.paddle;
-  if(b.vy>0 && b.y+b.r>=s.H-22 && b.y+b.r<=s.H-6 && b.x>=p.x && b.x<=p.x+p.w){ b.vy=-Math.abs(b.vy); b.vx=((b.x-(p.x+p.w/2))/(p.w/2))*4.4; }
+  if(b.vy>0 && prevY+b.r<=s.H-6 && b.y+b.r>=s.H-22 && b.x>=p.x && b.x<=p.x+p.w){ b.y=Math.min(b.y, s.H-22-b.r); b.vy=-Math.abs(b.vy); b.vx=((b.x-(p.x+p.w/2))/(p.w/2))*4.4; if(Math.abs(b.vx)<0.35) b.vx=(b.vx>=0?0.45:-0.45); }
   if(b.y-b.r>s.H){ s.lives--; bkUpdateHud(); if(s.lives<=0){ bkOver(); return; } bkResetBall(); }
   for(const br of s.bricks){ if(!br.alive) continue; if(b.x>br.x-b.r && b.x<br.x+br.w+b.r && b.y>br.y-b.r && b.y<br.y+br.h+b.r){ br.alive=false; s.score+=10; b.vy=-b.vy; bkUpdateHud(); break; } }
   if(s.bricks.every(br=>!br.alive)){ s.level++; bkBuildBricks(); bkResetBall(); s.ball.vx*=1.06; s.ball.vy*=1.06; }
@@ -20813,7 +20827,7 @@ async function xtraServe(){
   else { if(pEl) pEl.textContent='Generating problem...'; st.problem=await xtraGen(st.level); }
   if(currentGameId!=='xtramath'||!st.problem) return;
   if(pEl) pEl.textContent=st.problem.q;
-  if(aEl){ aEl.value=''; aEl.focus(); }
+  if(aEl){ aEl.value=''; if(!gameBotActive('xtramath')) aEl.focus(); }
   st.hintShown=false; st._botSubmitted=false;
   const fb=document.getElementById('xm-fb'); if(fb){ fb.textContent=''; fb.className='xm-fb'; }
   const lv=st.level;
@@ -20936,7 +20950,7 @@ const GAME_TILES = [
 // tb.mazeClr: one character per level, 1 for cleared) and its Orbs paid the same way.
 let mazeMod = null;
 function openMouseMaze(stage) {
-  if (!mazeMod) mazeMod = import('./games/maze/maze.js?v=3');
+  if (!mazeMod) mazeMod = import('./games/maze/maze.js?v=4');
   mazeMod.then(m => {
     if (currentGameId !== 'maze') return;
     m.open(stage, {
@@ -21017,19 +21031,60 @@ function closeGame() {
 //  accuracy. Strictly gated by realOwner() (owner: true, not Co-Owner,
 //  hidden in /sfmode). Stops cleanly on close, game switch or sign-out.
 // ============================================================
-let gameBotOn = false, gameBotTimer = 0, gameBotSilent = false;
+let gameBotOn = false, gameBotTimer = 0, gameBotSilent = false, gameBotLockInstalled = false;
 let gameBotLastBuy = 0, gameBotLastFloat = 0, gameBotLastSave = 0, gameBotLastStep = 0;
 const gameBotAllowed = () => !!(typeof realOwner === 'function' && realOwner());
 const gameBotActive = id => gameBotOn && gameBotAllowed() && (!id || currentGameId === id);
+const gameBotLocked = () => !!(gameBotOn && gameBotAllowed() && currentGameId && gameWin && !gameWin.hidden);
+
+// While BOT is on, block all human keyboard/text/focus input to the active game until BOT is turned off.
+// Keeps Escape (close game/overlay), the .fg-bar (BOT: ON toggle & close button), overlay chat (#ov-root)
+// and browser/system shortcuts (Ctrl/Meta/Alt or overlay keybind) working normally.
+function gameBotInstallLockout() {
+  if (gameBotLockInstalled) return;
+  gameBotLockInstalled = true;
+  const blockKey = e => {
+    if (!gameBotLocked()) return;
+    if (e.key === 'Escape') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const tgt = e.target instanceof Node ? e.target : null;
+    if (tgt && typeof ovOpen !== 'undefined' && ovOpen && typeof ovRoot !== 'undefined' && ovRoot && ovRoot.contains(tgt)) return;
+    if (typeof ovMatches === 'function' && typeof ovGetBind === 'function' && ovMatches(e, ovGetBind())) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  };
+  ['keydown', 'keyup', 'keypress'].forEach(ev => window.addEventListener(ev, blockKey, true));
+  const blockStageInput = e => {
+    if (!e.isTrusted || !gameBotLocked()) return;
+    const tgt = e.target instanceof Node ? e.target : null;
+    const stage = gameWin && gameWin.querySelector('#game-stage');
+    if (tgt && stage && stage.contains(tgt)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  };
+  ['beforeinput', 'input', 'paste'].forEach(ev => document.addEventListener(ev, blockStageInput, true));
+  document.addEventListener('focusin', e => {
+    if (!gameBotLocked()) return;
+    const tgt = e.target instanceof Node ? e.target : null;
+    const stage = gameWin && gameWin.querySelector('#game-stage');
+    if (tgt && stage && stage.contains(tgt) && typeof tgt.blur === 'function') tgt.blur();
+  }, true);
+}
 
 function gameBotSyncUI() {
   const allowed = gameBotAllowed();
   if (!allowed && gameBotOn) gameBotSet(false);
+  const locked = !!(allowed && gameBotOn);
+  const win = gameWin && gameWin.querySelector('.fg-window');
+  if (win) win.classList.toggle('bot-on', locked);
+  const stage = gameWin && gameWin.querySelector('#game-stage');
+  if (stage) stage.inert = locked;
   const btn = gameWin && gameWin.querySelector('#fg-bot-btn');
   if (!btn) return;
   btn.classList.toggle('hidden', !allowed);
-  btn.classList.toggle('on', allowed && gameBotOn);
-  btn.setAttribute('aria-pressed', allowed && gameBotOn ? 'true' : 'false');
+  btn.classList.toggle('on', locked);
+  btn.setAttribute('aria-pressed', locked ? 'true' : 'false');
   const lbl = btn.querySelector('.fg-bot-label');
   if (lbl) lbl.textContent = gameBotOn ? 'BOT: ON' : 'BOT: OFF';
 }
@@ -21041,11 +21096,17 @@ function gameBotSet(on) {
   if (on && !gameBotAllowed()) on = false;
   const was = gameBotOn;
   gameBotOn = !!on;
+  if (gameBotOn) {
+    gameBotInstallLockout();
+    if (gameWin && document.activeElement && gameWin.contains(document.activeElement) && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+  }
   if (gameBotTimer) { clearInterval(gameBotTimer); gameBotTimer = 0; }
   if (mazeMod) mazeMod.then(m => { if (typeof m.setBot === 'function') m.setBot(gameBotActive('maze')); }).catch(() => {});
   if (currentGameId === 'snake' && snakeState && snakeState.alive) {
     if (snakeTimer) clearInterval(snakeTimer);
-    snakeState.stepMs = gameBotOn ? 40 : Math.max(70, 130 - Math.floor(snakeState.eaten / 4) * 8);
+    snakeState.stepMs = gameBotOn ? 25 : Math.max(70, 130 - Math.floor(snakeState.eaten / 4) * 8);
     snakeTimer = setInterval(snakeStep, snakeState.stepMs);
   }
   if (gameBotOn) {
@@ -21113,15 +21174,68 @@ function gameBotGeoDash(s) {
   if (!surf || surf.side !== side) return;
   const dist = surf.x - cr;
   if (s.mode === 'spider') {
-    if (dist <= 10 * s.speed) gdDown();
+    const oppUnsafe = s.obstacles.some(o => o.type === 'surf' && o.side !== side && cr >= o.x - s.speed && cl <= o.x + o.w + s.speed);
+    if (dist <= 10 * s.speed && !oppUnsafe) gdDown();
     return;
   }
   const onSurface = (s.gravDir > 0 && s.y >= floor - 0.6) || (s.gravDir < 0 && s.y <= s.ceil + 0.6);
   if (onSurface && dist <= 22 * s.speed) gdDown();
 }
 
-// ---- Snake (BFS shortest path + virtual tail-reachability check + flood-fill fallback) ----
+// ---- Snake (Hamiltonian cycle + safe shortcutting + twisted mid-game recovery) ----
 const SN_DIRS = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
+function snBuildCycle(cols, rows) {
+  const pts = [];
+  if (rows % 2 === 0) {
+    for (let x = 0; x < cols; x++) pts.push({ x, y: 0 });
+    for (let y = 1; y < rows; y++) {
+      if (y % 2 === 1) { for (let x = cols - 1; x >= 1; x--) pts.push({ x, y }); }
+      else { for (let x = 1; x < cols; x++) pts.push({ x, y }); }
+    }
+    for (let y = rows - 1; y >= 1; y--) pts.push({ x: 0, y });
+  } else if (cols % 2 === 0) {
+    for (let y = 0; y < rows; y++) pts.push({ x: 0, y });
+    for (let x = 1; x < cols; x++) {
+      if (x % 2 === 1) { for (let y = rows - 1; y >= 1; y--) pts.push({ x, y }); }
+      else { for (let y = 1; y < rows; y++) pts.push({ x, y }); }
+    }
+    for (let x = cols - 1; x >= 1; x--) pts.push({ x, y: 0 });
+  } else {
+    for (let x = 0; x < cols; x++) pts.push({ x, y: 0 });
+    for (let y = 1; y <= rows - 3; y++) {
+      if (y % 2 === 1) { for (let x = cols - 1; x >= 1; x--) pts.push({ x, y }); }
+      else { for (let x = 1; x < cols; x++) pts.push({ x, y }); }
+    }
+    pts.push({ x: cols - 1, y: rows - 2 });
+    for (let x = cols - 2; x >= 1; x--) {
+      if ((cols - 2 - x) % 2 === 0) { pts.push({ x, y: rows - 2 }); pts.push({ x, y: rows - 1 }); }
+      else { pts.push({ x, y: rows - 1 }); pts.push({ x, y: rows - 2 }); }
+    }
+    for (let y = rows - 1; y >= 1; y--) pts.push({ x: 0, y });
+  }
+  const order = new Int32Array(cols * rows).fill(-1);
+  for (let i = 0; i < pts.length; i++) order[pts[i].y * cols + pts[i].x] = i;
+  return { cols, rows, order, cycle: pts, len: pts.length };
+}
+function snReverseCycle(cyc) {
+  cyc.cycle.reverse();
+  cyc.order.fill(-1);
+  for (let i = 0; i < cyc.len; i++) cyc.order[cyc.cycle[i].y * cyc.cols + cyc.cycle[i].x] = i;
+}
+function snIsMonotonic(body, cyc) {
+  const { cols, order: ord, len: N } = cyc;
+  const hi = ord[body[0].y * cols + body[0].x];
+  if (hi === -1) return false;
+  let prevBack = 0;
+  for (let i = 1; i < body.length; i++) {
+    const bi = ord[body[i].y * cols + body[i].x];
+    if (bi === -1) return false;
+    const back = (hi - bi + N) % N;
+    if (back <= prevBack) return false;
+    prevBack = back;
+  }
+  return true;
+}
 function snBfs(start, goal, blocked, cols, rows) {
   const gk = goal.y * cols + goal.x, sk = start.y * cols + start.x;
   if (sk === gk) return [];
@@ -21165,53 +21279,112 @@ function snFlood(start, blocked, cols, rows) {
 function gameBotSnake(s) {
   if (!s || !s.alive || !s.body.length) return;
   const { cols, rows, body, food } = s, head = body[0];
-  const blocked = new Uint8Array(cols * rows);
-  for (let i = 0; i < body.length - 1; i++) blocked[body[i].y * cols + body[i].x] = 1;
-  if (food) {
-    const path = snBfs(head, food, blocked, cols, rows);
-    if (path && path.length) {
-      let safe = body.length < 6 || body.length + 1 >= cols * rows;
-      if (!safe) {
-        const vBody = path.slice().reverse().concat(body).slice(0, body.length + 1);
-        const vb = new Uint8Array(cols * rows);
-        for (let i = 0; i < vBody.length - 1; i++) vb[vBody[i].y * cols + vBody[i].x] = 1;
-        safe = !!snBfs(vBody[0], vBody[vBody.length - 1], vb, cols, rows);
-      }
-      if (safe) {
-        const step = path[0];
-        if (!(step.x - head.x === -s.dir.x && step.y - head.y === -s.dir.y)) {
-          s.nextDir = { x: step.x - head.x, y: step.y - head.y };
+  if (!s._cyc || s._cyc.cols !== cols || s._cyc.rows !== rows) s._cyc = snBuildCycle(cols, rows);
+  const cyc = s._cyc, N = cyc.len, ord = cyc.order;
+  const cycDist = (a, b) => (b - a + N) % N;
+  const tail = body[body.length - 1];
+
+  if (!snIsMonotonic(body, cyc)) {
+    snReverseCycle(cyc);
+    if (!snIsMonotonic(body, cyc)) snReverseCycle(cyc);
+  }
+  const occ = new Uint8Array(cols * rows);
+  for (let i = 0; i < body.length - 1; i++) occ[body[i].y * cols + body[i].x] = 1;
+  const hi = ord[head.y * cols + head.x];
+
+  // Odd*odd off-cycle corner exit
+  if (hi === -1) {
+    const b1 = body.length > 1 ? ord[body[1].y * cols + body[1].x] : 0;
+    let best = null, bestStep = Infinity;
+    for (const d of SN_DIRS) {
+      if (d.x === -s.dir.x && d.y === -s.dir.y) continue;
+      const nx = head.x + d.x, ny = head.y + d.y;
+      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+      const nk = ny * cols + nx;
+      const eating = food && nx === food.x && ny === food.y;
+      if (occ[nk] || (eating && nx === tail.x && ny === tail.y && body.length > 1)) continue;
+      const ni = ord[nk];
+      if (ni === -1) continue;
+      const step = cycDist(b1, ni);
+      if (step > 0 && step < bestStep) { bestStep = step; best = d; }
+    }
+    if (best) s.nextDir = best;
+    return;
+  }
+
+  // Monotonic on the Hamiltonian cycle: mathematically guaranteed immortal up to 100% board fill
+  if (snIsMonotonic(body, cyc)) {
+    const ti = ord[tail.y * cols + tail.x];
+    const minBody = body.length > 1 ? cycDist(hi, ti) : N;
+    if (food && ord[food.y * cols + food.x] === -1 && body.length < cols * rows - 1) {
+      const fx = food.x, fy = food.y;
+      const n1 = { x: fx, y: fy - 1 }, n2 = { x: fx - 1, y: fy };
+      const exit = (head.x === n1.x && head.y === n1.y) ? n2 : (head.x === n2.x && head.y === n2.y) ? n1 : null;
+      if (exit) {
+        const exitK = exit.y * cols + exit.x, jumpToExit = cycDist(hi, ord[exitK]);
+        if (!occ[exitK] && jumpToExit >= 1 && jumpToExit <= 3 && minBody >= jumpToExit) {
+          s.nextDir = { x: fx - head.x, y: fy - head.y };
           return;
         }
       }
     }
+    let targetIdx = food ? ord[food.y * cols + food.x] : -1;
+    if (food && targetIdx === -1) {
+      const i1 = ord[(food.y - 1) * cols + food.x], i2 = ord[food.y * cols + (food.x - 1)];
+      targetIdx = cycDist(hi, i1) <= cycDist(hi, i2) ? i1 : i2;
+    }
+    const foodDist = targetIdx >= 0 ? cycDist(hi, targetIdx) : N;
+    const allowShortcut = body.length < N * 0.72 && food != null;
+    let bestDir = null, bestJump = -1;
+    for (const d of SN_DIRS) {
+      if (d.x === -s.dir.x && d.y === -s.dir.y) continue;
+      const nx = head.x + d.x, ny = head.y + d.y;
+      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+      const nk = ny * cols + nx;
+      const eating = food && nx === food.x && ny === food.y;
+      if (occ[nk] || (eating && nx === tail.x && ny === tail.y && body.length > 1)) continue;
+      const ni = ord[nk];
+      if (ni === -1) continue;
+      const j = cycDist(hi, ni);
+      if (j === 0) continue;
+      if (j === 1) { if (bestJump < 1) { bestJump = 1; bestDir = d; } continue; }
+      if (!allowShortcut) continue;
+      const cap = eating ? minBody - 2 : minBody - 1;
+      if (j <= cap && j <= foodDist && j > bestJump) { bestJump = j; bestDir = d; }
+    }
+    if (bestDir) { s.nextDir = bestDir; return; }
   }
-  const tail = body[body.length - 1];
+
+  // Mid-game recovery when BOT was turned on after manual play twisted the body off-cycle
   let bestDir = null, bestScore = -Infinity;
   for (const d of SN_DIRS) {
     if (d.x === -s.dir.x && d.y === -s.dir.y) continue;
     const nx = head.x + d.x, ny = head.y + d.y;
     if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
     const nk = ny * cols + nx;
-    if (blocked[nk]) continue;
-    const nb = blocked.slice(); nb[nk] = 1;
+    const eating = food && nx === food.x && ny === food.y;
+    if (occ[nk] || (eating && nx === tail.x && ny === tail.y && body.length > 1)) continue;
+    const nb = occ.slice(); nb[nk] = 1;
+    if (eating) nb[tail.y * cols + tail.x] = 1;
     const tailOk = !!snBfs({ x: nx, y: ny }, tail, nb, cols, rows);
     const space = snFlood({ x: nx, y: ny }, nb, cols, rows);
-    const fdist = food ? Math.abs(nx - food.x) + Math.abs(ny - food.y) : 0;
-    const sc = (tailOk ? 100000 : 0) + space * 120 + fdist;
+    const ni = ord[nk];
+    const alignBonus = (ni !== -1 && cycDist(hi, ni) === 1) ? 500 : 0;
+    const sc = (tailOk ? 100000 : 0) + space * 120 + alignBonus - (eating ? 80 : 0);
     if (sc > bestScore) { bestScore = sc; bestDir = d; }
   }
   if (bestDir) s.nextDir = bestDir;
 }
 
-// ---- Stack Tower (drops inside the exact <5px snap window every single time) ----
+// ---- Stack Tower (drops inside the exact <5px snap window, safe even on narrow manual blocks) ----
 function gameBotStack(s) {
   if (!s || !s.running || !s.cur || !s.blocks.length) return;
   const top = s.blocks[s.blocks.length - 1];
-  if (Math.abs(s.cur.x - top.x) < 4.9) stDrop();
+  const tol = Math.min(4.9, Math.max(0.5, top.w - 0.1));
+  if (Math.abs(s.cur.x - top.x) < tol) stDrop();
 }
 
-// ---- Brick Breaker (exact landing-x prediction + brick-hunting bounce angle) ----
+// ---- Brick Breaker (exact landing-x prediction + guaranteed safe capture + brick hunting) ----
 function gameBotBrick(s) {
   if (!s || !s.running || !s.ball) return;
   const b = s.ball, p = s.paddle;
@@ -21234,17 +21407,23 @@ function gameBotBrick(s) {
   if (alive.length) {
     const low = alive.reduce((a, c) => (c.y > a.y ? c : a), alive[0]);
     const bx = low.x + low.w / 2;
-    aim = Math.max(-p.w * 0.34, Math.min(p.w * 0.34, (bx - targetX) * 0.14));
+    aim = Math.max(-p.w * 0.28, Math.min(p.w * 0.28, (bx - targetX) * 0.14));
   }
-  p.x = Math.max(0, Math.min(s.W - p.w, targetX - p.w / 2 - aim));
+  let px = Math.max(0, Math.min(s.W - p.w, targetX - p.w / 2 - aim));
+  if (b.vy > 0 && b.y >= s.H - 60) {
+    px = Math.max(px, b.x - p.w + 8);
+    px = Math.min(px, b.x - 8);
+    px = Math.max(0, Math.min(s.W - p.w, px));
+  }
+  p.x = px;
 }
 
-// ---- Blox Merge / 2048 (depth-3 Expectimax with snake-corner heuristic) ----
+// ---- Blox Merge / 2048 (adaptive depth 2-4 Expectimax with corner-anchored snake monotonicity) ----
 const MG_SNAKE = [
-  [32768, 16384, 8192, 4096],
-  [256,   512,   1024, 2048],
-  [128,   64,    32,   16],
-  [1,     2,     4,    8],
+  [65536, 32768, 16384, 8192],
+  [512,   1024,  2048,  4096],
+  [256,   128,   64,    32],
+  [2,     4,     8,     16],
 ];
 function mgSimMove(grid, dir) {
   const g = grid.map(r => r.slice());
@@ -21270,17 +21449,32 @@ function mgSimMove(grid, dir) {
   return changed ? { g, score } : null;
 }
 function mgEval(g) {
-  let sc = 0, empty = 0, smooth = 0;
+  let sc = 0, empty = 0, smooth = 0, maxV = 0;
   for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
     const v = g[r][c];
     if (!v) { empty++; continue; }
+    if (v > maxV) maxV = v;
     sc += v * MG_SNAKE[r][c];
-    if (c < 3 && g[r][c + 1]) smooth -= Math.abs(v - g[r][c + 1]) * 4;
-    if (r < 3 && g[r + 1][c]) smooth -= Math.abs(v - g[r + 1][c]) * 4;
-    if (c < 3 && g[r][c + 1] === v) sc += v * 12;
-    if (r < 3 && g[r + 1][c] === v) sc += v * 12;
+    if (c < 3 && g[r][c + 1]) {
+      const n = g[r][c + 1];
+      smooth -= Math.abs(v - n) * 24;
+      if (n === v) sc += v * 64;
+    }
+    if (r < 3 && g[r + 1][c]) {
+      const n = g[r + 1][c];
+      smooth -= Math.abs(v - n) * 24;
+      if (n === v) sc += v * 64;
+    }
   }
-  return sc + empty * 8000 + smooth;
+  let mono = 0;
+  for (let c = 0; c < 3; c++) {
+    if (g[0][c] >= g[0][c + 1]) mono += g[0][c] * 32; else mono -= (g[0][c + 1] - g[0][c]) * 120;
+    if (g[1][3 - c] >= g[1][2 - c]) mono += g[1][3 - c] * 16;
+  }
+  if (g[0][3] >= g[1][3]) mono += g[1][3] * 24;
+  if (g[0][0] === maxV) sc += maxV * 80000;
+  else sc -= maxV * 40000;
+  return sc + mono + empty * empty * 32000 + smooth;
 }
 function mgExpecti(g, depth, isChance) {
   if (depth === 0) return mgEval(g);
@@ -21289,15 +21483,16 @@ function mgExpecti(g, depth, isChance) {
     for (const d of ['up', 'left', 'right', 'down']) {
       const m = mgSimMove(g, d);
       if (!m) continue;
-      const v = m.score * 6 + mgExpecti(m.g, depth - 1, true);
+      const v = m.score * 4 + mgExpecti(m.g, depth - 1, true);
       if (v > best) best = v;
     }
-    return best === -Infinity ? -1e9 : best;
+    return best === -Infinity ? -1e13 : best;
   }
   const empty = [];
   for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) if (!g[r][c]) empty.push([r, c]);
   if (!empty.length) return mgEval(g);
-  const step = empty.length > 4 ? Math.ceil(empty.length / 4) : 1;
+  const maxSamples = depth >= 3 ? 4 : 6;
+  const step = empty.length > maxSamples ? Math.ceil(empty.length / maxSamples) : 1;
   let total = 0, count = 0;
   for (let i = 0; i < empty.length; i += step) {
     const [r, c] = empty[i];
@@ -21309,34 +21504,92 @@ function mgExpecti(g, depth, isChance) {
 }
 function gameBotMerge() {
   const s = mergeState; if (!s || s.over) return;
+  let emptyCnt = 0;
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) if (!s.grid[r][c]) emptyCnt++;
+  const depth = emptyCnt <= 3 ? 4 : emptyCnt <= 6 ? 3 : 2;
   let best = null, bestV = -Infinity;
   for (const d of ['up', 'left', 'right', 'down']) {
     const m = mgSimMove(s.grid, d);
     if (!m) continue;
-    const v = m.score * 6 + mgExpecti(m.g, 2, true);
+    const v = m.score * 4 + mgExpecti(m.g, depth, true);
     if (v > bestV) { bestV = v; best = d; }
   }
   if (best) mergeMove(best);
 }
 
-// ---- Block Blast / Tetris (El-Tetris heuristic over all rotations & columns) ----
-function gameBotBlockBlast() {
-  const s = bbState; if (!s) return;
-  if (!s.running) { if (!s.over) bbStart(); return; }
-  if (!s.piece) return;
-  let best = null, bestSc = -Infinity;
-  let m = s.piece.m;
-  for (let rot = 0; rot < 4; rot++) {
-    const w = m[0].length, h = m.length;
-    for (let x = 0; x <= s.cols - w; x++) {
-      let y = Math.min(s.piece.y, 0);
-      if (bbCollide(s, m, x, y)) {
-        if (s.piece.y >= 0 && !bbCollide(s, m, x, s.piece.y)) y = s.piece.y;
-        else continue;
+// ---- Block Blast / Tetris (2-ply lookahead with s.next + Pierre Dellacherie / El-Tetris heuristic) ----
+let bbRotCache = null;
+function bbRotsOf(type) {
+  if (!bbRotCache) {
+    bbRotCache = {};
+    for (const t of BB_TYPES) {
+      const seen = new Set(), out = [];
+      let m = bbMatrix(t);
+      for (let i = 0; i < 4; i++) {
+        const k = m.map(r => r.map(v => v ? '1' : '0').join('')).join('/');
+        if (!seen.has(k)) { seen.add(k); out.push(m); }
+        m = bbRotate(m);
       }
-      while (!bbCollide(s, m, x, y + 1)) y++;
-      const g = s.grid.map(r => r.slice());
+      bbRotCache[t] = out;
+    }
+  }
+  return bbRotCache[type] || [];
+}
+function bbCollideGrid(grid, cols, rows, m, px, py) {
+  for (let r = 0; r < m.length; r++) for (let c = 0; c < m[r].length; c++) {
+    if (!m[r][c]) continue;
+    const x = px + c, y = py + r;
+    if (x < 0 || x >= cols || y >= rows) return true;
+    if (y >= 0 && grid[y][x]) return true;
+  }
+  return false;
+}
+function bbEvalBoard(g, cols, rows, landingHeight, lines) {
+  let rowTrans = 0, colTrans = 0, holes = 0, wells = 0;
+  for (let r = 0; r < rows; r++) {
+    let prev = 1;
+    for (let c = 0; c < cols; c++) {
+      const cur = g[r][c] ? 1 : 0;
+      if (cur !== prev) rowTrans++;
+      prev = cur;
+    }
+    if (prev === 0) rowTrans++;
+  }
+  for (let c = 0; c < cols; c++) {
+    let prev = 0, seen = false;
+    for (let r = 0; r < rows; r++) {
+      const cur = g[r][c] ? 1 : 0;
+      if (cur !== prev) colTrans++;
+      prev = cur;
+      if (cur) seen = true;
+      else if (seen) holes++;
+    }
+    if (prev === 0) colTrans++;
+  }
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < rows; r++) {
+      if (g[r][c]) continue;
+      if ((c === 0 || !!g[r][c - 1]) && (c === cols - 1 || !!g[r][c + 1])) {
+        let depth = 0;
+        for (let rr = r; rr < rows && !g[rr][c]; rr++) depth++;
+        wells += depth;
+      }
+    }
+  }
+  return -4.500158825 * landingHeight + 3.418126810 * lines - 3.217888286 * rowTrans
+       - 9.348695305 * colTrans - 7.899265427 * holes - 3.385597224 * wells;
+}
+function bbPlacements(grid, cols, rows, type) {
+  const rots = bbRotsOf(type), res = [];
+  for (const m of rots) {
+    const w = m[0].length, h = m.length;
+    for (let x = 0; x <= cols - w; x++) {
+      let y = -1;
+      if (bbCollideGrid(grid, cols, rows, m, x, y)) continue;
+      while (!bbCollideGrid(grid, cols, rows, m, x, y + 1)) y++;
       let topOut = false;
+      const g = new Array(rows);
+      for (let r = 0; r < rows; r++) g[r] = grid[r].slice();
       for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
         if (!m[r][c]) continue;
         if (y + r < 0) { topOut = true; break; }
@@ -21344,31 +21597,41 @@ function gameBotBlockBlast() {
       }
       if (topOut) continue;
       let lines = 0;
-      for (let r = s.rows - 1; r >= 0; r--) {
-        if (g[r].every(Boolean)) { g.splice(r, 1); g.unshift(new Array(s.cols).fill(null)); lines++; r++; }
+      for (let r = rows - 1; r >= 0; r--) {
+        let full = true;
+        for (let c = 0; c < cols; c++) if (!g[r][c]) { full = false; break; }
+        if (full) { g.splice(r, 1); g.unshift(new Array(cols).fill(null)); lines++; r++; }
       }
-      const colH = new Array(s.cols).fill(0);
-      let holes = 0;
-      for (let c = 0; c < s.cols; c++) {
-        let seen = false;
-        for (let r = 0; r < s.rows; r++) {
-          if (g[r][c]) { if (!seen) { colH[c] = s.rows - r; seen = true; } }
-          else if (seen) holes++;
-        }
-      }
-      let aggH = 0, bump = 0;
-      for (let c = 0; c < s.cols; c++) { aggH += colH[c]; if (c > 0) bump += Math.abs(colH[c] - colH[c - 1]); }
-      const sc = -0.510066 * aggH + 0.760666 * lines - 0.35663 * holes - 0.184483 * bump;
-      if (sc > bestSc) { bestSc = sc; best = { m, x, y }; }
+      const landingHeight = rows - (y + (h - 1) / 2);
+      res.push({ m, x, y, g, sc: bbEvalBoard(g, cols, rows, landingHeight, lines) });
     }
-    m = bbRotate(m);
   }
-  if (best) {
-    s.piece.m = best.m;
-    s.piece.x = best.x;
-    s.piece.y = Math.min(s.piece.y, best.y);
-    bbHard();
+  return res;
+}
+function gameBotBlockBlast() {
+  const s = bbState; if (!s) return;
+  if (!s.running) { if (!s.over) bbStart(); return; }
+  if (!s.piece) return;
+  const p1 = bbPlacements(s.grid, s.cols, s.rows, s.piece.type);
+  if (!p1.length) return;
+  p1.sort((a, b) => b.sc - a.sc);
+  let best = p1[0];
+  if (s.next) {
+    const top = p1.slice(0, 6);
+    let bestCombined = -Infinity;
+    for (const c1 of top) {
+      const p2 = bbPlacements(c1.g, s.cols, s.rows, s.next);
+      if (!p2.length) continue;
+      let best2 = -Infinity;
+      for (const c2 of p2) if (c2.sc > best2) best2 = c2.sc;
+      const total = c1.sc * 0.25 + best2;
+      if (total > bestCombined) { bestCombined = total; best = c1; }
+    }
   }
+  s.piece.m = best.m;
+  s.piece.x = best.x;
+  s.piece.y = Math.min(s.piece.y, best.y);
+  bbHard();
 }
 
 // ---- Orb Crush (evaluates every adjacent swap + multi-cascade score) ----
@@ -21620,7 +21883,11 @@ function gameBotTick() {
         if (s.grid[r][c].mine && !s.grid[r][c].flag) { csFlag(r, c); return; }
       }
       for (let r = 0; r < s.rows; r++) for (let c = 0; c < s.cols; c++) {
-        if (!s.grid[r][c].mine && !s.grid[r][c].rev) { csClick(r, c); return; }
+        if (!s.grid[r][c].mine && !s.grid[r][c].rev) {
+          if (s.grid[r][c].flag) csFlag(r, c);
+          else csClick(r, c);
+          return;
+        }
       }
       return;
     }

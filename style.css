@@ -3061,6 +3061,9 @@ body.quick-delete-armed #messages .msg-line:hover .msg-hover-actions { display: 
 }
 .fg-bot-btn.on .fg-bot-dot { background: #38e07b; box-shadow: 0 0 8px #38e07b; animation: fgBotPulse 1.4s ease-in-out infinite; }
 @keyframes fgBotPulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+.fg-window.bot-on { cursor: not-allowed; }
+.fg-window.bot-on .fg-bar { cursor: default; }
+.fg-window.bot-on #game-stage { pointer-events: none !important; user-select: none; }
 .fg-stage { overflow-y: auto; }
 .fg-btn { min-height: 42px; padding: 2px 22px; font-size: 15px; font-weight: 600; color: var(--text-normal); background: var(--bg-input); border-radius: 6px; }
 .fg-btn:hover:not(:disabled) { background: var(--bg-modifier-selected); }

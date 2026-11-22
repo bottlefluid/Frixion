@@ -44,6 +44,40 @@ applyAdminVisibility();
 check('v4.73: leaving /sfmode restores the BOT button', !botBtn().classList.contains('hidden'));
 closeGame();
 
+// ---------- 2b. Human control lockout while BOT is ON, restored when OFF ----------
+openGame('stack');
+stStart();
+stState.cur.x = 0; // far from center block -> manual Space drop would instantly Game Over!
+botBtn().click();
+const fgWinEl = gameWin.querySelector('.fg-window');
+const stageEl = gameWin.querySelector('#game-stage');
+check('lockout: .fg-window gets .bot-on, #game-stage is inert and pointer-events:none while BOT is on',
+  fgWinEl.classList.contains('bot-on') && stageEl.inert === true && getComputedStyle(stageEl).pointerEvents === 'none');
+const spEvt = new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true });
+window.dispatchEvent(spEvt);
+check('lockout: Space key is blocked while Stack Tower BOT is on (no accidental topple)',
+  spEvt.defaultPrevented && stState.running && !stState.over);
+// Turning BOT OFF via the bar button immediately restores manual control
+botBtn().click();
+check('lockout: turning BOT OFF removes .bot-on, clears inert and restores pointer-events on #game-stage',
+  !gameBotOn && !fgWinEl.classList.contains('bot-on') && stageEl.inert === false && getComputedStyle(stageEl).pointerEvents !== 'none');
+stState.cur.x = stState.blocks[0].x;
+const blocksBefore = stState.blocks.length;
+document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+check('lockout: after turning BOT OFF, manual Space drop works immediately',
+  stState.blocks.length === blocksBefore + 1);
+closeGame();
+
+// Typing Sprint input focus is blocked & blurred while BOT is ON
+openGame('typing');
+tsStart();
+const tsInp = $('ts-input');
+tsInp.focus();
+gameBotSet(true);
+const focusAttempt = (tsInp.focus(), document.activeElement === tsInp);
+check('lockout: #ts-input is blurred and refuses focus while BOT is ON', !focusAttempt);
+closeGame();
+
 // ---------- 3. Verify all 19 games auto-play accurately ----------
 // Daily Word: solved in 1 guess
 openGame('dailyword');
@@ -120,22 +154,23 @@ gameBotSet(true);
 check('BOT Liquid Dash: dodges spikes without dying', !!(await until(() => gdState && gdState.running && !gdState.dead && gdState.score >= 90, 8000)), gdState && { score: gdState.score, mode: gdState.mode, dead: gdState.dead });
 closeGame();
 
-// Snake: eats Orbs safely without crashing
+// Snake: eats 20+ Orbs on Hamiltonian + shortcut solver without dying (even while spamming bad keys!)
 openGame('snake');
 gameBotSet(true);
-check('BOT Snake: pathfinds and eats Orbs cleanly', !!(await until(() => snakeState && snakeState.alive && snakeState.eaten >= 3, 8000)), snakeState && { eaten: snakeState.eaten, alive: snakeState.alive });
+for (let k = 0; k < 8; k++) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', code: 'ArrowUp', bubbles: true, cancelable: true }));
+check('BOT Snake: eats 20+ Orbs immortally while ignoring human keys', !!(await until(() => snakeState && snakeState.alive && snakeState.eaten >= 20, 15000)), snakeState && { eaten: snakeState.eaten, alive: snakeState.alive });
 closeGame();
 
 // Blox Merge (2048): rapidly merges tiles
 openGame('merge');
 gameBotSet(true);
-check('BOT Blox Merge: plays fast and builds tiles', !!(await until(() => mergeState && mergeState.score >= 80 && mergeState.highest >= 16, 6000)), mergeState && { score: mergeState.score, highest: mergeState.highest });
+check('BOT Blox Merge: plays fast and builds tiles', !!(await until(() => mergeState && mergeState.score >= 120 && mergeState.highest >= 32, 6000)), mergeState && { score: mergeState.score, highest: mergeState.highest });
 closeGame();
 
-// Block Blast (Tetris): places pieces using El-Tetris heuristic
+// Block Blast (Tetris): 2-ply Dellacherie places pieces & clears lines cleanly without topping out
 openGame('blockblast');
 gameBotSet(true);
-check('BOT Block Blast: places pieces cleanly without topping out', !!(await until(() => bbState && bbState.running && !bbState.over && bbState.grid.some(r => r.some(Boolean)), 5000)));
+check('BOT Block Blast: places pieces & clears lines with 0 top-outs', !!(await until(() => bbState && bbState.running && !bbState.over && bbState.lines >= 1, 8000)), bbState && { lines: bbState.lines, score: bbState.score, over: bbState.over });
 closeGame();
 
 // Stack Tower: 100% pixel-perfect stack (zero width lost)
@@ -156,13 +191,14 @@ gameBotSet(true);
 check('BOT Color Simon: clears rounds accurately', !!(await until(() => smState && !smState.over && smState.round >= 2, 8000)), smState && { round: smState.round, over: smState.over });
 closeGame();
 
-// Mouse Maze: clears level 1 flawlessly without pointer lock or fullscreen
+// Mouse Maze: clears level 1 flawlessly with 0 deaths while ignoring human mouse input
 openGame('maze');
 await until(() => mazeMod, 5000);
 const mz = await mazeMod;
 await wait(250);
 gameBotSet(true);
-check('BOT Mouse Maze: clears level 1 flawlessly with 0 deaths', !!(await until(() => (UC.mazeBest || 0) >= 1 && mz._peek().deaths === 0, 10000)), { best: UC.mazeBest, peek: mz._peek() });
+document.dispatchEvent(new MouseEvent('mousemove', { clientX: 5, clientY: 5, movementX: 900, movementY: 900, bubbles: true }));
+check('BOT Mouse Maze: clears level 1 flawlessly with 0 deaths (ignoring human mouse)', !!(await until(() => (UC.mazeBest || 0) >= 1 && mz._peek().deaths === 0, 10000)), { best: UC.mazeBest, peek: mz._peek() });
 closeGame();
 check('v4.73: closing a game cleanly turns BOT off', !gameBotOn);
 
