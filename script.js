@@ -1258,6 +1258,12 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.73', date: '2026-11-22', title: 'Owner Game Bot and arcade fixes',
+    notes: [
+      'Games, for the Owner: a BOT toggle in the game bar that auto-plays all 19 mini-games at top speed and accuracy (from Liquid Dash, Snake, Blox Merge and Block Blast to Connect Four, Mouse Maze, Cookie Clicker and Grow a Garden).',
+      'Fixed Aim Trainer\'s end-of-round reward screen and Orb Sweeper\'s win message.',
+      '3 new easter eggs. That makes 90.',
+    ] },
   { v: '4.72', date: '2026-11-22', title: 'Black holes and space in the Shop',
     notes: [
       'A black hole and space set in the Shop, all together at the top of Featured:',
@@ -2600,6 +2606,7 @@ function applyAdminVisibility() {
   // The owner sees only "Owner Panel" (it's a strict superset), never both. A Co-Owner's says Co-Owner Panel (v4.63).
   if (adminEl) adminEl.classList.toggle('hidden', !isAdmin || isOwner);
   if (ownerEl) { ownerEl.classList.toggle('hidden', !isOwner); ownerEl.textContent = ownerPanelName(); }
+  if (typeof gameBotSyncUI === 'function') gameBotSyncUI();
 }
 // "Owner Panel" for the Owner, "Co-Owner Panel" for a Co-Owner (who sees the same panel minus the Owner's own tabs:
 // Devices, IP, Purge Perms and one-time passwords).
@@ -17824,7 +17831,7 @@ const gameDefaults = () => ({
 });
 
 function getU() { return myUid; }
-function showToast(msg) { toast(msg); }
+function showToast(msg) { if (!gameBotSilent) toast(msg); }
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function trackQuest() {}   // Frixion has no quest tracking any more
 function hexToRgb(h) { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
@@ -18779,7 +18786,7 @@ function ggRollMut(bonus){ const k=1+(bonus||0), r=Math.random(); if(r<0.02*k) r
 let _ggSavedSig='';
 function ggSaveData(){ return {ggSheckles:UC.ggSheckles, ggShecklesAllTime:UC.ggShecklesAllTime, ggPlots:UC.ggPlots, ggUnlocked:UC.ggUnlocked, ggInventory:UC.ggInventory, ggPets:UC.ggPets, ggOwnedSeeds:UC.ggOwnedSeeds||[], ggOwnedSprinklers:UC.ggOwnedSprinklers||[], ggStock:UC.ggStock||null, ggQuests:UC.ggQuests||null, ggBackpack:ggBp()}; }
 async function saveGarden(){
-  if(!UC) return; _ggSaveAt=Date.now();
+  if(!UC||gameBotSilent) return; _ggSaveAt=Date.now();
   const data=ggSaveData(), sig=JSON.stringify(data);
   if(sig===_ggSavedSig) return;
   _ggSavedSig=sig;
@@ -19565,6 +19572,7 @@ function gdStart(){
 function gdLoop(){
   const s=gdState; if(!s||!s.running) return;
   if(currentGameId!=='geodash'||!document.body.contains(s.cv)){ gdLeave(); return; }
+  if(gameBotActive('geodash')) gameBotGeoDash(s);
   s.speed=Math.min(9.1, s.baseSpeed + s.dist/16000);
   s.dist+=s.speed; s.score=Math.floor(s.dist/10);
   const floor=s.groundY-s.size;
@@ -19714,7 +19722,7 @@ function snakeStart(){
   const ov=document.getElementById('sn-overlay'); if(ov) ov.style.display='none';
   const cx=Math.floor(s.cols/2), cy=Math.floor(s.rows/2);
   s.body=[{x:cx,y:cy},{x:cx-1,y:cy},{x:cx-2,y:cy}]; s.dir={x:1,y:0}; s.nextDir={x:1,y:0}; s.eaten=0; s.alive=true; s.started=true; s.revive=false; s.colors=snakeColors();
-  s.prev=s.body.map(b=>({x:b.x,y:b.y})); s.stepMs=130; s.stepAt=performance.now(); s.fx=[]; s.dyingAt=0; s.eatAt=0;
+  s.prev=s.body.map(b=>({x:b.x,y:b.y})); s.stepMs=gameBotActive('snake')?40:130; s.stepAt=performance.now(); s.fx=[]; s.dyingAt=0; s.eatAt=0;
   snakeSpawnFood();
   const e=document.getElementById('sn-eaten'); if(e) e.textContent='0';
   if(snakeTimer) clearInterval(snakeTimer);
@@ -19732,6 +19740,7 @@ function snakeLoop(){
 function snakeStep(){
   const s=snakeState; if(!s||!s.alive) return;
   if(currentGameId!=='snake'){ snakeCleanup(); return; }
+  if(gameBotActive('snake')) gameBotSnake(s);
   s.dir=s.nextDir;
   const head={x:s.body[0].x+s.dir.x, y:s.body[0].y+s.dir.y};
   if(head.x<0||head.y<0||head.x>=s.cols||head.y>=s.rows || s.body.some(b=>b.x===head.x&&b.y===head.y)){
@@ -19745,7 +19754,7 @@ function snakeStep(){
     if(s.body.length===67) eggFind('snake67');   // (an easter egg)
     s.eatAt=performance.now(); s.fx.push({x:head.x, y:head.y, t0:s.eatAt});
     snakeSpawnFood();
-    if(s.eaten%4===0){ clearInterval(snakeTimer); s.stepMs=Math.max(70, 130-Math.floor(s.eaten/4)*8); snakeTimer=setInterval(snakeStep, s.stepMs); } }
+    if(s.eaten%4===0 && !gameBotActive('snake')){ clearInterval(snakeTimer); s.stepMs=Math.max(70, 130-Math.floor(s.eaten/4)*8); snakeTimer=setInterval(snakeStep, s.stepMs); } }
   else s.body.pop();
   s.prev=s.body.map((_,i)=>old[Math.min(i,old.length-1)]);   // a segment that just grew stays put for one tick
   s.stepAt=performance.now();
@@ -20017,7 +20026,7 @@ function atEnd(){
   refreshCaps();
   const bb=document.getElementById('at-best'); if(bb) bb.textContent=UC.aimBest||0;
   const tot=s.hits+s.misses, acc=tot?Math.round(s.hits/tot*100):100;
-  const ov=document.getElementById('at-overlay'); if(ov){ ov.style.display='flex'; ov.innerHTML=`<div class="ts-card"><div class="ts-title">Time's up</div><div class="ts-sub">${s.hits} hits at ${acc}% accuracy.</div><div class="ts-reward">${Orbs>0?('<span class="orb-ic"></span> +'+caps+' Orbs'):'Hit a few more next time to earn caps.'}</div><button class="ts-btn" onclick="atStart()">Play again</button></div>`; }
+  const ov=document.getElementById('at-overlay'); if(ov){ ov.style.display='flex'; ov.innerHTML=`<div class="ts-card"><div class="ts-title">Time's up</div><div class="ts-sub">${s.hits} hits at ${acc}% accuracy.</div><div class="ts-reward">${caps>0?('<span class="orb-ic"></span> +'+caps+' Orbs'):'Hit a few more next time to earn Orbs.'}</div><button class="ts-btn" onclick="atStart()">Play again</button></div>`; }
   if(caps>0) showToast('Aim Trainer: +'+caps+' Orbs!');
 }
 function atCleanup(){ if(atState){ if(atState.timer) clearInterval(atState.timer); atState.running=false; } atState=null; }
@@ -20392,6 +20401,7 @@ function stLoop(){
   if(currentGameId!=='stack'||!document.body.contains(s.cv)){ stCleanup(); return; }
   s.cur.x+=s.speed*s.dir;
   if(s.cur.x<=0){ s.cur.x=0; s.dir=1; } else if(s.cur.x+s.cur.w>=s.W){ s.cur.x=s.W-s.cur.w; s.dir=-1; }
+  if(gameBotActive('stack')) gameBotStack(s);
   stDraw(); s.raf=requestAnimationFrame(stLoop);
 }
 function stDrop(){
@@ -20556,7 +20566,7 @@ function csDraw(){
 function csLose(){ const s=csState; for(let r=0;r<s.rows;r++)for(let c=0;c<s.cols;c++) if(s.grid[r][c].mine) s.grid[r][c].rev=true; const msg=document.getElementById('cs-msg'); if(msg){ msg.textContent='Boom! You hit a mine. Try a new board.'; msg.className='cs-msg bad'; } }
 function csWin(){
   const caps=40; UC.coins=(UC.coins||0)+caps; try{ dbUpdateUser(getU(),{coins:UC.coins}); }catch(e){} refreshCaps();
-  const msg=document.getElementById('cs-msg'); if(msg){ msg.textContent='Swept! Every mine avoided. <span class="orb-ic"></span> +'+caps+' Orbs.'; msg.className='cs-msg ok'; }
+  const msg=document.getElementById('cs-msg'); if(msg){ msg.innerHTML='Swept! Every mine avoided. <span class="orb-ic"></span> +'+caps+' Orbs.'; msg.className='cs-msg ok'; }
   showToast('Orb Sweeper: +'+caps+' Orbs!');
 }
 function csCleanup(){ csState=null; }
@@ -20681,6 +20691,7 @@ function bkLoop(){
   const b=s.ball; b.x+=b.vx; b.y+=b.vy;
   if(b.x-b.r<0){ b.x=b.r; b.vx=Math.abs(b.vx); } else if(b.x+b.r>s.W){ b.x=s.W-b.r; b.vx=-Math.abs(b.vx); }
   if(b.y-b.r<0){ b.y=b.r; b.vy=Math.abs(b.vy); }
+  if(gameBotActive('brick')) gameBotBrick(s);
   const p=s.paddle;
   if(b.vy>0 && b.y+b.r>=s.H-22 && b.y+b.r<=s.H-6 && b.x>=p.x && b.x<=p.x+p.w){ b.vy=-Math.abs(b.vy); b.vx=((b.x-(p.x+p.w/2))/(p.w/2))*4.4; }
   if(b.y-b.r>s.H){ s.lives--; bkUpdateHud(); if(s.lives<=0){ bkOver(); return; } bkResetBall(); }
@@ -20803,7 +20814,7 @@ async function xtraServe(){
   if(currentGameId!=='xtramath'||!st.problem) return;
   if(pEl) pEl.textContent=st.problem.q;
   if(aEl){ aEl.value=''; aEl.focus(); }
-  st.hintShown=false;
+  st.hintShown=false; st._botSubmitted=false;
   const fb=document.getElementById('xm-fb'); if(fb){ fb.textContent=''; fb.className='xm-fb'; }
   const lv=st.level;
   xtraGen(lv).then(p=>{ if(xtraState&&xtraState.level&&xtraState.level.lv===lv.lv&&!xtraState.next) xtraState.next=p; }).catch(()=>{});
@@ -20874,7 +20885,7 @@ async function xtraSubmit(){
     set('xm-solved',st.solved); set('xm-streak',st.streak); set('xm-earned',st.earned);
     if(fb){ fb.textContent='Correct! +'+reward+' Orbs'+(bonus?(' ('+bonus+' streak bonus)'):''); fb.className='xm-fb ok'; }
     showToast('Correct! +'+reward+' Orbs');
-    setTimeout(()=>{ if(currentGameId==='xtramath') xtraServe(); }, 750);
+    setTimeout(()=>{ if(currentGameId==='xtramath') xtraServe(); }, gameBotActive('xtramath') ? 220 : 750);
   } else {
     st.streak=0; const sEl=document.getElementById('xm-streak'); if(sEl) sEl.textContent=0;
     if(fb){ fb.textContent='Not quite. Answer was '+xtraFmt(st.problem.a)+'. Next problem coming...'; fb.className='xm-fb bad'; }
@@ -20925,25 +20936,31 @@ const GAME_TILES = [
 // tb.mazeClr: one character per level, 1 for cleared) and its Orbs paid the same way.
 let mazeMod = null;
 function openMouseMaze(stage) {
-  if (!mazeMod) mazeMod = import('./games/maze/maze.js?v=2');
-  mazeMod.then(m => m.open(stage, {
-    isTouchOnly: () => isMobile() || !(window.matchMedia && matchMedia('(pointer: fine)').matches),
-    load: () => ({ best: Math.max(0, Math.min(125, Number(UC.mazeBest) || 0)), cleared: typeof UC.mazeClr === 'string' ? UC.mazeClr.slice(0, 125) : '' }),
-    save: (p, orbs) => {
-      UC.coins = (UC.coins || 0) + orbs;
-      if (typeof trackQuest === 'function') trackQuest('caps', orbs);
-      dbUpdateUser(getU(), { coins: UC.coins, mazeBest: p.best, mazeClr: p.cleared }).catch(() => {});
-      refreshCaps();
-    },
-    egg: id => eggFind(id),
-  })).catch(err => { mazeMod = null; console.error(err); toast('Mouse Maze could not load. Check your connection and try again.', 'error'); });
+  if (!mazeMod) mazeMod = import('./games/maze/maze.js?v=3');
+  mazeMod.then(m => {
+    if (currentGameId !== 'maze') return;
+    m.open(stage, {
+      isTouchOnly: () => isMobile() || !(window.matchMedia && matchMedia('(pointer: fine)').matches),
+      isOwner: () => realOwner(),
+      load: () => ({ best: Math.max(0, Math.min(125, Number(UC.mazeBest) || 0)), cleared: typeof UC.mazeClr === 'string' ? UC.mazeClr.slice(0, 125) : '' }),
+      save: (p, orbs) => {
+        UC.coins = (UC.coins || 0) + orbs;
+        if (typeof trackQuest === 'function') trackQuest('caps', orbs);
+        dbUpdateUser(getU(), { coins: UC.coins, mazeBest: p.best, mazeClr: p.cleared }).catch(() => {});
+        refreshCaps();
+      },
+      egg: id => eggFind(id),
+    });
+    if (typeof m.setBot === 'function') m.setBot(gameBotActive('maze'));
+  }).catch(err => { mazeMod = null; console.error(err); toast('Mouse Maze could not load. Check your connection and try again.', 'error'); });
 }
-function mzCleanup() { if (mazeMod) mazeMod.then(m => m.close()).catch(() => {}); }
+function mzCleanup() { if (mazeMod) mazeMod.then(m => { if (typeof m.setBot === 'function') m.setBot(false); m.close(); }).catch(() => {}); }
 
 const GAME_CLEANUPS = () => [gdCleanup, xtraCleanup, snakeCleanup, mergeCleanup, tsCleanup, atCleanup, dwCleanup, bbCleanup,
   suCleanup, c4Cleanup, stCleanup, mmCleanup, csCleanup, crCleanup, bkCleanup, smCleanup, ggCleanup, ccCleanup, mzCleanup];
 
 let gameWin = null;
+const gamesOpenedSession = new Set();   // (v4.73 easter egg: open 5 different games in one visit)
 
 function ensureGameWindow() {
   if (gameWin) return gameWin;
@@ -20953,12 +20970,16 @@ function ensureGameWindow() {
   gameWin.innerHTML =
     '<div class="fg-window" role="dialog" aria-modal="true" aria-labelledby="fg-title">' +
     '<header class="fg-bar"><h3 class="fg-title" id="fg-title"></h3>' +
+    '<button type="button" class="fg-bot-btn hidden" id="fg-bot-btn" aria-pressed="false" title="Owner only: auto-play at top speed and accuracy">' +
+    '<span class="fg-bot-dot" aria-hidden="true"></span><span class="fg-bot-label">BOT: OFF</span></button>' +
     '<span class="fg-chip"><span class="orb-ic"></span><b class="fg-orbs">0</b></span>' +
     '<button class="fg-x" aria-label="Close game">✕</button></header>' +
     '<div class="fg-stage" id="game-stage"></div></div>';
   document.body.append(gameWin);
   gameWin.querySelector('.fg-x').onclick = closeGame;
+  gameWin.querySelector('#fg-bot-btn').onclick = gameBotToggle;
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !gameWin.hidden) closeGame(); });
+  gameBotSyncUI();
   return gameWin;
 }
 
@@ -20966,6 +20987,7 @@ function openGame(id) {
   const game = GAME_TILES.find(g => g.id === id);
   if (!game || !myUid) return;
   ensureGameWindow();
+  gameBotSet(false);
   GAME_CLEANUPS().forEach(fn => fn());
   const stage = gameWin.querySelector('#game-stage');
   stage.innerHTML = '';
@@ -20973,16 +20995,660 @@ function openGame(id) {
   gameWin.querySelector('.fg-title').textContent = game.title;
   gameWin.hidden = false;
   currentGameId = id; rpcGameStartedAt = Date.now();
+  gameBotSyncUI();
   activityRefresh();
   refreshCaps();
   game.open(stage);
+  gamesOpenedSession.add(id);
+  if (gamesOpenedSession.size >= 5) eggFindOnce('arcadepro');   // (v4.73 easter egg)
 }
 
 function closeGame() {
+  gameBotSet(false);
   GAME_CLEANUPS().forEach(fn => { try { fn(); } catch (e) {} });
   currentGameId = null; rpcGameStartedAt = 0;
   activityRefresh();
   if (gameWin) { gameWin.hidden = true; gameWin.querySelector('#game-stage').innerHTML = ''; }
+}
+
+// ============================================================
+//  OWNER-ONLY GAME BOT (v4.73)
+//  Auto-plays every mini-game in the Games window at top speed and
+//  accuracy. Strictly gated by realOwner() (owner: true, not Co-Owner,
+//  hidden in /sfmode). Stops cleanly on close, game switch or sign-out.
+// ============================================================
+let gameBotOn = false, gameBotTimer = 0, gameBotSilent = false;
+let gameBotLastBuy = 0, gameBotLastFloat = 0, gameBotLastSave = 0, gameBotLastStep = 0;
+const gameBotAllowed = () => !!(typeof realOwner === 'function' && realOwner());
+const gameBotActive = id => gameBotOn && gameBotAllowed() && (!id || currentGameId === id);
+
+function gameBotSyncUI() {
+  const allowed = gameBotAllowed();
+  if (!allowed && gameBotOn) gameBotSet(false);
+  const btn = gameWin && gameWin.querySelector('#fg-bot-btn');
+  if (!btn) return;
+  btn.classList.toggle('hidden', !allowed);
+  btn.classList.toggle('on', allowed && gameBotOn);
+  btn.setAttribute('aria-pressed', allowed && gameBotOn ? 'true' : 'false');
+  const lbl = btn.querySelector('.fg-bot-label');
+  if (lbl) lbl.textContent = gameBotOn ? 'BOT: ON' : 'BOT: OFF';
+}
+function gameBotToggle() {
+  if (!gameBotAllowed()) return;
+  gameBotSet(!gameBotOn);
+}
+function gameBotSet(on) {
+  if (on && !gameBotAllowed()) on = false;
+  const was = gameBotOn;
+  gameBotOn = !!on;
+  if (gameBotTimer) { clearInterval(gameBotTimer); gameBotTimer = 0; }
+  if (mazeMod) mazeMod.then(m => { if (typeof m.setBot === 'function') m.setBot(gameBotActive('maze')); }).catch(() => {});
+  if (currentGameId === 'snake' && snakeState && snakeState.alive) {
+    if (snakeTimer) clearInterval(snakeTimer);
+    snakeState.stepMs = gameBotOn ? 40 : Math.max(70, 130 - Math.floor(snakeState.eaten / 4) * 8);
+    snakeTimer = setInterval(snakeStep, snakeState.stepMs);
+  }
+  if (gameBotOn) {
+    gameBotLastBuy = 0; gameBotLastStep = 0; gameBotLastSave = Date.now();
+    gameBotTimer = setInterval(gameBotTick, 25);
+    gameBotTick();
+  } else if (was) {
+    gameBotSilent = false;
+    if (currentGameId === 'cookie' && UC) saveCookies();
+    else if (currentGameId === 'growgarden' && UC) saveGarden();
+    else if (currentGameId === 'sudoku' && suState && !suState.done) suAfterInput();
+  }
+  gameBotSyncUI();
+}
+
+// ---- Liquid Dash (Cube, Ship, Ball, Wave, Spider, Swing) ----
+function gdSimCube(s, jumpNow) {
+  const floor = s.groundY - s.size, cl = s.x + 5, cr = s.x + s.size - 5;
+  let y = s.y, vy = s.vy, grounded = s.grounded;
+  if (jumpNow && grounded) { vy = s.jump; grounded = false; }
+  for (let f = 1; f <= 34; f++) {
+    vy += s.grav; y += vy;
+    if (y >= floor) { y = floor; vy = 0; grounded = true; }
+    const dx = f * s.speed, cb = y + s.size - 3;
+    for (const o of s.obstacles) {
+      const ox = o.x - dx;
+      if (o.type === 'portal' && ox <= s.x + s.size / 2) return true;
+      if (o.type !== 'spike') continue;
+      if (cr >= ox && cl <= ox + o.w && cb > s.groundY - 19) return false;
+    }
+  }
+  return true;
+}
+function gameBotGeoDash(s) {
+  const floor = s.groundY - s.size, cl = s.x + 5, cr = s.x + s.size - 5;
+  const portal = s.obstacles.find(o => o.type === 'portal' && !o.used && o.x >= cl);
+  const cutoff = portal ? portal.x : Infinity;
+  if (s.mode === 'cube') {
+    s.holding = false;
+    if (!s.grounded) return;
+    const sp = s.obstacles.find(o => o.type === 'spike' && o.x < cutoff && o.x + o.w >= cl);
+    if (!sp) return;
+    const dist = sp.x - cr;
+    if (dist <= 6.5 * s.speed && gdSimCube(s, true)) { gdDown(); s.holding = false; return; }
+    if (!gdSimCube(s, false) && gdSimCube(s, true)) { gdDown(); s.holding = false; }
+    return;
+  }
+  if (s.mode === 'ship' || s.mode === 'wave' || s.mode === 'swing') {
+    const gap = s.obstacles.find(o => o.type === 'gap' && o.x < cutoff && o.x + o.w >= cl - 2);
+    const ty = gap ? (gap.gapTop + gap.gapBot) / 2 - s.size / 2 : (s.ceil + floor) / 2;
+    if (s.mode === 'wave') { s.holding = s.y > ty; return; }
+    if (s.mode === 'ship') {
+      const stopY = s.y + (s.vy < 0 ? -(s.vy * s.vy) / (2 * s.shipDown) : (s.vy * s.vy) / (2 * s.shipUp));
+      s.holding = stopY > ty;
+      return;
+    }
+    const acc = s.grav * 0.5;
+    const stopY = s.y + (s.vy >= 0 ? (s.vy * s.vy) / (2 * acc) : -(s.vy * s.vy) / (2 * acc));
+    const want = stopY > ty + 4 ? -1 : stopY < ty - 4 ? 1 : s.gravDir;
+    if (want !== s.gravDir) gdDown();
+    return;
+  }
+  const side = s.gravDir > 0 ? 'floor' : 'ceiling';
+  const surf = s.obstacles.find(o => o.type === 'surf' && o.x < cutoff && o.x + o.w >= cl - 2);
+  if (!surf || surf.side !== side) return;
+  const dist = surf.x - cr;
+  if (s.mode === 'spider') {
+    if (dist <= 10 * s.speed) gdDown();
+    return;
+  }
+  const onSurface = (s.gravDir > 0 && s.y >= floor - 0.6) || (s.gravDir < 0 && s.y <= s.ceil + 0.6);
+  if (onSurface && dist <= 22 * s.speed) gdDown();
+}
+
+// ---- Snake (BFS shortest path + virtual tail-reachability check + flood-fill fallback) ----
+const SN_DIRS = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
+function snBfs(start, goal, blocked, cols, rows) {
+  const gk = goal.y * cols + goal.x, sk = start.y * cols + start.x;
+  if (sk === gk) return [];
+  const prev = new Int32Array(cols * rows).fill(-1);
+  const q = [sk]; prev[sk] = sk;
+  for (let qi = 0; qi < q.length; qi++) {
+    const cur = q[qi], cx = cur % cols, cy = (cur - cx) / cols;
+    for (const d of SN_DIRS) {
+      const nx = cx + d.x, ny = cy + d.y;
+      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+      const nk = ny * cols + nx;
+      if (prev[nk] !== -1) continue;
+      if (nk !== gk && blocked[nk]) continue;
+      prev[nk] = cur;
+      if (nk === gk) {
+        const path = [];
+        let p = gk;
+        while (p !== sk) { path.push({ x: p % cols, y: Math.floor(p / cols) }); p = prev[p]; }
+        return path.reverse();
+      }
+      q.push(nk);
+    }
+  }
+  return null;
+}
+function snFlood(start, blocked, cols, rows) {
+  const vis = new Uint8Array(cols * rows);
+  const sk = start.y * cols + start.x;
+  const q = [sk]; vis[sk] = 1;
+  for (let qi = 0; qi < q.length; qi++) {
+    const cur = q[qi], cx = cur % cols, cy = (cur - cx) / cols;
+    for (const d of SN_DIRS) {
+      const nx = cx + d.x, ny = cy + d.y;
+      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+      const nk = ny * cols + nx;
+      if (!vis[nk] && !blocked[nk]) { vis[nk] = 1; q.push(nk); }
+    }
+  }
+  return q.length;
+}
+function gameBotSnake(s) {
+  if (!s || !s.alive || !s.body.length) return;
+  const { cols, rows, body, food } = s, head = body[0];
+  const blocked = new Uint8Array(cols * rows);
+  for (let i = 0; i < body.length - 1; i++) blocked[body[i].y * cols + body[i].x] = 1;
+  if (food) {
+    const path = snBfs(head, food, blocked, cols, rows);
+    if (path && path.length) {
+      let safe = body.length < 6 || body.length + 1 >= cols * rows;
+      if (!safe) {
+        const vBody = path.slice().reverse().concat(body).slice(0, body.length + 1);
+        const vb = new Uint8Array(cols * rows);
+        for (let i = 0; i < vBody.length - 1; i++) vb[vBody[i].y * cols + vBody[i].x] = 1;
+        safe = !!snBfs(vBody[0], vBody[vBody.length - 1], vb, cols, rows);
+      }
+      if (safe) {
+        const step = path[0];
+        if (!(step.x - head.x === -s.dir.x && step.y - head.y === -s.dir.y)) {
+          s.nextDir = { x: step.x - head.x, y: step.y - head.y };
+          return;
+        }
+      }
+    }
+  }
+  const tail = body[body.length - 1];
+  let bestDir = null, bestScore = -Infinity;
+  for (const d of SN_DIRS) {
+    if (d.x === -s.dir.x && d.y === -s.dir.y) continue;
+    const nx = head.x + d.x, ny = head.y + d.y;
+    if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+    const nk = ny * cols + nx;
+    if (blocked[nk]) continue;
+    const nb = blocked.slice(); nb[nk] = 1;
+    const tailOk = !!snBfs({ x: nx, y: ny }, tail, nb, cols, rows);
+    const space = snFlood({ x: nx, y: ny }, nb, cols, rows);
+    const fdist = food ? Math.abs(nx - food.x) + Math.abs(ny - food.y) : 0;
+    const sc = (tailOk ? 100000 : 0) + space * 120 + fdist;
+    if (sc > bestScore) { bestScore = sc; bestDir = d; }
+  }
+  if (bestDir) s.nextDir = bestDir;
+}
+
+// ---- Stack Tower (drops inside the exact <5px snap window every single time) ----
+function gameBotStack(s) {
+  if (!s || !s.running || !s.cur || !s.blocks.length) return;
+  const top = s.blocks[s.blocks.length - 1];
+  if (Math.abs(s.cur.x - top.x) < 4.9) stDrop();
+}
+
+// ---- Brick Breaker (exact landing-x prediction + brick-hunting bounce angle) ----
+function gameBotBrick(s) {
+  if (!s || !s.running || !s.ball) return;
+  const b = s.ball, p = s.paddle;
+  let targetX = b.x;
+  if (b.vy > 0) {
+    const py = s.H - 22 - b.r;
+    if (b.y < py) {
+      const steps = (py - b.y) / b.vy;
+      let lx = b.x + b.vx * steps;
+      const span = Math.max(1, s.W - 2 * b.r);
+      lx -= b.r;
+      const period = 2 * span;
+      lx = ((lx % period) + period) % period;
+      if (lx > span) lx = period - lx;
+      targetX = lx + b.r;
+    }
+  }
+  let aim = 0;
+  const alive = s.bricks.filter(br => br.alive);
+  if (alive.length) {
+    const low = alive.reduce((a, c) => (c.y > a.y ? c : a), alive[0]);
+    const bx = low.x + low.w / 2;
+    aim = Math.max(-p.w * 0.34, Math.min(p.w * 0.34, (bx - targetX) * 0.14));
+  }
+  p.x = Math.max(0, Math.min(s.W - p.w, targetX - p.w / 2 - aim));
+}
+
+// ---- Blox Merge / 2048 (depth-3 Expectimax with snake-corner heuristic) ----
+const MG_SNAKE = [
+  [32768, 16384, 8192, 4096],
+  [256,   512,   1024, 2048],
+  [128,   64,    32,   16],
+  [1,     2,     4,    8],
+];
+function mgSimMove(grid, dir) {
+  const g = grid.map(r => r.slice());
+  let changed = false, score = 0;
+  for (let i = 0; i < 4; i++) {
+    const line = [];
+    for (let j = 0; j < 4; j++) {
+      const v = dir === 'left' ? g[i][j] : dir === 'right' ? g[i][3 - j] : dir === 'up' ? g[j][i] : g[3 - j][i];
+      if (v) line.push(v);
+    }
+    const out = [];
+    for (let k = 0; k < line.length; k++) {
+      if (k + 1 < line.length && line[k] === line[k + 1]) { out.push(line[k] * 2); score += line[k] * 2; k++; }
+      else out.push(line[k]);
+    }
+    while (out.length < 4) out.push(0);
+    for (let j = 0; j < 4; j++) {
+      const r = dir === 'left' || dir === 'right' ? i : dir === 'up' ? j : 3 - j;
+      const c = dir === 'left' ? j : dir === 'right' ? 3 - j : i;
+      if (g[r][c] !== out[j]) { g[r][c] = out[j]; changed = true; }
+    }
+  }
+  return changed ? { g, score } : null;
+}
+function mgEval(g) {
+  let sc = 0, empty = 0, smooth = 0;
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+    const v = g[r][c];
+    if (!v) { empty++; continue; }
+    sc += v * MG_SNAKE[r][c];
+    if (c < 3 && g[r][c + 1]) smooth -= Math.abs(v - g[r][c + 1]) * 4;
+    if (r < 3 && g[r + 1][c]) smooth -= Math.abs(v - g[r + 1][c]) * 4;
+    if (c < 3 && g[r][c + 1] === v) sc += v * 12;
+    if (r < 3 && g[r + 1][c] === v) sc += v * 12;
+  }
+  return sc + empty * 8000 + smooth;
+}
+function mgExpecti(g, depth, isChance) {
+  if (depth === 0) return mgEval(g);
+  if (!isChance) {
+    let best = -Infinity;
+    for (const d of ['up', 'left', 'right', 'down']) {
+      const m = mgSimMove(g, d);
+      if (!m) continue;
+      const v = m.score * 6 + mgExpecti(m.g, depth - 1, true);
+      if (v > best) best = v;
+    }
+    return best === -Infinity ? -1e9 : best;
+  }
+  const empty = [];
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) if (!g[r][c]) empty.push([r, c]);
+  if (!empty.length) return mgEval(g);
+  const step = empty.length > 4 ? Math.ceil(empty.length / 4) : 1;
+  let total = 0, count = 0;
+  for (let i = 0; i < empty.length; i += step) {
+    const [r, c] = empty[i];
+    g[r][c] = 2; total += 0.9 * mgExpecti(g, depth - 1, false);
+    g[r][c] = 4; total += 0.1 * mgExpecti(g, depth - 1, false);
+    g[r][c] = 0; count++;
+  }
+  return total / count;
+}
+function gameBotMerge() {
+  const s = mergeState; if (!s || s.over) return;
+  let best = null, bestV = -Infinity;
+  for (const d of ['up', 'left', 'right', 'down']) {
+    const m = mgSimMove(s.grid, d);
+    if (!m) continue;
+    const v = m.score * 6 + mgExpecti(m.g, 2, true);
+    if (v > bestV) { bestV = v; best = d; }
+  }
+  if (best) mergeMove(best);
+}
+
+// ---- Block Blast / Tetris (El-Tetris heuristic over all rotations & columns) ----
+function gameBotBlockBlast() {
+  const s = bbState; if (!s) return;
+  if (!s.running) { if (!s.over) bbStart(); return; }
+  if (!s.piece) return;
+  let best = null, bestSc = -Infinity;
+  let m = s.piece.m;
+  for (let rot = 0; rot < 4; rot++) {
+    const w = m[0].length, h = m.length;
+    for (let x = 0; x <= s.cols - w; x++) {
+      let y = Math.min(s.piece.y, 0);
+      if (bbCollide(s, m, x, y)) {
+        if (s.piece.y >= 0 && !bbCollide(s, m, x, s.piece.y)) y = s.piece.y;
+        else continue;
+      }
+      while (!bbCollide(s, m, x, y + 1)) y++;
+      const g = s.grid.map(r => r.slice());
+      let topOut = false;
+      for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
+        if (!m[r][c]) continue;
+        if (y + r < 0) { topOut = true; break; }
+        g[y + r][x + c] = 1;
+      }
+      if (topOut) continue;
+      let lines = 0;
+      for (let r = s.rows - 1; r >= 0; r--) {
+        if (g[r].every(Boolean)) { g.splice(r, 1); g.unshift(new Array(s.cols).fill(null)); lines++; r++; }
+      }
+      const colH = new Array(s.cols).fill(0);
+      let holes = 0;
+      for (let c = 0; c < s.cols; c++) {
+        let seen = false;
+        for (let r = 0; r < s.rows; r++) {
+          if (g[r][c]) { if (!seen) { colH[c] = s.rows - r; seen = true; } }
+          else if (seen) holes++;
+        }
+      }
+      let aggH = 0, bump = 0;
+      for (let c = 0; c < s.cols; c++) { aggH += colH[c]; if (c > 0) bump += Math.abs(colH[c] - colH[c - 1]); }
+      const sc = -0.510066 * aggH + 0.760666 * lines - 0.35663 * holes - 0.184483 * bump;
+      if (sc > bestSc) { bestSc = sc; best = { m, x, y }; }
+    }
+    m = bbRotate(m);
+  }
+  if (best) {
+    s.piece.m = best.m;
+    s.piece.x = best.x;
+    s.piece.y = Math.min(s.piece.y, best.y);
+    bbHard();
+  }
+}
+
+// ---- Orb Crush (evaluates every adjacent swap + multi-cascade score) ----
+function crScoreSwap(grid, r1, c1, r2, c2) {
+  const g = grid.map(r => r.slice());
+  const tmp = g[r1][c1]; g[r1][c1] = g[r2][c2]; g[r2][c2] = tmp;
+  let total = 0, cascade = 1;
+  while (cascade <= 4) {
+    const m = crFindMatches(g);
+    if (!m.size) break;
+    total += m.size * 10 * cascade;
+    m.forEach(k => { const [r, c] = k.split(',').map(Number); g[r][c] = null; });
+    for (let c = 0; c < CR_N; c++) {
+      const col = [];
+      for (let r = CR_N - 1; r >= 0; r--) if (g[r][c] != null) col.push(g[r][c]);
+      for (let r = CR_N - 1; r >= 0; r--) g[r][c] = (CR_N - 1 - r) < col.length ? col[CR_N - 1 - r] : null;
+    }
+    cascade++;
+  }
+  return total;
+}
+function gameBotCrush() {
+  const s = crState; if (!s || s.busy || s.done) return;
+  let best = null, bestSc = 0;
+  for (let r = 0; r < CR_N; r++) for (let c = 0; c < CR_N; c++) {
+    if (c + 1 < CR_N && s.grid[r][c] !== s.grid[r][c + 1]) {
+      const sc = crScoreSwap(s.grid, r, c, r, c + 1);
+      if (sc > 0 && sc + r * 0.25 > bestSc) { bestSc = sc + r * 0.25; best = [r, c, r, c + 1]; }
+    }
+    if (r + 1 < CR_N && s.grid[r][c] !== s.grid[r + 1][c]) {
+      const sc = crScoreSwap(s.grid, r, c, r + 1, c);
+      if (sc > 0 && sc + r * 0.25 > bestSc) { bestSc = sc + r * 0.25; best = [r, c, r + 1, c]; }
+    }
+  }
+  if (best) crSwap(best[0], best[1], best[2], best[3]);
+}
+
+// ---- Cookie Clicker (turbo clicks + Lucky Crumb + optimal ROI upgrades & buildings) ----
+function gameBotCookie(now) {
+  if (!UC) return;
+  if (ccLuckyEl) ccCatchLucky();
+  const clicks = 8, p = cookieClickPower() * cookieMult();
+  UC.cookies = (UC.cookies || 0) + p * clicks;
+  UC.cookiesAllTime = (UC.cookiesAllTime || 0) + p * clicks;
+  UC.cookiesRun = cookieBaked() + p * clicks;
+  UC.cookieClicks = (UC.cookieClicks || 0) + clicks;
+  trackQuest('cookie', clicks);
+  if (now - gameBotLastFloat >= 240) {
+    gameBotLastFloat = now;
+    const btn = document.getElementById('ck-cookie');
+    if (btn) {
+      btn.style.transform = 'scale(.94)';
+      setTimeout(() => { if (btn) btn.style.transform = ''; }, 70);
+      const r = btn.getBoundingClientRect();
+      try {
+        const f = document.createElement('div'); f.className = 'ck-float'; f.textContent = '+' + ckNum(p * clicks);
+        f.style.left = (r.left + r.width * (0.35 + Math.random() * 0.3)) + 'px';
+        f.style.top = (r.top + r.height * 0.3) + 'px';
+        document.body.appendChild(f); setTimeout(() => f.remove(), 750);
+      } catch (_) {}
+    }
+  }
+  if (now - gameBotLastBuy >= 220) {
+    gameBotLastBuy = now;
+    let bought = false;
+    const availUp = ccUpgrades.filter(u => ccUpgradeAvailable(u) && (UC.cookies || 0) >= u.cost);
+    if (availUp.length) {
+      const u = availUp[0];
+      UC.cookies -= u.cost; UC.cookieUpgrades = (UC.cookieUpgrades || []).concat(u.id);
+      bought = true;
+    } else {
+      const bld = UC.cookieBuildings || {}, fx = ccFx();
+      let bestB = null, bestRoi = 0, bestPrice = 0;
+      for (const b of ccProd) {
+        const owned = bld[b.id] || 0, price = cookieBuildingPrice(b, owned);
+        if ((UC.cookies || 0) < price || price <= 0) continue;
+        const m0 = cookieBuildingMult(owned), m1 = cookieBuildingMult(owned + 1);
+        const gain = b.cps * ((owned + 1) * m1 - owned * m0) * (fx.bld[b.id] || 1) * fx.global;
+        const roi = gain / price;
+        if (roi > bestRoi) { bestRoi = roi; bestB = b; bestPrice = price; }
+      }
+      if (bestB) {
+        UC.cookies -= bestPrice; UC.cookieBuildings = UC.cookieBuildings || {};
+        UC.cookieBuildings[bestB.id] = (UC.cookieBuildings[bestB.id] || 0) + 1;
+        bought = true;
+      }
+    }
+    if (bought) { ccCheckAch(); renderCookieShop(); }
+  }
+  updateCookieView();
+  if (now - gameBotLastSave >= 10000) { gameBotLastSave = now; saveCookies(); }
+}
+
+// ---- Grow a Garden (harvest, sell, quests, unlock plots, pets, best seeds + sprinklers) ----
+function gameBotGarden(now) {
+  if (!UC || ggVisit || now - gameBotLastStep < 420) return;
+  gameBotLastStep = now;
+  const seedRate = s => (s.sell / Math.max(1, s.grow / 1000)) * (s.fn === 'multi' ? 1 + (s.fnVal || 0) : 1) * (s.fn === 'weight' ? 1 + (s.fnVal || 0) : 1);
+  let dirty = false;
+  gameBotSilent = true;
+  try {
+    if ((UC.ggPlots || []).some(p => p && ggPlotReady(p))) { ggHarvestAll(); dirty = true; }
+    if (Array.isArray(UC.ggInventory) && UC.ggInventory.length) { ggSellAll(); dirty = true; }
+    const Q = ggQuestsToday();
+    Q.q.forEach((q, i) => { if (!Q.c[i] && (Q.p[i] || 0) >= q.n) { ggClaimQuest(i); dirty = true; } });
+    if (UC.ggUnlocked < GG_MAX_PLOTS && (UC.ggSheckles || 0) >= ggExpandCost()) { ggExpand(); dirty = true; }
+    for (const pet of GG_PETS) {
+      if (ggOwnsPet(pet.id)) continue;
+      if (pet.requiresAll && !ggOwnAllStatus().ok) continue;
+      if ((UC.ggSheckles || 0) >= pet.cost) { ggBuyPet(pet.id); dirty = true; }
+    }
+    const pickBestSeed = () => {
+      let best = null, bestR = -1;
+      for (const s of GG_SEEDS) {
+        const can = ggBpCount('seeds', s.id) > 0 || (ggStockLeft(s, 'seeds') > 0 && (UC.ggSheckles || 0) >= ggSeedCost(s));
+        if (!can) continue;
+        const r = seedRate(s);
+        if (r > bestR) { bestR = r; best = s; }
+      }
+      return best;
+    };
+    for (let i = 0; i < UC.ggUnlocked; i++) {
+      if (UC.ggPlots[i]) continue;
+      const s = pickBestSeed();
+      if (!s) break;
+      ggSel = s.id; ggPlant(i); dirty = true;
+    }
+    // Upgrade a low-tier plot without sprinklers when a much stronger seed (>= 5x rate) is easily affordable
+    const topSeed = pickBestSeed();
+    if (topSeed && (ggBpCount('seeds', topSeed.id) > 0 || (UC.ggSheckles || 0) >= ggSeedCost(topSeed) * 2)) {
+      const topR = seedRate(topSeed);
+      for (let i = 0; i < UC.ggUnlocked; i++) {
+        const p = UC.ggPlots[i]; if (!p || (p.sprinklers && p.sprinklers.length)) continue;
+        const cur = GG_SEED_MAP[p.seed];
+        if (cur && topR >= seedRate(cur) * 5) { ggDig(i); ggSel = topSeed.id; ggPlant(i); dirty = true; break; }
+      }
+    }
+    const sprs = GG_SPRINKLERS.slice().sort((a, b) => ((b.speed || 0) + (b.weight || 0)) - ((a.speed || 0) + (a.weight || 0)));
+    for (let i = 0; i < UC.ggUnlocked; i++) {
+      const p = UC.ggPlots[i]; if (!p) continue;
+      const have = Array.isArray(p.sprinklers) ? p.sprinklers : [];
+      for (const sp of sprs) {
+        if (have.includes(sp.id)) continue;
+        const can = ggBpCount('sprinklers', sp.id) > 0 || (ggStockLeft(sp, 'sprinklers') > 0 && (UC.ggSheckles || 0) >= (sp.cost || 0));
+        if (!can) continue;
+        ggSprSel = sp.id; ggPlaceSprinkler(i); dirty = true;
+        break;
+      }
+    }
+  } finally { gameBotSilent = false; }
+  if (dirty && now - gameBotLastSave >= 8000) { gameBotLastSave = now; saveGarden(); }
+}
+
+// ---- Main 25ms Bot Dispatcher for all polling/turn-based games ----
+function gameBotTick() {
+  if (!gameBotOn || !gameBotAllowed() || !currentGameId) {
+    if (gameBotOn) gameBotSet(false);
+    return;
+  }
+  const now = Date.now();
+  switch (currentGameId) {
+    case 'cookie': gameBotCookie(now); return;
+    case 'growgarden': gameBotGarden(now); return;
+    case 'geodash':
+      if (gdState && !gdState.started && !gdState.dead) gdStart();
+      return;
+    case 'snake':
+      if (snakeState && !snakeState.started && !snakeState.dyingAt) snakeStart();
+      return;
+    case 'stack':
+      if (stState && !stState.running && !stState.over) stStart();
+      return;
+    case 'brick':
+      if (bkState && !bkState.running && !bkState.over) bkStart();
+      return;
+    case 'aim':
+      if (!atState) return;
+      if (!atState.running && atState.hits === 0 && atState.misses === 0) { atStart(); return; }
+      if (atState.running) atHit();
+      return;
+    case 'typing':
+      if (!tsState) return;
+      if (!tsState.running && tsState.lives === 3 && tsState.cleared === 0) { tsStart(); return; }
+      if (tsState.running && tsState.words.length) {
+        let best = tsState.words[0];
+        for (const w of tsState.words) if (w.x < best.x) best = w;
+        const inp = document.getElementById('ts-input');
+        if (inp) { inp.value = best.text; tsSubmit(); }
+      }
+      return;
+    case 'merge':
+      if (now - gameBotLastStep < 45) return;
+      gameBotLastStep = now;
+      gameBotMerge();
+      return;
+    case 'blockblast':
+      if (now - gameBotLastStep < 50) return;
+      gameBotLastStep = now;
+      gameBotBlockBlast();
+      return;
+    case 'dailyword':
+      if (!dwState || dwState.done || now - gameBotLastStep < 55) return;
+      gameBotLastStep = now;
+      if (!dwState.word.startsWith(dwState.current)) dwBack();
+      else if (dwState.current.length < 5) dwType(dwState.word[dwState.current.length]);
+      else dwSubmit();
+      return;
+    case 'sudoku': {
+      const s = suState; if (!s || s.done || now - gameBotLastStep < 25) return;
+      gameBotLastStep = now;
+      let idx = -1, rem = 0;
+      for (let i = 0; i < 81; i++) {
+        if (s.cells[i] !== +s.solution[i]) { if (idx === -1) idx = i; rem++; }
+      }
+      if (idx === -1) { suAfterInput(); return; }
+      s.sel = idx; s.cells[idx] = +s.solution[idx];
+      if (rem <= 1) suAfterInput(); else suDraw();
+      return;
+    }
+    case 'connect4': {
+      const s = c4State; if (!s || s.over || s.busy || s.turn !== 1 || now - gameBotLastStep < 75) return;
+      gameBotLastStep = now;
+      const cols = c4Cols(s.board); if (!cols.length) return;
+      for (const col of cols) { const nb = s.board.map(r => r.slice()); c4Drop(nb, col, 1); if (c4Wins(nb, 1)) { c4Play(col); return; } }
+      for (const col of cols) { const nb = s.board.map(r => r.slice()); c4Drop(nb, col, 2); if (c4Wins(nb, 2)) { c4Play(col); return; } }
+      const mv = c4Minimax(s.board, 7, -Infinity, Infinity, false)[1];
+      c4Play(mv == null ? cols[0] : mv);
+      return;
+    }
+    case 'memory': {
+      const s = mmState; if (!s || s.busy || s.done || s.peek || now - gameBotLastStep < 55) return;
+      gameBotLastStep = now;
+      if (s.first === -1) {
+        const i = s.cards.findIndex(c => !c.matched && !c.flipped);
+        if (i >= 0) mmFlip(i);
+      } else {
+        const val = s.cards[s.first].val;
+        const j = s.cards.findIndex((c, idx) => idx !== s.first && !c.matched && c.val === val);
+        if (j >= 0) mmFlip(j);
+      }
+      return;
+    }
+    case 'sweeper': {
+      const s = csState; if (!s || s.over || now - gameBotLastStep < 25) return;
+      gameBotLastStep = now;
+      if (s.flagMode) csToggleFlag();
+      if (!s.started) { csClick(Math.floor(s.rows / 2), Math.floor(s.cols / 2)); return; }
+      for (let r = 0; r < s.rows; r++) for (let c = 0; c < s.cols; c++) {
+        if (s.grid[r][c].mine && !s.grid[r][c].flag) { csFlag(r, c); return; }
+      }
+      for (let r = 0; r < s.rows; r++) for (let c = 0; c < s.cols; c++) {
+        if (!s.grid[r][c].mine && !s.grid[r][c].rev) { csClick(r, c); return; }
+      }
+      return;
+    }
+    case 'crush':
+      if (now - gameBotLastStep < 65) return;
+      gameBotLastStep = now;
+      gameBotCrush();
+      return;
+    case 'simon': {
+      const s = smState; if (!s || s.over || now - gameBotLastStep < 65) return;
+      gameBotLastStep = now;
+      if (s.round === 0 && !s.showing && !s.accepting) { smStart(); return; }
+      if (s.accepting && s.step < s.seq.length) smPress(s.seq[s.step]);
+      return;
+    }
+    case 'xtramath': {
+      const s = xtraState; if (!s || now - gameBotLastStep < 120) return;
+      gameBotLastStep = now;
+      if (!s.level) { xtraPick(6); return; }
+      if (s.problem && !s._botSubmitted) {
+        s._botSubmitted = true;
+        const aEl = document.getElementById('xm-answer');
+        if (aEl) aEl.value = xtraFmt(s.problem.a);
+        xtraSubmit();
+      }
+      return;
+    }
+  }
 }
 
 function mountGameHubs() {
@@ -21177,6 +21843,10 @@ const EGGS = [
   { id: 'hawking', t: 'e', name: 'Hawking Radiation', how: 'Type "hawking" anywhere.', hint: 'Even black holes leak a little. Who worked that out?' },
   { id: 'spaghetti', t: 'm', name: 'Spaghettified', how: 'Poke the Black Hole profile effect in the Shop 5 times.', hint: 'Don\'t poke the black hole.' },
   { id: 'lostinspace', t: 'h', name: 'Lost in Space', how: 'Wear the whole black hole set at once: the Black Hole theme, nameplate and profile effect, the Event Horizon frame and the Pocket Black Hole.', hint: 'Go all the way in.' },
+  // v4.73
+  { id: 'autopilot', t: 'e', name: 'Autopilot', how: 'Type "autopilot" anywhere.', hint: 'Hands off the wheel. One word.' },
+  { id: 'beepboop', t: 'e', name: 'Beep Boop', how: 'Type "beepboop" anywhere.', hint: 'What does a robot say?' },
+  { id: 'arcadepro', t: 'm', name: 'Arcade Regular', how: 'Open 5 different mini-games in one visit.', hint: 'Try five different games in one sitting.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -21421,11 +22091,14 @@ function eggEffect(id, first) {
     case 'hawking': eggToast('Hawking radiation.', 'Even black holes leak a little.'); return;
     case 'spaghetti': eggToast('Spaghettified.', 'You got a little too close.'); return;
     case 'lostinspace': eggToast('Lost in space.', 'Nothing gets out. Not even you.'); return;
+    case 'autopilot': eggToast('Autopilot engaged.', 'Hands off the wheel.'); return;
+    case 'beepboop': eggToast('Beep boop.', 'Definitely a human.'); return;
+    case 'arcadepro': eggToast('Arcade regular.', 'Five games in one sitting.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
 // ---- the triggers that live here (the rest are in the code they belong to: search for eggFind) ----
-const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot', hawking: 'hawking' };
+const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot', hawking: 'hawking', autopilot: 'autopilot', beepboop: 'beepboop' };
 const EGG_SEQS = {
   oldcode: ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'KeyB', 'KeyA'],
   spin: ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'],
@@ -21544,6 +22217,7 @@ const EGG_GROUPS = [
   ['Privacy, glass and Premium (v4.70)', ['keepout', 'glassphone', 'forever']],
   ['Nameplates and themes (v4.71)', ['smoothplate', 'freshpaint', 'matchingset']],
   ['Black holes (v4.72)', ['hawking', 'spaghetti', 'lostinspace']],
+  ['Game Bot (v4.73)', ['autopilot', 'beepboop', 'arcadepro']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {

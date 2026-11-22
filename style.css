@@ -3044,6 +3044,23 @@ body.quick-delete-armed #messages .msg-line:hover .msg-hover-actions { display: 
 .fg-title { font-size: 20px; font-weight: 700; }
 .fg-x { width: 36px; height: 36px; border-radius: 6px; font-size: 18px; color: var(--text-muted); }
 .fg-x:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
+/* Owner-only game BOT toggle (v4.73) */
+.fg-bot-btn {
+  display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--text-muted); background: var(--bg-tertiary); border: 1px solid var(--divider);
+  cursor: pointer; transition: background .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
+  flex-shrink: 0;
+}
+.fg-bot-btn.hidden { display: none; }
+.fg-bot-btn:hover { color: var(--text-normal); border-color: rgba(255,255,255,.22); }
+.fg-bot-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); flex-shrink: 0; }
+.fg-bot-btn.on {
+  color: #fff; background: rgba(35,165,90,.22); border-color: #23a55a;
+  box-shadow: 0 0 14px rgba(35,165,90,.35);
+}
+.fg-bot-btn.on .fg-bot-dot { background: #38e07b; box-shadow: 0 0 8px #38e07b; animation: fgBotPulse 1.4s ease-in-out infinite; }
+@keyframes fgBotPulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 .fg-stage { overflow-y: auto; }
 .fg-btn { min-height: 42px; padding: 2px 22px; font-size: 15px; font-weight: 600; color: var(--text-normal); background: var(--bg-input); border-radius: 6px; }
 .fg-btn:hover:not(:disabled) { background: var(--bg-modifier-selected); }
@@ -4134,6 +4151,7 @@ html[data-epilepsy] .sic-theme-blackhole::before,
 html[data-epilepsy] .nameplate-blackhole::before,
 html[data-epilepsy] .frame-eventhorizon::before,
 html[data-epilepsy] .fg-window .gg-plot.ready,
+html[data-epilepsy] .fg-bot-btn.on .fg-bot-dot,
 html[data-epilepsy] .fg-window .gg-wx-layer,
 html[data-epilepsy] .fg-window .r-super,
 html[data-epilepsy] .gag-item .r-super,

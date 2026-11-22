@@ -15,6 +15,8 @@ const W = 1600, H = 900;                       // the level's own units; the can
 let api = null, root = null, cv = null, ctx = null, raf = 0, level = null, state = 'menu', t0 = 0, deaths = 0;
 let progress = { best: 0, cleared: '' }, arm = null, last = null, paused = '', msg = '', msgUntil = 0, offFns = [];
 let pos = null, frozenUntil = 0, atEnd = false, flawless = 0, wonAt = 0;
+let botOn = false, botWp = 1, botLastAt = 0;
+const botAllowed = () => !!(botOn && api && typeof api.isOwner === 'function' && api.isOwner());
 const canLock = () => !!(cv && cv.requestPointerLock);
 const locked = () => !!cv && document.pointerLockElement === cv;
 
@@ -95,7 +97,31 @@ function build(n) {
     const c = center(...path[i]), type = types[Math.floor(r() * types.length)];
     obstacles.push({ type, x: c.x, y: c.y, size: width * (0.28 + r() * 0.12), amp: width * 0.5, sp: speed * (0.7 + r() * 0.6), ph: r() * Math.PI * 2, len: width * 0.92 });
   }
-  return { n, rects, start: startZone, end: endZone, checkpoints, tricks, obstacles, width };
+  // Build obstacle-aware bot waypoints: skirts around obstacle centers (0.38 * width from center, strictly inside corridor)
+  const rawWps = path.map(p => center(...p)), obsIdx = new Set();
+  obstacles.forEach(o => {
+    const idx = rawWps.findIndex(w => Math.hypot(w.x - o.x, w.y - o.y) < 4);
+    if (idx > 0 && idx < rawWps.length - 1) obsIdx.add(idx);
+  });
+  const waypoints = [rawWps[0]], wpIndexForCell = [0];
+  const d = width * 0.38;
+  for (let i = 1; i < rawWps.length; i++) {
+    wpIndexForCell[i] = waypoints.length;
+    if (!obsIdx.has(i)) { waypoints.push(rawWps[i]); continue; }
+    const prev = rawWps[i - 1], cur = rawWps[i], next = rawWps[i + 1];
+    const id = Math.hypot(cur.x - prev.x, cur.y - prev.y) || 1, ix = (cur.x - prev.x) / id, iy = (cur.y - prev.y) / id;
+    const od = Math.hypot(next.x - cur.x, next.y - cur.y) || 1, ox = (next.x - cur.x) / od, oy = (next.y - cur.y) / od;
+    if (Math.abs(ix - ox) < 0.01 && Math.abs(iy - oy) < 0.01) {
+      const px = -iy, py = ix;
+      waypoints.push({ x: cur.x - ix * d + px * d, y: cur.y - iy * d + py * d });
+      waypoints.push({ x: cur.x + ix * d + px * d, y: cur.y + iy * d + py * d });
+    } else {
+      waypoints.push({ x: cur.x - ix * d - ox * d, y: cur.y - iy * d - oy * d });
+      waypoints.push({ x: cur.x + ix * d - ox * d, y: cur.y + iy * d - oy * d });
+      waypoints.push({ x: cur.x + ix * d + ox * d, y: cur.y + iy * d + oy * d });
+    }
+  }
+  return { n, rects, start: startZone, end: endZone, checkpoints, tricks, obstacles, width, waypoints, wpIndexForCell };
 }
 
 // ---------- what's where at time t ----------
@@ -145,14 +171,20 @@ function lockPointer() {
 }
 // The mouse goes onto a square (the start, or the checkpoint after a touch), held still a moment so a hand still moving
 // doesn't carry it straight into the next wall.
-function placeOn(z, holdMs) { pos = middle(z); last = pos; atEnd = false; frozenUntil = performance.now() + (holdMs || 0); }
+function placeOn(z, holdMs) {
+  pos = middle(z); last = pos; atEnd = false; frozenUntil = performance.now() + (holdMs || 0);
+  if (level && level.waypoints) {
+    if (z === level.start) botWp = 1;
+    else if (z && typeof z.at === 'number' && level.wpIndexForCell) botWp = Math.min(level.waypoints.length - 1, (level.wpIndexForCell[z.at] || 0) + 1);
+  }
+}
 function startLevel(n) {
-  level = build(n); arm = level.start; deaths = 0; t0 = performance.now(); atEnd = false;
-  if (canLock()) {
-    placeOn(level.start, 250);
+  level = build(n); arm = level.start; deaths = 0; t0 = performance.now(); atEnd = false; botWp = 1;
+  if (canLock() || botAllowed()) {
+    placeOn(level.start, botAllowed() ? 80 : 250);
     state = 'play';
-    lockPointer();
-    say(locked() ? 'Go! Reach the gold square and click it.' : 'Click the maze to start.', 2400);
+    if (!botAllowed()) lockPointer();
+    say(botAllowed() ? 'BOT active.' : locked() ? 'Go! Reach the gold square and click it.' : 'Click the maze to start.', 2400);
   } else {
     state = 'arming'; last = null; pos = null;
     say('Move the mouse onto the green square to start.', 2600);
@@ -178,7 +210,7 @@ function clear() {
   if (flawless >= 10) api.egg('mazeflawless');     // ten levels in a row without touching anything
   state = 'won'; wonAt = performance.now(); atEnd = false;
   say(`Level ${n} cleared${first ? ' for the first time' : ''}! +${orbs} Orbs${deaths ? ` (${deaths} ${deaths === 1 ? 'try' : 'tries'})` : ' without a single touch'}`, 2400);
-  setTimeout(() => { if (state === 'won') { if (n < LEVELS) startLevel(n + 1); else { showMenu(true); say('That was the last level. You beat Mouse Maze.', 4000); } } }, 2000);
+  setTimeout(() => { if (state === 'won') { if (n < LEVELS) startLevel(n + 1); else { showMenu(true); say('That was the last level. You beat Mouse Maze.', 4000); } } }, botAllowed() ? 650 : 2000);
 }
 // one step of the mouse, from where it was to `p`, checked all the way along
 function moveTo(p) {
@@ -222,10 +254,50 @@ function onDown(e) {
 }
 function onLeave() { if (!canLock() && state === 'play' && !paused) die('left'); }
 function checkPause() {
+  if (botAllowed()) { paused = ''; return; }
   const why = !isFull() ? 'full' : !document.hasFocus() ? 'focus' : (canLock() && level && state === 'play' && !locked()) ? 'lock' : '';
   if (why === paused) return;
   paused = why;
   if (why && state === 'play' && !canLock()) { state = 'arming'; last = null; }   // pick up again from the square you're on
+}
+function botSegSafe(a, b, t) {
+  const d = Math.hypot(b.x - a.x, b.y - a.y), steps = Math.max(1, Math.ceil(d / 3));
+  for (let i = 1; i <= steps; i++) {
+    const q = { x: a.x + (b.x - a.x) * i / steps, y: a.y + (b.y - a.y) * i / steps };
+    if (!level.rects.some(r => inRect(q, r))) return false;
+    if (level.tricks.some(tr => inRect(q, tr))) return false;
+    if (hitsObstacle(q, t) || hitsObstacle(q, t + 0.045)) return false;
+  }
+  return true;
+}
+function botStep(now) {
+  if (!botAllowed() || !level) return;
+  if (state === 'menu') { startLevel(progress.best >= LEVELS ? 1 : progress.best + 1); return; }
+  if (state === 'arming' && arm) { placeOn(arm, 0); state = 'play'; }
+  if (state !== 'play' || now < frozenUntil) { botLastAt = now; return; }
+  if (atEnd) { clear(); return; }
+  if (!pos) placeOn(arm || level.start, 0);
+  const wps = level.waypoints;
+  if (!wps || !wps.length) return;
+  const dt = botLastAt ? Math.min(0.06, Math.max(0.012, (now - botLastAt) / 1000)) : 0.016;
+  botLastAt = now;
+  let budget = Math.max(18, Math.min(48, 1200 * dt));
+  const t = (now - t0) / 1000;
+  while (budget > 0.5 && state === 'play' && !atEnd) {
+    while (botWp < wps.length - 1 && Math.hypot(wps[botWp].x - pos.x, wps[botWp].y - pos.y) < 4) botWp++;
+    const wp = wps[botWp], dx = wp.x - pos.x, dy = wp.y - pos.y, dist = Math.hypot(dx, dy);
+    if (dist < 1) { if (inRect(pos, level.end)) { atEnd = true; clear(); } break; }
+    const ux = dx / dist, uy = dy / dist, step = Math.min(budget, dist);
+    const cand = { x: pos.x + ux * step, y: pos.y + uy * step };
+    if (botSegSafe(pos, cand, t)) { moveTo(cand); budget -= step; if (atEnd) { clear(); return; } continue; }
+    // blocked by a moving obstacle ahead: wait safely, or step back slightly if our spot is about to be clipped
+    if (hitsObstacle(pos, t + 0.06)) {
+      const prev = wps[Math.max(0, botWp - 1)], bdx = prev.x - pos.x, bdy = prev.y - pos.y, bd = Math.hypot(bdx, bdy) || 1;
+      const back = { x: pos.x + (bdx / bd) * Math.min(12, bd), y: pos.y + (bdy / bd) * Math.min(12, bd) };
+      if (botSegSafe(pos, back, t)) moveTo(back);
+    }
+    break;
+  }
 }
 
 // ---------- drawing ----------
@@ -268,6 +340,7 @@ function pill(text, x, y, align, strong) {
 function draw(now) {
   raf = requestAnimationFrame(draw);
   checkPause();
+  if (botAllowed()) botStep(now);
   const b = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(b.width * dpr) || cv.height !== Math.round(b.height * dpr)) { cv.width = Math.round(b.width * dpr); cv.height = Math.round(b.height * dpr); }
   const s = Math.min(b.width / W, b.height / H) * dpr, ox = (cv.width - W * s) / 2, oy = (cv.height - H * s) / 2;
@@ -303,7 +376,7 @@ function draw(now) {
   });
   ctx.restore();
   if (state === 'arming' && arm) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.strokeRect(arm.x - 4, arm.y - 4, arm.w + 8, arm.h + 8); ctx.setLineDash([]); }
-  if (pos && canLock() && state !== 'menu') drawPointer(pos, s / dpr, now < frozenUntil && Math.floor(now / 90) % 2 === 0);
+  if (pos && (canLock() || botAllowed()) && state !== 'menu') drawPointer(pos, s / dpr, now < frozenUntil && Math.floor(now / 90) % 2 === 0);
   // what's going on: level and tries at the top, messages at the bottom
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   pill(`Level ${level.n} of ${LEVELS}`, 14, 12, 'left');
@@ -334,7 +407,7 @@ function showMenu(on) {
   m.querySelectorAll('[data-lv]').forEach(b => { b.onclick = () => go(Number(b.dataset.lv)); });
 }
 function go(n) {
-  if (!isFull()) { (root.requestFullscreen ? root.requestFullscreen() : Promise.reject()).catch(() => {}); }
+  if (!botAllowed() && !isFull()) { (root.requestFullscreen ? root.requestFullscreen() : Promise.reject()).catch(() => {}); }
   startLevel(n);
 }
 
@@ -373,7 +446,17 @@ export function open(stage, frixion) {
   showMenu(true);
   raf = requestAnimationFrame(draw);
 }
+export function setBot(on) {
+  botOn = !!(on && api && typeof api.isOwner === 'function' && api.isOwner());
+  if (botOn && root && cv) {
+    paused = '';
+    if (locked()) document.exitPointerLock();
+    if (state === 'menu') startLevel(progress.best >= LEVELS ? 1 : progress.best + 1);
+    else if (state === 'arming' && arm) { placeOn(arm, 0); state = 'play'; }
+  }
+}
 export function close() {
+  botOn = false; botWp = 1;
   cancelAnimationFrame(raf); raf = 0;
   offFns.forEach(f => f()); offFns = [];
   if (cv && document.pointerLockElement === cv) document.exitPointerLock();

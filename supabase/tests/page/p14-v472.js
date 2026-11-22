@@ -10,7 +10,7 @@ hideModals();
 // ---------- syncShopPrices() writes the 7 new built-in items for the server ----------
 const pricesDoc = await until(async () => {
   const d = await doc('shopPrices/builtin');
-  return d && d.v === '4.72' && d.p && d.p.themes && d.p.themes.blackhole === 1500 ? d : null;
+  return d && versionNum(d.v) >= versionNum('4.72') && d.p && d.p.themes && d.p.themes.blackhole === 1500 ? d : null;
 }, 8000);
 check('84: Owner login syncs shopPrices/builtin with v4.72 and all 7 space items', !!pricesDoc
   && pricesDoc.p.themes.blackhole === 1500
@@ -134,8 +134,8 @@ closeModal('profile-modal');
 if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
 for (const ch of 'hawking') document.dispatchEvent(new KeyboardEvent('keydown', { key: ch, code: 'Key' + ch.toUpperCase(), bubbles: true }));
 check('egg: Hawking Radiation (type "hawking" anywhere)', !!(await until(() => eggFoundSet.has('hawking'), 6000)));
-check('84: EGGS total is 87 and Black holes (v4.72) is in EGG_GROUPS',
-  EGGS.length === 87 && EGG_GROUPS.some(([name, ids]) => /v4\.72/.test(name) && ids.join() === 'hawking,spaghetti,lostinspace'),
+check('84: EGGS total is at least 87 and Black holes (v4.72) is in EGG_GROUPS',
+  EGGS.length >= 87 && EGG_GROUPS.some(([name, ids]) => /v4\.72/.test(name) && ids.join() === 'hawking,spaghetti,lostinspace'),
   EGGS.length);
 
 // Clean up
