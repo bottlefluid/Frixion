@@ -265,6 +265,9 @@ const AVATAR_DECORATIONS = [
     svg: (s) => `<svg viewBox="0 0 100 100" width="${s}" height="${s}"><path d="M50 0 L66 30 L34 30 Z" fill="#f23f42"/><path d="M50 0 L55 10 L45 10 Z M42 16 L58 16 L61 22 L39 22 Z" fill="#ffe066"/><circle cx="50" cy="2" r="4" fill="#5ec7ff"/><path d="M34 30 L66 30" stroke="#fff" stroke-width="2"/></svg>` },
   { id: 'angel-wings', name: 'Angel Wings', desc: 'Soft feathered wings on either side.', price: 750,
     svg: (s) => `<svg viewBox="0 0 100 100" width="${s}" height="${s}"><path d="M16 60 Q-4 40 6 20 Q14 36 22 34 Q10 48 20 56 Z" fill="#fff" stroke="#d6dcff" stroke-width="1.5"/><path d="M84 60 Q104 40 94 20 Q86 36 78 34 Q90 48 80 56 Z" fill="#fff" stroke="#d6dcff" stroke-width="1.5"/></svg>` },
+  // the black hole and space set (v4.72, request 84)
+  { id: 'pocket-blackhole', name: 'Pocket Black Hole', desc: 'A tiny black hole floating by your picture, wrapped in its glowing disk.', price: 750, collection: 'space',
+    svg: (s) => `<svg viewBox="0 0 100 100" width="${s}" height="${s}"><circle cx="83" cy="17" r="16" fill="#ff8a2a" opacity=".12"/><circle cx="83" cy="17" r="10" fill="#ffb35c" opacity=".18"/><circle cx="64" cy="5" r="1" fill="#fff"/><circle cx="97" cy="34" r=".8" fill="#fff"/><circle cx="72" cy="31" r=".6" fill="#fff"/><g transform="rotate(-22 83 17)"><path d="M68 17 A15 4.8 0 0 1 98 17" fill="none" stroke="#ffcf8a" stroke-width="2.2" stroke-linecap="round" opacity=".85"/><circle cx="83" cy="17" r="6.2" fill="#040306"/><path d="M75 14.5 A9 8 0 0 1 91 14.5" fill="none" stroke="#ffd59a" stroke-width="1.4" opacity=".75"/><circle cx="83" cy="17" r="6.9" fill="none" stroke="#fff1d6" stroke-width="1.1"/><path d="M68 17 A15 4.8 0 0 0 98 17" fill="none" stroke="#ff9a3c" stroke-width="3" stroke-linecap="round"/><path d="M72 17 A11 3.4 0 0 0 94 17" fill="none" stroke="#fff3dc" stroke-width="1.2" stroke-linecap="round" opacity=".9"/></g></svg>` },
 ];
 // Admin/owner-published decorations, drawn in-app rather than hand-coded —
 // loaded from Firestore (see shopDecorations collection) and merged
@@ -287,6 +290,9 @@ const NAMEPLATES = [
   { id: 'sunset', name: 'Sunset', desc: 'A warm sun setting behind your name.', price: 450, cssClass: 'nameplate-sunset', animated: false },
   { id: 'galaxy', name: 'Galaxy', desc: 'Drifting nebula colors dotted with stars.', price: 700, cssClass: 'nameplate-galaxy', animated: true, featured: true },
   { id: 'lava', name: 'Lava', desc: 'Molten lava flowing along your name.', price: 600, cssClass: 'nameplate-lava', animated: true },
+  // the black hole and space set (v4.72, request 84)
+  { id: 'blackhole', name: 'Black Hole', desc: 'A black hole at the end of your name, its glowing disk always turning.', price: 800, cssClass: 'nameplate-blackhole', animated: true, collection: 'space' },
+  { id: 'planetrise', name: 'Planetrise', desc: 'The glowing edge of a planet rising under your name, with stars above.', price: 600, cssClass: 'nameplate-planetrise', animated: false, collection: 'space' },
 ];
 let customNameplates = [];
 // Gradient Banners — admin/owner-published profile banners sold in the Shop.
@@ -337,6 +343,8 @@ const PROFILE_EFFECTS = [
   { id: 'fx-koi', name: 'Koi Pond', desc: 'A drop rings out across the water, then koi swim slow loops while it ripples. They look hungry.', price: 2800, fx: 'koi', animated: true },
   { id: 'fx-storm', name: 'Thunderstorm', desc: 'Dark clouds roll in, rain falls, and a thin bolt forks now and then.', price: 3000, fx: 'storm', animated: true, featured: true },
   { id: 'fx-soap', name: 'Soap Bubbles', desc: 'Shiny bubbles wobble up your card and pop near the top.', price: 1600, fx: 'soap', animated: true },
+  // the black hole and space set (v4.72, request 84)
+  { id: 'fx-blackhole', name: 'Black Hole', desc: 'A black hole opens behind your card and pulls the stars into a glowing disk that keeps turning. Every so often it swallows one more.', price: 3600, fx: 'blackhole', animated: true, collection: 'space' },
 ];
 let customProfileEffects = [];
 function profileEffectById(id) { return PROFILE_EFFECTS.find(d => d.id === id) || customProfileEffects.find(d => d.id === id) || null; }
@@ -772,6 +780,65 @@ const FX_DRAW = {
       c.globalAlpha = 1;
     },
   },
+  // Black Hole (v4.72, request 84): a black hole opens behind the card and pulls the stars around it into a tilted,
+  // glowing disk. Then the disk keeps turning (faster near the middle), the far side of it bends up over the top, and
+  // every few seconds a star spirals in.
+  blackhole: {
+    intro: 2600,
+    make: R => ({
+      stars: Array.from({ length: 80 }, () => ({ x: R(), y: R(), s: .5 + R() * 1.3, p: R() * 6.28 })),
+      disk: Array.from({ length: 170 }, () => ({ a: R() * 6.2832, d: Math.pow(R(), .8), s: .7 + R() * 1.6, v: .6 + R() * .5, sx: R(), sy: R() })),
+      seed: Math.floor(R() * 1e6),
+    }),
+    draw(c, st, t, w, h) {
+      const k = fxEase(t / 2600), sec = t / 1000, S = Math.min(w, h), TAU = 6.2832;
+      const cx = w * .72, cy = Math.min(h * .22, 112), hole = S * .065 * (.15 + .85 * k), inner = S * .09, outer = S * .34, tilt = .3;
+      // a dark patch of sky around it, and the stars behind, pulled in toward it as it opens
+      c.globalAlpha = .6 * k; c.drawImage(fxBlob([6, 2, 14], 128), cx - outer * 1.7, cy - outer * 1.7, outer * 3.4, outer * 3.4);
+      c.fillStyle = '#e6ecff';
+      st.stars.forEach(s => {
+        let x = s.x * w, y = s.y * h;
+        const dx = x - cx, dy = y - cy, pull = Math.min(.6, (S * .1) * (S * .1) / (dx * dx + dy * dy || 1)) * k;
+        x -= dx * pull; y -= dy * pull;
+        if ((x - cx) ** 2 + (y - cy) ** 2 < (hole * 1.2) ** 2) return;
+        c.globalAlpha = .3 + .3 * Math.sin(sec * 1.4 + s.p);
+        c.fillRect(x, y, s.s, s.s);
+      });
+      // the disk, in two halves: the far half before the hole is drawn, the near half after it
+      const disk = near => st.disk.forEach(p => {
+        const r = inner + p.d * (outer - inner), a = p.a + sec * p.v * Math.pow(inner / r, 1.1) * 2.2;
+        if ((Math.sin(a) >= 0) !== near) return;
+        const gx = cx + Math.cos(a) * r, gy = cy + Math.sin(a) * r * tilt;
+        const x = p.sx * w + (gx - p.sx * w) * k, y = p.sy * h + (gy - p.sy * h) * k;
+        c.globalAlpha = (1 - p.d * .7) * (.35 + .65 * k);
+        c.fillStyle = p.d < .3 ? '#fff3dc' : p.d < .62 ? '#ffaa50' : '#c45aa0';
+        c.fillRect(x - p.s / 2, y - p.s / 2, p.s, p.s);
+      });
+      c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = .45 * k; c.drawImage(fxBlob([255, 130, 40], 128), cx - outer * 1.1, cy - outer * .5, outer * 2.2, outer);
+      disk(false);
+      c.globalCompositeOperation = 'source-over';
+      // the hole, a thin ring of bent light round it, and the far side of the disk bending up over the top
+      c.globalAlpha = 1; c.fillStyle = '#000'; c.beginPath(); c.arc(cx, cy, hole, 0, TAU); c.fill();
+      c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = .85 * k; c.strokeStyle = '#ffe4be'; c.lineWidth = 1.3; c.beginPath(); c.arc(cx, cy, hole * 1.07, 0, TAU); c.stroke();
+      c.globalAlpha = .5 * k; c.strokeStyle = '#ffaa50'; c.lineWidth = 2.5;
+      c.beginPath(); c.ellipse(cx, cy - hole * .1, hole * 1.55, hole * 1.3, 0, Math.PI * 1.06, Math.PI * 1.94); c.stroke();
+      disk(true);
+      // now and then a star spirals in, with a short tail
+      const slot = Math.floor(t / 4200), age = t - slot * 4200;
+      if (t > 2600 && age < 1500) {
+        const R = fxRand(st.seed + slot), a0 = R() * TAU, q = age / 1500;
+        c.fillStyle = '#fffaf0';
+        for (let i = 0; i < 5; i++) {
+          const u = Math.max(0, q - i * .03), r = outer * 1.5 * (1 - u) + hole * u, a = a0 + u * 7;
+          c.globalAlpha = (1 - i * .2) * Math.sin(Math.min(1, q * 1.15) * Math.PI) * .9;
+          c.fillRect(cx + Math.cos(a) * r - 1, cy + Math.sin(a) * r * tilt - 1, 2, 2);
+        }
+      }
+      c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
+    },
+  },
   // Lava Lamp: warm blobs rise from the bottom, swell, sink again and run into each other
   lava: {
     intro: 1800,
@@ -940,6 +1007,7 @@ function wireFxPreviews(wrap) {
     let run = fxRun(cv, kind, { still: true, seed: 7 });
     if (kind === 'ooze') { let pokes = 0; card.addEventListener('click', e => { if (!e.target.closest('button') && ++pokes >= 5) eggFindOnce('slimepoke'); }); }
     if (kind === 'koi') { let taps = 0; card.addEventListener('click', e => { if (!e.target.closest('button') && ++taps >= 5) eggFindOnce('koifeed'); }); }   // (v4.67)
+    if (kind === 'blackhole') { let pokes = 0; card.addEventListener('click', e => { if (!e.target.closest('button') && ++pokes >= 5) eggFindOnce('spaghetti'); }); }   // (v4.72)
     if (fxStill()) return;
     card.addEventListener('mouseenter', () => { if (run) run.stop(); run = fxRun(cv, kind, { seed: 7 }); });
     card.addEventListener('mouseleave', () => { if (run) run.stop(); run = fxRun(cv, kind, { still: true, seed: 7 }); });
@@ -957,6 +1025,8 @@ const PROFILE_FRAMES = [
   { id: 'rosevine', name: 'Rosevine', desc: 'A deep green border wrapped like climbing vines.', price: 450, cssClass: 'frame-rosevine', animated: false },
   { id: 'emerald', name: 'Emerald', desc: 'A polished emerald-green border.', price: 500, cssClass: 'frame-emerald', animated: false },
   { id: 'plasma', name: 'Plasma', desc: 'A border that pulses between violet and cyan.', price: 750, cssClass: 'frame-plasma', animated: true, featured: true },
+  // the black hole and space set (v4.72, request 84)
+  { id: 'eventhorizon', name: 'Event Horizon', desc: 'A ring of hot, falling light that slowly turns all the way round your card.', price: 800, cssClass: 'frame-eventhorizon', animated: true, collection: 'space' },
 ];
 let customProfileFrames = [];
 function profileFrameById(id) { return PROFILE_FRAMES.find(d => d.id === id) || customProfileFrames.find(d => d.id === id) || null; }
@@ -1004,7 +1074,7 @@ const SHOP_THEMES = [
   { id: 'mint', name: 'Mint', desc: 'Soft aqua mint.', price: 150, bg: ['#05100d', '#162923', '#2b6955'], accent: '#7fffd4', accent2: '#a7ffe4' },
   { id: 'lavender', name: 'Lavender', desc: 'Soft dreamy lavender.', price: 150, bg: ['#080113', '#241e37', '#534e85'], accent: '#bb88ff', accent2: '#ccaaff' },
   { id: 'cyber', name: 'Cyber', desc: 'Cyberpunk yellow-green.', price: 250, bg: ['#080518', '#13183b', '#3b5300'], accent: '#ddff00', accent2: '#eeff33' },
-  { id: 'bloodmoon', name: 'Blood Moon', desc: 'Dark crimson lunar glow.', price: 275, bg: ['#030b17', '#001326', '#590000'], accent: '#ff4400', accent2: '#ff6622' },
+  { id: 'bloodmoon', name: 'Blood Moon', desc: 'Dark crimson lunar glow.', price: 275, bg: ['#0a0202', '#2a0505', '#9a1010'], accent: '#ff4400', accent2: '#ff6622' },
   { id: 'neonorange', name: 'Neon Orange', desc: 'Blazing electric orange.', price: 225, bg: ['#011018', '#001c2a', '#7a3900'], accent: '#ff6600', accent2: '#ff8800' },
   { id: 'deepsea', name: 'Deep Sea', desc: 'Abyssal dark ocean blue.', price: 200, bg: ['#000507', '#001115', '#002d34'], accent: '#0033aa', accent2: '#0044cc' },
   { id: 'solar', name: 'Solar', desc: 'Brilliant solar gold.', price: 225, bg: ['#170700', '#371600', '#7d5f00'], accent: '#ffcc00', accent2: '#ffdd33' },
@@ -1015,6 +1085,8 @@ const SHOP_THEMES = [
   { id: 'aurora', name: 'Aurora', desc: 'Northern lights: teal into purple.', price: 300, bg: ['#06071a', '#0b2a2a', '#3a1450'], accent: '#2de2b4', accent2: '#b16cff', anim: 'aurora', featured: true },
   { id: 'candy', name: 'Candy', desc: 'Cotton candy pink into blue.', price: 200, bg: ['#17050f', '#400829', '#1b4878'], accent: '#ff44cc', accent2: '#ff66dd' },
   { id: 'infrared', name: 'Infrared', desc: 'Deep infrared heat red.', price: 225, bg: ['#090015', '#201640', '#920128'], accent: '#ff0055', accent2: '#ff2266' },
+  // the black hole and space set (v4.72, request 84): a black hole turns in the corner of the screen (anim)
+  { id: 'blackhole', name: 'Black Hole', desc: 'Pitch black, with a black hole slowly turning in the corner of your screen.', price: 1500, bg: ['#020103', '#0c0612', '#4a2a10'], accent: '#ff9a3c', accent2: '#ffc27a', anim: 'blackhole', collection: 'space' },
 ];
 let customThemes = [];
 let customThemesLoaded = false;
@@ -1036,14 +1108,14 @@ const SHOP_SECTION_DEFAULTS = {
   decorations: shopSectionMap({
     'Hats & Crowns': ['halo', 'crown', 'party-hat', 'flower-crown', 'bow'],
     'Ears & Horns': ['cat-ears', 'devil-horns'],
-    'All Around': ['sparkle-ring', 'angel-wings', 'headphones'],
+    'All Around': ['sparkle-ring', 'angel-wings', 'headphones', 'pocket-blackhole'],
   }),
   themes: shopSectionMap({
     Neon: ['disco', 'synthwave', 'toxic', 'neonpink', 'neonblue', 'neonorange', 'cyber', 'holographic', 'candy', 'infrared', 'matrix', 'terminal'],
     Warm: ['sunset', 'blood', 'lava', 'gold', 'copper', 'amber', 'wine', 'coffee', 'fire', 'rust', 'coral', 'bloodmoon', 'solar'],
     Cool: ['ocean', 'arctic', 'ice', 'storm', 'steel', 'aqua', 'deepsea', 'midnight'],
     Nature: ['forest', 'emerald', 'mint', 'aurora', 'cherry', 'rose', 'sakura'],
-    'Dark & Space': ['plasma', 'galaxy', 'void', 'obsidian', 'purplerain', 'violet', 'lavender', 'ash'],
+    'Dark & Space': ['blackhole', 'plasma', 'galaxy', 'void', 'obsidian', 'purplerain', 'violet', 'lavender', 'ash'],
   }),
 };
 const cleanSectionName = s => (typeof s === 'string' ? s.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 30) : '');
@@ -1099,7 +1171,7 @@ function applyShopTheme(themeId) {
   // arrive from Firestore asynchronously) is left alone rather than reset —
   // subscribeCustomThemes re-applies once it knows about it.
   if (themeId && !t && !customThemesLoaded) return;
-  body.classList.remove('shop-anim-hue', 'shop-anim-holo', 'shop-anim-aurora');
+  body.classList.remove('shop-anim-hue', 'shop-anim-holo', 'shop-anim-aurora', 'shop-anim-blackhole');
   if (!t) {
     ['--shop-theme-bg', '--bg-deepest', '--bg-secondary', '--bg-primary', '--bg-tertiary', '--bg-floating',
      '--bg-input', '--accent', '--accent-hover', '--accent-soft', '--text-link']
@@ -1135,6 +1207,7 @@ function applyShopTheme(themeId) {
   if (t.anim === 'hue') body.classList.add('shop-anim-hue');
   if (t.anim === 'holo') body.classList.add('shop-anim-holo');
   if (t.anim === 'aurora') body.classList.add('shop-anim-aurora');
+  if (t.anim === 'blackhole') body.classList.add('shop-anim-blackhole');   // (v4.72: drawn in the corner, behind the app)
 }
 
 
@@ -1185,6 +1258,15 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.72', date: '2026-11-22', title: 'Black holes and space in the Shop',
+    notes: [
+      'A black hole and space set in the Shop, all together at the top of Featured:',
+      'The Black Hole theme: pitch black, with a black hole slowly turning in the corner of your screen.',
+      'The Black Hole profile effect: a black hole opens behind your card and pulls the stars into a glowing disk. Every so often it swallows one more.',
+      'Two nameplates (Black Hole and Planetrise), the Event Horizon frame, the Pocket Black Hole decoration and a Black Hole badge.',
+      'Blood Moon has no blue in it any more: it fades from black into a deep blood red.',
+      '3 new easter eggs. That makes 87.',
+    ] },
   { v: '4.71', date: '2026-11-20', title: 'Round nameplates and themes that don\'t look alike',
     notes: [
       'Frixion\'s own nameplates keep their round corners on every device now. Safari could draw the animated ones with square corners.',
@@ -2845,7 +2927,9 @@ const SHOP_BADGES = [
   ['clover', 'Lucky Clover', 'Four leaves.', 1500, '#3ccf68', '<circle cx="8.5" cy="8.5" r="3.6"/><circle cx="15.5" cy="8.5" r="3.6"/><circle cx="8.5" cy="15.5" r="3.6"/><circle cx="15.5" cy="15.5" r="3.6"/><path d="M12 12l5 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'],
   ['crown', 'Crown', 'For royalty.', 2500, '#f5c542', '<path d="M3 7.5l4.5 4 4.5-6.5 4.5 6.5 4.5-4-2 11H5z"/><path d="M5 20h14" stroke="currentColor" stroke-width="2"/>'],
   ['diamond', 'Diamond', 'Shiny and rare.', 5000, '#6ee7ff', '<path d="M6 3.5h12l3.5 5L12 21 2.5 8.5z"/><path d="M2.5 8.5h19M8.6 8.5L12 21l3.4-12.5" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="1.2"/>'],
-].map(([id, name, desc, price, color, svg]) => ({ id, name, desc, price, color, svg, featured: price >= 2500 }));
+  // the black hole and space set (v4.72, request 84)
+  ['blackhole', 'Black Hole', 'Nothing gets out.', 3000, '#ff9a3c', '<circle cx="12" cy="12" r="10.5" opacity=".16"/><path d="M1.5 12a10.5 3.6 0 0 1 21 0" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".75" transform="rotate(-18 12 12)"/><circle cx="12" cy="12" r="5" fill="#07060c"/><circle cx="12" cy="12" r="5.6" fill="none" stroke="#ffe2b8" stroke-width="1"/><path d="M1.5 12a10.5 3.6 0 0 0 21 0" fill="none" stroke="currentColor" stroke-width="2.3" transform="rotate(-18 12 12)"/>', 'space'],
+].map(([id, name, desc, price, color, svg, collection]) => ({ id, name, desc, price, color, svg, featured: price >= 2500, ...(collection ? { collection } : {}) }));
 const badgeSvg = (inner, color, size) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="${color}" style="color:${color}">${inner}</svg>`;
 // everything this profile has earned, in the order shown
 function badgesFor(p, self) {
@@ -14941,7 +15025,7 @@ function shopItemPreviewHTML(key, item) {
   // the name sits on top of it (with a dark scrim behind the text for
   // legibility) instead of living in a separate line below — this is
   // also why themes skip the usual .sic-name block in shopItemCardHTML.
-  if (key === 'themes') return `<div class="sic-theme-preview" style="background:linear-gradient(135deg, ${item.bg[0]} 0%, ${item.bg[1]} 55%, ${item.bg[2]} 100%);">
+  if (key === 'themes') return `<div class="sic-theme-preview${item.anim === 'blackhole' ? ' sic-theme-blackhole' : ''}" style="background:linear-gradient(135deg, ${item.bg[0]} 0%, ${item.bg[1]} 55%, ${item.bg[2]} 100%);">
     <div class="sic-theme-overlay">
       <span class="sic-theme-name">${esc(item.name)}</span>
     </div>
@@ -14973,7 +15057,8 @@ function wireFreeThemeButtons(wrap) {
 }
 
 function itemCutscenes(item) { return item.cutscenes || (item.cutscene ? [{ src: item.cutscene, label: 'Cutscene' }] : []); }
-function shopItemCardHTML(key, item) {
+const SHOP_KIND_LABELS = { themes: 'Theme', decorations: 'Decoration', masks: 'Mask', nameplates: 'Nameplate', profile_effects: 'Profile Effect', profile_frames: 'Profile Frame', badges: 'Badge', banners: 'Banner', music: 'Music' };
+function shopItemCardHTML(key, item, showKind) {
   const def = SHOP_CATEGORY_DEFS[key];
   const owned = (myProfile[def.ownedField] || []).includes(item.id);
   const noEquip = key === 'badges';
@@ -14984,6 +15069,7 @@ function shopItemCardHTML(key, item) {
   const priceTip = action === 'buy' && Number(item.price) >= 1e6 ? ` title="${esc(Number(item.price).toLocaleString())} Orbs"` : '';
   return `<div class="shop-item-card${key === 'themes' ? ' is-theme-card' : ''}${key === 'music' ? ' is-music-card' : ''}${item.hero ? ' is-hero' : ''}" data-item="${esc(item.id)}" data-cat="${key}">
     <div class="sic-preview">${shopItemPreviewHTML(key, item)}</div>
+    ${showKind && SHOP_KIND_LABELS[key] ? `<div class="sic-kind">${esc(SHOP_KIND_LABELS[key])}</div>` : ''}
     ${(key === 'themes' || key === 'music') ? '' : `<div class="sic-name">${esc(item.name)}${item.animated && key !== 'profile_effects' ? '<span class="sic-animated-tag">Animated</span>' : ''}</div>`}
     ${item.desc ? `<div class="sic-desc">${esc(item.desc)}</div>` : ''}
     <button class="sic-btn${equipped ? ' is-equipped' : owned ? ' is-owned' : ''}" data-action="${action}"${action === 'none' ? ' disabled' : ''}${priceTip}>${label}</button>
@@ -15009,6 +15095,8 @@ function wireShopCardButtons(wrap) {
 
 // Featured is split into one section per kind of item. Music comes first, so the newest tracks sit at the very top.
 const SHOP_FEATURED_ORDER = ['music', 'themes', 'banners', 'decorations', 'masks', 'nameplates', 'profile_effects', 'profile_frames'];
+// Sets of items shown together at the top of Featured, whatever kind each one is (items say which with collection)
+const SHOP_COLLECTIONS = [{ id: 'space', label: 'New: black hole and space' }];
 function shopGridClass(key) {
   return 'shop-grid' + (key === 'music' ? ' music-shop-grid' : (key === 'themes' || key === 'banners') ? ' theme-shop-grid' : '');
 }
@@ -15016,10 +15104,16 @@ function renderShopFeatured() {
   const wrap = $('shop-pane-featured');
   const keys = SHOP_FEATURED_ORDER.concat(Object.keys(SHOP_CATEGORY_DEFS).filter(k => !SHOP_FEATURED_ORDER.includes(k)));
   const sections = [];
+  // New sets first, every kind of item in one row (and not again below)
+  SHOP_COLLECTIONS.forEach(col => {
+    const cards = keys.flatMap(key => (SHOP_CATEGORY_DEFS[key] ? SHOP_CATEGORY_DEFS[key].catalog : [])
+      .filter(item => item.collection === col.id && !item.disabled).map(item => shopItemCardHTML(key, item, true)));
+    if (cards.length) sections.push(`<div class="shop-section-label">${esc(col.label)}</div><div class="shop-grid shop-collection" data-collection="${esc(col.id)}">${cards.join('')}</div>`);
+  });
   keys.forEach(key => {
     const def = SHOP_CATEGORY_DEFS[key];
     if (!def) return;
-    const items = def.catalog.filter(item => item.featured && !item.disabled);
+    const items = def.catalog.filter(item => item.featured && !item.disabled && !item.collection);
     if (!items.length) return;
     sections.push(`<div class="shop-section-label">${esc(def.label)}</div><div class="${shopGridClass(key)}">${items.map(item => shopItemCardHTML(key, item)).join('')}</div>`);
   });
@@ -15151,6 +15245,7 @@ async function buyShopItem(key, id) {
     if (r && r.orbs != null) myProfile.orbs = r.orbs;
     if (key === 'themes' && ['light', 'sync'].includes(myProfile.theme)) db.collection('users').doc(myUid).update({ theme: 'dark' }).catch(() => {});   // (see equipShopItem)
     toast(`Purchased ${item.name}!`);
+    shopEquipEggs(key, id);   // (easter eggs: buying puts it on too)
     if (key === 'badges') checkAllBadges();
     refreshOpenShopPanes();
     if (cuts.length && !showCut) toast('Epilepsy mode is on, so the cutscenes were skipped. You can replay them from the Shop.');
@@ -15196,7 +15291,8 @@ async function equipShopItem(key, id) {
   } catch (e) { toast('Could not update.', 'error'); }
 }
 // Easter eggs for putting things on (v4.71): one of Frixion's own nameplates, 3 different bought themes within 2
-// minutes, and a nameplate and a theme with the same name (Ocean, Aurora, Sunset, Galaxy or Lava).
+// minutes, and a nameplate and a theme with the same name (Ocean, Aurora, Sunset, Galaxy or Lava). v4.72: the whole
+// black hole set at once.
 let freshPaintLog = [];
 function shopEquipEggs(key, id) {
   const builtinPlate = x => NAMEPLATES.some(n => n.id === x);
@@ -15208,6 +15304,9 @@ function shopEquipEggs(key, id) {
   }
   const plate = key === 'nameplates' ? id : myProfile.equippedNameplate, theme = key === 'themes' ? id : myProfile.equippedTheme;
   if (plate && plate === theme && builtinPlate(plate) && SHOP_THEMES.some(t => t.id === theme)) eggFind('matchingset');
+  const worn = { ...myProfile, [SHOP_CATEGORY_DEFS[key].equipField]: id };
+  if (worn.equippedTheme === 'blackhole' && worn.equippedNameplate === 'blackhole' && worn.equippedProfileEffect === 'fx-blackhole'
+    && worn.equippedProfileFrame === 'eventhorizon' && worn.equippedDecoration === 'pocket-blackhole') eggFind('lostinspace');
 }
 
 function openShop() {
@@ -21073,7 +21172,11 @@ const EGGS = [
   // v4.71
   { id: 'smoothplate', t: 'e', name: 'Smooth Edges', how: 'Equip one of Frixion\'s own nameplates (not a staff-made one) in the Shop.', hint: 'Round corners suit everyone.' },
   { id: 'freshpaint', t: 'm', name: 'Fresh Paint', how: 'Equip 3 different bought themes within 2 minutes.', hint: 'Try a few coats before the paint dries.' },
-  { id: 'matchingset', t: 'm', name: 'Matching Set', how: 'Wear a nameplate and a theme with the same name: Ocean, Aurora, Sunset, Galaxy or Lava.', hint: 'Some nameplates and themes share a name.' },
+  { id: 'matchingset', t: 'm', name: 'Matching Set', how: 'Wear a nameplate and a theme with the same name: Ocean, Aurora, Sunset, Galaxy, Lava or Black Hole.', hint: 'Some nameplates and themes share a name.' },
+  // v4.72
+  { id: 'hawking', t: 'e', name: 'Hawking Radiation', how: 'Type "hawking" anywhere.', hint: 'Even black holes leak a little. Who worked that out?' },
+  { id: 'spaghetti', t: 'm', name: 'Spaghettified', how: 'Poke the Black Hole profile effect in the Shop 5 times.', hint: 'Don\'t poke the black hole.' },
+  { id: 'lostinspace', t: 'h', name: 'Lost in Space', how: 'Wear the whole black hole set at once: the Black Hole theme, nameplate and profile effect, the Event Horizon frame and the Pocket Black Hole.', hint: 'Go all the way in.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -21315,11 +21418,14 @@ function eggEffect(id, first) {
     case 'smoothplate': eggToast('Smooth edges.', 'Not a sharp corner in sight.'); return;
     case 'freshpaint': eggToast('Fresh paint.', 'Mind the wet walls.'); return;
     case 'matchingset': eggToast('Matching set.', 'You and your name, dressed alike.'); return;
+    case 'hawking': eggToast('Hawking radiation.', 'Even black holes leak a little.'); return;
+    case 'spaghetti': eggToast('Spaghettified.', 'You got a little too close.'); return;
+    case 'lostinspace': eggToast('Lost in space.', 'Nothing gets out. Not even you.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
 // ---- the triggers that live here (the rest are in the code they belong to: search for eggFind) ----
-const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot' };
+const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot', hawking: 'hawking' };
 const EGG_SEQS = {
   oldcode: ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'KeyB', 'KeyA'],
   spin: ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'],
@@ -21437,6 +21543,7 @@ const EGG_GROUPS = [
   ['Voice, events, threads and trades (v4.69)', ['longwinded', 'midnightevent', 'secretclub', 'firsttrade']],
   ['Privacy, glass and Premium (v4.70)', ['keepout', 'glassphone', 'forever']],
   ['Nameplates and themes (v4.71)', ['smoothplate', 'freshpaint', 'matchingset']],
+  ['Black holes (v4.72)', ['hawking', 'spaghetti', 'lostinspace']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {

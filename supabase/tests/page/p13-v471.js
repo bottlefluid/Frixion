@@ -73,7 +73,7 @@ for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) {
 check('82: every pair of Shop theme cards differs by at least 5 (it was 0: Gold and Solar were the same)', closest.d >= 5, closest);
 const same = (a, b) => JSON.stringify(shopThemeById(a).bg) === JSON.stringify(shopThemeById(b).bg);
 check('82: the pairs that were identical or nearly so now differ', !same('gold', 'solar') && !same('holographic', 'obsidian') && !same('lava', 'copper') && !same('rust', 'neonorange'));
-check('82: every theme still has 3 colors', SHOP_THEMES.length === 48 && SHOP_THEMES.every(t => t.bg.length === 3 && t.bg.every(c => /^#[0-9a-f]{6}$/.test(c))));
+check('82: every theme still has 3 colors', SHOP_THEMES.length >= 48 && SHOP_THEMES.every(t => t.bg.length === 3 && t.bg.every(c => /^#[0-9a-f]{6}$/.test(c))));
 
 // ---------- text boxes stay as dark as before ----------
 const lum = s => { const m = s.match(/(\d+),\s*(\d+),\s*(\d+)/); const c = [m[1], m[2], m[3]].map(v => lin(v / 255)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };

@@ -135,9 +135,11 @@ x = await call('admin', 'casino', { token: nova, game: 'coinflip', bet: 100, sid
 check('51: the infinity sign can bet (it said "not enough Orbs" after the move)', x.status === 200 && (x.result === 'h' || x.result === 't'), x);
 check('...and stays infinite, win or lose', (await doc('users/Nova')).orbs === Infinity, await doc('users/Nova'));
 x = await call('admin', 'egg', { token: nova, egg: 'equilibrium' });
-check('the new eggs are known to the server (84 in all since v4.71)', x.ok && x.total === 84, x);
+check('the new eggs are known to the server (87 in all since v4.72)', x.ok && x.total === 87, x);
 x = await call('admin', 'egg', { token: nova, egg: 'matchingset' });
-check('v4.71: Matching Set (a nameplate and a theme with the same name) is one of them', x.ok && x.total === 84, x);
+check('v4.71: Matching Set (a nameplate and a theme with the same name) is one of them', x.ok && x.total === 87, x);
+const bhEggs = await Promise.all(['hawking', 'spaghetti', 'lostinspace'].map(egg => call('admin', 'egg', { token: nova, egg })));
+check('v4.72: Hawking Radiation, Spaghettified and Lost in Space pay their tiers (100, 250, 500)', bhEggs.every(r => r.ok && r.total === 87) && bhEggs.map(r => r.orbs).join() === '100,250,500', bhEggs);
 
 section('v4.67 on the server: Provably Fair, bets without a top limit, referrals');
 const fairJs = await import(new URL('../../casino-fair.js', import.meta.url).href);
