@@ -181,7 +181,37 @@ async function supabaseHttp(req, res) {
 // subscriber whose filter matches and whose read rules let them see the row (checked as them), deletes go to every
 // subscriber whose filter matches the old row's key (no rules: the row is gone), with only the key in old_record.
 const sockets = new Set();
-let bindingSeq = 1000;
+let bindingSeq = 1000, presSeq = 1;
+function presStateFor(topic) {
+  const st = {};
+  for (const c of sockets) {
+    const ch = c.channels.get(topic);
+    if (!ch || !ch.pres) continue;
+    const { key, phx_ref, meta } = ch.pres;
+    (st[key] || (st[key] = { metas: [] })).metas.push({ phx_ref, ...meta });
+  }
+  return st;
+}
+function presBroadcast(topic, joins, leaves) {
+  for (const peer of [...sockets]) {
+    const ch = peer.channels.get(topic);
+    if (ch) push(peer, { join_ref: ch.joinRef, ref: null, topic, event: 'presence_diff', payload: { joins, leaves } });
+  }
+}
+function leaveTopic(conn, topic) {
+  const ch = conn.channels.get(topic);
+  if (!ch) return;
+  conn.channels.delete(topic);
+  if (ch.pres) {
+    const { key, phx_ref, meta } = ch.pres;
+    ch.pres = null;
+    presBroadcast(topic, {}, { [key]: { metas: [{ phx_ref, ...meta }] } });
+  }
+}
+function dropConn(conn) {
+  if (!sockets.delete(conn)) return;
+  for (const topic of [...conn.channels.keys()]) leaveTopic(conn, topic);
+}
 function wsAccept(req, socket, head) {
   const url = new URL(req.url, 'http://x');
   const key = req.headers['sec-websocket-key'];
@@ -191,7 +221,7 @@ function wsAccept(req, socket, head) {
   socket.setNoDelay(true);
   const conn = { socket, vsn: url.searchParams.get('vsn') || '1.0.0', apikey: url.searchParams.get('apikey'), channels: new Map(), buf: Buffer.alloc(0), frags: [], fragOp: 1 };
   sockets.add(conn);
-  const drop = () => sockets.delete(conn);
+  const drop = () => dropConn(conn);
   socket.on('data', d => { try { wsData(conn, d); } catch (e) { log('websocket:', e.message); socket.destroy(); drop(); } });
   socket.on('close', drop);
   socket.on('error', drop);
@@ -212,7 +242,7 @@ function wsData(conn, chunk) {
     let payload = Buffer.from(b.subarray(off, off + len));
     if (masked) for (let i = 0; i < payload.length; i++) payload[i] ^= b[maskAt + (i & 3)];
     conn.buf = b.subarray(off + len);
-    if (op === 8) { wsFrame(conn, 8, Buffer.alloc(0)); conn.socket.end(); sockets.delete(conn); return; }
+    if (op === 8) { wsFrame(conn, 8, Buffer.alloc(0)); conn.socket.end(); dropConn(conn); return; }
     if (op === 9) { wsFrame(conn, 10, payload); continue; }
     if (op === 10) continue;
     if (op === 1 || op === 2) conn.fragOp = op;
@@ -221,7 +251,37 @@ function wsData(conn, chunk) {
     const whole = Buffer.concat(conn.frags);
     conn.frags = [];
     if (conn.fragOp === 1) phoenix(conn, whole.toString('utf8'));
+    else if (conn.fragOp === 2) phoenixBin(conn, whole);
   }
+}
+function relayBroadcast(conn, topic, payload) {
+  const senderCh = conn.channels.get(topic);
+  const allowSelf = !!(senderCh && senderCh.broadcastSelf);
+  for (const peer of [...sockets]) {
+    const peerCh = peer.channels.get(topic);
+    if (!peerCh) continue;
+    if (peer === conn && !allowSelf) continue;
+    push(peer, { join_ref: peerCh.joinRef, ref: null, topic, event: 'broadcast', payload });
+  }
+}
+// Phoenix v2 binary userBroadcastPush (used by @supabase/realtime-js v2.118+):
+// [kind=3, joinRefLen, refLen, topicLen, eventLen, metaLen, encoding(1=json), ...fields, ...payload]
+function phoenixBin(conn, buf) {
+  if (!buf || buf.length < 7 || buf[0] !== 3) return;
+  const jl = buf[1], rl = buf[2], tl = buf[3], el = buf[4], ml = buf[5], enc = buf[6];
+  let o = 7;
+  if (o + jl + rl + tl + el + ml > buf.length) return;
+  const joinRef = buf.subarray(o, o += jl).toString('utf8');
+  const ref = buf.subarray(o, o += rl).toString('utf8');
+  const topic = buf.subarray(o, o += tl).toString('utf8');
+  const event = buf.subarray(o, o += el).toString('utf8');
+  o += ml;
+  let body = null;
+  if (enc === 1) {
+    try { body = JSON.parse(buf.subarray(o).toString('utf8')); } catch (e) { return; }
+  }
+  relayBroadcast(conn, topic, { type: 'broadcast', event, payload: body });
+  if (ref) push(conn, { join_ref: joinRef || null, ref, topic, event: 'phx_reply', payload: { status: 'ok', response: {} } });
 }
 function wsFrame(conn, op, payload) {
   const n = payload.length;
@@ -246,9 +306,13 @@ function phoenix(conn, text) {
     try { who = whoFrom(p.access_token || null); } catch (e) { return answer('error', { reason: e.message }); }
     const cfg = p.config || {};
     const bindings = (cfg.postgres_changes || []).map(b => ({ id: ++bindingSeq, event: b.event, schema: b.schema, table: b.table, filter: b.filter }));
-    conn.channels.set(m.topic, { joinRef: m.join_ref, who, bindings });
+    const presKey = String((cfg.presence && cfg.presence.key) || ('p_' + (++presSeq)));
+    const broadcastSelf = !!(cfg.broadcast && cfg.broadcast.self);
+    if (conn.channels.has(m.topic)) leaveTopic(conn, m.topic);
+    conn.channels.set(m.topic, { joinRef: m.join_ref, who, bindings, presKey, broadcastSelf, pres: null });
     answer('ok', { postgres_changes: bindings.map(b => Object.assign({ id: b.id, event: b.event, schema: b.schema, table: b.table }, b.filter !== undefined ? { filter: b.filter } : {})) });
     if (bindings.length) push(conn, { join_ref: m.join_ref, ref: null, topic: m.topic, event: 'system', payload: { channel: m.topic.replace(/^realtime:/, ''), extension: 'postgres_changes', message: 'Subscribed to PostgreSQL', status: 'ok' } });
+    if (cfg.presence) push(conn, { join_ref: m.join_ref, ref: null, topic: m.topic, event: 'presence_state', payload: presStateFor(m.topic) });
     return;
   }
   if (m.event === 'access_token') {
@@ -256,8 +320,32 @@ function phoenix(conn, text) {
     if (ch) { try { ch.who = whoFrom(p.access_token || null); } catch (e) { ch.who = SIGNED_OUT; } }
     return answer('ok', {});
   }
-  if (m.event === 'phx_leave') { conn.channels.delete(m.topic); return answer('ok', {}); }
-  answer('ok', {});   // (broadcast and presence: not used by Frixion)
+  if (m.event === 'phx_leave') { leaveTopic(conn, m.topic); return answer('ok', {}); }
+  if (m.event === 'broadcast') {
+    relayBroadcast(conn, m.topic, p);
+    if (m.ref != null) answer('ok', {});
+    return;
+  }
+  if (m.event === 'presence') {
+    const ch = conn.channels.get(m.topic);
+    if (ch && p.event === 'track') {
+      const leaves = {};
+      if (ch.pres) leaves[ch.pres.key] = { metas: [{ phx_ref: ch.pres.phx_ref, ...ch.pres.meta }] };
+      const phx_ref = 'r' + (++presSeq);
+      const meta = (p.payload && typeof p.payload === 'object') ? p.payload : {};
+      ch.pres = { key: ch.presKey, phx_ref, meta };
+      presBroadcast(m.topic, { [ch.pres.key]: { metas: [{ phx_ref, ...meta }] } }, leaves);
+    } else if (ch && p.event === 'untrack') {
+      if (ch.pres) {
+        const { key, phx_ref, meta } = ch.pres;
+        ch.pres = null;
+        presBroadcast(m.topic, {}, { [key]: { metas: [{ phx_ref, ...meta }] } });
+      }
+    }
+    if (m.ref != null) answer('ok', {});
+    return;
+  }
+  if (m.ref != null) answer('ok', {});
 }
 function filterOk(filter, row) {
   const m = /^([a-z_][a-z0-9_]*)=(eq|neq)\.(.*)$/.exec(filter || '');

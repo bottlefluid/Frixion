@@ -1258,6 +1258,13 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.75', date: '2026-11-23', title: 'Screenshare in DMs, group chats and server channels',
+    notes: [
+      'Share your screen directly inside any DM, group chat or server channel (including threads) using the Share Screen button in the chat header — video only (silent), peer-to-peer.',
+      'Everyone in the room sees a live banner with a Watch button; watching opens a collapsible player above chat with Expand, Picture-in-Picture, and Fullscreen so you can keep chatting while watching.',
+      'Phones and tablets can watch live screenshares too, and if you switch rooms while sharing, a green bar lets you jump right back or stop.',
+      '3 new easter eggs. That makes 96.',
+    ] },
   { v: '4.74', date: '2026-11-23', title: 'Harder Liquid Dash, Wave trail, mobile Mouse Maze and Simon 67',
     notes: [
       'Liquid Dash is now much harder, inspired by Geometry Dash: faster pacing, 1x to 4x Speed Portals, UFO mode, Mini Wave and Mini Ship corridors, triple spikes, spinning sawblades, an Attempt counter, and a crisp glowing 45° laser trail for Wave.',
@@ -5024,6 +5031,7 @@ function cleanupAllListeners() {
   if (unsub.threads) unsub.threads();
   if (unsub.events) { unsub.events(); unsub.events = null; }
   if (unsub.blocks) unsub.blocks();
+  if (typeof ssTeardownAll === 'function') ssTeardownAll();
   myBlocks = []; revealedBlocked.clear();
   stopServerChannelListeners();
   catalogUnsubs.forEach(u => { try { u(); } catch (e) {} });
@@ -8421,6 +8429,7 @@ async function selectServer(server) {
   currentServerData = server;
   currentDMId = null; currentDMOtherUid = null; currentGroupDMId = null; currentChannelId = null; currentThreadId = null; currentThreadData = null;
   currentView = 'none';
+  if (typeof ssSyncRoom === 'function') ssSyncRoom();
   document.querySelectorAll('#server-rail-list .rail-item').forEach(e => e.classList.remove('active'));
   $('rail-home').classList.remove('active');
   [...$('server-rail-list').children].forEach(el => { if (el.dataset.id === server.id) el.classList.add('active'); });
@@ -10366,6 +10375,7 @@ $('search-input').addEventListener('input', () => renderMessages(lastRawMessages
 $('search-input').addEventListener('keydown', (e) => { if (e.key === 'Escape') $('search-close').click(); });
 
 function showHeaderActions() {
+  $('screenshare-toggle').classList.toggle('hidden', typeof ssCanShare !== 'function' || !ssCanShare());
   $('mute-toggle').classList.remove('hidden');
   $('pins-toggle').classList.remove('hidden');
   $('search-toggle').classList.remove('hidden');
@@ -10376,8 +10386,10 @@ function showHeaderActions() {
   searchActive = false;
   $('search-toggle').classList.remove('on');
   $('search-bar').classList.add('hidden');
+  if (typeof ssSyncRoom === 'function') ssSyncRoom();
 }
 function hideHeaderActions() {
+  $('screenshare-toggle').classList.add('hidden');
   $('mute-toggle').classList.add('hidden');
   $('pins-toggle').classList.add('hidden');
   $('search-toggle').classList.add('hidden');
@@ -10386,6 +10398,7 @@ function hideHeaderActions() {
   $('leave-group-toggle').classList.add('hidden');
   $('gift-btn').classList.add('hidden');
   $('search-bar').classList.add('hidden');
+  if (typeof ssSyncRoom === 'function') ssSyncRoom();
 }
 
 // Without Read Message History you only see messages sent after you
@@ -22385,6 +22398,10 @@ const EGGS = [
   { id: 'liquiddash', t: 'h', name: 'Demon Slayer', how: 'Reach a score of 600 in Liquid Dash.', hint: 'Survive to 600 in the new Liquid Dash.' },
   { id: 'pocketmaze', t: 'e', name: 'Thumb Runner', how: 'Clear any Mouse Maze level using the gamepad controls (automatic on mobile, or press Gamepad on desktop).', hint: 'Beat a maze without touching a mouse.' },
   { id: 'gdwave', t: 'e', name: 'Nine Circles', how: 'Type "ninecircles" anywhere.', hint: 'The classic Geometry Dash wave level. Two words, no space.' },
+  // v4.75
+  { id: 'watchparty', t: 'e', name: 'Front Row', how: 'Share your screen or watch someone else\'s screenshare in any DM, group chat or server channel.', hint: 'Pull up a chair for a live screen.' },
+  { id: 'screensaver', t: 'e', name: 'Screen Saver', how: 'Type "screenshare" anywhere.', hint: 'What\'s the new feature called? One word.' },
+  { id: 'golive', t: 'e', name: 'Going Live', how: 'Type "golive" anywhere.', hint: 'Ready to stream? Two words, no space.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -22635,11 +22652,14 @@ function eggEffect(id, first) {
     case 'liquiddash': eggParticles('confetti', 5000); eggToast('Demon Slayer', '600 in Liquid Dash. Your reflexes are unreal.'); return;
     case 'pocketmaze': eggToast('Thumb Runner', 'No mouse needed.'); return;
     case 'gdwave': eggToast('Nine Circles', 'Wave mode intensifies.'); return;
+    case 'watchparty': eggToast('Front Row', 'Best seat in the house.'); return;
+    case 'screensaver': eggToast('Screen Saver', 'Don\'t let the pixels burn in.'); return;
+    case 'golive': eggToast('Going Live', 'Quiet on the set — you\'re on air.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
 // ---- the triggers that live here (the rest are in the code they belong to: search for eggFind) ----
-const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot', hawking: 'hawking', autopilot: 'autopilot', beepboop: 'beepboop', gdwave: 'ninecircles' };
+const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot', hawking: 'hawking', autopilot: 'autopilot', beepboop: 'beepboop', gdwave: 'ninecircles', screensaver: 'screenshare', golive: 'golive' };
 const EGG_SEQS = {
   oldcode: ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'KeyB', 'KeyA'],
   spin: ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'],
@@ -22760,6 +22780,7 @@ const EGG_GROUPS = [
   ['Black holes (v4.72)', ['hawking', 'spaghetti', 'lostinspace']],
   ['Game Bot (v4.73)', ['autopilot', 'beepboop', 'arcadepro']],
   ['Hard Dash & Mobile Maze (v4.74)', ['liquiddash', 'pocketmaze', 'gdwave']],
+  ['Screenshare (v4.75)', ['watchparty', 'screensaver', 'golive']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {
@@ -23642,3 +23663,821 @@ async function ovSend(chat, input) {
     toast(err.message || 'Failed to send message.', 'error');
   }
 }
+
+// ============================================================
+// SCREENSHARE (v4.75) — peer-to-peer WebRTC (silent video)
+// Signaling runs over Supabase Realtime Broadcast + Presence on one
+// topic per room ('screen:' + roomKey), so video goes straight from
+// sharer to viewer with zero database writes or SQL tables.
+// The sharer enforces room membership & block checks before ever
+// creating a peer connection or sending an SDP offer.
+// ============================================================
+const SS_ICE_SERVERS = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+];
+const SS_MAX_VIEWERS = 8;
+
+const ssChannels = new Map();     // roomKey -> { key, ch, joined, sharers: Map, wantTrack, readyCbs }
+let ssViewRoom = null;
+let ssHostRoom = null;
+let ssHostMeta = null;            // room metadata captured when sharing began
+let ssLocalStream = null;
+let ssHostPreviewHidden = false;
+const ssHostPeers = new Map();    // viewerUid -> { uid, sessionId, pc, pendingIce, connected, discTimer }
+let ssLastTrackedViewers = -1;
+
+let ssWatchRoom = null;
+let ssWatchingUid = null;
+let ssWatchingName = '';
+let ssWatchSessionId = '';
+let ssWatchPc = null;
+let ssRemoteStream = null;
+let ssWatchState = 'idle';        // 'idle' | 'connecting' | 'live' | 'reconnecting' | 'error'
+let ssWatchError = '';
+let ssWatchIceQueue = [];
+let ssWatchedSeenInPresence = false;
+let ssWatchRetryTimer = null;
+let ssWatchTimeoutTimer = null;
+let ssBoundStream = null;
+
+function ssCanWatch() {
+  return typeof window.RTCPeerConnection === 'function' && !!sbClient;
+}
+function ssCanShare() {
+  return !!(ssCanWatch() && navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function');
+}
+function ssCurrentRoomKey() {
+  if (currentView === 'dm' && currentDMId) return 'dm:' + currentDMId;
+  if (currentView === 'groupdm' && currentGroupDMId) return 'gdm:' + currentGroupDMId;
+  if (currentView === 'channel' && currentServerId && currentChannelId) {
+    return currentThreadId
+      ? 'th:' + currentServerId + ':' + currentChannelId + ':' + currentThreadId
+      : 'ch:' + currentServerId + ':' + currentChannelId;
+  }
+  return null;
+}
+function ssCurrentRoomMeta() {
+  const key = ssCurrentRoomKey();
+  if (!key) return null;
+  const titleText = ($('chat-header-title') && $('chat-header-title').textContent) || '';
+  if (currentView === 'dm') {
+    return { key, kind: 'dm', dmId: currentDMId, otherUid: currentDMOtherUid, label: '@' + (titleText || currentDMOtherUid || 'DM') };
+  }
+  if (currentView === 'groupdm') {
+    const g = (window.__myGroupDMs || []).find(x => x.id === currentGroupDMId);
+    return { key, kind: 'gdm', gdmId: currentGroupDMId, participants: g ? [...(g.participants || [])] : [], label: titleText || 'Group Chat' };
+  }
+  const ch = lastChannelsList.find(c => c.id === currentChannelId) || null;
+  if (currentThreadId) {
+    return { key, kind: 'th', sid: currentServerId, cid: currentChannelId, tid: currentThreadId, server: currentServerData, channel: ch, thread: currentThreadData, label: titleText || 'Thread' };
+  }
+  return { key, kind: 'ch', sid: currentServerId, cid: currentChannelId, server: currentServerData, channel: ch, label: '#' + (titleText || (ch && ch.name) || 'channel') };
+}
+function ssCanViewerWatch(viewerUid) {
+  if (!viewerUid || typeof viewerUid !== 'string' || viewerUid === myUid || isBlocked(viewerUid)) return false;
+  const meta = ssHostMeta;
+  if (!meta) return false;
+  if (meta.kind === 'dm') {
+    const dm = (window.__myDMs || []).find(d => d.id === meta.dmId);
+    if (dm && Array.isArray(dm.participants)) return dm.participants.includes(viewerUid);
+    return viewerUid === meta.otherUid;
+  }
+  if (meta.kind === 'gdm') {
+    const g = (window.__myGroupDMs || []).find(x => x.id === meta.gdmId);
+    const list = (g && Array.isArray(g.participants)) ? g.participants : meta.participants;
+    return Array.isArray(list) && list.includes(viewerUid);
+  }
+  const srv = (currentServerId === meta.sid && currentServerData) ? currentServerData : meta.server;
+  const ch = (currentServerId === meta.sid && lastChannelsList.find(c => c.id === meta.cid)) || meta.channel;
+  if (!srv || !ch) return false;
+  const isMember = srv.ownerId === viewerUid || (Array.isArray(srv.members) && srv.members.includes(viewerUid));
+  if (!isMember || !canViewChannel(ch, srv, viewerUid)) return false;
+  if (meta.kind === 'th') {
+    const th = (currentServerId === meta.sid && lastThreadsList.find(t => t.id === meta.tid)) || meta.thread;
+    if (th && th.private) {
+      return srv.ownerId === viewerUid
+        || (Array.isArray(th.members) && th.members.includes(viewerUid))
+        || hasChannelPerm(ch, srv, viewerUid, 'manageThreads');
+    }
+  }
+  return true;
+}
+function ssHostPresencePayload() {
+  let count = 0;
+  for (const peer of ssHostPeers.values()) { if (peer.connected) count++; }
+  ssLastTrackedViewers = count;
+  return {
+    sharing: true,
+    uid: myUid,
+    name: (myProfile && displayNameOf(myProfile)) || myUid || 'Someone',
+    since: (ssHostMeta && ssHostMeta.since) || Date.now(),
+    viewers: count,
+  };
+}
+function ssSend(entry, event, payload) {
+  if (!entry || !entry.ch) return;
+  try { entry.ch.send({ type: 'broadcast', event, payload }); } catch (e) {}
+}
+function ssWhenJoined(entry, fn) {
+  if (!entry) return;
+  if (entry.joined) { fn(); return; }
+  entry.readyCbs.push(fn);
+}
+function ssEnsureChannel(roomKey) {
+  if (!roomKey || !sbClient || !myUid) return null;
+  const existing = ssChannels.get(roomKey);
+  if (existing) return existing;
+  const ch = sbClient.channel('screen:' + roomKey, {
+    config: { broadcast: { self: false }, presence: { key: myUid } },
+  });
+  const entry = { key: roomKey, ch, joined: false, sharers: new Map(), wantTrack: null, readyCbs: [] };
+  ssChannels.set(roomKey, entry);
+  ch.on('presence', { event: 'sync' }, () => ssOnPresenceSync(entry));
+  ch.on('broadcast', { event: 'watch-req' }, ({ payload }) => ssOnWatchReq(entry, payload));
+  ch.on('broadcast', { event: 'offer' }, ({ payload }) => ssOnOffer(entry, payload));
+  ch.on('broadcast', { event: 'answer' }, ({ payload }) => ssOnAnswer(entry, payload));
+  ch.on('broadcast', { event: 'ice' }, ({ payload }) => ssOnIce(entry, payload));
+  ch.on('broadcast', { event: 'watch-stop' }, ({ payload }) => ssOnWatchStop(entry, payload));
+  ch.on('broadcast', { event: 'share-stop' }, ({ payload }) => ssOnShareStop(entry, payload));
+  ch.on('broadcast', { event: 'watch-denied' }, ({ payload }) => ssOnWatchDenied(entry, payload));
+  ch.subscribe(status => {
+    if (ssChannels.get(roomKey) !== entry) return;
+    if (status === 'SUBSCRIBED') {
+      entry.joined = true;
+      if (entry.wantTrack) { try { ch.track(entry.wantTrack); } catch (e) {} }
+      const cbs = entry.readyCbs.splice(0);
+      cbs.forEach(fn => { try { fn(); } catch (e) {} });
+      ssOnPresenceSync(entry);
+    }
+  });
+  return entry;
+}
+function ssReleaseUnusedChannels() {
+  for (const [key, entry] of [...ssChannels.entries()]) {
+    if (key === ssViewRoom || key === ssHostRoom) continue;
+    ssChannels.delete(key);
+    try { entry.ch.untrack(); } catch (e) {}
+    try { sbClient.removeChannel(entry.ch); } catch (e) {}
+  }
+}
+function ssOnPresenceSync(entry) {
+  if (!entry || ssChannels.get(entry.key) !== entry) return;
+  let st = {};
+  try { st = entry.ch.presenceState() || {}; } catch (e) {}
+  const next = new Map();
+  for (const [key, metas] of Object.entries(st)) {
+    const arr = Array.isArray(metas) ? metas : [];
+    const m = arr.slice().reverse().find(x => x && x.sharing === true);
+    if (!m) continue;
+    const uid = String(m.uid || key || '');
+    if (!uid || (uid !== myUid && isBlocked(uid))) continue;
+    next.set(uid, {
+      uid,
+      name: String(m.name || uid).slice(0, 40),
+      since: Number(m.since) || Date.now(),
+      viewers: Math.max(0, Number(m.viewers) || 0),
+    });
+  }
+  entry.sharers = next;
+  if (entry.key === ssViewRoom && ssWatchingUid && ssWatchRoom === entry.key) {
+    if (next.has(ssWatchingUid)) {
+      ssWatchedSeenInPresence = true;
+      const info = next.get(ssWatchingUid);
+      if (info && info.name) ssWatchingName = info.name;
+    } else if (ssWatchedSeenInPresence) {
+      ssStopWatching({ quiet: false, endedMsg: (ssWatchingName || 'They') + ' stopped sharing.' });
+      return;
+    }
+  }
+  ssRenderUI();
+}
+
+function ssSyncRoom() {
+  const next = (myUid && ssCanWatch()) ? ssCurrentRoomKey() : null;
+  if (next !== ssViewRoom) {
+    if (ssWatchingUid && ssWatchRoom !== next) ssStopWatching({ quiet: true });
+    ssViewRoom = next;
+    if (ssViewRoom) ssEnsureChannel(ssViewRoom);
+    ssReleaseUnusedChannels();
+  }
+  ssRenderUI();
+}
+
+function ssUpdateHeaderBtn() {
+  const btn = $('screenshare-toggle');
+  if (!btn) return;
+  const inChat = !!ssCurrentRoomKey();
+  const can = inChat && ssCanShare();
+  btn.classList.toggle('hidden', !can);
+  const liveHere = !!(ssLocalStream && ssHostRoom && ssHostRoom === ssViewRoom);
+  btn.classList.toggle('ss-live', liveHere);
+  btn.title = liveHere ? 'Stop Sharing Screen' : 'Share Screen';
+}
+
+function ssClearWatchTimers() {
+  if (ssWatchRetryTimer) { clearTimeout(ssWatchRetryTimer); ssWatchRetryTimer = null; }
+  if (ssWatchTimeoutTimer) { clearTimeout(ssWatchTimeoutTimer); ssWatchTimeoutTimer = null; }
+}
+
+function ssCloseHostPeer(viewerUid, skipSync) {
+  const peer = ssHostPeers.get(viewerUid);
+  if (!peer) return;
+  ssHostPeers.delete(viewerUid);
+  if (peer.discTimer) { clearTimeout(peer.discTimer); peer.discTimer = null; }
+  try { peer.pc.onicecandidate = null; peer.pc.onconnectionstatechange = null; peer.pc.oniceconnectionstatechange = null; peer.pc.close(); } catch (e) {}
+  if (!skipSync) {
+    ssTuneHostBitrates();
+    ssSyncHostViewerCount();
+  }
+}
+
+function ssTuneHostBitrates() {
+  const n = ssHostPeers.size;
+  if (!n) return;
+  const maxBitrate = n <= 2 ? 2500000 : n <= 4 ? 1500000 : 900000;
+  for (const peer of ssHostPeers.values()) {
+    try {
+      const sender = peer.pc.getSenders().find(s => s.track && s.track.kind === 'video');
+      if (!sender || typeof sender.getParameters !== 'function') continue;
+      const params = sender.getParameters();
+      if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+      params.encodings[0].maxBitrate = maxBitrate;
+      params.degradationPreference = 'maintain-resolution';
+      sender.setParameters(params).catch(() => {});
+    } catch (e) {}
+  }
+}
+
+function ssSyncHostViewerCount() {
+  if (!ssLocalStream || !ssHostRoom) return;
+  const entry = ssChannels.get(ssHostRoom);
+  let count = 0;
+  for (const peer of ssHostPeers.values()) { if (peer.connected) count++; }
+  if (entry && count !== ssLastTrackedViewers) {
+    entry.wantTrack = ssHostPresencePayload();
+    if (entry.joined) { try { entry.ch.track(entry.wantTrack); } catch (e) {} }
+  }
+  ssRenderUI();
+}
+
+async function ssStartSharing() {
+  if (!ssCanShare()) { toast('Screen sharing is not supported in this browser.', 'error'); return; }
+  const meta = ssCurrentRoomMeta();
+  if (!meta) return;
+  if (ssLocalStream && ssHostRoom === meta.key) { ssStopSharing(); return; }
+  if (ssLocalStream) ssStopSharing({ silent: true });
+
+  let stream = null;
+  let lastErr = null;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: { ideal: 30, max: 60 }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false,
+    });
+  } catch (err) {
+    lastErr = err;
+    if (err && (err.name === 'OverconstrainedError' || err.name === 'TypeError')) {
+      try { stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false }); lastErr = null; }
+      catch (e2) { lastErr = e2; }
+    }
+  }
+  if (!stream) {
+    if (lastErr && lastErr.name === 'NotSupportedError') {
+      toast("Screen sharing isn't supported in this app window yet — use a browser tab to share (you can still watch here).", 'error');
+    } else if (lastErr && lastErr.name !== 'NotAllowedError' && lastErr.name !== 'AbortError') {
+      toast('Could not start screen share: ' + (lastErr.message || lastErr.name), 'error');
+    }
+    return;
+  }
+  const vTrack = stream.getVideoTracks()[0];
+  if (!vTrack) {
+    stream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+    toast('No video screen track was returned.', 'error');
+    return;
+  }
+  // If room changed while user was in the OS screen picker, bind to the room they clicked Share from.
+  if (ssWatchingUid) ssStopWatching({ quiet: true });
+  meta.since = Date.now();
+  ssLocalStream = stream;
+  ssHostRoom = meta.key;
+  ssHostMeta = meta;
+  ssHostPreviewHidden = false;
+  ssLastTrackedViewers = -1;
+  vTrack.addEventListener('ended', () => {
+    if (ssLocalStream === stream) ssStopSharing();
+  });
+  const entry = ssEnsureChannel(meta.key);
+  if (entry) {
+    entry.wantTrack = ssHostPresencePayload();
+    if (entry.joined) { try { entry.ch.track(entry.wantTrack); } catch (e) {} }
+  }
+  eggFindOnce('watchparty');
+  ssRenderUI();
+}
+
+function ssStopSharing(opts) {
+  const silent = !!(opts && opts.silent);
+  const hostRoom = ssHostRoom;
+  const stream = ssLocalStream;
+  ssLocalStream = null;
+  ssHostRoom = null;
+  ssHostMeta = null;
+  ssHostPreviewHidden = false;
+  ssLastTrackedViewers = -1;
+  for (const uid of [...ssHostPeers.keys()]) ssCloseHostPeer(uid, true);
+  if (stream) {
+    stream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+  }
+  if (hostRoom) {
+    const entry = ssChannels.get(hostRoom);
+    if (entry) {
+      entry.wantTrack = null;
+      ssSend(entry, 'share-stop', { from: myUid });
+      try { entry.ch.untrack(); } catch (e) {}
+    }
+  }
+  ssReleaseUnusedChannels();
+  ssRenderUI();
+  if (!silent && stream) toast('Stopped sharing your screen.');
+}
+
+async function ssOnWatchReq(entry, p) {
+  if (!ssLocalStream || entry.key !== ssHostRoom) return;
+  if (!p || p.to !== myUid || !p.from || !p.sessionId) return;
+  const from = String(p.from);
+  const sessionId = String(p.sessionId);
+  if (!ssCanViewerWatch(from)) return;
+  if (!ssHostPeers.has(from) && ssHostPeers.size >= SS_MAX_VIEWERS) {
+    ssSend(entry, 'watch-denied', { to: from, from: myUid, sessionId, reason: 'full' });
+    return;
+  }
+  ssCloseHostPeer(from, true);
+  const pc = new RTCPeerConnection({ iceServers: SS_ICE_SERVERS });
+  const peer = { uid: from, sessionId, pc, pendingIce: [], connected: false, discTimer: null };
+  ssHostPeers.set(from, peer);
+  const vTrack = ssLocalStream.getVideoTracks()[0];
+  if (!vTrack) { ssCloseHostPeer(from); return; }
+  pc.addTrack(vTrack, ssLocalStream);
+  pc.onicecandidate = ev => {
+    if (ev.candidate && ssHostPeers.get(from) === peer) {
+      ssSend(entry, 'ice', { to: from, from: myUid, dir: 'h2v', sessionId, candidate: ev.candidate });
+    }
+  };
+  const onState = () => {
+    if (ssHostPeers.get(from) !== peer) return;
+    const st = pc.connectionState || pc.iceConnectionState;
+    if (st === 'connected' || st === 'completed') {
+      if (peer.discTimer) { clearTimeout(peer.discTimer); peer.discTimer = null; }
+      if (!peer.connected) { peer.connected = true; ssSyncHostViewerCount(); }
+    } else if (st === 'failed' || st === 'closed') {
+      ssCloseHostPeer(from);
+    } else if (st === 'disconnected') {
+      if (!peer.discTimer) {
+        peer.discTimer = setTimeout(() => {
+          if (ssHostPeers.get(from) === peer && (pc.connectionState === 'disconnected' || pc.iceConnectionState === 'disconnected')) {
+            ssCloseHostPeer(from);
+          }
+        }, 6000);
+      }
+    }
+  };
+  pc.onconnectionstatechange = onState;
+  pc.oniceconnectionstatechange = onState;
+  try {
+    const offer = await pc.createOffer();
+    if (ssHostPeers.get(from) !== peer) return;
+    await pc.setLocalDescription(offer);
+    ssTuneHostBitrates();
+    ssSend(entry, 'offer', { to: from, from: myUid, sessionId, sdp: pc.localDescription });
+  } catch (e) {
+    ssCloseHostPeer(from);
+  }
+}
+
+async function ssOnAnswer(entry, p) {
+  if (!ssLocalStream || entry.key !== ssHostRoom) return;
+  if (!p || p.to !== myUid || !p.from || !p.sdp) return;
+  const peer = ssHostPeers.get(String(p.from));
+  if (!peer || peer.sessionId !== String(p.sessionId || '')) return;
+  try {
+    await peer.pc.setRemoteDescription(new RTCSessionDescription(p.sdp));
+    const q = peer.pendingIce.splice(0);
+    for (const c of q) { try { await peer.pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {} }
+  } catch (e) {
+    ssCloseHostPeer(peer.uid);
+  }
+}
+
+async function ssOnIce(entry, p) {
+  if (!p || p.to !== myUid || !p.from || !p.candidate) return;
+  if (p.dir === 'v2h') {
+    if (!ssLocalStream || entry.key !== ssHostRoom) return;
+    const peer = ssHostPeers.get(String(p.from));
+    if (!peer || peer.sessionId !== String(p.sessionId || '')) return;
+    if (peer.pc.remoteDescription) {
+      try { await peer.pc.addIceCandidate(new RTCIceCandidate(p.candidate)); } catch (e) {}
+    } else if (peer.pendingIce.length < 64) {
+      peer.pendingIce.push(p.candidate);
+    }
+  } else if (p.dir === 'h2v') {
+    if (!ssWatchPc || entry.key !== ssWatchRoom) return;
+    if (String(p.from) !== ssWatchingUid || String(p.sessionId || '') !== ssWatchSessionId) return;
+    if (ssWatchPc.remoteDescription) {
+      try { await ssWatchPc.addIceCandidate(new RTCIceCandidate(p.candidate)); } catch (e) {}
+    } else if (ssWatchIceQueue.length < 64) {
+      ssWatchIceQueue.push(p.candidate);
+    }
+  }
+}
+
+function ssOnWatchStop(entry, p) {
+  if (!ssLocalStream || entry.key !== ssHostRoom) return;
+  if (!p || p.to !== myUid || !p.from) return;
+  const peer = ssHostPeers.get(String(p.from));
+  if (!peer) return;
+  if (p.sessionId && peer.sessionId !== String(p.sessionId)) return;
+  ssCloseHostPeer(peer.uid);
+}
+
+function ssWatchSharer(uid, name) {
+  if (!ssCanWatch() || !ssViewRoom || !uid || uid === myUid) return;
+  const roomKey = ssViewRoom;
+  const entry = ssEnsureChannel(roomKey);
+  if (!entry) return;
+  if (ssWatchingUid) ssStopWatching({ quiet: true });
+  if (ssLocalStream && ssHostRoom === roomKey) ssHostPreviewHidden = true;
+
+  const sessionId = myUid + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+  ssWatchRoom = roomKey;
+  ssWatchingUid = uid;
+  ssWatchingName = name || uid;
+  ssWatchSessionId = sessionId;
+  ssWatchState = 'connecting';
+  ssWatchError = '';
+  ssWatchIceQueue = [];
+  ssWatchedSeenInPresence = entry.sharers.has(uid);
+
+  const pc = new RTCPeerConnection({ iceServers: SS_ICE_SERVERS });
+  ssWatchPc = pc;
+  pc.ontrack = ev => {
+    if (ssWatchPc !== pc) return;
+    const stream = (ev.streams && ev.streams[0]) || new MediaStream([ev.track]);
+    ssRemoteStream = stream;
+    ssWatchState = 'live';
+    ssWatchError = '';
+    ssClearWatchTimers();
+    eggFindOnce('watchparty');
+    ssRenderUI();
+  };
+  pc.onicecandidate = ev => {
+    if (ev.candidate && ssWatchPc === pc) {
+      ssSend(entry, 'ice', { to: uid, from: myUid, dir: 'v2h', sessionId, candidate: ev.candidate });
+    }
+  };
+  const onState = () => {
+    if (ssWatchPc !== pc) return;
+    const st = pc.connectionState || pc.iceConnectionState;
+    if (st === 'connected' || st === 'completed') {
+      if (ssRemoteStream) {
+        ssWatchState = 'live';
+        ssWatchError = '';
+        ssClearWatchTimers();
+        ssRenderUI();
+      }
+    } else if (st === 'disconnected') {
+      if (ssWatchState === 'live') { ssWatchState = 'reconnecting'; ssRenderUI(); }
+    } else if (st === 'failed') {
+      ssWatchState = 'error';
+      ssWatchError = "Couldn't connect directly — a strict Wi-Fi or firewall may be blocking peer-to-peer video.";
+      ssClearWatchTimers();
+      ssRenderUI();
+    }
+  };
+  pc.onconnectionstatechange = onState;
+  pc.oniceconnectionstatechange = onState;
+
+  ssWhenJoined(entry, () => {
+    if (ssWatchPc !== pc || ssWatchSessionId !== sessionId) return;
+    ssSend(entry, 'watch-req', { to: uid, from: myUid, sessionId });
+  });
+  ssWatchRetryTimer = setTimeout(() => {
+    if (ssWatchPc === pc && ssWatchSessionId === sessionId && !pc.remoteDescription && ssWatchState === 'connecting') {
+      ssSend(entry, 'watch-req', { to: uid, from: myUid, sessionId });
+    }
+  }, 2800);
+  ssWatchTimeoutTimer = setTimeout(() => {
+    if (ssWatchPc === pc && ssWatchSessionId === sessionId && ssWatchState === 'connecting') {
+      ssWatchState = 'error';
+      ssWatchError = "Couldn't connect to this screen share. Make sure they're still sharing, or try again.";
+      ssRenderUI();
+    }
+  }, 14000);
+  ssRenderUI();
+}
+
+async function ssOnOffer(entry, p) {
+  if (!ssWatchPc || entry.key !== ssWatchRoom) return;
+  if (!p || p.to !== myUid || String(p.from) !== ssWatchingUid || String(p.sessionId || '') !== ssWatchSessionId || !p.sdp) return;
+  const pc = ssWatchPc;
+  try {
+    await pc.setRemoteDescription(new RTCSessionDescription(p.sdp));
+    const q = ssWatchIceQueue.splice(0);
+    for (const c of q) { try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {} }
+    const answer = await pc.createAnswer();
+    if (ssWatchPc !== pc) return;
+    await pc.setLocalDescription(answer);
+    ssSend(entry, 'answer', { to: ssWatchingUid, from: myUid, sessionId: ssWatchSessionId, sdp: pc.localDescription });
+  } catch (e) {
+    if (ssWatchPc === pc) {
+      ssWatchState = 'error';
+      ssWatchError = 'Failed to establish video stream. Try again.';
+      ssClearWatchTimers();
+      ssRenderUI();
+    }
+  }
+}
+
+function ssOnShareStop(entry, p) {
+  if (!p || !p.from) return;
+  if (entry.key === ssWatchRoom && String(p.from) === ssWatchingUid) {
+    ssStopWatching({ quiet: false, endedMsg: (ssWatchingName || 'They') + ' stopped sharing.' });
+  }
+}
+
+function ssOnWatchDenied(entry, p) {
+  if (!p || p.to !== myUid || entry.key !== ssWatchRoom) return;
+  if (String(p.from) !== ssWatchingUid || String(p.sessionId || '') !== ssWatchSessionId) return;
+  ssClearWatchTimers();
+  ssWatchState = 'error';
+  ssWatchError = p.reason === 'full'
+    ? `This screen share is full (${SS_MAX_VIEWERS}/${SS_MAX_VIEWERS} viewers).`
+    : "You can't watch this screen share right now.";
+  ssRenderUI();
+}
+
+function ssStopWatching(opts) {
+  const quiet = !!(opts && opts.quiet);
+  const endedMsg = opts && opts.endedMsg;
+  ssClearWatchTimers();
+  if (ssWatchingUid && ssWatchRoom) {
+    const entry = ssChannels.get(ssWatchRoom);
+    if (entry) ssSend(entry, 'watch-stop', { to: ssWatchingUid, from: myUid, sessionId: ssWatchSessionId });
+  }
+  if (ssWatchPc) {
+    try { ssWatchPc.ontrack = null; ssWatchPc.onicecandidate = null; ssWatchPc.onconnectionstatechange = null; ssWatchPc.oniceconnectionstatechange = null; ssWatchPc.close(); } catch (e) {}
+    ssWatchPc = null;
+  }
+  ssWatchRoom = null;
+  ssWatchingUid = null;
+  ssWatchingName = '';
+  ssWatchSessionId = '';
+  ssRemoteStream = null;
+  ssWatchState = 'idle';
+  ssWatchError = '';
+  ssWatchIceQueue = [];
+  ssWatchedSeenInPresence = false;
+  if (document.pictureInPictureElement && document.pictureInPictureElement.id === 'screen-video') {
+    document.exitPictureInPicture().catch(() => {});
+  }
+  if (document.fullscreenElement && document.fullscreenElement.id === 'screen-stage') {
+    document.exitFullscreen().catch(() => {});
+  }
+  ssRenderUI();
+  if (!quiet && endedMsg) toast(endedMsg);
+}
+
+function ssTeardownAll() {
+  if (ssWatchingUid) ssStopWatching({ quiet: true });
+  if (ssLocalStream) ssStopSharing({ silent: true });
+  ssViewRoom = null;
+  ssReleaseUnusedChannels();
+  ssRenderUI();
+}
+
+function ssReturnToHostRoom() {
+  const m = ssHostMeta;
+  if (!m) return;
+  if (m.kind === 'dm') { selectDM(m.dmId, m.otherUid); return; }
+  if (m.kind === 'gdm') { selectGroupDM(m.gdmId); return; }
+  if (m.kind === 'ch' || m.kind === 'th') {
+    const openTarget = () => {
+      if (m.kind === 'th') { openThreadById(m.tid); return; }
+      const ch = lastChannelsList.find(c => c.id === m.cid) || m.channel;
+      if (ch) selectChannel(ch);
+    };
+    if (currentServerId === m.sid) { openTarget(); return; }
+    if (m.server) {
+      selectServer(m.server);
+      let tries = 0;
+      const poll = setInterval(() => {
+        tries++;
+        if (currentServerId !== m.sid || tries > 25) { clearInterval(poll); return; }
+        const ch = lastChannelsList.find(c => c.id === m.cid);
+        if (ch) { clearInterval(poll); openTarget(); }
+      }, 120);
+    }
+  }
+}
+
+function ssRenderUI() {
+  ssUpdateHeaderBtn();
+  const awayBar = $('screen-away-bar');
+  const banner = $('screen-banner');
+  const stage = $('screen-stage');
+  const vid = $('screen-video');
+  if (!awayBar || !banner || !stage || !vid) return;
+
+  // 1. Global away-sharing bar (if hosting in a different room than current view)
+  const hosting = !!(ssLocalStream && ssHostRoom);
+  const hostingHere = hosting && ssHostRoom === ssViewRoom;
+  if (hosting && !hostingHere) {
+    let vCount = 0;
+    for (const peer of ssHostPeers.values()) { if (peer.connected) vCount++; }
+    const where = (ssHostMeta && ssHostMeta.label) || 'another chat';
+    $('ss-away-text').textContent = `Sharing screen in ${where}` + (vCount ? ` · ${vCount} watching` : '');
+    awayBar.classList.remove('hidden');
+  } else {
+    awayBar.classList.add('hidden');
+  }
+
+  // 2. Determine what goes in the docked stage (either watching someone, or local preview)
+  const watchingHere = !!(ssWatchingUid && ssWatchRoom && ssWatchRoom === ssViewRoom);
+  const showLocalPreview = hostingHere && !watchingHere && !ssHostPreviewHidden;
+  const showStage = watchingHere || showLocalPreview;
+
+  // 3. In-room live banner (active sharers we aren't currently watching, plus hidden local preview prompt)
+  const entry = ssViewRoom ? ssChannels.get(ssViewRoom) : null;
+  const rows = [];
+  if (hostingHere && ssHostPreviewHidden) {
+    let vCount = 0;
+    for (const peer of ssHostPeers.values()) { if (peer.connected) vCount++; }
+    rows.push(
+      `<div class="ss-banner-row">`
+      + `<span class="ss-live-dot" aria-hidden="true"></span>`
+      + `<div class="ss-banner-info"><span class="ss-banner-name">You are sharing your screen</span>`
+      + `<span class="ss-banner-sub">${vCount ? `${vCount} watching` : 'No viewers yet'}</span></div>`
+      + `<div class="ss-banner-acts">`
+      + `<button type="button" class="ss-btn" data-ss-act="show-preview">Show Preview</button>`
+      + `<button type="button" class="ss-btn ss-btn-danger" data-ss-act="stop">Stop Sharing</button>`
+      + `</div></div>`
+    );
+  }
+  if (entry) {
+    for (const s of entry.sharers.values()) {
+      if (s.uid === myUid) continue;
+      if (watchingHere && s.uid === ssWatchingUid) continue;
+      const viewersText = s.viewers > 0 ? `${s.viewers} watching` : 'Silent';
+      rows.push(
+        `<div class="ss-banner-row">`
+        + `<span class="ss-live-dot" aria-hidden="true"></span>`
+        + `<div class="ss-banner-info"><span class="ss-banner-name">${esc(s.name)} is sharing their screen</span>`
+        + `<span class="ss-banner-sub">${esc(viewersText)}</span></div>`
+        + `<div class="ss-banner-acts">`
+        + `<button type="button" class="ss-btn ss-btn-accent" data-ss-watch="${esc(s.uid)}" data-ss-name="${esc(s.name)}">Watch</button>`
+        + `</div></div>`
+      );
+    }
+  }
+  if (rows.length && ssViewRoom) {
+    banner.innerHTML = rows.join('');
+    banner.classList.remove('hidden');
+  } else {
+    banner.innerHTML = '';
+    banner.classList.add('hidden');
+  }
+
+  // 4. Docked stage
+  if (!showStage) {
+    stage.classList.add('hidden');
+    if (ssBoundStream) {
+      vid.srcObject = null;
+      ssBoundStream = null;
+    }
+    return;
+  }
+  stage.classList.remove('hidden');
+  const pill = $('ss-status-pill');
+  const statusText = $('ss-status-text');
+  const titleEl = $('ss-title');
+  const metaEl = $('ss-meta');
+  const overlay = $('ss-overlay');
+  const spinner = $('ss-spinner');
+  const overlayMsg = $('ss-overlay-msg');
+  const retryBtn = $('ss-retry-btn');
+  const pipBtn = $('ss-pip-btn');
+  const hidePreviewBtn = $('ss-hide-preview-btn');
+  const leaveBtn = $('ss-leave-btn');
+  const stopBtn = $('ss-stop-btn');
+
+  pipBtn.classList.toggle('hidden', !(document.pictureInPictureEnabled && !vid.disablePictureInPicture));
+
+  if (watchingHere) {
+    hidePreviewBtn.classList.add('hidden');
+    stopBtn.classList.add('hidden');
+    leaveBtn.classList.remove('hidden');
+    const info = entry && entry.sharers.get(ssWatchingUid);
+    const vCount = info ? info.viewers : 0;
+    titleEl.textContent = `${ssWatchingName}'s screen`;
+    metaEl.textContent = vCount > 0 ? `${vCount} watching · Silent` : 'Silent';
+    pill.classList.remove('connecting', 'error');
+    if (ssWatchState === 'live') {
+      statusText.textContent = 'LIVE';
+      overlay.classList.add('hidden');
+    } else if (ssWatchState === 'reconnecting') {
+      pill.classList.add('connecting');
+      statusText.textContent = 'RECONNECTING';
+      spinner.classList.remove('hidden');
+      retryBtn.classList.add('hidden');
+      overlayMsg.textContent = 'Reconnecting to stream...';
+      overlay.classList.remove('hidden');
+    } else if (ssWatchState === 'error') {
+      pill.classList.add('error');
+      statusText.textContent = 'OFFLINE';
+      spinner.classList.add('hidden');
+      retryBtn.classList.remove('hidden');
+      overlayMsg.textContent = ssWatchError || 'Stream disconnected.';
+      overlay.classList.remove('hidden');
+    } else {
+      pill.classList.add('connecting');
+      statusText.textContent = 'CONNECTING';
+      spinner.classList.remove('hidden');
+      retryBtn.classList.add('hidden');
+      overlayMsg.textContent = `Connecting to ${ssWatchingName}...`;
+      overlay.classList.remove('hidden');
+    }
+    if (ssBoundStream !== ssRemoteStream) {
+      vid.srcObject = ssRemoteStream || null;
+      vid.muted = true;
+      ssBoundStream = ssRemoteStream;
+      if (ssRemoteStream) vid.play().catch(() => {});
+    }
+  } else {
+    // Local host preview
+    hidePreviewBtn.classList.remove('hidden');
+    stopBtn.classList.remove('hidden');
+    leaveBtn.classList.add('hidden');
+    let vCount = 0;
+    for (const peer of ssHostPeers.values()) { if (peer.connected) vCount++; }
+    pill.classList.remove('connecting', 'error');
+    statusText.textContent = 'LIVE';
+    titleEl.textContent = 'Your screen (preview)';
+    metaEl.textContent = vCount ? `${vCount} watching · Silent` : 'No viewers yet · Silent';
+    overlay.classList.add('hidden');
+    if (ssBoundStream !== ssLocalStream) {
+      vid.srcObject = ssLocalStream;
+      vid.muted = true;
+      ssBoundStream = ssLocalStream;
+      if (ssLocalStream) vid.play().catch(() => {});
+    }
+  }
+}
+
+// Wire screenshare UI events
+$('screenshare-toggle').addEventListener('click', () => ssStartSharing());
+$('screenshare-toggle').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ssStartSharing(); } });
+$('ss-stop-btn').addEventListener('click', () => ssStopSharing());
+$('ss-away-stop').addEventListener('click', () => ssStopSharing());
+$('ss-away-return').addEventListener('click', () => ssReturnToHostRoom());
+$('ss-leave-btn').addEventListener('click', () => ssStopWatching({ quiet: true }));
+$('ss-hide-preview-btn').addEventListener('click', () => { ssHostPreviewHidden = true; ssRenderUI(); });
+$('ss-retry-btn').addEventListener('click', () => { if (ssWatchingUid) ssWatchSharer(ssWatchingUid, ssWatchingName); });
+$('ss-size-btn').addEventListener('click', () => {
+  const stage = $('screen-stage');
+  const exp = stage.classList.toggle('expanded');
+  $('ss-size-btn').classList.toggle('on', exp);
+  $('ss-size-btn').title = exp ? 'Compact' : 'Expand';
+});
+$('ss-pip-btn').addEventListener('click', async () => {
+  const vid = $('screen-video');
+  try {
+    if (document.pictureInPictureElement) await document.exitPictureInPicture();
+    else if (vid && vid.readyState >= 1) await vid.requestPictureInPicture();
+  } catch (e) {}
+});
+function ssToggleFullscreen() {
+  const stage = $('screen-stage'), vid = $('screen-video');
+  try {
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else if (stage.requestFullscreen) {
+      stage.requestFullscreen();
+    } else if (stage.webkitRequestFullscreen) {
+      stage.webkitRequestFullscreen();
+    } else if (vid && vid.webkitEnterFullscreen) {
+      vid.webkitEnterFullscreen();
+    }
+  } catch (e) {}
+}
+$('ss-fs-btn').addEventListener('click', ssToggleFullscreen);
+$('screen-video').addEventListener('dblclick', ssToggleFullscreen);
+$('screen-banner').addEventListener('click', e => {
+  const watchBtn = e.target.closest('[data-ss-watch]');
+  if (watchBtn) { ssWatchSharer(watchBtn.dataset.ssWatch, watchBtn.dataset.ssName); return; }
+  const actBtn = e.target.closest('[data-ss-act]');
+  if (!actBtn) return;
+  if (actBtn.dataset.ssAct === 'show-preview') { ssHostPreviewHidden = false; ssRenderUI(); }
+  else if (actBtn.dataset.ssAct === 'stop') ssStopSharing();
+});
+window.addEventListener('pagehide', () => {
+  if (ssWatchingUid || ssLocalStream) ssTeardownAll();
+});
