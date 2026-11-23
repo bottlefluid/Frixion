@@ -16,6 +16,8 @@ let api = null, root = null, cv = null, ctx = null, raf = 0, level = null, state
 let progress = { best: 0, cleared: '' }, arm = null, last = null, paused = '', msg = '', msgUntil = 0, offFns = [];
 let pos = null, frozenUntil = 0, atEnd = false, flawless = 0, wonAt = 0;
 let botOn = false, botWp = 1, botLastAt = 0;
+let padOn = false, padTouch = false, padSlow = false, padVec = { x: 0, y: 0 }, padPtrId = null, padLastAt = 0, padUsedRun = false, hwFinishPrev = false;
+let padEl = null, stickEl = null, knobEl = null, slowBtn = null, finBtn = null, padBtn = null;
 const botAllowed = () => !!(botOn && api && typeof api.isOwner === 'function' && api.isOwner());
 const canLock = () => !!(cv && cv.requestPointerLock);
 const locked = () => !!cv && document.pointerLockElement === cv;
@@ -179,12 +181,12 @@ function placeOn(z, holdMs) {
   }
 }
 function startLevel(n) {
-  level = build(n); arm = level.start; deaths = 0; t0 = performance.now(); atEnd = false; botWp = 1;
-  if (canLock() || botAllowed()) {
+  level = build(n); arm = level.start; deaths = 0; t0 = performance.now(); atEnd = false; botWp = 1; padUsedRun = padOn;
+  if (canLock() || botAllowed() || padOn) {
     placeOn(level.start, botAllowed() ? 80 : 250);
     state = 'play';
-    if (!botAllowed()) lockPointer();
-    say(botAllowed() ? 'BOT active.' : locked() ? 'Go! Reach the gold square and click it.' : 'Click the maze to start.', 2400);
+    if (!botAllowed() && !padOn) lockPointer();
+    say(botAllowed() ? 'BOT active.' : padOn ? 'Steer with the stick. Tap FINISH on gold.' : locked() ? 'Go! Reach the gold square and click it.' : 'Click the maze to start.', 2400);
   } else {
     state = 'arming'; last = null; pos = null;
     say('Move the mouse onto the green square to start.', 2600);
@@ -195,7 +197,7 @@ function die(why) {
   deaths++; flawless = 0;
   say(why === 'trick' ? 'That one was a trick. Back to your checkpoint.' : why === 'left' ? 'You left the maze. Back to your checkpoint.' : 'You touched a wall. Back to your checkpoint.', 1800);
   if (why === 'trick') api.egg('tricked');
-  if (canLock()) placeOn(arm, 450);                // straight back onto the checkpoint (or the start)
+  if (canLock() || padOn) placeOn(arm, 450);       // straight back onto the checkpoint (or the start)
   else { state = 'arming'; last = null; }
 }
 function clear() {
@@ -206,6 +208,7 @@ function clear() {
   progress = { best: Math.max(progress.best, n), cleared: cl.join('') };
   api.save(progress, orbs);
   if (n >= 50) api.egg('mazehalf');
+  if ((padOn || padUsedRun) && !botAllowed()) api.egg('pocketmaze');
   flawless = deaths ? 0 : flawless + 1;
   if (flawless >= 10) api.egg('mazeflawless');     // ten levels in a row without touching anything
   state = 'won'; wonAt = performance.now(); atEnd = false;
@@ -227,11 +230,11 @@ function moveTo(p) {
   }
   last = p; pos = p;
   inEnd = inEnd && inRect(p, level.end);
-  if (inEnd && !atEnd) say('Click to finish!', 1400);
+  if (inEnd && !atEnd) say(padOn ? 'Tap FINISH!' : 'Click to finish!', 1400);
   atEnd = inEnd;
 }
 function onMove(e) {
-  if (botAllowed() || !level || paused || state === 'menu' || state === 'won') return;
+  if (botAllowed() || padOn || !level || paused || state === 'menu' || state === 'won') return;
   if (canLock()) {
     if (!locked() || state !== 'play' || !pos) return;
     if (performance.now() < frozenUntil) return;
@@ -248,17 +251,85 @@ function onMove(e) {
 }
 function onDown(e) {
   if (botAllowed() || e.button !== 0 || !level || state === 'menu' || state === 'won') return;
+  if (padOn) { if (atEnd && state === 'play') clear(); return; }
   if (canLock() && !locked()) { lockPointer(); return; }   // clicking the maze takes the mouse back
   if (paused) return;
   if (atEnd && state === 'play') clear();
 }
-function onLeave() { if (!botAllowed() && !canLock() && state === 'play' && !paused) die('left'); }
+function onLeave() { if (!botAllowed() && !padOn && !canLock() && state === 'play' && !paused) die('left'); }
 function checkPause() {
-  if (botAllowed()) { paused = ''; return; }
+  if (botAllowed() || padOn) { paused = ''; return; }
   const why = !isFull() ? 'full' : !document.hasFocus() ? 'focus' : (canLock() && level && state === 'play' && !locked()) ? 'lock' : '';
   if (why === paused) return;
   paused = why;
   if (why && state === 'play' && !canLock()) { state = 'arming'; last = null; }   // pick up again from the square you're on
+}
+// ---------- mobile virtual gamepad + Bluetooth/USB hardware gamepad ----------
+function syncPadUI() {
+  if (!root) return;
+  root.classList.toggle('mz-pad-on', padOn);
+  if (padEl) padEl.hidden = !padOn;
+  if (padBtn) {
+    padBtn.classList.toggle('on', padOn);
+    padBtn.textContent = padOn ? 'Gamepad: ON' : 'Gamepad';
+  }
+  if (slowBtn) {
+    slowBtn.classList.toggle('on', padSlow);
+    slowBtn.setAttribute('aria-pressed', padSlow ? 'true' : 'false');
+    slowBtn.textContent = padSlow ? 'SLOW: ON' : 'SLOW';
+  }
+  if (finBtn) {
+    const rdy = state === 'play' && atEnd;
+    finBtn.disabled = !rdy;
+    finBtn.classList.toggle('ready', rdy);
+  }
+}
+function setPadMode(on) {
+  padOn = !!on;
+  if (padOn) {
+    paused = '';
+    if (locked()) document.exitPointerLock();
+    if (level && state === 'arming' && arm) { placeOn(arm, 0); state = 'play'; }
+    if (level && state === 'play' && !pos) placeOn(arm || level.start, 0);
+  } else {
+    padVec = { x: 0, y: 0 }; padPtrId = null;
+    if (knobEl) knobEl.style.transform = '';
+  }
+  syncPadUI();
+}
+function padStep(now) {
+  if (botAllowed() || !level || state !== 'play' || paused) { padLastAt = now; return; }
+  const dt = padLastAt ? Math.min(0.05, Math.max(0.004, (now - padLastAt) / 1000)) : 0.016;
+  padLastAt = now;
+  let vx = padOn ? padVec.x : 0, vy = padOn ? padVec.y : 0, slow = padSlow, hwFin = false;
+  // Also poll real Bluetooth/USB controllers via the Web Gamepad API
+  try {
+    const gps = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (const gp of gps) {
+      if (!gp) continue;
+      const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;
+      if (Math.hypot(ax, ay) > 0.15) { vx = ax; vy = ay; padUsedRun = true; }
+      const up = gp.buttons[12] && gp.buttons[12].pressed, dn = gp.buttons[13] && gp.buttons[13].pressed;
+      const lt = gp.buttons[14] && gp.buttons[14].pressed, rt = gp.buttons[15] && gp.buttons[15].pressed;
+      if (up || dn || lt || rt) { vx = (rt ? 1 : 0) - (lt ? 1 : 0); vy = (dn ? 1 : 0) - (up ? 1 : 0); padUsedRun = true; }
+      if ((gp.buttons[4] && gp.buttons[4].pressed) || (gp.buttons[6] && gp.buttons[6].pressed)) slow = true;
+      if (gp.buttons[0] && gp.buttons[0].pressed) hwFin = true;
+    }
+  } catch (_) {}
+  if (hwFin && !hwFinishPrev && atEnd) { padUsedRun = true; clear(); }
+  hwFinishPrev = hwFin;
+  const mag = Math.hypot(vx, vy);
+  if (mag < 0.04 || now < frozenUntil) return;
+  if (!pos) placeOn(arm || level.start, 0);
+  const clamped = Math.min(1, mag);
+  const curve = 0.2 * clamped + 0.8 * clamped * clamped;
+  const maxSpd = slow ? 155 : 440;
+  const step = curve * maxSpd * dt;
+  padUsedRun = true;
+  moveTo({
+    x: Math.max(0, Math.min(W, pos.x + (vx / mag) * step)),
+    y: Math.max(0, Math.min(H, pos.y + (vy / mag) * step)),
+  });
 }
 function botSegWallFree(a, b) {
   const d = Math.hypot(b.x - a.x, b.y - a.y), steps = Math.max(1, Math.ceil(d / 3));
@@ -381,7 +452,12 @@ function pill(text, x, y, align, strong) {
 function draw(now) {
   raf = requestAnimationFrame(draw);
   checkPause();
-  if (botAllowed()) botStep(now);
+  if (botAllowed()) botStep();
+  else padStep(performance.now());
+  if (finBtn) {
+    const rdy = state === 'play' && atEnd;
+    if (finBtn.disabled === rdy) { finBtn.disabled = !rdy; finBtn.classList.toggle('ready', rdy); }
+  }
   const b = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(b.width * dpr) || cv.height !== Math.round(b.height * dpr)) { cv.width = Math.round(b.width * dpr); cv.height = Math.round(b.height * dpr); }
   const s = Math.min(b.width / W, b.height / H) * dpr, ox = (cv.width - W * s) / 2, oy = (cv.height - H * s) / 2;
@@ -417,7 +493,7 @@ function draw(now) {
   });
   ctx.restore();
   if (state === 'arming' && arm) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.strokeRect(arm.x - 4, arm.y - 4, arm.w + 8, arm.h + 8); ctx.setLineDash([]); }
-  if (pos && (canLock() || botAllowed()) && state !== 'menu') drawPointer(pos, s / dpr, now < frozenUntil && Math.floor(now / 90) % 2 === 0);
+  if (pos && (canLock() || botAllowed() || padOn) && state !== 'menu') drawPointer(pos, s / dpr, now < frozenUntil && Math.floor(now / 90) % 2 === 0);
   // what's going on: level and tries at the top, messages at the bottom
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   pill(`Level ${level.n} of ${LEVELS}`, 14, 12, 'left');
@@ -426,7 +502,7 @@ function draw(now) {
   const text = paused === 'full' ? 'Paused: Mouse Maze only plays in fullscreen. Press the Fullscreen button or F11.'
     : paused === 'focus' ? 'Paused: click back into Frixion.'
     : paused === 'lock' ? 'Paused. Click the maze to keep playing (Esc lets go of the mouse).'
-    : (now < msgUntil ? msg : state === 'arming' ? 'Move the mouse onto the highlighted square.' : atEnd ? 'Click to finish!' : '');
+    : (now < msgUntil ? msg : state === 'arming' ? 'Move the mouse onto the highlighted square.' : atEnd ? (padOn ? 'Tap FINISH!' : 'Click to finish!') : '');
   if (text) pill(text, b.width / 2, b.height - 54, 'center', true);
 }
 
@@ -448,7 +524,7 @@ function showMenu(on) {
   m.querySelectorAll('[data-lv]').forEach(b => { b.onclick = () => go(Number(b.dataset.lv)); });
 }
 function go(n) {
-  if (!botAllowed() && !isFull()) { (root.requestFullscreen ? root.requestFullscreen() : Promise.reject()).catch(() => {}); }
+  if (!botAllowed() && !padOn && !isFull()) { (root.requestFullscreen ? root.requestFullscreen() : Promise.reject()).catch(() => {}); }
   startLevel(n);
 }
 
@@ -458,32 +534,103 @@ export function open(stage, frixion) {
   root = document.createElement('div');
   root.className = 'mz-root';
   stage.appendChild(root);
-  if (api.isTouchOnly()) {
-    root.innerHTML = '<div class="mz-note"><b>Mouse Maze needs a computer.</b><span>It\'s played with a mouse, so it doesn\'t work on phones or tablets.</span></div>';
-    return;
-  }
+  padTouch = !!(api && typeof api.isTouchOnly === 'function' && api.isTouchOnly());
+  padOn = padTouch;
+  padSlow = false; padVec = { x: 0, y: 0 }; padPtrId = null; padLastAt = 0; padUsedRun = padOn; hwFinishPrev = false;
+  if (padTouch) root.classList.add('mz-touch');
   progress = api.load();
-  root.innerHTML = `<canvas class="mz-canvas"></canvas>
-    <div class="mz-menu"><div class="mz-menu-box">
-      <h2>Mouse Maze</h2>
-      <p>Get the mouse from the <b class="g">green</b> square to the <b class="y">gold</b> one, then click it. Don't touch a wall or anything red: touch something and the mouse goes straight back to your last checkpoint (the blue squares). Watch out, some gold and blue squares are tricks.</p>
-      <p class="mz-fine">It plays in fullscreen, with the game's own mouse: Esc lets go of it and pauses. Every clear pays Orbs, and a level's first clear pays more.</p>
-      <div class="mz-progress"><div class="mz-progress-fill"></div></div>
-      <div class="mz-progress-text"></div>
-      <button type="button" class="mz-continue"></button>
-      <div class="mz-levels"></div>
-    </div></div>
-    <div class="mz-bar"><button type="button" class="mz-btn" data-mz="menu">Levels</button><button type="button" class="mz-btn" data-mz="full">Fullscreen</button></div>`;
+  const intro = padTouch
+    ? 'Use the thumbstick below to steer from the <b class="g">green</b> square to the <b class="y">gold</b> one, then tap FINISH. Don\'t touch a wall or anything red: touching something sends you back to your last checkpoint. Watch out for fake gold and blue squares.'
+    : 'Get the mouse from the <b class="g">green</b> square to the <b class="y">gold</b> one, then click it. Don\'t touch a wall or anything red: touch something and the mouse goes straight back to your last checkpoint (the blue squares). Watch out, some gold and blue squares are tricks.';
+  const fine = padTouch
+    ? 'Tap SLOW for surgical cornering in narrow corridors. Bluetooth/USB gamepads work too. Every clear pays Orbs, and a level\'s first clear pays more.'
+    : 'Plays in fullscreen with the game\'s own mouse (Esc pauses), or press Gamepad for stick controls. Every clear pays Orbs, and a level\'s first clear pays more.';
+  root.innerHTML = `<div class="mz-stage">
+      <canvas class="mz-canvas"></canvas>
+      <div class="mz-menu"><div class="mz-menu-box">
+        <h2>Mouse Maze</h2>
+        <p>${intro}</p>
+        <p class="mz-fine">${fine}</p>
+        <div class="mz-progress"><div class="mz-progress-fill"></div></div>
+        <div class="mz-progress-text"></div>
+        <button type="button" class="mz-continue"></button>
+        <div class="mz-levels"></div>
+      </div></div>
+      <div class="mz-bar">
+        <button type="button" class="mz-btn" data-mz="menu">Levels</button>
+        ${padTouch ? '' : '<button type="button" class="mz-btn" data-mz="pad">Gamepad</button><button type="button" class="mz-btn" data-mz="full">Fullscreen</button>'}
+      </div>
+    </div>
+    <div class="mz-pad"${padOn ? '' : ' hidden'}>
+      <div class="mz-stick" aria-label="Move pointer">
+        <div class="mz-stick-ring"></div>
+        <div class="mz-knob"></div>
+      </div>
+      <div class="mz-pad-mid">
+        <div class="mz-pad-label">GAMEPAD</div>
+        <div class="mz-pad-hint">Drag stick to steer</div>
+      </div>
+      <div class="mz-pad-acts">
+        <button type="button" class="mz-act mz-act-slow" aria-pressed="false">SLOW</button>
+        <button type="button" class="mz-act mz-act-finish" disabled>FINISH</button>
+      </div>
+    </div>`;
   cv = root.querySelector('.mz-canvas'); ctx = cv.getContext('2d');
-  const on = (el, ev, fn, opt) => { el.addEventListener(ev, fn, opt); offFns.push(() => el.removeEventListener(ev, fn, opt)); };
+  padEl = root.querySelector('.mz-pad');
+  stickEl = root.querySelector('.mz-stick');
+  knobEl = root.querySelector('.mz-knob');
+  slowBtn = root.querySelector('.mz-act-slow');
+  finBtn = root.querySelector('.mz-act-finish');
+  padBtn = root.querySelector('[data-mz="pad"]');
+  const on = (el, ev, fn, opt) => { if (!el) return; el.addEventListener(ev, fn, opt); offFns.push(() => el.removeEventListener(ev, fn, opt)); };
   on(document, 'mousemove', onMove);              // (with the pointer locked, moves come to the document)
   on(cv, 'mousedown', onDown);
   on(cv, 'mouseleave', onLeave);
   on(root, 'contextmenu', e => e.preventDefault());       // no right-click menu in the maze
-  on(window, 'blur', () => { if (!botAllowed() && state === 'play' && !canLock()) { state = 'arming'; last = null; } });
+  on(window, 'blur', () => { if (!botAllowed() && !padOn && state === 'play' && !canLock()) { state = 'arming'; last = null; } });
+
+  // Virtual analog stick (multi-touch safe via pointerId)
+  const updateStick = e => {
+    const r = stickEl.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const maxR = Math.max(20, r.width * 0.36);
+    let dx = e.clientX - cx, dy = e.clientY - cy;
+    const d = Math.hypot(dx, dy);
+    if (d > maxR) { dx = dx / d * maxR; dy = dy / d * maxR; }
+    padVec = { x: dx / maxR, y: dy / maxR };
+    if (knobEl) knobEl.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+  };
+  on(stickEl, 'pointerdown', e => {
+    if (botAllowed()) return;
+    e.preventDefault();
+    padPtrId = e.pointerId;
+    try { stickEl.setPointerCapture(e.pointerId); } catch (_) {}
+    stickEl.classList.add('active');
+    updateStick(e);
+  });
+  on(stickEl, 'pointermove', e => {
+    if (e.pointerId !== padPtrId || botAllowed()) return;
+    e.preventDefault();
+    updateStick(e);
+  });
+  const endStick = e => {
+    if (e.pointerId !== padPtrId) return;
+    padPtrId = null;
+    padVec = { x: 0, y: 0 };
+    stickEl.classList.remove('active');
+    if (knobEl) knobEl.style.transform = '';
+  };
+  on(stickEl, 'pointerup', endStick);
+  on(stickEl, 'pointercancel', endStick);
+
+  slowBtn.onclick = () => { if (botAllowed()) return; padSlow = !padSlow; syncPadUI(); };
+  finBtn.onclick = () => { if (!botAllowed() && state === 'play' && atEnd) { padUsedRun = true; clear(); } };
+  if (padBtn) padBtn.onclick = () => { if (!botAllowed()) setPadMode(!padOn); };
   root.querySelector('.mz-continue').onclick = () => go(progress.best >= LEVELS ? 1 : progress.best + 1);
   root.querySelector('[data-mz="menu"]').onclick = () => showMenu(true);
-  root.querySelector('[data-mz="full"]').onclick = () => { if (!document.fullscreenElement) root.requestFullscreen().then(() => { if (state === 'play') lockPointer(); }).catch(() => {}); else document.exitFullscreen().catch(() => {}); };
+  const fullBtn = root.querySelector('[data-mz="full"]');
+  if (fullBtn) fullBtn.onclick = () => { if (!document.fullscreenElement) root.requestFullscreen().then(() => { if (state === 'play' && !padOn) lockPointer(); }).catch(() => {}); else document.exitFullscreen().catch(() => {}); };
+  syncPadUI();
   showMenu(true);
   raf = requestAnimationFrame(draw);
 }
@@ -491,6 +638,8 @@ export function setBot(on) {
   botOn = !!(on && api && typeof api.isOwner === 'function' && api.isOwner());
   if (botOn && root && cv) {
     paused = '';
+    padVec = { x: 0, y: 0 }; padPtrId = null;
+    if (knobEl) knobEl.style.transform = '';
     if (locked()) document.exitPointerLock();
     if (state === 'menu') startLevel(progress.best >= LEVELS ? 1 : progress.best + 1);
     else if (state === 'arming' && arm) { placeOn(arm, 0); state = 'play'; }
@@ -499,13 +648,14 @@ export function setBot(on) {
 }
 export function close() {
   botOn = false; botWp = 1;
+  padOn = false; padTouch = false; padSlow = false; padVec = { x: 0, y: 0 }; padPtrId = null; padLastAt = 0; padUsedRun = false;
   cancelAnimationFrame(raf); raf = 0;
   offFns.forEach(f => f()); offFns = [];
   if (cv && document.pointerLockElement === cv) document.exitPointerLock();
   if (document.fullscreenElement && root && root.contains(document.fullscreenElement) || document.fullscreenElement === root) document.exitFullscreen().catch(() => {});
   if (root) root.remove();
-  root = cv = ctx = level = null; state = 'menu'; paused = ''; pos = null; atEnd = false;
+  root = cv = ctx = padEl = stickEl = knobEl = slowBtn = finBtn = padBtn = level = null; state = 'menu'; paused = ''; pos = null; atEnd = false;
 }
 // (for tests: the level as built, and where things stand)
 export const _build = build;
-export const _peek = () => ({ state, pos: pos && { ...pos }, atEnd, n: level && level.n, deaths, paused, onStart: !!(level && arm === level.start), start: level && middle(level.start) });
+export const _peek = () => ({ state, pos: pos && { ...pos }, atEnd, n: level && level.n, deaths, paused, onStart: !!(level && arm === level.start), start: level && middle(level.start), padOn, padTouch, padSlow });

@@ -1258,6 +1258,13 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.74', date: '2026-11-23', title: 'Harder Liquid Dash, Wave trail, mobile Mouse Maze and Simon 67',
+    notes: [
+      'Liquid Dash is now much harder, inspired by Geometry Dash: faster pacing, 1x to 4x Speed Portals, UFO mode, Mini Wave and Mini Ship corridors, triple spikes, spinning sawblades, an Attempt counter, and a crisp glowing 45° laser trail for Wave.',
+      'Mouse Maze now works on phones and tablets with an on-screen analog thumbstick, a SLOW precision toggle and a FINISH button (plus Bluetooth/USB gamepad support, and an optional Gamepad toggle on desktop too).',
+      'Color Simon\'s easter egg moved from round 15 to round 67 (Very Hard, 1,000 Orbs) — anyone who had the old round 15 egg will have to reach round 67 to earn it again.',
+      '3 new easter eggs (including Liquid Dash and Mouse Maze gamepad). That makes 93.',
+    ] },
   { v: '4.73', date: '2026-11-22', title: 'Owner Game Bot and arcade fixes',
     notes: [
       'Games, for the Owner: a BOT toggle in the game bar that auto-plays all 19 mini-games at top speed and accuracy (from Liquid Dash, Snake, Blox Merge and Block Blast to Connect Four, Mouse Maze, Cookie Clicker and Grow a Garden).',
@@ -19444,12 +19451,19 @@ function stopGGEngine(){ if(ggEngine){ clearInterval(ggEngine); ggEngine=null; }
 function ggCleanup(){ stopGGEngine(); ggStopStaffWeather(); }
 
 // ============================================================
-//  LIQUID DASH  (geometry-dash: cube, ship, ball, wave, spider, swing)
+//  LIQUID DASH  (v4.74 Hard-Demon GD overhaul: 7 modes, speed portals, mini mode, wave trail)
 // ============================================================
-const GEO_CAP_DIV=100; // score points needed per Orb earned
-const GD_MODES=['cube','ship','ball','wave','spider','swing'];
-const GD_PORTAL_COL={ ship:'#19c3ff', ball:'#ffb020', wave:'#ff3df0', spider:'#9b5cff', swing:'#2ee6a6' }; // cube uses accent
+const GEO_CAP_DIV=80; // score points needed per Orb earned
+const GD_MODES=['cube','ship','wave','ball','ufo','spider','swing'];
+const GD_PORTAL_COL={ ship:'#19c3ff', wave:'#ff3df0', ball:'#ffb020', ufo:'#58f287', spider:'#9b5cff', swing:'#2ee6a6' }; // cube uses accent
+const GD_SPEEDS=[
+  { mult:1.0,  label:'1x', col:'#f5c518', chev:1 },
+  { mult:1.22, label:'2x', col:'#19c3ff', chev:2 },
+  { mult:1.42, label:'3x', col:'#38e07b', chev:3 },
+  { mult:1.62, label:'4x', col:'#ff5252', chev:4 },
+];
 let gdState=null, gdKeyHandler=null, gdKeyUpHandler=null, gdPointerUp=null;
+function gdCurSize(mode, mini){ return (mini && (mode==='wave'||mode==='ship')) ? 20 : 28; }
 // Canvas games read theme colors from the game window, where the theme's variables
 // are in effect. Each color is resolved through a probe element, so hex, rgb(), hsl()
 // and var() chains from custom themes all come back as a plain #rrggbb.
@@ -19481,12 +19495,13 @@ function gdThemeColors(){
 function renderGeoDash(){
   const stage=document.getElementById('game-stage'); if(!stage||!UC) return;
   stage.innerHTML=`<div class="gd-wrap">
-    <div class="gd-hud"><span>Score <b id="gd-score">0</b></span><span id="gd-mode-tag" class="gd-mode-tag">Cube</span><span>Best <b id="gd-best">${UC.geoBest||0}</b></span></div>
+    <div class="gd-hud"><span>Score <b id="gd-score">0</b></span><span id="gd-mode-tag" class="gd-mode-tag">Cube &middot; 1x</span><span>Att <b id="gd-att">1</b> &middot; Best <b id="gd-best">${UC.geoBest||0}</b></span></div>
     <canvas id="gd-canvas" class="gd-canvas"></canvas>
     <div class="gd-overlay" id="gd-overlay">
       <div class="gd-card">
         <div class="gd-title">Liquid Dash</div>
-        <div class="gd-sub">Tap, click or press Space, and hold to keep jumping as a cube. Ship and wave you hold to steer, ball flips gravity only while resting on a surface, spider teleports between floor and ceiling, and swing flips gravity even in mid-air. Dodge everything. The further you go, the more Orbs you earn.</div>
+        <div class="gd-sub">Hard Demon pace: Cube (triple spikes), Ship, 45° Wave, Ball, UFO, Spider and Swing, with 1x–4x Speed Portals and Mini corridors. Tap, click or hold Space. Survive as far as you can for Orbs.</div>
+        <div class="egg-tip">Score 600 in Liquid Dash. Most people don't make it past the wave.</div>
         <button class="gd-btn" onclick="gdStart()">Play</button>
       </div>
     </div>
@@ -19498,10 +19513,12 @@ function gdInit(){
   const W=Math.max(320, (cv.parentElement&&cv.parentElement.clientWidth)||640), H=380;
   cv.width=W; cv.height=H;
   gdState={ cv, ctx:cv.getContext('2d'), W, H, groundY:H-56, ceil:16, size:28, x:90,
-    y:H-56-28, vy:0, grav:0.9, jump:-13.2, baseSpeed:5.72, speed:5.72,
-    shipUp:0.55, shipDown:0.4, shipMax:6.4, ballMax:8, swingMax:6, gravDir:1,
-    dist:0, score:0, obstacles:[], grounded:true, rot:0, mode:'cube', holding:false, flash:0,
-    genMode:'cube', sinceSwitch:1, segLen:6, lastGapC:(H-56+16)/2, lastSurfSide:'ceiling',
+    y:H-56-28, vy:0, grav:0.96, jump:-13.6, baseSpeed:6.8, speed:6.8, speedMult:1.0, speedIdx:0,
+    shipUp:0.62, shipDown:0.50, shipMax:6.8, ufoFlap:-7.6, ufoGrav:0.62, ballMax:10.5, swingMax:7.2, gravDir:1,
+    dist:0, score:0, attempts:0, obstacles:[], trail:[], beams:[], sawRot:0,
+    grounded:true, rot:0, mode:'cube', mini:false, holding:false, flash:0, _egg600:false,
+    genMode:'cube', genMini:false, genSpeedMult:1.0, genSpeedIdx:0,
+    sinceSwitch:1, segLen:6, segCount:0, lastGapC:(H-56+16)/2, lastSurfSide:'ceiling',
     running:false, dead:false, started:false, raf:0, colors:gdThemeColors() };
   gdSeed();
   gdCleanupListeners();
@@ -19514,102 +19531,175 @@ function gdInit(){
   cv.onpointerdown=function(e){ e.preventDefault(); gdDown(); };
   gdDraw();
 }
+function gdUpdateModeTag(s){
+  const tag=document.getElementById('gd-mode-tag'); if(!tag) return;
+  const name=s.mode==='ufo'?'UFO':(s.mode.charAt(0).toUpperCase()+s.mode.slice(1));
+  const sp=(GD_SPEEDS[s.speedIdx]||GD_SPEEDS[0]).label;
+  tag.textContent=name+(s.mini?' Mini':'')+' · '+sp;
+  tag.style.background=GD_PORTAL_COL[s.mode]||s.colors.cube;
+}
 function gdDown(){ const s=gdState; if(!s||s.dead) return; s.holding=true; if(!s.started){ gdStart(); return; }
   if(s.mode==='cube'){ if(s.grounded){ s.vy=s.jump; s.grounded=false; } }
+  else if(s.mode==='ufo'){ s.vy=s.ufoFlap; s.grounded=false; }
   else if(s.mode==='ball'){ const onF=s.y>=s.groundY-s.size-0.6, onC=s.y<=s.ceil+0.6; if((s.gravDir>0&&onF)||(s.gravDir<0&&onC)) s.gravDir=-s.gravDir; }
-  else if(s.mode==='spider'){ s.gravDir=-s.gravDir; s.y = s.gravDir>0 ? (s.groundY-s.size) : s.ceil; s.vy=0; }
+  else if(s.mode==='spider'){ const oldY=s.y; s.gravDir=-s.gravDir; s.y = s.gravDir>0 ? (s.groundY-s.size) : s.ceil; s.vy=0; s.beams.push({x:s.x+s.size/2, y1:oldY+s.size/2, y2:s.y+s.size/2, life:10}); }
   else if(s.mode==='swing'){ s.gravDir=-s.gravDir; }
 }
 function gdNextMode(m){ return GD_MODES[(GD_MODES.indexOf(m)+1)%GD_MODES.length]; }
-function gdSetMode(s,m){ s.mode=m; s.vy=0; s.flash=12;
-  if(m==='ship'||m==='wave'||m==='swing'){ s.y=(s.ceil+(s.groundY-s.size))/2; if(m==='swing') s.gravDir=1; }
-  else if(m==='ball'||m==='spider'){ s.gravDir=1; s.y=s.groundY-s.size; }
-  const tag=document.getElementById('gd-mode-tag'); if(tag) tag.textContent=m.charAt(0).toUpperCase()+m.slice(1);
+function gdSetMode(s,m,mini){
+  s.mode=m; s.mini=!!(mini&&(m==='wave'||m==='ship')); s.size=gdCurSize(m,s.mini); s.vy=0; s.flash=12;
+  const floor=s.groundY-s.size;
+  if(m==='ship'||m==='wave'||m==='swing'||m==='ufo'){ s.y=(s.ceil+floor)/2; if(m==='swing') s.gravDir=1; }
+  else if(m==='ball'||m==='spider'){ s.gravDir=1; s.y=floor; }
+  else { s.y=Math.min(s.y, floor); }
+  s.trail.push({ brk:true });
+  gdUpdateModeTag(s);
 }
-function gdCubeGap(s){ const air=2*Math.abs(s.jump)/s.grav, reach=air*s.speed; return reach*1.3 + Math.random()*reach*0.6; }
+function gdCubeGap(s, sp){ const air=2*Math.abs(s.jump)/s.grav, reach=air*sp; return reach*(1.12 + Math.random()*0.36); }
 function gdGenAhead(s){
-  let last=s.obstacles.length? s.obstacles[s.obstacles.length-1].x : s.W;
-  while(last < s.W+300){
+  const tail=s.obstacles[s.obstacles.length-1];
+  let last=tail ? (tail.x + (tail.w||0)) : s.W;
+  while(last < s.W+380){
+    const genSp=Math.min(11.4, (s.baseSpeed + s.dist/20000)*s.genSpeedMult);
     if(s.sinceSwitch>=s.segLen){
       const nm=gdNextMode(s.genMode);
-      last+=170; s.obstacles.push({type:'portal', x:last, w:16, mode:nm});
-      last+=140; s.genMode=nm; s.sinceSwitch=0;
-      s.segLen = nm==='cube'? 5+Math.floor(Math.random()*3) : nm==='spider'? 6+Math.floor(Math.random()*3) : 4+Math.floor(Math.random()*2);
-      s.lastGapC=(s.ceil+(s.groundY-s.size))/2; s.lastSurfSide='ceiling';
+      s.segCount++;
+      let spIdx=s.genSpeedIdx;
+      if(s.segCount>=1){
+        const maxTier=Math.min(3, 1+Math.floor(s.segCount/2));
+        spIdx=Math.min(maxTier, s.segCount%(maxTier+1));
+        if(spIdx===0 && s.segCount>=3) spIdx=1;
+      }
+      const wantMini=(nm==='wave'||nm==='ship') && s.segCount>=2 && (s.segCount%2===0);
+      last+=Math.max(150, genSp*22);
+      if(spIdx!==s.genSpeedIdx){
+        s.genSpeedIdx=spIdx; s.genSpeedMult=GD_SPEEDS[spIdx].mult;
+        s.obstacles.push({type:'speed', x:last, w:18, idx:spIdx, mult:GD_SPEEDS[spIdx].mult});
+        last+=Math.max(95, genSp*12);
+      }
+      s.obstacles.push({type:'portal', x:last, w:18, mode:nm, mini:wantMini});
+      const newSp=Math.min(11.4, (s.baseSpeed + s.dist/20000)*s.genSpeedMult);
+      last+=Math.max(130, newSp*18);
+      s.genMode=nm; s.genMini=wantMini; s.sinceSwitch=0;
+      s.segLen = nm==='cube'? 5+Math.floor(Math.random()*3) : nm==='spider'? 6+Math.floor(Math.random()*3) : 5+Math.floor(Math.random()*3);
+      const ns=gdCurSize(nm, wantMini);
+      s.lastGapC=(s.ceil+(s.groundY-ns))/2 + ns/2; s.lastSurfSide='ceiling';
       continue;
     }
     if(s.genMode==='cube'){
-      last+=gdCubeGap(s); const n=Math.random()<0.82?1:2;
-      s.obstacles.push({type:'spike', x:last, w:26*n, n});
-    } else if(s.genMode==='ship'||s.genMode==='wave'||s.genMode==='swing'){
+      last+=gdCubeGap(s, genSp);
+      const r=Math.random(), n=r<0.35?3:(r<0.75?2:1), sw=22;
+      s.obstacles.push({type:'spike', x:last, w:sw*n, n, sw});
+      last+=sw*n;
+    } else if(s.genMode==='wave'){
+      const dx=genSp*(28+Math.random()*14);
+      last+=dx;
+      const gapSize=s.genMini?(86+Math.random()*14):(100+Math.random()*18);
+      const minC=s.ceil+gapSize/2+12, maxC=s.groundY-gapSize/2-12;
+      const wv=genSp*(s.genMini?1.35:0.95);
+      const maxShift=Math.min(110, (dx/genSp)*wv*0.56);
+      const dir=s.lastGapC>(minC+maxC)/2?-1:1;
+      const swing=(0.45+Math.random()*0.55)*maxShift*(Math.random()<0.8?dir:-dir);
+      const cc=Math.max(minC, Math.min(maxC, s.lastGapC+swing));
+      s.lastGapC=cc;
+      s.obstacles.push({type:'gap', x:last, w:28, gapTop:cc-gapSize/2, gapBot:cc+gapSize/2, slope:true});
+    } else if(s.genMode==='ship'||s.genMode==='swing'||s.genMode==='ufo'){
       const gm=s.genMode;
-      last+= s.speed*(gm==='ship'?(48+Math.random()*20):(50+Math.random()*20));
-      const gapSize = gm==='ship'?184 : gm==='swing'?172 : 170;
-      const minC=s.ceil+gapSize/2+8, maxC=s.groundY-gapSize/2-8;
-      let cc=s.lastGapC + (Math.random()*2-1)*(gm==='wave'?46 : gm==='swing'?40 : 66);
+      const frames=gm==='ship'?(36+Math.random()*14):gm==='ufo'?(36+Math.random()*14):(38+Math.random()*14);
+      last+=genSp*frames;
+      const gapSize=gm==='ship'?(s.genMini?96:112):gm==='ufo'?122:116;
+      const minC=s.ceil+gapSize/2+10, maxC=s.groundY-gapSize/2-10;
+      const maxShift=gm==='ship'?68:gm==='ufo'?62:56;
+      let cc=s.lastGapC+(Math.random()*2-1)*maxShift;
       cc=Math.max(minC, Math.min(maxC, cc)); s.lastGapC=cc;
       s.obstacles.push({type:'gap', x:last, w:26, gapTop:cc-gapSize/2, gapBot:cc+gapSize/2});
-    } else { // ball or spider: spikes on the floor or ceiling, flip/teleport to dodge
-      last+= s.speed*(s.genMode==='ball'?(70+Math.random()*34):(44+Math.random()*16));
-      const side = s.lastSurfSide==='floor'?'ceiling':'floor'; s.lastSurfSide=side;
-      s.obstacles.push({type:'surf', x:last, w:26, side});
+      if(Math.random()<0.45){
+        const topRoom=(cc-gapSize/2)-s.ceil, botRoom=s.groundY-(cc+gapSize/2);
+        if(topRoom>=38) s.obstacles.push({type:'saw', x:last+13, y:s.ceil+Math.min(topRoom-18,22), r:16});
+        else if(botRoom>=38) s.obstacles.push({type:'saw', x:last+13, y:s.groundY-Math.min(botRoom-18,22), r:16});
+      }
+    } else {
+      const frames=s.genMode==='ball'?(48+Math.random()*16):(26+Math.random()*12);
+      last+=genSp*frames;
+      const side=s.lastSurfSide==='floor'?'ceiling':'floor'; s.lastSurfSide=side;
+      const n=Math.random()<0.5?2:1;
+      s.obstacles.push({type:'surf', x:last, w:22*n, n, side});
     }
     s.sinceSwitch++;
   }
 }
-function gdSeed(){ const s=gdState; s.obstacles=[]; s.genMode='cube'; s.sinceSwitch=1; s.segLen=6; s.lastGapC=(s.ceil+(s.groundY-s.size))/2; s.lastSurfSide='ceiling';
-  s.obstacles.push({type:'spike', x:s.W+180, w:26, n:1}); gdGenAhead(s); }
+function gdSeed(){ const s=gdState; s.obstacles=[]; s.trail=[]; s.beams=[]; s.genMode='cube'; s.genMini=false; s.genSpeedMult=1.0; s.genSpeedIdx=0; s.sinceSwitch=1; s.segLen=6; s.segCount=0; s.lastGapC=(s.ceil+(s.groundY-28))/2+14; s.lastSurfSide='ceiling';
+  s.obstacles.push({type:'spike', x:s.W+140, w:44, n:2, sw:22}); gdGenAhead(s); }
 function gdStart(){
   if(!gdState){ gdInit(); }
   const ov=document.getElementById('gd-overlay'); if(ov) ov.style.display='none';
   const s=gdState;
-  s.started=true; s.dead=false; s.running=true;
-  s.mode='cube'; s.holding=false; s.gravDir=1; s.y=s.groundY-s.size; s.vy=0; s.grounded=true;
-  s.dist=0; s.score=0; s.speed=s.baseSpeed; s.rot=0; s.flash=0; s.shield=false; s.invuln=0;
+  s.started=true; s.dead=false; s.running=true; s.attempts=(s.attempts||0)+1;
+  s.mode='cube'; s.mini=false; s.size=28; s.holding=false; s.gravDir=1; s.y=s.groundY-s.size; s.vy=0; s.grounded=true;
+  s.dist=0; s.score=0; s.speedMult=1.0; s.speedIdx=0; s.speed=s.baseSpeed; s.rot=0; s.flash=0; s.shield=false; s.invuln=0; s._egg600=false;
   s.colors=gdThemeColors(); gdSeed();
-  const tag=document.getElementById('gd-mode-tag'); if(tag) tag.textContent='Cube';
+  gdUpdateModeTag(s);
+  const att=document.getElementById('gd-att'); if(att) att.textContent=s.attempts;
   gdLoop();
 }
 function gdLoop(){
   const s=gdState; if(!s||!s.running) return;
   if(currentGameId!=='geodash'||!document.body.contains(s.cv)){ gdLeave(); return; }
   if(gameBotActive('geodash')) gameBotGeoDash(s);
-  s.speed=Math.min(9.1, s.baseSpeed + s.dist/16000);
+  s.speed=Math.min(11.4, (s.baseSpeed + s.dist/20000)*s.speedMult);
   s.dist+=s.speed; s.score=Math.floor(s.dist/10);
+  if(s.score>=600 && !s._egg600){ s._egg600=true; eggFind('liquiddash'); }
   const floor=s.groundY-s.size;
   if(s.mode==='cube'){
     s.vy+=s.grav; s.y+=s.vy;
     if(s.y>=floor){ s.y=floor; s.vy=0; s.grounded=true; s.rot=Math.round(s.rot/(Math.PI/2))*(Math.PI/2); if(s.holding){ s.vy=s.jump; s.grounded=false; } }
-    else { s.grounded=false; s.rot+=0.16; }
+    else { s.grounded=false; s.rot+=0.18; }
   } else if(s.mode==='ship'){
     s.vy += s.holding? -s.shipUp : s.shipDown;
     s.vy=Math.max(-s.shipMax, Math.min(s.shipMax, s.vy)); s.y+=s.vy;
     if(s.y<s.ceil){ s.y=s.ceil; if(s.vy<0) s.vy=0; }
     if(s.y>floor){ s.y=floor; if(s.vy>0) s.vy=0; }
-    s.rot=Math.max(-0.5,Math.min(0.5,s.vy*0.05)); s.grounded=false;
+    s.rot=Math.max(-0.55,Math.min(0.55,s.vy*0.06)); s.grounded=false;
   } else if(s.mode==='wave'){
-    const wv=s.speed*0.8; s.vy = s.holding? -wv : wv; s.y+=s.vy;
+    const wv=s.speed*(s.mini?1.35:0.95); s.vy = s.holding? -wv : wv; s.y+=s.vy;
     if(s.y<s.ceil) s.y=s.ceil; if(s.y>floor) s.y=floor;
-    s.rot=s.holding?-0.6:0.6; s.grounded=false;
+    const ang=s.mini?0.93:0.785; s.rot=s.holding?-ang:ang; s.grounded=false;
+  } else if(s.mode==='ufo'){
+    s.vy+=s.ufoGrav; s.vy=Math.max(-9.5, Math.min(8.5, s.vy)); s.y+=s.vy;
+    if(s.y<s.ceil){ s.y=s.ceil; if(s.vy<0) s.vy=0; }
+    if(s.y>floor){ s.y=floor; if(s.vy>0) s.vy=0; }
+    s.rot=Math.max(-0.35, Math.min(0.35, s.vy*0.035)); s.grounded=false;
   } else if(s.mode==='ball'){
-    s.vy += s.grav*0.78*s.gravDir;
+    s.vy += s.grav*1.12*s.gravDir;
     s.vy=Math.max(-s.ballMax, Math.min(s.ballMax, s.vy)); s.y+=s.vy;
     if(s.y>=floor){ s.y=floor; if(s.gravDir>0) s.vy=0; }
     if(s.y<=s.ceil){ s.y=s.ceil; if(s.gravDir<0) s.vy=0; }
-    s.rot+=s.gravDir*0.2; s.grounded=false;
-  } else if(s.mode==='spider'){ // snapped to its current surface, taps teleport it
+    s.rot+=s.gravDir*0.26; s.grounded=false;
+  } else if(s.mode==='spider'){
     s.y = s.gravDir>0 ? floor : s.ceil; s.vy=0; s.rot=0; s.grounded=false;
-  } else { // swing: gravity flip you can use mid-air, fly straight through the corridors
-    s.vy += s.grav*0.5*s.gravDir;
+  } else {
+    s.vy += s.grav*0.65*s.gravDir;
     s.vy=Math.max(-s.swingMax, Math.min(s.swingMax, s.vy)); s.y+=s.vy;
     if(s.y<s.ceil){ s.y=s.ceil; if(s.vy<0) s.vy=0; }
     if(s.y>floor){ s.y=floor; if(s.vy>0) s.vy=0; }
-    s.rot=Math.max(-0.6,Math.min(0.6,s.vy*0.06)); s.grounded=false;
+    s.rot=Math.max(-0.6,Math.min(0.6,s.vy*0.065)); s.grounded=false;
   }
+  // Scroll world-space wave & motion trail + spider teleport beams
+  for(const pt of s.trail){ if(!pt.brk) pt.x-=s.speed; }
+  while(s.trail.length && (s.trail[0].brk || s.trail[0].x < -60)) s.trail.shift();
+  s.trail.push({ x:s.x+s.size*0.35, y:s.y+s.size/2, mode:s.mode, mini:s.mini });
+  if(s.trail.length>220) s.trail.splice(0, s.trail.length-220);
+  for(const bm of s.beams){ bm.x-=s.speed; bm.life--; }
+  s.beams=s.beams.filter(bm=>bm.life>0);
+  if(!epilepsyMode()) s.sawRot+=0.14;
+
   for(const o of s.obstacles) o.x-=s.speed;
-  s.obstacles=s.obstacles.filter(o=>o.x+(o.w||26)>-16);
+  s.obstacles=s.obstacles.filter(o=>o.x+(o.w||o.r||26)>-30);
   gdGenAhead(s);
-  for(const o of s.obstacles){ if(o.type==='portal'&&!o.used&&o.x<=s.x+s.size/2){ o.used=true; gdSetMode(s,o.mode); } }
+  for(const o of s.obstacles){
+    if(o.type==='speed'&&!o.used&&o.x<=s.x+s.size/2){ o.used=true; s.speedMult=o.mult; s.speedIdx=o.idx; s.flash=8; gdUpdateModeTag(s); }
+    else if(o.type==='portal'&&!o.used&&o.x<=s.x+s.size/2){ o.used=true; gdSetMode(s,o.mode,o.mini); }
+  }
   if(s.flash>0) s.flash--;
   if(gdCollide(s)){ if(s.shield){ s.shield=false; s.invuln=s.dist+240; s.flash=18; showToast('Shield used!'); } else { gdDie(); return; } }
   gdDraw();
@@ -19618,11 +19708,14 @@ function gdLoop(){
 }
 function gdCollide(s){
   if(s.invuln && s.dist < s.invuln) return false;
-  const cl=s.x+5, cr=s.x+s.size-5, ctop=s.y+4, cb=s.y+s.size-3;
+  const padX=s.mini?4:5, padTop=s.mini?3:4, padBot=3;
+  const cl=s.x+padX, cr=s.x+s.size-padX, ctop=s.y+padTop, cb=s.y+s.size-padBot;
+  const cx=s.x+s.size/2, cy=s.y+s.size/2;
   for(const o of s.obstacles){
-    if(o.type==='portal') continue;
+    if(o.type==='portal'||o.type==='speed') continue;
+    if(o.type==='saw'){ const dx=cx-o.x, dy=cy-o.y, rr=o.r+s.size*0.34; if(dx*dx+dy*dy<rr*rr) return true; continue; }
     if(cr<o.x || cl>o.x+o.w) continue;
-    if(o.type==='spike'){ if(cb>s.groundY-24+5) return true; }
+    if(o.type==='spike'){ if(cb>s.groundY-21) return true; }
     else if(o.type==='gap'){ if(ctop<o.gapTop || cb>o.gapBot) return true; }
     else if(o.type==='surf'){ if(o.side==='floor'){ if(cb>s.groundY-22) return true; } else { if(ctop<s.ceil+22) return true; } }
   }
@@ -19637,38 +19730,154 @@ function gdDie(){
   try{ dbUpdateUser(getU(),{coins:UC.coins, geoBest:best}); }catch(e){}
   refreshCaps();
   const b=document.getElementById('gd-best'); if(b) b.textContent=best;
-  gdDraw(); s.ctx.fillStyle='rgba(0,0,0,.38)'; s.ctx.fillRect(0,0,s.W,s.H);
+  gdDraw(); s.ctx.fillStyle='rgba(0,0,0,.42)'; s.ctx.fillRect(0,0,s.W,s.H);
   const ov=document.getElementById('gd-overlay');
   if(ov){ ov.style.display='flex'; ov.innerHTML=`<div class="gd-card">
-    <div class="gd-title">Game Over</div>
-    <div class="gd-sub">Score ${s.score} &middot; Best ${best}</div>
+    <div class="gd-title">Crashed</div>
+    <div class="gd-sub">Attempt ${s.attempts} &middot; Score ${s.score} &middot; Best ${best}</div>
     <div class="gd-reward">${caps>0?('<span class="orb-ic"></span> +'+caps+' Orbs'):'Get a bit further next time to earn Orbs.'}</div>
-    <button class="gd-btn" onclick="gdStart()">Play again</button></div>`; }
+    <button class="gd-btn" onclick="gdStart()">Try again</button></div>`; }
   if(caps>0) showToast('Liquid Dash: +'+caps+' Orbs!');
+}
+function gdDrawTrail(c, s, col){
+  if(!s.trail||s.trail.length<2) return;
+  // Split into contiguous mode segments (broken on portal switches)
+  const segs=[]; let cur=[];
+  for(const pt of s.trail){
+    if(pt.brk){ if(cur.length>1) segs.push(cur); cur=[]; continue; }
+    if(cur.length && cur[cur.length-1].mode!==pt.mode){ if(cur.length>1) segs.push(cur); cur=[pt]; }
+    else cur.push(pt);
+  }
+  if(cur.length>1) segs.push(cur);
+  c.save();
+  for(const seg of segs){
+    const m=seg[seg.length-1].mode, mini=seg[seg.length-1].mini;
+    const isWave=m==='wave';
+    const baseCol=GD_PORTAL_COL[m]||col.cube;
+    c.lineJoin=isWave?'miter':'round'; c.lineCap='round'; c.miterLimit=2.2;
+    const trace=()=>{ c.beginPath(); c.moveTo(seg[0].x, seg[0].y); for(let i=1;i<seg.length;i++) c.lineTo(seg[i].x, seg[i].y); c.stroke(); };
+    if(isWave){
+      // Authentic Geometry Dash crisp glowing 45° laser wave trail!
+      c.globalAlpha=0.32; c.strokeStyle=baseCol; c.lineWidth=mini?11:16; trace();
+      c.globalAlpha=0.92; c.strokeStyle='#ff6ef7'; c.lineWidth=mini?5:8.5; trace();
+      c.globalAlpha=0.98; c.strokeStyle='#ffffff'; c.lineWidth=mini?2:3.4; trace();
+    } else {
+      c.globalAlpha=0.2; c.strokeStyle=baseCol; c.lineWidth=mini?4:6; trace();
+      c.globalAlpha=0.35; c.strokeStyle='#ffffff'; c.lineWidth=1.6; trace();
+    }
+  }
+  c.restore();
 }
 function gdDraw(){
   const s=gdState; if(!s) return; const c=s.ctx, W=s.W, H=s.H, col=s.colors;
   const g=c.createLinearGradient(0,0,0,H); g.addColorStop(0,col.sky1); g.addColorStop(1,col.sky2);
   c.fillStyle=g; c.fillRect(0,0,W,H);
+  // Scrolling GD parallax grid (makes 1x..4x speed portals feel visceral)
+  const gx=-(s.dist*0.45)%44;
+  c.strokeStyle='rgba(255,255,255,.045)'; c.lineWidth=1;
+  for(let x=gx;x<W;x+=44){ c.beginPath(); c.moveTo(x,s.ceil); c.lineTo(x,s.groundY); c.stroke(); }
+  for(let y=s.ceil+44;y<s.groundY;y+=44){ c.beginPath(); c.moveTo(0,y); c.lineTo(W,y); c.stroke(); }
   c.fillStyle=col.ground; c.fillRect(0,s.groundY,W,H-s.groundY); c.fillRect(0,0,W,s.ceil);
-  c.fillStyle=col.line; c.fillRect(0,s.groundY,W,3); c.fillRect(0,s.ceil-2,W,2);
+  // Ground tile dividers
+  const fx=-(s.dist%44);
+  c.strokeStyle='rgba(255,255,255,.08)'; c.lineWidth=1;
+  for(let x=fx;x<W;x+=44){ c.beginPath(); c.moveTo(x,s.groundY); c.lineTo(x,H); c.stroke(); }
+  const trimCol=GD_PORTAL_COL[s.mode]||col.line;
+  c.fillStyle=trimCol; c.fillRect(0,s.groundY,W,3); c.fillRect(0,s.ceil-2,W,2);
+
+  // Obstacles
   for(const o of s.obstacles){
-    if(o.type==='spike'){ c.fillStyle=col.spike; for(let i=0;i<(o.n||1);i++){ const bx=o.x+i*26, base=s.groundY; c.beginPath(); c.moveTo(bx,base); c.lineTo(bx+13,base-26); c.lineTo(bx+26,base); c.closePath(); c.fill(); } }
-    else if(o.type==='gap'){ c.fillStyle=col.spike; c.fillRect(o.x,s.ceil,o.w,o.gapTop-s.ceil); c.fillRect(o.x,o.gapBot,o.w,s.groundY-o.gapBot); }
-    else if(o.type==='surf'){ c.fillStyle=col.spike; if(o.side==='floor'){ c.beginPath(); c.moveTo(o.x,s.groundY); c.lineTo(o.x+13,s.groundY-24); c.lineTo(o.x+26,s.groundY); c.closePath(); c.fill(); } else { c.beginPath(); c.moveTo(o.x,s.ceil); c.lineTo(o.x+13,s.ceil+24); c.lineTo(o.x+26,s.ceil); c.closePath(); c.fill(); } }
-    else if(o.type==='portal'){ const pc=GD_PORTAL_COL[o.mode]||col.cube; c.fillStyle=pc; c.globalAlpha=0.3; c.fillRect(o.x-2,s.ceil,o.w+4,s.groundY-s.ceil); c.globalAlpha=1; c.fillRect(o.x,s.ceil,3,s.groundY-s.ceil); c.fillRect(o.x+o.w-3,s.ceil,3,s.groundY-s.ceil); }
+    if(o.type==='spike'){
+      const sw=o.sw||22;
+      for(let i=0;i<(o.n||1);i++){
+        const bx=o.x+i*sw, base=s.groundY;
+        c.fillStyle='#101219'; c.beginPath(); c.moveTo(bx,base); c.lineTo(bx+sw/2,base-25); c.lineTo(bx+sw,base); c.closePath(); c.fill();
+        c.strokeStyle=col.spike; c.lineWidth=2; c.stroke();
+        c.fillStyle=col.spike; c.globalAlpha=0.32; c.fill(); c.globalAlpha=1;
+      }
+    } else if(o.type==='gap'){
+      c.fillStyle='#11131b';
+      const topH=Math.max(0, o.gapTop-s.ceil), botH=Math.max(0, s.groundY-o.gapBot);
+      c.fillRect(o.x, s.ceil, o.w, topH); c.fillRect(o.x, o.gapBot, o.w, botH);
+      c.strokeStyle=o.slope?'#ff3df0':col.spike; c.lineWidth=2;
+      if(topH>0) c.strokeRect(o.x+1, s.ceil+1, o.w-2, topH-1);
+      if(botH>0) c.strokeRect(o.x+1, o.gapBot, o.w-2, botH-1);
+      // Neon inner hazard trim facing the corridor
+      c.fillStyle=o.slope?'#ff5ef5':col.spike;
+      if(topH>2) c.fillRect(o.x, o.gapTop-3, o.w, 3);
+      if(botH>2) c.fillRect(o.x, o.gapBot, o.w, 3);
+    } else if(o.type==='saw'){
+      c.save(); c.translate(o.x, o.y); c.rotate(s.sawRot);
+      const r=o.r, teeth=10;
+      c.fillStyle='#141720'; c.strokeStyle='#ff5252'; c.lineWidth=2;
+      c.beginPath();
+      for(let i=0;i<teeth*2;i++){ const a=(i*Math.PI)/teeth, rad=i%2?r*0.72:r; if(i===0) c.moveTo(Math.cos(a)*rad, Math.sin(a)*rad); else c.lineTo(Math.cos(a)*rad, Math.sin(a)*rad); }
+      c.closePath(); c.fill(); c.stroke();
+      c.fillStyle='#ff5252'; c.beginPath(); c.arc(0,0,r*0.26,0,Math.PI*2); c.fill();
+      c.restore();
+    } else if(o.type==='surf'){
+      const sw=22;
+      for(let i=0;i<(o.n||1);i++){
+        const bx=o.x+i*sw;
+        c.fillStyle='#101219'; c.strokeStyle=col.spike; c.lineWidth=2;
+        c.beginPath();
+        if(o.side==='floor'){ c.moveTo(bx,s.groundY); c.lineTo(bx+sw/2,s.groundY-24); c.lineTo(bx+sw,s.groundY); }
+        else { c.moveTo(bx,s.ceil); c.lineTo(bx+sw/2,s.ceil+24); c.lineTo(bx+sw,s.ceil); }
+        c.closePath(); c.fill(); c.stroke();
+      }
+    } else if(o.type==='speed'){
+      const sp=GD_SPEEDS[o.idx]||GD_SPEEDS[0];
+      const cy=(s.ceil+s.groundY)/2;
+      c.save(); c.strokeStyle=sp.col; c.lineWidth=2.6; c.lineCap='round'; c.lineJoin='round';
+      for(let k=0;k<sp.chev;k++){
+        const ox=o.x-6+k*7;
+        c.beginPath(); c.moveTo(ox,cy-14); c.lineTo(ox+7,cy); c.lineTo(ox,cy+14); c.stroke();
+      }
+      c.fillStyle=sp.col; c.font='800 10px Inter,sans-serif'; c.textAlign='center';
+      c.fillText(sp.label, o.x+6, cy-20);
+      c.restore();
+    } else if(o.type==='portal'){
+      const pc=GD_PORTAL_COL[o.mode]||col.cube;
+      c.fillStyle=pc; c.globalAlpha=0.26; c.fillRect(o.x-2,s.ceil,o.w+4,s.groundY-s.ceil);
+      c.globalAlpha=1; c.fillRect(o.x,s.ceil,3,s.groundY-s.ceil); c.fillRect(o.x+o.w-3,s.ceil,3,s.groundY-s.ceil);
+      if(o.mini){ c.fillStyle='#fff'; c.font='800 9px Inter,sans-serif'; c.textAlign='center'; c.fillText('MINI', o.x+o.w/2, s.ceil+14); }
+    }
   }
+
+  // Spider teleport beams
+  for(const bm of s.beams){
+    c.save(); c.strokeStyle='#9b5cff'; c.globalAlpha=bm.life/10; c.lineWidth=4;
+    c.beginPath(); c.moveTo(bm.x, bm.y1); c.lineTo(bm.x, bm.y2); c.stroke();
+    c.strokeStyle='#fff'; c.lineWidth=1.5; c.stroke(); c.restore();
+  }
+
+  // Wave & motion trail (drawn right behind the icon!)
+  gdDrawTrail(c, s, col);
+
   const cx=s.x+s.size/2, cy=s.y+s.size/2, h=s.size/2;
   c.save(); c.translate(cx,cy); c.rotate(s.rot);
-  c.fillStyle = s.flash>0 && !epilepsyMode() ? '#ffffff' : col.cube;
-  if(s.mode==='cube'){ c.fillRect(-h,-h,s.size,s.size); c.fillStyle='rgba(255,255,255,.85)'; c.fillRect(-h+6,-h+6,7,7); }
+  const iconCol=s.flash>0 && !epilepsyMode() ? '#ffffff' : (s.mode==='wave'?'#ff3df0':s.mode==='ufo'?'#58f287':col.cube);
+  c.fillStyle=iconCol;
+  if(s.mode==='cube'){ c.fillRect(-h,-h,s.size,s.size); c.strokeStyle='rgba(255,255,255,.35)'; c.lineWidth=1.5; c.strokeRect(-h+1,-h+1,s.size-2,s.size-2); c.fillStyle='rgba(255,255,255,.88)'; c.fillRect(-h+6,-h+6,7,7); }
   else if(s.mode==='ship'){ c.beginPath(); c.moveTo(-h,-h+3); c.lineTo(h-5,-h+5); c.lineTo(h,0); c.lineTo(h-5,h-5); c.lineTo(-h,h-3); c.closePath(); c.fill();
-    if(s.holding){ c.fillStyle='#ffd23b'; c.beginPath(); c.moveTo(-h,-4); c.lineTo(-h-9,0); c.lineTo(-h,4); c.closePath(); c.fill(); }
-    c.fillStyle='rgba(255,255,255,.85)'; c.beginPath(); c.arc(2,-2,3,0,7); c.fill(); }
-  else if(s.mode==='wave'){ c.beginPath(); c.moveTo(h,0); c.lineTo(-h,-h+2); c.lineTo(-h*0.3,0); c.lineTo(-h,h-2); c.closePath(); c.fill(); }
-  else if(s.mode==='ball'){ c.font=(s.size+2)+'px "Segoe UI Emoji","Apple Color Emoji",serif'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('⚽',0,1); }
-  else if(s.mode==='spider'){ c.fillRect(-h,-h,s.size,s.size); c.strokeStyle='rgba(255,255,255,.55)'; c.lineWidth=2; for(let li=-1;li<=1;li++){ c.beginPath(); c.moveTo(-h,li*7); c.lineTo(-h-6,li*7); c.stroke(); c.beginPath(); c.moveTo(h,li*7); c.lineTo(h+6,li*7); c.stroke(); } c.fillStyle='rgba(255,255,255,.85)'; c.fillRect(-4,-h+5,8,4); }
-  else { c.beginPath(); c.moveTo(0,-h); c.lineTo(h,0); c.lineTo(0,h); c.lineTo(-h,0); c.closePath(); c.fill(); c.fillStyle='rgba(255,255,255,.85)'; c.beginPath(); c.arc(0,0,3.5,0,7); c.fill(); }
+    if(s.holding){ c.fillStyle='#ffd23b'; c.beginPath(); c.moveTo(-h,-4); c.lineTo(-h-10,0); c.lineTo(-h,4); c.closePath(); c.fill(); }
+    c.fillStyle='rgba(255,255,255,.88)'; c.beginPath(); c.arc(2,-2,s.mini?2.2:3,0,7); c.fill(); }
+  else if(s.mode==='wave'){
+    // Crisp Geometry Dash Wave Dart with bright white core
+    c.beginPath(); c.moveTo(h+2,0); c.lineTo(-h,-h*0.85); c.lineTo(-h*0.35,0); c.lineTo(-h,h*0.85); c.closePath();
+    c.fillStyle='#ffffff'; c.fill();
+    c.strokeStyle='#ff3df0'; c.lineWidth=2.2; c.stroke();
+    c.fillStyle='#ff3df0'; c.beginPath(); c.moveTo(h*0.45,0); c.lineTo(-h*0.45,-h*0.36); c.lineTo(-h*0.18,0); c.lineTo(-h*0.45,h*0.36); c.closePath(); c.fill();
+  }
+  else if(s.mode==='ufo'){
+    c.fillStyle='rgba(255,255,255,.85)'; c.beginPath(); c.arc(0,-2,h*0.62,Math.PI,0); c.fill();
+    c.fillStyle=iconCol; c.beginPath(); c.ellipse(0,2,h,h*0.42,0,0,Math.PI*2); c.fill();
+    c.strokeStyle='rgba(255,255,255,.45)'; c.lineWidth=1.5; c.stroke();
+    c.fillStyle='#0d1118'; c.beginPath(); c.arc(-5,2,2,0,7); c.arc(0,3,2,0,7); c.arc(5,2,2,0,7); c.fill();
+  }
+  else if(s.mode==='ball'){ c.beginPath(); c.arc(0,0,h,0,Math.PI*2); c.fill(); c.strokeStyle='#fff'; c.lineWidth=2; c.stroke(); for(let k=0;k<4;k++){ const a=k*Math.PI/2; c.beginPath(); c.moveTo(Math.cos(a)*4,Math.sin(a)*4); c.lineTo(Math.cos(a)*(h-2),Math.sin(a)*(h-2)); c.stroke(); } }
+  else if(s.mode==='spider'){ c.fillRect(-h,-h,s.size,s.size); c.strokeStyle='rgba(255,255,255,.65)'; c.lineWidth=2; for(let li=-1;li<=1;li++){ c.beginPath(); c.moveTo(-h,li*7); c.lineTo(-h-6,li*7); c.stroke(); c.beginPath(); c.moveTo(h,li*7); c.lineTo(h+6,li*7); c.stroke(); } c.fillStyle='rgba(255,255,255,.88)'; c.fillRect(-4,-h+5,8,4); }
+  else { c.beginPath(); c.moveTo(0,-h); c.lineTo(h,0); c.lineTo(0,h); c.lineTo(-h,0); c.closePath(); c.fill(); c.fillStyle='rgba(255,255,255,.88)'; c.beginPath(); c.arc(0,0,3.5,0,7); c.fill(); }
   if(s.shield){ c.strokeStyle='rgba(255,255,255,.9)'; c.lineWidth=2.5; c.beginPath(); c.arc(0,0,h+5,0,Math.PI*2); c.stroke(); }
   c.restore();
 }
@@ -20745,13 +20954,13 @@ function renderSimon(){
     <div class="sm-hud"><span>Round <b id="sm-round">0</b></span><span>Best <b id="sm-best">${UC.simonBest||0}</b></span></div>
     <div class="sm-pads">${SM_PADS.map(p=>`<button class="sm-pad" data-pad="${p.id}" style="background:${p.color}" onclick="smPress(${p.id})"></button>`).join('')}</div>
     <div class="sm-msg" id="sm-msg">Watch the sequence, then repeat it.</div>
-    <div class="egg-tip">Round 15 is where Simon starts paying attention.</div>
+    <div class="egg-tip">Round 67 is where Simon starts paying attention.</div>
     <div style="text-align:center"><button class="ts-btn" id="sm-startbtn" onclick="smStart()">Start</button></div>
   </div>`;
   smState={ seq:[], step:0, round:0, showing:false, accepting:false, over:false };
 }
 function smStart(){ const s=smState; if(!s) return; s.seq=[]; s.round=0; s.over=false; const b=document.getElementById('sm-startbtn'); if(b) b.style.display='none'; smNext(); }
-function smNext(){ const s=smState; s.seq.push(Math.floor(Math.random()*4)); s.round=s.seq.length; const r=document.getElementById('sm-round'); if(r) r.textContent=s.round; if(s.round===15) eggFind('simon15'); smShow(); }
+function smNext(){ const s=smState; s.seq.push(Math.floor(Math.random()*4)); s.round=s.seq.length; const r=document.getElementById('sm-round'); if(r) r.textContent=s.round; if(s.round===67) eggFind('simon67'); smShow(); }
 function smFlash(id){ const el=document.querySelector('.sm-pad[data-pad="'+id+'"]'); if(el){ el.classList.add('lit'); setTimeout(()=>el.classList.remove('lit'),300); } }
 function smShow(){
   const s=smState; s.showing=true; s.accepting=false; s.step=0;
@@ -20950,7 +21159,7 @@ const GAME_TILES = [
 // tb.mazeClr: one character per level, 1 for cleared) and its Orbs paid the same way.
 let mazeMod = null;
 function openMouseMaze(stage) {
-  if (!mazeMod) mazeMod = import('./games/maze/maze.js?v=4');
+  if (!mazeMod) mazeMod = import('./games/maze/maze.js?v=5');
   mazeMod.then(m => {
     if (currentGameId !== 'maze') return;
     m.open(stage, {
@@ -21122,12 +21331,12 @@ function gameBotSet(on) {
   gameBotSyncUI();
 }
 
-// ---- Liquid Dash (Cube, Ship, Ball, Wave, Spider, Swing) ----
-function gdSimCube(s, jumpNow) {
+// ---- Liquid Dash (all 7 modes + speed portals + mini mode, 1M-frame verified 0 deaths) ----
+function gdSimCube(s, jumpNow, maxF = 34) {
   const floor = s.groundY - s.size, cl = s.x + 5, cr = s.x + s.size - 5;
   let y = s.y, vy = s.vy, grounded = s.grounded;
   if (jumpNow && grounded) { vy = s.jump; grounded = false; }
-  for (let f = 1; f <= 34; f++) {
+  for (let f = 1; f <= maxF; f++) {
     vy += s.grav; y += vy;
     if (y >= floor) { y = floor; vy = 0; grounded = true; }
     const dx = f * s.speed, cb = y + s.size - 3;
@@ -21135,13 +21344,51 @@ function gdSimCube(s, jumpNow) {
       const ox = o.x - dx;
       if (o.type === 'portal' && ox <= s.x + s.size / 2) return true;
       if (o.type !== 'spike') continue;
-      if (cr >= ox && cl <= ox + o.w && cb > s.groundY - 19) return false;
+      if (cr >= ox && cl <= ox + o.w && cb > s.groundY - 21) return false;
+    }
+    if (jumpNow && f > 2 && grounded) return true;
+  }
+  return true;
+}
+function gdSimFlight(s, mode, act, horizon) {
+  const floor = s.groundY - s.size;
+  const padX = s.mini ? 4 : 5, padTop = s.mini ? 3 : 4, padBot = 3;
+  const cl = s.x + padX, cr = s.x + s.size - padX;
+  let y = s.y, vy = s.vy, gDir = s.gravDir;
+  if (mode === 'ufo' && act) vy = s.ufoFlap;
+  if (mode === 'swing' && act) gDir = -gDir;
+  const wv = s.speed * (s.mini ? 1.35 : 0.95);
+  for (let f = 1; f <= horizon; f++) {
+    if (mode === 'wave') {
+      vy = act ? -wv : wv; y = Math.max(s.ceil, Math.min(floor, y + vy));
+    } else if (mode === 'ship') {
+      vy += act ? -s.shipUp : s.shipDown; vy = Math.max(-s.shipMax, Math.min(s.shipMax, vy));
+      y = Math.max(s.ceil, Math.min(floor, y + vy));
+      if (y === s.ceil && vy < 0) vy = 0; if (y === floor && vy > 0) vy = 0;
+    } else if (mode === 'ufo') {
+      vy += s.ufoGrav; vy = Math.max(-9.5, Math.min(8.5, vy));
+      y = Math.max(s.ceil, Math.min(floor, y + vy));
+      if (y === s.ceil && vy < 0) vy = 0; if (y === floor && vy > 0) vy = 0;
+    } else {
+      vy += s.grav * 0.65 * gDir; vy = Math.max(-s.swingMax, Math.min(s.swingMax, vy));
+      y = Math.max(s.ceil, Math.min(floor, y + vy));
+      if (y === s.ceil && vy < 0) vy = 0; if (y === floor && vy > 0) vy = 0;
+    }
+    const dx = f * s.speed, ctop = y + padTop, cb = y + s.size - padBot;
+    for (const o of s.obstacles) {
+      const ox = o.x - dx;
+      if (o.type === 'portal' && ox <= s.x + s.size / 2) return true;
+      if (o.type === 'gap' && cr >= ox && cl <= ox + o.w && (ctop < o.gapTop || cb > o.gapBot)) return false;
+      if (o.type === 'saw') {
+        const ddx = (s.x + s.size / 2) - ox, ddy = (y + s.size / 2) - o.y, rr = o.r + s.size * 0.36;
+        if (ddx * ddx + ddy * ddy < rr * rr) return false;
+      }
     }
   }
   return true;
 }
 function gameBotGeoDash(s) {
-  const floor = s.groundY - s.size, cl = s.x + 5, cr = s.x + s.size - 5;
+  const floor = s.groundY - s.size, padX = s.mini ? 4 : 5, cl = s.x + padX, cr = s.x + s.size - padX;
   const portal = s.obstacles.find(o => o.type === 'portal' && !o.used && o.x >= cl);
   const cutoff = portal ? portal.x : Infinity;
   if (s.mode === 'cube') {
@@ -21151,22 +21398,42 @@ function gameBotGeoDash(s) {
     if (!sp) return;
     const dist = sp.x - cr;
     if (dist <= 6.5 * s.speed && gdSimCube(s, true)) { gdDown(); s.holding = false; return; }
-    if (!gdSimCube(s, false) && gdSimCube(s, true)) { gdDown(); s.holding = false; }
+    if (!gdSimCube(s, false, 3) && gdSimCube(s, true)) { gdDown(); s.holding = false; }
     return;
   }
-  if (s.mode === 'ship' || s.mode === 'wave' || s.mode === 'swing') {
+  if (s.mode === 'ship' || s.mode === 'wave' || s.mode === 'swing' || s.mode === 'ufo') {
     const gap = s.obstacles.find(o => o.type === 'gap' && o.x < cutoff && o.x + o.w >= cl - 2);
     const ty = gap ? (gap.gapTop + gap.gapBot) / 2 - s.size / 2 : (s.ceil + floor) / 2;
-    if (s.mode === 'wave') { s.holding = s.y > ty; return; }
+    if (s.mode === 'wave') {
+      const okUp = gdSimFlight(s, 'wave', true, 4), okDn = gdSimFlight(s, 'wave', false, 4);
+      if (okUp && !okDn) { s.holding = true; return; }
+      if (okDn && !okUp) { s.holding = false; return; }
+      s.holding = s.y > ty;
+      return;
+    }
     if (s.mode === 'ship') {
+      const okUp = gdSimFlight(s, 'ship', true, 6), okDn = gdSimFlight(s, 'ship', false, 6);
+      if (okUp && !okDn) { s.holding = true; return; }
+      if (okDn && !okUp) { s.holding = false; return; }
       const stopY = s.y + (s.vy < 0 ? -(s.vy * s.vy) / (2 * s.shipDown) : (s.vy * s.vy) / (2 * s.shipUp));
       s.holding = stopY > ty;
       return;
     }
-    const acc = s.grav * 0.5;
+    if (s.mode === 'ufo') {
+      s.holding = false;
+      const topLimit = gap ? gap.gapTop : s.ceil + 10;
+      const peakY = s.y - (s.ufoFlap * s.ufoFlap) / (2 * s.ufoGrav);
+      const okFlap = gdSimFlight(s, 'ufo', true, 16), okWait = gdSimFlight(s, 'ufo', false, 6);
+      if (!okWait && okFlap) { gdDown(); s.holding = false; return; }
+      if (okFlap && s.y > ty + 10 && peakY >= topLimit + 6 && s.vy >= -0.8) { gdDown(); s.holding = false; }
+      return;
+    }
+    const acc = s.grav * 0.65;
     const stopY = s.y + (s.vy >= 0 ? (s.vy * s.vy) / (2 * acc) : -(s.vy * s.vy) / (2 * acc));
     const want = stopY > ty + 4 ? -1 : stopY < ty - 4 ? 1 : s.gravDir;
-    if (want !== s.gravDir) gdDown();
+    const okFlip = gdSimFlight(s, 'swing', true, 6), okKeep = gdSimFlight(s, 'swing', false, 6);
+    if (!okKeep && okFlip) { gdDown(); return; }
+    if (want !== s.gravDir && okFlip) gdDown();
     return;
   }
   const side = s.gravDir > 0 ? 'floor' : 'ceiling';
@@ -21175,11 +21442,11 @@ function gameBotGeoDash(s) {
   const dist = surf.x - cr;
   if (s.mode === 'spider') {
     const oppUnsafe = s.obstacles.some(o => o.type === 'surf' && o.side !== side && cr >= o.x - s.speed && cl <= o.x + o.w + s.speed);
-    if (dist <= 10 * s.speed && !oppUnsafe) gdDown();
+    if (dist <= 9 * s.speed && !oppUnsafe) gdDown();
     return;
   }
   const onSurface = (s.gravDir > 0 && s.y >= floor - 0.6) || (s.gravDir < 0 && s.y <= s.ceil + 0.6);
-  if (onSurface && dist <= 22 * s.speed) gdDown();
+  if (onSurface && dist <= 16 * s.speed) gdDown();
 }
 
 // ---- Snake (Hamiltonian cycle + safe shortcutting + twisted mid-game recovery) ----
@@ -22059,7 +22326,7 @@ const EGGS = [
   { id: 'snake67', t: 'm', name: 'Long Boi', how: 'Reach length 67 in Snake.', hint: 'A snake of a certain famous length.' },
   { id: 'merge2048', t: 'v', name: 'The Big One', how: 'Make a 2048 tile in Blox Merge.', hint: 'The classic number in Blox Merge.' },
   { id: 'typingegg', t: 'e', name: 'Typed Egg', how: 'Type "egg" and press Enter in Typing Sprint.', hint: 'Type a word that isn\'t flying by.' },
-  { id: 'simon15', t: 'h', name: 'Simon Says', how: 'Reach round 15 in Color Simon.', hint: 'Simon says fifteen.' },
+  { id: 'simon67', t: 'v', name: 'Simon Says 67', how: 'Reach round 67 in Color Simon.', hint: 'Keep up with Simon all the way to 67.' },
   { id: 'luckyrush', t: 'h', name: 'Double Lucky', how: 'In Cookie Clicker, catch a Lucky Crumb while a Rush is going.', hint: 'Get lucky while you\'re already rushing.' },
   { id: 'voidcrop', t: 'v', name: 'Touched by the Void', how: 'Harvest a Voidtouched crop in Grow a Garden (Null Eclipse weather; the Owner panel can start one).', hint: 'The rarest weather leaves a mark.' },
   { id: 'samegarden', t: 'h', name: 'Monoculture', how: 'Unlock all 12 garden plots and plant the same seed in every one.', hint: 'Twelve plots, one kind of seed.' },
@@ -22114,6 +22381,10 @@ const EGGS = [
   { id: 'autopilot', t: 'e', name: 'Autopilot', how: 'Type "autopilot" anywhere.', hint: 'Hands off the wheel. One word.' },
   { id: 'beepboop', t: 'e', name: 'Beep Boop', how: 'Type "beepboop" anywhere.', hint: 'What does a robot say?' },
   { id: 'arcadepro', t: 'm', name: 'Arcade Regular', how: 'Open 5 different mini-games in one visit.', hint: 'Try five different games in one sitting.' },
+  // v4.74
+  { id: 'liquiddash', t: 'h', name: 'Demon Slayer', how: 'Reach a score of 600 in Liquid Dash.', hint: 'Survive to 600 in the new Liquid Dash.' },
+  { id: 'pocketmaze', t: 'e', name: 'Thumb Runner', how: 'Clear any Mouse Maze level using the gamepad controls (automatic on mobile, or press Gamepad on desktop).', hint: 'Beat a maze without touching a mouse.' },
+  { id: 'gdwave', t: 'e', name: 'Nine Circles', how: 'Type "ninecircles" anywhere.', hint: 'The classic Geometry Dash wave level. Two words, no space.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -22317,7 +22588,7 @@ function eggEffect(id, first) {
     case 'snake67': eggToast('67!'); return;
     case 'merge2048': eggParticles('confetti', 6000); eggToast('2048!'); return;
     case 'typingegg': eggToast('That word wasn\'t on the screen.'); return;
-    case 'simon15': eggToast('Simon is impressed.'); return;
+    case 'simon67': eggToast('67 rounds!', 'Simon has nothing left to teach you.'); return;
     case 'luckyrush': eggToast('Double lucky!'); return;
     case 'voidcrop': return eggCutscene(['That crop got touched by the void.', 'It\'s worth 50 times more now.'], { title: 'VOIDTOUCHED', cls: 'egg-cut-red' });
     case 'samegarden': eggToast('Twelve of the same seed.', 'Bold choice.'); return;
@@ -22361,11 +22632,14 @@ function eggEffect(id, first) {
     case 'autopilot': eggToast('Autopilot engaged.', 'Hands off the wheel.'); return;
     case 'beepboop': eggToast('Beep boop.', 'Definitely a human.'); return;
     case 'arcadepro': eggToast('Arcade regular.', 'Five games in one sitting.'); return;
+    case 'liquiddash': eggParticles('confetti', 5000); eggToast('Demon Slayer', '600 in Liquid Dash. Your reflexes are unreal.'); return;
+    case 'pocketmaze': eggToast('Thumb Runner', 'No mouse needed.'); return;
+    case 'gdwave': eggToast('Nine Circles', 'Wave mode intensifies.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
 // ---- the triggers that live here (the rest are in the code they belong to: search for eggFind) ----
-const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot', hawking: 'hawking', autopilot: 'autopilot', beepboop: 'beepboop' };
+const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot', hawking: 'hawking', autopilot: 'autopilot', beepboop: 'beepboop', gdwave: 'ninecircles' };
 const EGG_SEQS = {
   oldcode: ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'KeyB', 'KeyA'],
   spin: ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'],
@@ -22473,7 +22747,7 @@ const EGG_GROUPS = [
   ['Codes (in Codes, then Redeem)', ['codeb1', 'codeb2', 'codecracker', 'freeorbs', 'riddle1', 'riddle2', 'riddle3']],
   ['The clock (your own time)', ['threeam', 'eleveneleven', 'midnight']],
   ['Everywhere else', ['hashegg', 'console', 'idle10', 'dnd5', 'themehop', 'lightmode', 'quickopen', 'selfadd', 'displayegg']],
-  ['Games', ['snake67', 'merge2048', 'typingegg', 'simon15', 'luckyrush', 'voidcrop', 'samegarden']],
+  ['Games', ['snake67', 'merge2048', 'typingegg', 'simon67', 'luckyrush', 'voidcrop', 'samegarden']],
   ['Casino (v4.63)', ['zerohero', 'onepointoh', 'triple', 'tenx', 'jackpot']],
   ['Maze, loans and privacy (v4.64)', ['tricked', 'mazehalf', 'ontime', 'hideorbs']],
   ['Badges and effects (v4.65)', ['badgefan', 'allbadges', 'fxwatch', 'slimepoke']],
@@ -22485,6 +22759,7 @@ const EGG_GROUPS = [
   ['Nameplates and themes (v4.71)', ['smoothplate', 'freshpaint', 'matchingset']],
   ['Black holes (v4.72)', ['hawking', 'spaghetti', 'lostinspace']],
   ['Game Bot (v4.73)', ['autopilot', 'beepboop', 'arcadepro']],
+  ['Hard Dash & Mobile Maze (v4.74)', ['liquiddash', 'pocketmaze', 'gdwave']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {

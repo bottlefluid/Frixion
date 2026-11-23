@@ -209,8 +209,8 @@ for (const word of ['autopilot', 'beepboop']) {
   for (const ch of word) document.dispatchEvent(new KeyboardEvent('keydown', { key: ch, code: 'Key' + ch.toUpperCase(), bubbles: true }));
 }
 check('egg: Autopilot and Beep Boop (typed anywhere)', !!(await until(() => eggFoundSet.has('autopilot') && eggFoundSet.has('beepboop'), 6000)));
-check('v4.73: EGGS total is 90 and Game Bot (v4.73) is in EGG_GROUPS',
-  EGGS.length === 90 && EGG_GROUPS.some(([name, ids]) => /v4\.73/.test(name) && ids.join() === 'autopilot,beepboop,arcadepro'),
+check('v4.73: EGGS has at least 90 eggs and Game Bot (v4.73) is in EGG_GROUPS',
+  EGGS.length >= 90 && EGG_GROUPS.some(([name, ids]) => /v4\.73/.test(name) && ids.join() === 'autopilot,beepboop,arcadepro'),
   EGGS.length);
 
 return T.report();

@@ -604,7 +604,7 @@ const EGGS = {
   ctrlalto: 'm', spin: 'm', pi: 'h', logo10: 'e', avatar7: 'm', version5: 'e', orbchip: 'm', settings10: 'm', typingclick: 'h',
   hiddendot: 'h', credits: 'h', emptypins: 'e', eggmsg: 'e', threeam: 'h', eleveneleven: 'm', midnight: 'h', hashegg: 'm',
   console: 'h', idle10: 'm', dnd5: 'm', themehop: 'm', lightmode: 'e', quickopen: 'e', selfadd: 'e', displayegg: 'm',
-  snake67: 'm', merge2048: 'v', typingegg: 'e', simon15: 'h', luckyrush: 'h', voidcrop: 'v', samegarden: 'h', lastegg: 'l',
+  snake67: 'm', merge2048: 'v', typingegg: 'e', simon67: 'v', luckyrush: 'h', voidcrop: 'v', samegarden: 'h', lastegg: 'l',
   zerohero: 'm', onepointoh: 'e', triple: 'm', tenx: 'h', jackpot: 'e',   // v4.63: the Casino
   tricked: 'e', mazehalf: 'h', ontime: 'm', hideorbs: 'e',                // v4.64
   badgefan: 'm', allbadges: 'h', fxwatch: 'm', slimepoke: 'e',           // v4.65: badges and drawn effects
@@ -616,6 +616,7 @@ const EGGS = {
   smoothplate: 'e', freshpaint: 'm', matchingset: 'm',                    // v4.71: a built-in nameplate, 3 themes, a matching set
   hawking: 'e', spaghetti: 'm', lostinspace: 'h',                          // v4.72: the word, poking the Black Hole effect, the whole set
   autopilot: 'e', beepboop: 'e', arcadepro: 'm',                           // v4.73: two bot words, opening 5 games in one visit
+  liquiddash: 'h', pocketmaze: 'e', gdwave: 'e',                           // v4.74: Liquid Dash 600, Mouse Maze gamepad, "ninecircles"
   xyzzy: ['m', '7d76c6d11ed06a3e671afa826c4f88f4e8227fdef446cbd576a3428967e45af9'],
   codeb1: ['e', '4f3cd88dc035fd4d04dda074fd7ced1722751824644c1a27a700dfd5d06ba19e'],
   codeb2: ['e', 'c886bb737cc711b2dfcb069ea8179dc430661db13a38113ddf718b9098f653c7'],

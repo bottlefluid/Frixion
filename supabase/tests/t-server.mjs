@@ -135,13 +135,18 @@ x = await call('admin', 'casino', { token: nova, game: 'coinflip', bet: 100, sid
 check('51: the infinity sign can bet (it said "not enough Orbs" after the move)', x.status === 200 && (x.result === 'h' || x.result === 't'), x);
 check('...and stays infinite, win or lose', (await doc('users/Nova')).orbs === Infinity, await doc('users/Nova'));
 x = await call('admin', 'egg', { token: nova, egg: 'equilibrium' });
-check('the new eggs are known to the server (90 in all since v4.73)', x.ok && x.total === 90, x);
+check('the new eggs are known to the server (93 in all since v4.74)', x.ok && x.total === 93, x);
 x = await call('admin', 'egg', { token: nova, egg: 'matchingset' });
-check('v4.71: Matching Set (a nameplate and a theme with the same name) is one of them', x.ok && x.total === 90, x);
+check('v4.71: Matching Set (a nameplate and a theme with the same name) is one of them', x.ok && x.total === 93, x);
 const bhEggs = await Promise.all(['hawking', 'spaghetti', 'lostinspace'].map(egg => call('admin', 'egg', { token: nova, egg })));
-check('v4.72: Hawking Radiation, Spaghettified and Lost in Space pay their tiers (100, 250, 500)', bhEggs.every(r => r.ok && r.total === 90) && bhEggs.map(r => r.orbs).join() === '100,250,500', bhEggs);
+check('v4.72: Hawking Radiation, Spaghettified and Lost in Space pay their tiers (100, 250, 500)', bhEggs.every(r => r.ok && r.total === 93) && bhEggs.map(r => r.orbs).join() === '100,250,500', bhEggs);
 const botEggs = await Promise.all(['autopilot', 'beepboop', 'arcadepro'].map(egg => call('admin', 'egg', { token: nova, egg })));
-check('v4.73: Autopilot, Beep Boop and Arcade Regular pay their tiers (100, 100, 250)', botEggs.every(r => r.ok && r.total === 90) && botEggs.map(r => r.orbs).join() === '100,100,250', botEggs);
+check('v4.73: Autopilot, Beep Boop and Arcade Regular pay their tiers (100, 100, 250)', botEggs.every(r => r.ok && r.total === 93) && botEggs.map(r => r.orbs).join() === '100,100,250', botEggs);
+const oldSimon = await call('admin', 'egg', { token: nova, egg: 'simon15' });
+const newSimon = await call('admin', 'egg', { token: nova, egg: 'simon67' });
+check('v4.74: old simon15 is retired (404, forcing re-earn without SQL) and simon67 pays 1000', oldSimon.status === 404 && newSimon.ok && newSimon.orbs === 1000 && newSimon.total === 93, { oldSimon, newSimon });
+const v474Eggs = await Promise.all(['liquiddash', 'pocketmaze', 'gdwave'].map(egg => call('admin', 'egg', { token: nova, egg })));
+check('v4.74: Demon Slayer, Thumb Runner and Nine Circles pay their tiers (500, 100, 100)', v474Eggs.every(r => r.ok && r.total === 93) && v474Eggs.map(r => r.orbs).join() === '500,100,100', v474Eggs);
 
 section('v4.67 on the server: Provably Fair, bets without a top limit, referrals');
 const fairJs = await import(new URL('../../casino-fair.js', import.meta.url).href);

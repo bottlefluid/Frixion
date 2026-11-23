@@ -5153,13 +5153,59 @@ body.is-mobile .blocked-msgs { margin-left: 16px; }
 .loan-pay-amt { width: 110px; }
 .loan-empty { font-size: 12.5px; color: var(--text-faint); }
 .loan-fine { font-size: 12px; color: var(--text-faint); margin: 4px 0 12px; }
-/* Mouse Maze (v4.64, games/maze/maze.js; cleaner in v4.66) */
-.mz-root { position: relative; width: 100%; height: min(72vh, 640px); background: #07080b; border-radius: 14px; overflow: hidden; user-select: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+/* Mouse Maze (v4.64, games/maze/maze.js; cleaner in v4.66; mobile gamepad in v4.74) */
+.mz-root { position: relative; display: flex; flex-direction: column; width: 100%; height: min(72vh, 640px); background: #07080b; border-radius: 14px; overflow: hidden; user-select: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+.mz-root.mz-touch { height: min(78vh, 680px); }
 .mz-root:fullscreen { width: 100vw; height: 100vh; border-radius: 0; box-shadow: none; }
+.mz-stage { position: relative; flex: 1; min-height: 0; width: 100%; }
 .mz-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
-.mz-bar { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; }
+.mz-root.mz-pad-on .mz-canvas { cursor: default; }
+.mz-bar { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 2; }
 .mz-btn { padding: 7px 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.12); background: rgba(20,22,30,.82); color: #e8eaf0; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; backdrop-filter: blur(6px); transition: background .15s, border-color .15s; }
 .mz-btn:hover { background: rgba(44,48,62,.95); border-color: rgba(255,255,255,.22); }
+.mz-btn.on { background: rgba(88,101,242,.35); border-color: #5865f2; color: #fff; }
+.mz-pad {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 14px 20px; background: #0e1017; border-top: 1px solid rgba(255,255,255,.08);
+  touch-action: none; flex-shrink: 0;
+}
+.mz-pad[hidden] { display: none; }
+.mz-stick {
+  position: relative; width: 118px; height: 118px; border-radius: 50%; flex-shrink: 0;
+  background: radial-gradient(circle at 50% 50%, #171b26 0%, #10131b 70%, #0b0d13 100%);
+  border: 2px solid rgba(255,255,255,.14); box-shadow: inset 0 0 18px rgba(0,0,0,.6);
+  display: flex; align-items: center; justify-content: center; touch-action: none; cursor: grab;
+}
+.mz-stick.active { border-color: rgba(88,101,242,.7); cursor: grabbing; }
+.mz-stick-ring {
+  position: absolute; inset: 14px; border-radius: 50%; border: 1px dashed rgba(255,255,255,.12); pointer-events: none;
+}
+.mz-knob {
+  width: 44px; height: 44px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle at 35% 32%, #ffffff, #aeb6c8 68%, #6d758a 100%);
+  box-shadow: 0 4px 12px rgba(0,0,0,.55), 0 0 0 2px rgba(10,12,18,.7);
+  will-change: transform;
+}
+.mz-pad-mid { flex: 1; text-align: center; min-width: 0; }
+.mz-pad-label { font-size: 11px; font-weight: 800; letter-spacing: .12em; color: #8b92a2; }
+.mz-pad-hint { font-size: 12px; color: #676e80; margin-top: 3px; }
+.mz-pad-acts { display: flex; flex-direction: column; gap: 10px; align-items: stretch; min-width: 108px; flex-shrink: 0; }
+.mz-act {
+  min-height: 46px; padding: 8px 16px; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 800;
+  letter-spacing: .06em; text-transform: uppercase; cursor: pointer; touch-action: manipulation;
+  border: 1px solid rgba(255,255,255,.14); background: #181c27; color: #dce0ea; transition: background .12s, border-color .12s, transform .1s, box-shadow .15s;
+}
+.mz-act:active:not(:disabled) { transform: scale(.96); }
+.mz-act-slow.on { background: rgba(90,168,255,.22); border-color: #5aa8ff; color: #fff; }
+.mz-act-finish { background: #1e2028; color: #6c7284; border-color: rgba(255,255,255,.08); }
+.mz-act-finish:disabled { opacity: .45; cursor: default; }
+.mz-act-finish.ready { background: #e3b23c; border-color: #f8d474; color: #12141a; box-shadow: 0 0 18px rgba(227,178,60,.55); }
+@media (max-width: 560px) {
+  .mz-pad { padding: 12px 14px; gap: 10px; }
+  .mz-stick { width: 108px; height: 108px; }
+  .mz-pad-mid { display: none; }
+  .mz-pad-acts { min-width: 114px; }
+}
 .mz-menu { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 30%, rgba(26,30,44,.96), rgba(7,8,11,.97)); padding: 24px; overflow-y: auto; }
 .mz-menu[hidden] { display: none; }
 .mz-menu-box { max-width: 720px; width: 100%; color: #e8e9ee; text-align: center; }
