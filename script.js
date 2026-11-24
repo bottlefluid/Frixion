@@ -1269,6 +1269,7 @@ const UPDATES = [
       'Gifted/bought 3-day Frixion Premium codes are now hidden from the Admin/Owner Codes panel so promo codes stay clean and easy to read.',
       'Fixed Matching Set and Lost in Space (and other Shop equip eggs) re-showing their toast when equipping music or other items.',
       'Screenshare now opens the browser Window picker first (so you can share one window instead of everything) and adds a live Switch Window button to change windows mid-stream without disconnecting viewers.',
+      'Settings > Accessibility now has a "Don\'t repeat easter eggs" switch so eggs you\'ve already found won\'t replay their pop-ups or effects.',
       '3 new easter eggs. That makes 99.',
     ] },
   { v: '4.75', date: '2026-11-23', title: 'Screenshare in DMs, group chats and server channels',
@@ -5304,6 +5305,7 @@ function initAppForUser() {
     applyShopTheme(myProfile.equippedTheme);
     syncShakeFromProfile(myProfile);
     syncEpilepsyFromProfile(myProfile);
+    syncNoRepeatEggsFromProfile(myProfile);
     syncLiquidGlassFromProfile(myProfile);
     musicSync(myProfile.equippedMusic || null);
     activityRefresh();   // Settings > Activity Status may have changed
@@ -14705,6 +14707,27 @@ function syncEpilepsyFromProfile(p) {
 }
 
 // ============================================================
+// ACCESSIBILITY — DON'T REPEAT EASTER EGGS (request 85)
+// When on, easter eggs you've already found (in eggFoundSet) won't replay their
+// animation, effect or toast when triggered again. Unfound eggs still work as usual.
+// Saved on the device and mirrored onto the account (a11yNoRepeatEggs).
+// ============================================================
+const NO_REPEAT_EGGS_KEY = 'frixion_no_repeat_eggs';
+function noRepeatEggsOn() { try { return localStorage.getItem(NO_REPEAT_EGGS_KEY) === '1'; } catch (e) { return false; } }
+function applyNoRepeatEggs() {
+  const t = $('a11y-no-repeat-eggs-toggle'); if (t) t.checked = noRepeatEggsOn();
+}
+function setNoRepeatEggs(on) {
+  try { localStorage.setItem(NO_REPEAT_EGGS_KEY, on ? '1' : '0'); } catch (e) {}
+  applyNoRepeatEggs();
+  if (myUid) db.collection('users').doc(myUid).update({ a11yNoRepeatEggs: on }).catch(() => {});
+}
+function syncNoRepeatEggsFromProfile(p) {
+  if (!p || typeof p.a11yNoRepeatEggs !== 'boolean') return;
+  if (p.a11yNoRepeatEggs !== noRepeatEggsOn()) { try { localStorage.setItem(NO_REPEAT_EGGS_KEY, p.a11yNoRepeatEggs ? '1' : '0'); } catch (e) {} applyNoRepeatEggs(); }
+}
+
+// ============================================================
 // ACCESSIBILITY — LIQUID GLASS
 // Settings > Accessibility > "Liquid glass" sets html[data-liquid-glass], and style.css turns menus, pop-ups,
 // pickers, sheets and floating bars into frosted, see-through glass. Anything new that is a menu, pop-up or
@@ -17853,6 +17876,8 @@ window.addEventListener('beforeunload', () => {
 $('a11y-no-shake-toggle').onchange = e => setScreenShakeOff(e.target.checked);
 $('a11y-epilepsy-toggle').onchange = e => setEpilepsyMode(e.target.checked);
 applyEpilepsySetting();   // also applies the shake setting
+$('a11y-no-repeat-eggs-toggle').onchange = e => setNoRepeatEggs(e.target.checked);
+applyNoRepeatEggs();
 $('a11y-glass-toggle').onchange = e => setLiquidGlass(e.target.checked);
 $('a11y-glass-opacity').oninput = e => setGlassTune({ opacity: +e.target.value });
 $('a11y-glass-strength').oninput = e => setGlassTune({ strength: +e.target.value });
@@ -22466,6 +22491,7 @@ async function eggFind(id, answer) {
   const before = { riddle2: 'riddle1', riddle3: 'riddle2' }[id];
   if (before && !eggFoundSet.has(before)) { toast(before === 'riddle1' ? 'Right answer, wrong order. Solve the first riddle first.' : 'Right answer, wrong order. Solve the second riddle first.'); return; }
   const first = !eggFoundSet.has(id);
+  if (!first && noRepeatEggsOn()) return;   // Settings > Accessibility > Don't repeat easter eggs (request 85)
   const claim = first && !eggBusy.has(id) ? eggClaim(egg, answer) : null;
   try { await eggEffect(id, first); } catch (e) {}
   const r = claim && await claim;
@@ -22758,6 +22784,7 @@ document.addEventListener('click', e => {
 async function eggCodeCheck(code) {
   const h = await eggHash(code), egg = EGGS.find(x => x.ans === h);
   if (!egg) return false;
+  if (eggFoundSet.has(egg.id) && noRepeatEggsOn()) { toast('You already found that easter egg.'); return true; }
   eggFind(egg.id, code);
   return true;
 }

@@ -6,7 +6,7 @@
 // - 91: Co-Owner can see and use the Game BOT (still blocked for regular users & Mods/OPs, hidden in /sfmode)
 // - 92: Screenshare defaults getDisplayMedia to displaySurface: 'window' and supports live Switch Window (replaceTrack)
 // - 3 new easter eggs (supernovae, coownerbot, cosmicwardrobe) -> 99 total
-const { check, until, put, patch, wait } = T;
+const { check, until, doc, put, patch, wait } = T;
 const hideModals = () => document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(m => m.classList.add('hidden'));
 
 // ---------- 1. Co-Owner can use Game BOT (#91), regular/OP cannot ----------
@@ -147,5 +147,34 @@ for (const [w, id] of [['supernova', 'supernovae'], ['coowner', 'coownerbot']]) 
   check(`v4.76: typing "${w}" unlocks ${id}`, !!(await until(() => eggFoundSet.has(id), 5000)));
 }
 box.value = '';
+
+// ---------- 9. #85: Accessibility > "Don't repeat easter eggs" toggle ----------
+const nrToggle = $('a11y-no-repeat-eggs-toggle');
+check('85: Accessibility has "Don\'t repeat easter eggs" toggle (off by default)', !!nrToggle && !noRepeatEggsOn() && !nrToggle.checked);
+// With toggle OFF, re-triggering an already-found egg replays its toast
+document.querySelectorAll('.egg-toast').forEach(el => el.remove());
+await eggFind('supernovae');
+await wait(120);
+check('85: with toggle OFF, re-triggering an already-found egg still replays its toast',
+  document.querySelectorAll('.egg-toast').length >= 1);
+
+// Turn toggle ON via UI checkbox -> saves to localStorage & user profile, blocks repeats, still allows new eggs!
+nrToggle.checked = true;
+nrToggle.dispatchEvent(new Event('change'));
+await until(async () => (await doc('users/Tester')).a11yNoRepeatEggs === true, 5000);
+document.querySelectorAll('.egg-toast').forEach(el => el.remove());
+await eggFind('supernovae');
+await wait(150);
+check('85: with toggle ON, already-found egg does NOT replay its toast/effects and persists to profile',
+  noRepeatEggsOn() && document.querySelectorAll('.egg-toast').length === 0 && (await doc('users/Tester')).a11yNoRepeatEggs === true);
+
+// Unfound egg ("hello") MUST still work and pay Orbs even with toggle ON!
+await eggFind('hello');
+check('85: with toggle ON, brand-new unfound eggs still trigger and save normally',
+  !!(await until(() => eggFoundSet.has('hello'), 5000)) && document.querySelectorAll('.egg-toast').length >= 1);
+
+// Clean up localStorage setting so it doesn't leak into subsequent tests
+nrToggle.checked = false;
+nrToggle.dispatchEvent(new Event('change'));
 
 return T.report();
