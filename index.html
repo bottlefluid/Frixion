@@ -25,7 +25,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=124">
+<link rel="stylesheet" href="style.css?v=125">
 <link rel="stylesheet" href="casino.css?v=2">
 </head>
 <body>
@@ -288,6 +288,9 @@
         </span>
         <span class="hdr-icon-btn hidden" id="pins-toggle" title="Pinned Messages">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2 2-5 5-4 1 7 7 1-4 5-5 2 2"/><path d="M9 15l-5 5"/></svg>
+        </span>
+        <span class="hdr-icon-btn hidden" id="bookmarks-toggle" title="Saved Messages" role="button" tabindex="0">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h12a1 1 0 0 1 1 1v16l-7-4-7 4V5a1 1 0 0 1 1-1z"/></svg>
         </span>
         <span class="hdr-icon-btn hidden" id="edit-group-toggle" title="Edit Group">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
@@ -667,6 +670,7 @@
         <button type="button" class="ss-tab ds-nav-item on" data-ss-tab="overview">Overview</button>
         <button type="button" class="ss-tab ds-nav-item" data-ss-tab="roles">Roles</button>
         <button type="button" class="ss-tab ds-nav-item hidden" data-ss-tab="webhooks" id="ss-tab-webhooks">Integrations</button>
+        <button type="button" class="ss-tab ds-nav-item hidden" data-ss-tab="automod" id="ss-tab-automod">AutoMod</button>
         <div class="ds-nav-label ss-nav-mod">User Management</div>
         <button type="button" class="ss-tab ds-nav-item" data-ss-tab="invites">Invites</button>
         <button type="button" class="ss-tab ds-nav-item" data-ss-tab="bans">Bans</button>
@@ -719,6 +723,48 @@
             <small>Post to it with JSON like <code>{"content": "hello"}</code>. Add <code>"username"</code> or <code>"avatar_url"</code> to change the name or picture for one message, like Discord's webhooks.</small>
           </div>
           <div id="wh-list"></div>
+        </section>
+        <section class="ss-pane hidden" id="ss-pane-automod">
+          <h2 class="ss-h2">AutoMod</h2>
+          <p class="ss-sub">Automatically block rule-breaking messages in this server before they post. Server owners, admins, and moderators always bypass AutoMod.</p>
+          <div class="am-row">
+            <div class="am-copy">
+              <div class="am-title">Enable AutoMod</div>
+              <p class="ss-hint">Turn automated message filtering on or off for this server.</p>
+            </div>
+            <label class="toggle-switch"><input type="checkbox" id="am-enabled"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="ss-divider"></div>
+          <div class="field">
+            <label for="am-words">Blocked Words &amp; Phrases</label>
+            <textarea id="am-words" class="ss-textarea" rows="3" maxlength="1000" placeholder="Enter words or phrases separated by commas or new lines (e.g. badword, free nitro)"></textarea>
+            <p class="ss-hint">Case-insensitive. Whole words and exact phrases are blocked.</p>
+          </div>
+          <div class="am-row">
+            <div class="am-copy">
+              <div class="am-title">Block External Links</div>
+              <p class="ss-hint">Stop regular members from posting outside URLs. Frixion links are always allowed.</p>
+            </div>
+            <label class="toggle-switch"><input type="checkbox" id="am-links"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="am-row">
+            <div class="am-copy">
+              <div class="am-title">Anti-Spam Protection</div>
+              <p class="ss-hint">Block rapid message floods (5+ messages in 5s) and repeated duplicate messages.</p>
+            </div>
+            <label class="toggle-switch"><input type="checkbox" id="am-spam"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="field am-action-field">
+            <label for="am-action">When a message triggers AutoMod</label>
+            <select id="am-action" class="fld-input">
+              <option value="block">Block message only</option>
+              <option value="cooldown">Block message + 5-minute cooldown</option>
+            </select>
+          </div>
+          <div class="ss-divider"></div>
+          <div class="ss-footer-actions">
+            <button type="button" class="ds-btn ds-btn-green" id="am-save-btn">Save AutoMod</button>
+          </div>
         </section>
         <section class="ss-pane hidden" id="ss-pane-invites">
           <h2 class="ss-h2">Invites</h2>
@@ -2038,6 +2084,34 @@
   </div>
 </div>
 
+<div class="modal-overlay hidden" id="forward-modal" role="dialog" aria-modal="true" aria-labelledby="forward-modal-title">
+  <div class="modal-box forward-modal-box">
+    <div class="modal-header-row"><h2 id="forward-modal-title">Forward Message</h2><span class="x" data-close="forward-modal" aria-label="Close">✕</span></div>
+    <div class="fwd-preview" id="forward-preview"></div>
+    <div class="field fwd-note-field">
+      <label for="forward-note">Add a note (optional)</label>
+      <input type="text" id="forward-note" maxlength="400" placeholder="Add an optional comment..." autocomplete="off">
+    </div>
+    <div class="field fwd-search-field">
+      <input type="search" id="forward-search" placeholder="Search DMs, groups, or server channels..." autocomplete="off">
+    </div>
+    <div id="forward-targets" class="fwd-targets"></div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="bookmarks-modal" role="dialog" aria-modal="true" aria-labelledby="bookmarks-modal-title">
+  <div class="modal-box bookmarks-modal-box">
+    <div class="modal-header-row">
+      <div><h2 id="bookmarks-modal-title">Saved Messages</h2><p class="desc" id="bookmarks-count-desc">Only visible to you.</p></div>
+      <span class="x" data-close="bookmarks-modal" aria-label="Close">✕</span>
+    </div>
+    <div class="field bm-search-field">
+      <input type="search" id="bookmarks-search" placeholder="Search saved messages..." autocomplete="off">
+    </div>
+    <div id="bookmarks-list" class="bm-list"></div>
+  </div>
+</div>
+
 </div><!-- /#page-body -->
 
 <div id="toast-stack"></div>
@@ -2072,7 +2146,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
 <script defer src="fdb.js?v=2"></script>
-<script defer src="script.js?v=166"></script>
+<script defer src="script.js?v=167"></script>
 <script defer src="casino.js?v=4"></script>
 </body>
 </html>

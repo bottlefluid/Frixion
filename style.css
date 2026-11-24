@@ -4955,7 +4955,7 @@ body.is-mobile #attach-btn svg circle { display: none; }
 body.is-mobile #attach-btn svg path { transform: scale(1.75); transform-origin: 12px 12px; stroke-width: 1.4; }
 
 /* phone: a channel or group keeps only search and members up top; tapping its name opens the rest in a sheet */
-body.is-mobile #chat-header:is([data-kind="channel"], [data-kind="group"]) :is(#mute-toggle, #pins-toggle, #add-member-toggle, #leave-group-toggle) { display: none; }
+body.is-mobile #chat-header:is([data-kind="channel"], [data-kind="group"]) :is(#mute-toggle, #pins-toggle, #bookmarks-toggle, #add-member-toggle, #leave-group-toggle) { display: none; }
 .as-title { padding: 2px 14px 10px; font-size: 18px; font-weight: 800; color: var(--text-header, var(--text-normal)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .as-item > svg { flex: none; width: 20px; height: 20px; }
 /* Discord's selected server has no glow */
@@ -5548,3 +5548,154 @@ body.is-mobile #screen-stage { margin: 8px 10px 4px; border-radius: 12px; }
   .ss-banner-sub { display: none; }
   #screen-away-bar { padding: 7px 12px; font-size: 12.5px; }
 }
+
+/* ============================================================
+   v4.77 — Live sidebar screenshare badges, Server AutoMod,
+   Message Forwarding, and Bookmarks (Saved Messages)
+   ============================================================ */
+
+/* Live sidebar screenshare badge on DMs, group chats, channels, and threads */
+.ss-side-live {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  margin-left: auto; padding: 1px 6px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; line-height: 1.35;
+  background: rgba(35, 165, 90, .2); color: #4ade80; border: 1px solid rgba(35, 165, 90, .38);
+}
+.ss-side-live::before {
+  content: ''; width: 5px; height: 5px; border-radius: 50%; background: #23a55a; flex-shrink: 0;
+}
+.dm-row .ss-side-live { margin-left: 6px; }
+.channel-row .ss-side-live,
+.thread-row .ss-side-live { margin-left: 6px; }
+body.theme-light .ss-side-live {
+  background: rgba(22, 163, 74, .14); color: #15803d; border-color: rgba(22, 163, 74, .32);
+}
+
+/* Server AutoMod settings pane */
+.am-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 10px 0;
+}
+.am-copy { flex: 1; min-width: 0; }
+.am-title { font-size: 15px; font-weight: 600; color: var(--text-header, var(--text-normal)); margin-bottom: 2px; }
+.am-row .ss-hint { margin: 0; }
+.am-action-field { margin-top: 10px; }
+
+/* Bookmark active state in message hover bar */
+.hover-icon-btn.bookmark-msg.on { color: var(--accent); }
+.hover-icon-btn.bookmark-msg.on svg { fill: currentColor; }
+
+/* Forwarded message card inside chat */
+.msg-forwarded {
+  margin-top: 4px; padding: 8px 12px; max-width: 520px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-secondary);
+  border-radius: 0 8px 8px 0;
+  border-top: 1px solid var(--divider);
+  border-right: 1px solid var(--divider);
+  border-bottom: 1px solid var(--divider);
+}
+.msg-fwd-head {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  font-size: 11.5px; color: var(--text-muted); margin-bottom: 4px;
+}
+.msg-fwd-head .i { display: inline-flex; width: 13px; height: 13px; color: var(--accent); }
+.msg-fwd-head .i svg { width: 13px; height: 13px; }
+.msg-fwd-label { font-style: italic; font-weight: 600; color: var(--text-muted); }
+.msg-fwd-who { font-weight: 700; color: var(--text-normal); }
+.msg-fwd-where { color: var(--text-muted); }
+.msg-fwd-text {
+  font-size: 14px; line-height: 1.4; color: var(--text-normal);
+  word-break: break-word; white-space: pre-wrap;
+}
+.msg-fwd-atts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.msg-fwd-img {
+  max-width: 240px; max-height: 180px; border-radius: 6px; display: block;
+  object-fit: cover; cursor: zoom-in; border: 1px solid var(--divider);
+}
+.msg-fwd-file {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 9px; border-radius: 6px; font-size: 12.5px; font-weight: 600;
+  background: var(--bg-tertiary); color: var(--text-normal); text-decoration: none;
+  border: 1px solid var(--divider);
+}
+.msg-fwd-file:hover { border-color: var(--accent); color: var(--accent); }
+.msg-fwd-sticker { width: 96px; height: 96px; object-fit: contain; display: block; margin-top: 4px; }
+
+/* Forward Message modal */
+.forward-modal-box { width: min(480px, 94vw); }
+.fwd-preview {
+  padding: 9px 11px; margin-bottom: 12px; border-radius: 8px;
+  background: var(--bg-tertiary); border-left: 3px solid var(--accent);
+  font-size: 13px; color: var(--text-normal); max-height: 92px; overflow-y: auto;
+}
+.fwd-preview-meta { font-size: 11.5px; color: var(--text-muted); margin-bottom: 3px; font-weight: 600; }
+.fwd-preview-text { white-space: pre-wrap; word-break: break-word; }
+.fwd-note-field { margin-bottom: 10px; }
+.fwd-search-field { margin-bottom: 8px; }
+.fwd-note-field input,
+.fwd-search-field input,
+.bm-search-field input {
+  width: 100%; padding: 9px 11px; border-radius: 6px; font-size: 13.5px; font-family: inherit;
+  background: var(--input-bg, var(--bg-tertiary)); color: var(--text-normal);
+  border: 1px solid var(--divider); outline: none;
+}
+.fwd-note-field input:focus,
+.fwd-search-field input:focus,
+.bm-search-field input:focus { border-color: var(--accent); }
+.fwd-targets {
+  max-height: 270px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;
+  padding-right: 2px;
+}
+.fwd-group-lbl {
+  font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-muted); padding: 6px 4px 2px;
+}
+.fwd-target-row {
+  display: flex; align-items: center; gap: 10px; padding: 7px 9px; border-radius: 7px;
+  background: var(--bg-secondary); border: 1px solid transparent;
+}
+.fwd-target-row:hover { border-color: var(--divider); background: var(--bg-modifier-hover); }
+.fwd-target-info { flex: 1; min-width: 0; }
+.fwd-target-name { font-size: 13.5px; font-weight: 600; color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fwd-target-sub { font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fwd-send-btn {
+  padding: 5px 12px; border-radius: 6px; font-size: 12.5px; font-weight: 600; flex-shrink: 0;
+  background: var(--accent); color: #fff; border: none; cursor: pointer;
+}
+.fwd-send-btn:hover { filter: brightness(1.08); }
+.fwd-send-btn:disabled { opacity: .6; cursor: default; filter: none; }
+
+/* Saved Messages (Bookmarks) modal */
+.bookmarks-modal-box { width: min(540px, 95vw); }
+.bm-search-field { margin-bottom: 10px; }
+.bm-list {
+  max-height: 410px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;
+  padding-right: 2px;
+}
+.bm-item {
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--bg-secondary); border: 1px solid var(--divider);
+  display: flex; flex-direction: column; gap: 5px;
+}
+.bm-head {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  font-size: 12px; color: var(--text-muted);
+}
+.bm-who { font-weight: 700; color: var(--text-normal); }
+.bm-where { color: var(--accent); font-weight: 600; }
+.bm-time { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+.bm-body {
+  font-size: 13.5px; line-height: 1.42; color: var(--text-normal);
+  white-space: pre-wrap; word-break: break-word;
+}
+.bm-actions { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.bm-btn {
+  padding: 4px 9px; border-radius: 5px; font-size: 12px; font-weight: 600;
+  background: var(--bg-tertiary); color: var(--text-normal);
+  border: 1px solid var(--divider); cursor: pointer;
+}
+.bm-btn:hover { background: var(--bg-modifier-hover); }
+.bm-btn-del { color: var(--danger); }
+.bm-btn-del:hover { background: rgba(242, 63, 66, .12); border-color: rgba(242, 63, 66, .35); }
+.bm-empty { text-align: center; padding: 28px 14px; color: var(--text-muted); font-size: 13.5px; }

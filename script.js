@@ -1261,6 +1261,14 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.77', date: '2026-11-24', title: 'Live screenshare badges, Server AutoMod, Message Forwarding, Bookmarks & 100th Easter Egg',
+    notes: [
+      'Live sidebar LIVE badges: DMs, group chats, server channels, and threads now show a green LIVE pill whenever someone is sharing their screen there — and Frixion will no longer auto-reload for an update while you are actively sharing or watching.',
+      'Server AutoMod: Server Settings now has an AutoMod tab (for Manage Server) with blocked words & phrases, external link blocking (Frixion links allowed), anti-spam flood/duplicate protection, and an optional 5-minute cooldown. Server owners and staff bypass AutoMod.',
+      'Message Forwarding: Hover any message (or hold it on mobile) and pick Forward to send a clean forwarded quote card — with an optional note — to any DM, group chat, or server channel you can post in.',
+      'Bookmarks (Saved Messages): Save any message to your private Saved Messages list from the message hover bar or mobile hold menu, and browse or search them anytime from the bookmark button in the chat header.',
+      '100th Easter Egg Milestone: 3 new easter eggs (including the 500-Orb Century Club #100 milestone). That makes 102.',
+    ] },
   { v: '4.76', date: '2026-11-24', title: '4 new space themes, Co-Owner Game Bot, Equinox cover art and fixes',
     notes: [
       '4 new Black Hole-tier animated themes in the Shop (Featured & Dark & Space): Supernova, Solar Eclipse, Cosmic Nebula, and Crimson Rift — each with its own glowing corner centerpiece and live Shop preview.',
@@ -2152,6 +2160,8 @@ const ICONS = {
   poll: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10"/><path d="M12 20V4"/><path d="M20 20v-7"/></svg>',
   download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>',
+  forward: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>',
+  bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h12a1 1 0 0 1 1 1v16l-7-4-7 4V5a1 1 0 0 1 1-1z"/></svg>',
 };
 function icon(name, cls) { return `<span class="i ${cls||''}">${ICONS[name] || ''}</span>`; }
 
@@ -5046,8 +5056,10 @@ function cleanupAllListeners() {
   if (unsub.threads) unsub.threads();
   if (unsub.events) { unsub.events(); unsub.events = null; }
   if (unsub.blocks) unsub.blocks();
+  if (unsub.bookmarks) unsub.bookmarks();
   if (typeof ssTeardownAll === 'function') ssTeardownAll();
   myBlocks = []; revealedBlocked.clear();
+  if (typeof myBookmarks !== 'undefined') myBookmarks = [];
   stopServerChannelListeners();
   catalogUnsubs.forEach(u => { try { u(); } catch (e) {} });
   catalogUnsubs = [];
@@ -5378,6 +5390,7 @@ function initAppForUser() {
   subscribeDMList();
   subscribeMentions();
   subscribeReadSync();
+  subscribeBookmarks();
   subscribeCustomEmojis();
   subscribeCustomDecorations();
   subscribeCustomThemes();
@@ -5841,7 +5854,7 @@ async function checkForNewVersion() {
   try { if (sessionStorage.getItem('frixion_reloaded_for') === live) return; } catch (e) {}
   // (v4.68, request 70: any focused box counts, even an empty one between two messages, and so does an open phone keyboard)
   const el = document.activeElement, typing = (el && /^(INPUT|TEXTAREA)$/.test(el.tagName)) || document.body.classList.contains('keyboard-open');
-  if (!typing && !currentGameId && !document.getElementById('ocrng') && !document.querySelector('.modal-overlay:not(.hidden)')) {
+  if (!typing && !currentGameId && !document.getElementById('ocrng') && !document.querySelector('.modal-overlay:not(.hidden)') && !ssLocalStream && !ssWatchingUid) {
     try { sessionStorage.setItem('frixion_reloaded_for', live); } catch (e) {}
     location.reload(); return;
   }
@@ -5994,6 +6007,7 @@ function showHomeView() {
   document.querySelector('.home-nav-item[data-home-view="friends"]').classList.add('active');
   openHomeMainView('friends');
   setMobilePane('list');
+  if (typeof ssSyncServerWatch === 'function') ssSyncServerWatch(null);
   renderDMRows();
 }
 
@@ -6032,6 +6046,7 @@ function openHomeMainView(which) {
   else if (which === 'shop') { currentView = 'shop'; $('chat-header-title').textContent = 'Shop'; $('shop-view').classList.remove('hidden'); openShop(); }
   else if (which === 'casino') { currentView = 'casino'; $('chat-header-title').textContent = 'Casino'; $('casino-view').classList.remove('hidden'); if (typeof openCasino === 'function') openCasino(); }
   setMobilePane('chat');
+  if (typeof ssSyncServerWatch === 'function') ssSyncServerWatch(null);
   renderDMRows();
 }
 
@@ -6065,6 +6080,7 @@ function subscribeDMList() {
     const dms = [];
     snap.forEach(d => dms.push({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }));
     window.__myDMs = dms;
+    if (typeof ssSyncDmWatches === 'function') ssSyncDmWatches();
     if (currentView !== 'channel') renderDMRows();    // draw the list straight away (names are the usernames); avatars fill in as profiles arrive
     await Promise.all(dms.map(dm => getProfile(dm.participants.find(p => p !== myUid))));
     hydrateConversationPreviews('dms', dms);
@@ -6080,6 +6096,7 @@ function subscribeDMList() {
     const gs = [];
     snap.forEach(d => gs.push({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }));
     window.__myGroupDMs = gs;
+    if (typeof ssSyncDmWatches === 'function') ssSyncDmWatches();
     await Promise.all(gs.flatMap(g => g.participants.filter(p => p !== myUid).map(p => getProfile(p))));
     hydrateConversationPreviews('groupDMs', gs);
     if (currentView !== 'channel') renderDMRows();
@@ -6114,6 +6131,7 @@ function previewForMessage(message, includeAuthor = false) {
   if (!text && message.system) text = systemPlainText(message);
   if (!text && message.purgeResult) text = `Deleted ${message.purgeResult.count} messages`;
   if (!text && message.wordle) text = '🟩 Started a game of Wordle';
+  if (!text && message.forwarded) text = 'Forwarded: ' + (message.forwarded.text ? mdPlain(message.forwarded.text).slice(0, 80) : 'a message');
   if (!text) text = 'New message';
   return includeAuthor && message.username ? `${message.username}: ${text}` : text;
 }
@@ -6844,15 +6862,23 @@ function renderDMRows() {
       const otherUid = dm.participants.find(p => p !== myUid);
       const p = profileCache[otherUid] || { username: otherUid, avatarColor: '#5865f2', status: 'offline' };
       const nameplate = nameplateById(p.equippedNameplate);
+      const rk = 'dm:' + dm.id;
+      row.dataset.room = rk;
       row.className = 'dm-row' + (currentDMId === dm.id ? ' active' : '') + (isConversationUnread(dm) ? ' unread' : '') + (nameplate ? ' has-nameplate' : '');
       row.innerHTML = nameplateBgHTML(nameplate) +
         avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(otherUid), p.avatarUrl, p.equippedDecoration, otherUid, p.equippedMask, typersIn('dm', dm).includes(otherUid)) +
-        `<div class="dm-copy"><span class="dm-name">${gapUnderscores(esc(displayNameOf(p)))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div><span class="dm-time">${esc(shortAgo(timeValue(dm.updatedAt) || timeValue((dm.lastMessage || {}).createdAt)))}</span>`;
+        `<div class="dm-copy"><span class="dm-name">${gapUnderscores(esc(displayNameOf(p)))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div>` +
+        (typeof ssIsRoomLive === 'function' && ssIsRoomLive(rk) ? '<span class="ss-side-live">LIVE</span>' : '') +
+        `<span class="dm-time">${esc(shortAgo(timeValue(dm.updatedAt) || timeValue((dm.lastMessage || {}).createdAt)))}</span>`;
       row.onclick = () => selectDM(dm.id, otherUid);
     } else {
       const g = c;
+      const rk = 'gdm:' + g.id;
+      row.dataset.room = rk;
       row.className = 'dm-row' + (currentGroupDMId === g.id ? ' active' : '') + (isConversationUnread(g) ? ' unread' : '');
-      row.innerHTML = groupIconHTML(g, 32, typersIn('gdm', g).length > 0) + `<div class="dm-copy"><span class="dm-name">${esc(groupDMDisplayName(g))}</span><span class="dm-preview">${esc(previewForMessage(g.lastMessage || conversationPreviewCache.get(`groupDMs:${g.id}`), true))}</span></div><span class="dm-time">${esc(shortAgo(timeValue(g.updatedAt)))}</span>`;
+      row.innerHTML = groupIconHTML(g, 32, typersIn('gdm', g).length > 0) + `<div class="dm-copy"><span class="dm-name">${esc(groupDMDisplayName(g))}</span><span class="dm-preview">${esc(previewForMessage(g.lastMessage || conversationPreviewCache.get(`groupDMs:${g.id}`), true))}</span></div>` +
+        (typeof ssIsRoomLive === 'function' && ssIsRoomLive(rk) ? '<span class="ss-side-live">LIVE</span>' : '') +
+        `<span class="dm-time">${esc(shortAgo(timeValue(g.updatedAt)))}</span>`;
       row.onclick = () => selectGroupDM(g.id);
     }
     wrap.appendChild(row);
@@ -6953,7 +6979,7 @@ function renderChatHeaderAvatar() {
 function openConversationSheet(kind) {
   closeActionSheet();
   const rows = [['members-toggle', 'Members'], ['edit-group-toggle', 'Edit Group'], ['add-member-toggle', 'Add Friends'], ['pins-toggle', 'Pinned Messages'],
-    ['mute-toggle', isMuted() ? 'Unmute' : 'Mute'], ['search-toggle', 'Search'], ['leave-group-toggle', 'Leave Group']]
+    ['bookmarks-toggle', 'Saved Messages'], ['mute-toggle', isMuted() ? 'Unmute' : 'Mute'], ['search-toggle', 'Search'], ['leave-group-toggle', 'Leave Group']]
     .filter(([id]) => !$(id).classList.contains('hidden'));
   const title = (kind === 'channel' ? '#' : '') + $('chat-header-title').textContent;
   const backdrop = document.createElement('div');
@@ -6991,6 +7017,7 @@ async function selectDM(id, otherUid) {
   refreshChannelComposerState();
   $('gift-btn').classList.remove('hidden');
   showHeaderActions();
+  if (typeof ssSyncServerWatch === 'function') ssSyncServerWatch(null);
   renderDMRows();
   showChat();
   setMobilePane('chat');
@@ -7030,6 +7057,7 @@ async function selectGroupDM(id) {
   showHeaderActions();
   $('pins-toggle').classList.remove('hidden');
   renderMemberPanel(g ? g.participants : [], g ? g.ownerId : null);
+  if (typeof ssSyncServerWatch === 'function') ssSyncServerWatch(null);
   renderDMRows();
   showChat();
   setMobilePane('chat');
@@ -8446,6 +8474,7 @@ async function selectServer(server) {
   currentDMId = null; currentDMOtherUid = null; currentGroupDMId = null; currentChannelId = null; currentThreadId = null; currentThreadData = null;
   currentView = 'none';
   if (typeof ssSyncRoom === 'function') ssSyncRoom();
+  if (typeof ssSyncServerWatch === 'function') ssSyncServerWatch(server.id);
   document.querySelectorAll('#server-rail-list .rail-item').forEach(e => e.classList.remove('active'));
   $('rail-home').classList.remove('active');
   [...$('server-rail-list').children].forEach(el => { if (el.dataset.id === server.id) el.classList.add('active'); });
@@ -8647,7 +8676,7 @@ function openServerSettings(tab) {
   const can = (p) => hasServerPerm(currentServerData, myUid, p);
   const canManage = can('manageServer') || can('manageRoles') || can('banMembers') || can('manageWebhooks');
   if (!canManage) { toast('You need Manage Server, Manage Roles, Manage Webhooks, or Ban Members permission to open Server Settings.'); return; }
-  const tabPerm = { overview: 'manageServer', roles: 'manageRoles', webhooks: 'manageWebhooks', invites: 'manageServer', bans: 'banMembers' };
+  const tabPerm = { overview: 'manageServer', roles: 'manageRoles', webhooks: 'manageWebhooks', automod: 'manageServer', invites: 'manageServer', bans: 'banMembers' };
   document.querySelectorAll('.ss-tab').forEach(t => t.classList.toggle('hidden', !can(tabPerm[t.dataset.ssTab])));
   document.querySelector('.ss-nav-mod').classList.toggle('hidden', !can('manageServer') && !can('banMembers'));
   $('edit-server-desc').value = currentServerData.description || '';
@@ -8874,10 +8903,12 @@ document.querySelectorAll('.ss-tab').forEach(btn => {
 function openServerSettingsTab(tab) {
   if (tab === 'overview' && currentServerData && !hasServerPerm(currentServerData, myUid, 'manageServer')) { toast('You need Manage Server permission to view this.'); return; }
   if (tab === 'webhooks' && currentServerData && !hasServerPerm(currentServerData, myUid, 'manageWebhooks')) { toast('You need Manage Webhooks permission to view this.'); return; }
+  if (tab === 'automod' && currentServerData && !hasServerPerm(currentServerData, myUid, 'manageServer')) { toast('You need Manage Server permission to view this.'); return; }
   document.querySelectorAll('.ss-tab').forEach(t => t.classList.toggle('on', t.dataset.ssTab === tab));
-  ['overview', 'roles', 'webhooks', 'invites', 'bans'].forEach(p => $('ss-pane-' + p).classList.toggle('hidden', tab !== p));
+  ['overview', 'roles', 'webhooks', 'automod', 'invites', 'bans'].forEach(p => $('ss-pane-' + p).classList.toggle('hidden', tab !== p));
   if (tab === 'bans') { $('bans-search').value = ''; renderBansList(); }
   if (tab === 'webhooks') { $('wh-made').classList.add('hidden'); renderWebhooksPane(); }
+  if (tab === 'automod') renderAutoModPane();
   if (tab === 'roles') {
     rolesView = 'list'; selectedRoleId = null; roleListSearch = '';
     resetRoleEditorState();
@@ -9541,11 +9572,14 @@ function renderChannelRows(channels) {
 
   const buildChannelRow = (c) => {
     const restricted = isChannelPrivate(c);
+    const rk = currentServerId ? 'ch:' + currentServerId + ':' + c.id : '';
     const row = document.createElement('div');
     row.className = 'channel-row' + (currentChannelId === c.id && !currentThreadId ? ' active' : '');
     row.dataset.cid = c.id;
+    if (rk) row.dataset.room = rk;
     row.innerHTML = `<span class="hash">#</span><span class="cname">${esc(c.name)}</span>` +
       (restricted ? `<span class="i channel-lock-icon" title="Restricted to certain roles">${icon('shield')}</span>` : '') +
+      (rk && typeof ssIsRoomLive === 'function' && ssIsRoomLive(rk) ? '<span class="ss-side-live">LIVE</span>' : '') +
       (canManage ? `<span class="channel-perms-btn" title="Channel Permissions">${icon('gear')}</span><span class="del-channel" title="Delete channel">${icon('trash')}</span>` : '');
     row.onclick = () => selectChannel(c);
     if (canManage) {
@@ -9576,12 +9610,15 @@ function renderChannelRows(channels) {
   const appendChannelRow = (c) => {
     wrap.appendChild(buildChannelRow(c));
     activeThreadsFor(c.id).forEach(t => {
+      const rk = currentServerId ? 'th:' + currentServerId + ':' + c.id + ':' + t.id : '';
       const row = document.createElement('div');
       row.className = 'thread-row' + (currentThreadId === t.id ? ' active' : '');
       row.dataset.tid = t.id; row.dataset.cid = c.id;
+      if (rk) row.dataset.room = rk;
       row.innerHTML = `<span class="thread-curve" aria-hidden="true"></span><span class="tname">${esc(t.name)}</span>`
         + (t.private ? `<span class="thread-flag" title="Private thread">${THREAD_LOCK_ICON}</span>` : '')
-        + (t.locked ? '<span class="thread-flag thread-locked" title="Locked: only people who can manage threads can post">Locked</span>' : '');
+        + (t.locked ? '<span class="thread-flag thread-locked" title="Locked: only people who can manage threads can post">Locked</span>' : '')
+        + (rk && typeof ssIsRoomLive === 'function' && ssIsRoomLive(rk) ? '<span class="ss-side-live">LIVE</span>' : '');
       row.onclick = () => selectThread(t);
       wrap.appendChild(row);
     });
@@ -10394,6 +10431,7 @@ function showHeaderActions() {
   $('screenshare-toggle').classList.toggle('hidden', typeof ssCanShare !== 'function' || !ssCanShare());
   $('mute-toggle').classList.remove('hidden');
   $('pins-toggle').classList.remove('hidden');
+  $('bookmarks-toggle').classList.remove('hidden');
   $('search-toggle').classList.remove('hidden');
   $('add-member-toggle').classList.toggle('hidden', currentView !== 'groupdm');
   $('edit-group-toggle').classList.toggle('hidden', currentView !== 'groupdm');
@@ -10408,6 +10446,7 @@ function hideHeaderActions() {
   $('screenshare-toggle').classList.add('hidden');
   $('mute-toggle').classList.add('hidden');
   $('pins-toggle').classList.add('hidden');
+  $('bookmarks-toggle').classList.add('hidden');
   $('search-toggle').classList.add('hidden');
   $('add-member-toggle').classList.add('hidden');
   $('edit-group-toggle').classList.add('hidden');
@@ -10523,6 +10562,8 @@ function openMessageActionSheet(msgId, heldImg) {
       <div class="as-actions">
         ${canEditThis ? `<button type="button" class="as-item" data-act="edit">${icon('edit')}<span>Edit Message</span></button>` : ''}
         <button type="button" class="as-item" data-act="reply">${icon('reply')}<span>Reply</span></button>
+        ${!m.ephemeral ? `<button type="button" class="as-item" data-act="forward">${icon('forward')}<span>Forward Message</span></button>` : ''}
+        ${!m.ephemeral ? `<button type="button" class="as-item" data-act="bookmark">${icon('bookmark')}<span>${isMessageBookmarked(msgId) ? 'Remove Bookmark' : 'Save Message'}</span></button>` : ''}
         ${threadAct ? `<button type="button" class="as-item" data-act="thread">${THREAD_ICON}<span>${threadAct}</span></button>` : ''}
         ${m.text ? `<button type="button" class="as-item" data-act="copy">${icon('copy')}<span>Copy Text</span></button>` : ''}
         ${imgUrl ? `<button type="button" class="as-item" data-act="copyimg">${icon('copy')}<span>Copy Image</span></button>` : ''}
@@ -10548,6 +10589,8 @@ function openMessageActionSheet(msgId, heldImg) {
       closeActionSheet();
       if (act === 'edit') startEditMessage(msgId);
       else if (act === 'reply') setReplyTarget(msgId);
+      else if (act === 'forward') openForwardModal(msgId);
+      else if (act === 'bookmark') toggleBookmark(msgId);
       else if (act === 'thread') openCreateThread(msgId);
       else if (act === 'copy') copyMessageText(m);
       else if (act === 'copyimg') copyImage(imgUrl);
@@ -11129,12 +11172,16 @@ function buildMessageLineEl(m, canDelete) {
     : m.wordle
     ? wordleCardHTML(m)
     : (m.text ? `<span class="msg-text">${msgTextHTML(m)}</span>${m.edited ? `<span class="edited-tag">(edited)</span>` : ''}` : '') +
+      (m.forwarded ? forwardedCardHTML(m.forwarded) : '') +
       attachmentHTML(m, canDelete));
 
+  const bookmarked = !m.ephemeral && isMessageBookmarked(m.id);
   rowWrap.innerHTML = bodyHTML +
     `<span class="msg-hover-actions">` +
     `<span class="hover-icon-btn react-btn" title="Add Reaction">${icon('smiley')}</span>` +
     `<span class="hover-icon-btn reply-msg" title="Reply">${icon('reply')}</span>` +
+    (!m.ephemeral ? `<span class="hover-icon-btn forward-msg" title="Forward Message">${icon('forward')}</span>` : '') +
+    (!m.ephemeral ? `<span class="hover-icon-btn bookmark-msg${bookmarked ? ' on' : ''}" title="${bookmarked ? 'Remove Bookmark' : 'Save Message'}">${icon('bookmark')}</span>` : '') +
     (m.text ? `<span class="hover-icon-btn copy-msg" title="Copy Text">${icon('copy')}</span>` : '') +
     (canThread ? `<span class="hover-icon-btn thread-msg" title="Create Thread">${THREAD_ICON}</span>` : '') +
     (canEditThis ? `<span class="hover-icon-btn edit-msg" title="Edit">${icon('edit')}</span>` : '') +
@@ -11143,11 +11190,18 @@ function buildMessageLineEl(m, canDelete) {
     `</span>`;
   rowWrap.querySelector('.react-btn').onclick = (e) => { e.stopPropagation(); toggleReactPopover(e.currentTarget, m.id); };
   rowWrap.querySelector('.reply-msg').onclick = () => setReplyTarget(m.id);
+  if (!m.ephemeral) {
+    rowWrap.querySelector('.forward-msg').onclick = () => openForwardModal(m.id);
+    rowWrap.querySelector('.bookmark-msg').onclick = () => toggleBookmark(m.id);
+  }
   if (m.text) rowWrap.querySelector('.copy-msg').onclick = () => copyText(m.text, 'Text copied.');   // v4.62, like the phone's Copy Text
   if (canThread) rowWrap.querySelector('.thread-msg').onclick = () => openCreateThread(m.id);
   if (canEditThis) rowWrap.querySelector('.edit-msg').onclick = () => startEditMessage(m.id);
   if (pinnable) rowWrap.querySelector('.pin-msg').onclick = () => togglePin(m.id);
   if (canDelete) rowWrap.querySelector('.del-msg').onclick = () => deleteMessage(m.id);
+  rowWrap.querySelectorAll('.msg-fwd-img').forEach(img => {
+    img.onclick = (e) => { e.stopPropagation(); openImageViewer(img.src, img.alt || 'Image'); };
+  });
   // (Anyone who can see a file can download it: the download button on a file card is a plain link, see attachmentDownloadUrl.)
   rowWrap.querySelectorAll('.msg-media-slot').forEach(slot => slot.replaceWith(getMsgMediaEl(slot.dataset.mkey, slot.dataset.kind, slot.dataset.url)));
   rowWrap.querySelectorAll('.msg-att-del').forEach(btn => {
@@ -11201,7 +11255,7 @@ async function renderMessages(rawMsgs) {
   const seq = ++messagesRenderSeq;
   const searching = searchActive;
   const q = searching ? ($('search-input').value || '').trim().toLowerCase() : '';
-  let msgs = q ? rawMsgs.filter(m => `${m.text || ''} ${m.poll ? m.poll.question : ''}`.toLowerCase().includes(q)) : rawMsgs;
+  let msgs = q ? rawMsgs.filter(m => `${m.text || ''} ${m.forwarded ? (m.forwarded.text || '') + ' ' + (m.forwarded.from || '') : ''} ${m.poll ? m.poll.question : ''}`.toLowerCase().includes(q)) : rawMsgs;
   if (!searching) {
     // "Only you can see this" messages sit in the list by time but are never stored anywhere.
     const eph = ephemeralsHere();
@@ -12186,6 +12240,14 @@ async function sendMessage() {
   if (!raw && !pendingAttachments.length) return;
   if (currentView !== 'channel' && currentView !== 'dm' && currentView !== 'groupdm') { toast('Pick a conversation first.'); return; }
   { const tooLong = messageTooLong(raw); if (tooLong) { toast(tooLong, 'error'); return; } }
+  if (currentView === 'channel' && currentServerData) {
+    const amRes = checkServerAutoMod(currentServerData, raw);
+    if (amRes.blocked) {
+      toast(amRes.reason, 'error');
+      postEphemeral('**AutoMod:** ' + amRes.reason);
+      return;
+    }
+  }
   if (sendChannel && sendChannel.slowmode) { lastChannelSendAt[sendChannel.id] = Date.now(); renderSlowmodeIndicator(); }
   input.value = '';
   autoResize(input);
@@ -22465,6 +22527,10 @@ const EGGS = [
   { id: 'supernovae', t: 'e', name: 'Starburst', how: 'Type "supernova" anywhere.', hint: 'An exploding star. One word.' },
   { id: 'coownerbot', t: 'e', name: 'Double Shift', how: 'Type "coowner" anywhere.', hint: 'Second in command. No hyphen, no space.' },
   { id: 'cosmicwardrobe', t: 'm', name: 'Cosmic Drip', how: 'Equip any of the 4 new space themes: Supernova, Solar Eclipse, Cosmic Nebula or Crimson Rift.', hint: 'Try on one of the newest space themes in the Shop.' },
+  // v4.77 (100th Easter Egg Milestone!)
+  { id: 'centurion', t: 'h', name: 'Century Club (#100)', how: 'Type "century" anywhere.', hint: 'One hundred years — and Frixion\'s 100th easter egg. One word.' },
+  { id: 'savedforlater', t: 'e', name: 'Saved for Later', how: 'Bookmark any message to save it to your Saved Messages.', hint: 'Keep a message handy for later.' },
+  { id: 'passiton', t: 'e', name: 'Pass It On', how: 'Forward any message to another DM, group chat or server channel.', hint: 'Share a message with another chat.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -22722,11 +22788,14 @@ function eggEffect(id, first) {
     case 'supernovae': eggToast('Starburst', 'Bright enough to outshine a galaxy.'); return;
     case 'coownerbot': eggToast('Double Shift', 'Now there are two of them.'); return;
     case 'cosmicwardrobe': eggToast('Cosmic Drip', 'Looking out of this world.'); return;
+    case 'centurion': eggParticles('confetti', 6000); eggToast('Century Club (#100)', 'Welcome to 100+ easter eggs in Frixion!'); return;
+    case 'savedforlater': eggToast('Saved for Later', 'Tucked safely in your Bookmarks.'); return;
+    case 'passiton': eggToast('Pass It On', 'Delivered to its new home.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
 // ---- the triggers that live here (the rest are in the code they belong to: search for eggFind) ----
-const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot', hawking: 'hawking', autopilot: 'autopilot', beepboop: 'beepboop', gdwave: 'ninecircles', screensaver: 'screenshare', golive: 'golive', supernovae: 'supernova', coownerbot: 'coowner' };
+const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot', hawking: 'hawking', autopilot: 'autopilot', beepboop: 'beepboop', gdwave: 'ninecircles', screensaver: 'screenshare', golive: 'golive', supernovae: 'supernova', coownerbot: 'coowner', centurion: 'century' };
 const EGG_SEQS = {
   oldcode: ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'KeyB', 'KeyA'],
   spin: ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'],
@@ -22850,6 +22919,7 @@ const EGG_GROUPS = [
   ['Hard Dash & Mobile Maze (v4.74)', ['liquiddash', 'pocketmaze', 'gdwave']],
   ['Screenshare (v4.75)', ['watchparty', 'screensaver', 'golive']],
   ['Space Themes & Fixes (v4.76)', ['supernovae', 'coownerbot', 'cosmicwardrobe']],
+  ['AutoMod, Forwarding, Bookmarks & #100 (v4.77)', ['centurion', 'savedforlater', 'passiton']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {
@@ -23648,6 +23718,7 @@ function ovCloseChat(chat, forget) {
 
 function ovMsgBody(m) {
   let h = m.text ? `<div class="ov-text">${msgTextHTML(m)}</div>` : '';
+  if (m.forwarded) h += `<div class="ov-text ov-note">Forwarded from ${esc(m.forwarded.from || 'Someone')}: ${esc(m.forwarded.text || 'a message')}</div>`;
   const atts = m.attachments || (m.attachment ? [m.attachment] : []);
   atts.forEach(a => {
     const url = ovSafeUrl(a.url);
@@ -23698,6 +23769,8 @@ async function ovSend(chat, input) {
       const left = Math.max(0, Math.ceil(((lastChannelSendAt[ch.id] || 0) + ch.slowmode * 1000 - Date.now()) / 1000));
       if (left > 0) { toast(`Slowmode is on. You can send another message in ${left}s.`); return; }
     }
+    const amRes = checkServerAutoMod(server, raw);
+    if (amRes.blocked) { toast(amRes.reason, 'error'); return; }
   }
   input.value = '';
   ovAutosize(input);
@@ -23745,8 +23818,11 @@ const SS_ICE_SERVERS = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
 ];
 const SS_MAX_VIEWERS = 8;
+const SS_MAX_DM_WATCH = 12;
 
 const ssChannels = new Map();     // roomKey -> { key, ch, joined, sharers: Map, wantTrack, readyCbs }
+const ssSrvChannels = new Map();  // sid -> { sid, ch, joined, liveRooms: Map<roomKey, Set<uid>>, wantTrack }
+let ssDmWatched = new Set();      // top recent DM / Group DM roomKeys watched for sidebar LIVE badges
 let ssViewRoom = null;
 let ssHostRoom = null;
 let ssHostMeta = null;            // room metadata captured when sharing began
@@ -23883,11 +23959,108 @@ function ssEnsureChannel(roomKey) {
 }
 function ssReleaseUnusedChannels() {
   for (const [key, entry] of [...ssChannels.entries()]) {
-    if (key === ssViewRoom || key === ssHostRoom) continue;
+    if (key === ssViewRoom || key === ssHostRoom || ssDmWatched.has(key)) continue;
     ssChannels.delete(key);
     try { entry.ch.untrack(); } catch (e) {}
     try { sbClient.removeChannel(entry.ch); } catch (e) {}
   }
+}
+function ssEnsureServerChannel(sid) {
+  if (!sid || !sbClient || !myUid) return null;
+  const existing = ssSrvChannels.get(sid);
+  if (existing) return existing;
+  const ch = sbClient.channel('screen-srv:' + sid, {
+    config: { presence: { key: myUid } },
+  });
+  const entry = { sid, ch, joined: false, liveRooms: new Map(), wantTrack: null };
+  ssSrvChannels.set(sid, entry);
+  ch.on('presence', { event: 'sync' }, () => ssOnServerPresenceSync(entry));
+  ch.subscribe(status => {
+    if (ssSrvChannels.get(sid) !== entry) return;
+    if (status === 'SUBSCRIBED') {
+      entry.joined = true;
+      if (entry.wantTrack) { try { ch.track(entry.wantTrack); } catch (e) {} }
+      ssOnServerPresenceSync(entry);
+    }
+  });
+  return entry;
+}
+function ssOnServerPresenceSync(entry) {
+  if (!entry || ssSrvChannels.get(entry.sid) !== entry) return;
+  let st = {};
+  try { st = entry.ch.presenceState() || {}; } catch (e) {}
+  const liveRooms = new Map();
+  for (const [key, metas] of Object.entries(st)) {
+    const arr = Array.isArray(metas) ? metas : [];
+    const m = arr.slice().reverse().find(x => x && x.sharing === true && x.cid);
+    if (!m) continue;
+    const uid = String(m.uid || key || '');
+    if (!uid || (uid !== myUid && isBlocked(uid))) continue;
+    const rk = m.tid ? 'th:' + entry.sid + ':' + m.cid + ':' + m.tid : 'ch:' + entry.sid + ':' + m.cid;
+    if (!liveRooms.has(rk)) liveRooms.set(rk, new Set());
+    liveRooms.get(rk).add(uid);
+  }
+  entry.liveRooms = liveRooms;
+  ssRefreshSidebarLive();
+}
+function ssSyncServerWatch(sid) {
+  const want = new Set();
+  if (myUid && ssCanWatch()) {
+    if (sid) want.add(sid);
+    if (ssLocalStream && ssHostMeta && ssHostMeta.sid) want.add(ssHostMeta.sid);
+  }
+  for (const id of want) ssEnsureServerChannel(id);
+  for (const [id, entry] of [...ssSrvChannels.entries()]) {
+    if (want.has(id)) continue;
+    ssSrvChannels.delete(id);
+    try { entry.ch.untrack(); } catch (e) {}
+    try { sbClient.removeChannel(entry.ch); } catch (e) {}
+  }
+  ssRefreshSidebarLive();
+}
+function ssSyncDmWatches() {
+  if (!myUid || !ssCanWatch()) {
+    ssDmWatched = new Set();
+    ssReleaseUnusedChannels();
+    ssRefreshSidebarLive();
+    return;
+  }
+  const convs = [
+    ...(window.__myDMs || []).map(c => ({ key: 'dm:' + c.id, t: convTime(c) })),
+    ...(window.__myGroupDMs || []).map(c => ({ key: 'gdm:' + c.id, t: convTime(c) })),
+  ].sort((a, b) => b.t - a.t).slice(0, SS_MAX_DM_WATCH);
+  ssDmWatched = new Set(convs.map(x => x.key));
+  for (const k of ssDmWatched) ssEnsureChannel(k);
+  ssReleaseUnusedChannels();
+  ssRefreshSidebarLive();
+}
+function ssIsRoomLive(roomKey) {
+  if (!roomKey) return false;
+  if (ssLocalStream && ssHostRoom === roomKey) return true;
+  const entry = ssChannels.get(roomKey);
+  if (entry && entry.sharers.size > 0) return true;
+  if (roomKey.startsWith('ch:') || roomKey.startsWith('th:')) {
+    const sid = roomKey.split(':')[1];
+    const sEntry = ssSrvChannels.get(sid);
+    if (sEntry && sEntry.liveRooms.has(roomKey) && sEntry.liveRooms.get(roomKey).size > 0) return true;
+  }
+  return false;
+}
+function ssRefreshSidebarLive() {
+  document.querySelectorAll('#dm-rows .dm-row[data-room], #channel-rows .channel-row[data-room], #channel-rows .thread-row[data-room]').forEach(row => {
+    const live = ssIsRoomLive(row.dataset.room);
+    let pill = row.querySelector('.ss-side-live');
+    if (live && !pill) {
+      pill = document.createElement('span');
+      pill.className = 'ss-side-live';
+      pill.textContent = 'LIVE';
+      const before = row.querySelector('.dm-time, .channel-perms-btn, .del-channel');
+      if (before) row.insertBefore(pill, before);
+      else row.appendChild(pill);
+    } else if (!live && pill) {
+      pill.remove();
+    }
+  });
 }
 function ssOnPresenceSync(entry) {
   if (!entry || ssChannels.get(entry.key) !== entry) return;
@@ -23915,10 +24088,12 @@ function ssOnPresenceSync(entry) {
       if (info && info.name) ssWatchingName = info.name;
     } else if (ssWatchedSeenInPresence) {
       ssStopWatching({ quiet: false, endedMsg: (ssWatchingName || 'They') + ' stopped sharing.' });
+      ssRefreshSidebarLive();
       return;
     }
   }
   ssRenderUI();
+  ssRefreshSidebarLive();
 }
 
 function ssSyncRoom() {
@@ -24047,8 +24222,22 @@ async function ssStartSharing() {
     entry.wantTrack = ssHostPresencePayload();
     if (entry.joined) { try { entry.ch.track(entry.wantTrack); } catch (e) {} }
   }
+  if ((meta.kind === 'ch' || meta.kind === 'th') && meta.sid) {
+    const sEntry = ssEnsureServerChannel(meta.sid);
+    if (sEntry) {
+      sEntry.wantTrack = {
+        sharing: true,
+        uid: myUid,
+        name: (myProfile && displayNameOf(myProfile)) || myUid || 'Someone',
+        cid: meta.cid,
+        tid: meta.tid || null,
+      };
+      if (sEntry.joined) { try { sEntry.ch.track(sEntry.wantTrack); } catch (e) {} }
+    }
+  }
   eggFindOnce('watchparty');
   ssRenderUI();
+  ssRefreshSidebarLive();
 }
 
 async function ssSwitchScreen() {
@@ -24080,6 +24269,7 @@ async function ssSwitchScreen() {
 function ssStopSharing(opts) {
   const silent = !!(opts && opts.silent);
   const hostRoom = ssHostRoom;
+  const hostMeta = ssHostMeta;
   const stream = ssLocalStream;
   ssLocalStream = null;
   ssHostRoom = null;
@@ -24098,8 +24288,17 @@ function ssStopSharing(opts) {
       try { entry.ch.untrack(); } catch (e) {}
     }
   }
+  if (hostMeta && hostMeta.sid) {
+    const sEntry = ssSrvChannels.get(hostMeta.sid);
+    if (sEntry) {
+      sEntry.wantTrack = null;
+      try { sEntry.ch.untrack(); } catch (e) {}
+    }
+  }
+  ssSyncServerWatch(currentServerId);
   ssReleaseUnusedChannels();
   ssRenderUI();
+  ssRefreshSidebarLive();
   if (!silent && stream) toast('Stopped sharing your screen.');
 }
 
@@ -24352,8 +24551,15 @@ function ssTeardownAll() {
   if (ssWatchingUid) ssStopWatching({ quiet: true });
   if (ssLocalStream) ssStopSharing({ silent: true });
   ssViewRoom = null;
+  ssDmWatched = new Set();
+  for (const [id, entry] of [...ssSrvChannels.entries()]) {
+    ssSrvChannels.delete(id);
+    try { entry.ch.untrack(); } catch (e) {}
+    try { sbClient.removeChannel(entry.ch); } catch (e) {}
+  }
   ssReleaseUnusedChannels();
   ssRenderUI();
+  ssRefreshSidebarLive();
 }
 
 function ssReturnToHostRoom() {
@@ -24586,4 +24792,509 @@ $('screen-banner').addEventListener('click', e => {
 });
 window.addEventListener('pagehide', () => {
   if (ssWatchingUid || ssLocalStream) ssTeardownAll();
+});
+
+// ============================================================
+// SERVER AUTOMOD (v4.77) — per-server automated moderation
+// Stored on servers/{sid}.automod (editable by Manage Server).
+// Staff bypasses AutoMod automatically; cooldowns persist per
+// server in localStorage with zero extra DB tables or SQL.
+// ============================================================
+const AUTOMOD_COOLDOWN_MS = 5 * 60 * 1000;
+const AUTOMOD_FRIXION_HOSTS = new Set([
+  'frixionbeta.pages.dev', 'frixion.pages.dev', 'frixionchat.pages.dev',
+  'frixion2.pages.dev', 'liquidalt.pages.dev', 'localhost', '127.0.0.1',
+]);
+const automodRecent = new Map(); // sid -> [{ ts, norm }]
+
+function automodBypass(server, uid) {
+  if (!server || !uid) return true;
+  if (isServerOwnerLevel(server, uid)) return true;
+  if (uid === myUid && (isOwner || isAdmin)) return true;
+  return ['administrator', 'manageServer', 'manageMessages', 'timeoutMembers'].some(p => hasServerPerm(server, uid, p));
+}
+function automodCdKey(sid) { return `frixion_am_cd:${sid}:${myUid || ''}`; }
+function automodCooldownUntil(sid) {
+  if (!sid || !myUid) return 0;
+  try {
+    const v = Number(localStorage.getItem(automodCdKey(sid)) || '0');
+    if (v > Date.now()) return v;
+    if (v) localStorage.removeItem(automodCdKey(sid));
+  } catch (e) {}
+  return 0;
+}
+function setAutomodCooldown(sid, ms) {
+  if (!sid || !myUid) return;
+  try { localStorage.setItem(automodCdKey(sid), String(Date.now() + ms)); } catch (e) {}
+}
+function parseAutoModWords(raw) {
+  const seen = new Set(), out = [];
+  String(raw || '').split(/[\n,]+/).forEach(part => {
+    const w = part.replace(/\s+/g, ' ').trim().slice(0, 60);
+    const k = w.toLowerCase();
+    if (!w || seen.has(k) || out.length >= 60) return;
+    seen.add(k);
+    out.push(w);
+  });
+  return out;
+}
+function renderAutoModPane() {
+  const am = (currentServerData && currentServerData.automod) || {};
+  const can = !!(currentServerData && hasServerPerm(currentServerData, myUid, 'manageServer'));
+  $('am-enabled').checked = !!am.enabled;
+  $('am-words').value = Array.isArray(am.words) ? am.words.join(', ') : '';
+  $('am-links').checked = !!am.blockLinks;
+  $('am-spam').checked = !!am.antiSpam;
+  $('am-action').value = am.action === 'cooldown' ? 'cooldown' : 'block';
+  ['am-enabled', 'am-words', 'am-links', 'am-spam', 'am-action', 'am-save-btn'].forEach(id => { $(id).disabled = !can; });
+}
+$('am-save-btn').onclick = async () => {
+  if (!currentServerId || !currentServerData || !hasServerPerm(currentServerData, myUid, 'manageServer')) {
+    toast('You need Manage Server permission to change AutoMod.', 'error');
+    return;
+  }
+  const automod = {
+    enabled: $('am-enabled').checked,
+    words: parseAutoModWords($('am-words').value),
+    blockLinks: $('am-links').checked,
+    antiSpam: $('am-spam').checked,
+    action: $('am-action').value === 'cooldown' ? 'cooldown' : 'block',
+  };
+  const btn = $('am-save-btn');
+  btn.disabled = true;
+  try {
+    await db.collection('servers').doc(currentServerId).update({ automod });
+    currentServerData.automod = automod;
+    logAudit(currentServerId, automod.enabled ? 'updated AutoMod rules' : 'turned off AutoMod');
+    toast('AutoMod settings saved.');
+  } catch (e) {
+    toast(e.message || 'Could not save AutoMod settings.', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+};
+function automodFindExternalLink(text) {
+  const urls = String(text || '').match(/\b(?:https?:\/\/|www\.)[^\s<>()]+/gi);
+  if (!urls) return false;
+  for (const raw of urls) {
+    try {
+      const u = new URL(/^https?:\/\//i.test(raw) ? raw : 'https://' + raw);
+      const h = (u.hostname || '').toLowerCase();
+      if (!h) continue;
+      if (h === (location.hostname || '').toLowerCase() || AUTOMOD_FRIXION_HOSTS.has(h)) continue;
+      return true;
+    } catch (e) { return true; }
+  }
+  return false;
+}
+function checkServerAutoMod(server, text) {
+  const am = server && server.automod;
+  if (!am || !am.enabled || automodBypass(server, myUid)) return { blocked: false };
+  const cdUntil = automodCooldownUntil(server.id);
+  if (cdUntil > Date.now()) {
+    return { blocked: true, reason: `You are on an AutoMod cooldown for ${timeoutLeftText(cdUntil)}.` };
+  }
+  const str = String(text || '').trim();
+  const trigger = (baseReason) => {
+    let reason = baseReason;
+    if (am.action === 'cooldown') {
+      setAutomodCooldown(server.id, AUTOMOD_COOLDOWN_MS);
+      reason += ' You have been placed on a 5-minute cooldown.';
+    }
+    return { blocked: true, reason };
+  };
+  if (str && Array.isArray(am.words) && am.words.length) {
+    for (const rawWord of am.words) {
+      const w = String(rawWord || '').trim();
+      if (!w) continue;
+      const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`(?:^|[^A-Za-z0-9_])${escaped}(?=$|[^A-Za-z0-9_])`, 'i');
+      if (re.test(str)) {
+        return trigger('Your message was blocked because it contains a restricted word or phrase.');
+      }
+    }
+  }
+  if (str && am.blockLinks && automodFindExternalLink(str)) {
+    return trigger('External links are not allowed in this server.');
+  }
+  if (am.antiSpam) {
+    const now = Date.now();
+    const norm = str.toLowerCase().replace(/\s+/g, ' ').trim();
+    const recent = (automodRecent.get(server.id) || []).filter(e => now - e.ts < 10000);
+    const fastCount = recent.filter(e => now - e.ts < 5000).length;
+    if (fastCount >= 4) {
+      automodRecent.set(server.id, recent);
+      return trigger('Slow down — you are sending messages too fast.');
+    }
+    if (norm.length >= 2 && recent.filter(e => e.norm === norm).length >= 2) {
+      automodRecent.set(server.id, recent);
+      return trigger('Please do not send repeated duplicate messages.');
+    }
+    recent.push({ ts: now, norm });
+    automodRecent.set(server.id, recent.slice(-12));
+  }
+  return { blocked: false };
+}
+
+// ============================================================
+// BOOKMARKS / SAVED MESSAGES (v4.77)
+// Stored privately at users/{myUid}/meta/bookmarks (max 100).
+// ============================================================
+const MAX_BOOKMARKS = 100;
+let myBookmarks = [];
+
+function currentPlaceLabel() {
+  if (currentView === 'channel') {
+    const ch = lastChannelsList.find(c => c.id === currentChannelId);
+    const chPart = currentThreadData ? currentThreadData.name : ('#' + ((ch && ch.name) || 'channel'));
+    const srvPart = (currentServerData && currentServerData.name) || 'Server';
+    return `${chPart} · ${srvPart}`;
+  }
+  if (currentView === 'dm') {
+    const p = profileCache[currentDMOtherUid] || { username: currentDMOtherUid || 'DM' };
+    return '@' + displayNameOf(p);
+  }
+  if (currentView === 'groupdm') {
+    const g = (window.__myGroupDMs || []).find(x => x.id === currentGroupDMId);
+    return g ? groupDMDisplayName(g) : 'Group Chat';
+  }
+  return 'Frixion';
+}
+function bookmarkKeyFor(msgId) { return `${convKey()}:${msgId}`; }
+function isMessageBookmarked(msgId) {
+  if (!msgId || !myBookmarks.length) return false;
+  const k = bookmarkKeyFor(msgId);
+  return myBookmarks.some(b => b.id === k || b.mid === msgId);
+}
+function syncBookmarksUI() {
+  const btn = $('bookmarks-toggle');
+  if (btn) btn.title = myBookmarks.length ? `Saved Messages (${myBookmarks.length})` : 'Saved Messages';
+  document.querySelectorAll('.msg-line[data-mid] .bookmark-msg').forEach(el => {
+    const line = el.closest('.msg-line');
+    const on = !!(line && isMessageBookmarked(line.dataset.mid));
+    el.classList.toggle('on', on);
+    el.title = on ? 'Remove Bookmark' : 'Save Message';
+  });
+  if (!$('bookmarks-modal').classList.contains('hidden')) renderBookmarksModal();
+}
+function subscribeBookmarks() {
+  if (unsub.bookmarks) { unsub.bookmarks(); unsub.bookmarks = null; }
+  if (!myUid) return;
+  unsub.bookmarks = db.collection('users').doc(myUid).collection('meta').doc('bookmarks')
+    .onSnapshot(snap => {
+      const d = snap.exists ? snap.data() : null;
+      myBookmarks = (d && Array.isArray(d.items)) ? d.items : [];
+      syncBookmarksUI();
+    }, () => {});
+}
+async function persistBookmarks(items) {
+  if (!myUid) return;
+  const clean = items.slice(0, MAX_BOOKMARKS);
+  await db.collection('users').doc(myUid).collection('meta').doc('bookmarks').set({ items: clean }, { merge: true });
+}
+async function toggleBookmark(msgId) {
+  if (!myUid || !msgId) return;
+  const m = lastRawMessages.find(x => x.id === msgId);
+  if (!m || m.system || m.ephemeral) return;
+  const key = bookmarkKeyFor(msgId);
+  const exists = myBookmarks.some(b => b.id === key || b.mid === msgId);
+  try {
+    if (exists) {
+      const next = myBookmarks.filter(b => b.id !== key && b.mid !== msgId);
+      myBookmarks = next;
+      syncBookmarksUI();
+      await persistBookmarks(next);
+      toast('Removed from Saved Messages.');
+    } else {
+      const authorProfile = profileCache[m.uid] || { username: m.username || m.uid || 'Unknown' };
+      const rawAtts = m.attachments || (m.attachment ? [m.attachment] : []);
+      const atts = rawAtts.slice(0, 4).map(a => ({ url: a.url || '', type: a.type || 'file', name: a.name || 'File' })).filter(a => a.url);
+      const item = {
+        id: key,
+        mid: m.id,
+        uid: m.uid || '',
+        username: displayNameOf(authorProfile),
+        where: currentPlaceLabel(),
+        text: String(m.text && m.forwarded && m.forwarded.text ? `${m.text}\n[Forwarded from ${m.forwarded.from || 'Unknown'}]: ${m.forwarded.text}` : (m.text || (m.forwarded && m.forwarded.text) || '')).slice(0, 1500),
+        preview: previewForMessage(m),
+        attachments: atts,
+        savedAt: Date.now(),
+      };
+      const next = [item, ...myBookmarks.filter(b => b.id !== key)].slice(0, MAX_BOOKMARKS);
+      myBookmarks = next;
+      syncBookmarksUI();
+      await persistBookmarks(next);
+      toast('Message saved to Bookmarks.');
+      eggFindOnce('savedforlater');
+    }
+  } catch (e) {
+    toast(e.message || 'Could not update Saved Messages.', 'error');
+  }
+}
+function renderBookmarksModal() {
+  const list = $('bookmarks-list');
+  const q = ($('bookmarks-search').value || '').trim().toLowerCase();
+  const total = myBookmarks.length;
+  $('bookmarks-count-desc').textContent = total ? `${total} saved message${total === 1 ? '' : 's'} · Only visible to you.` : 'Only visible to you.';
+  const filtered = q ? myBookmarks.filter(b => `${b.username || ''} ${b.where || ''} ${b.text || ''} ${b.preview || ''}`.toLowerCase().includes(q)) : myBookmarks;
+  if (!filtered.length) {
+    list.innerHTML = `<div class="bm-empty">${total ? 'No saved messages match your search.' : 'No saved messages yet. Hover a message (or hold it on mobile) and click Bookmark to save it here.'}</div>`;
+    return;
+  }
+  list.innerHTML = filtered.map(b => {
+    const bodyText = b.text || b.preview || '';
+    const when = b.savedAt ? new Date(b.savedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+    const atts = Array.isArray(b.attachments) ? b.attachments : [];
+    const attHTML = atts.length ? `<div class="msg-fwd-atts">${atts.map(a => {
+      const safe = ovSafeUrl(a.url);
+      if (!safe) return '';
+      return a.type === 'image'
+        ? `<img class="msg-fwd-img" src="${esc(safe)}" alt="${esc(a.name || 'Image')}" loading="lazy">`
+        : `<a class="msg-fwd-file" href="${esc(safe)}" target="_blank" rel="noopener noreferrer">${icon('file')}<span>${esc(a.name || 'File')}</span></a>`;
+    }).join('')}</div>` : '';
+    return `<div class="bm-item" data-bmid="${esc(b.id)}">
+      <div class="bm-head">
+        <span class="bm-who">${esc(b.username || 'Unknown')}</span>
+        <span class="bm-where">${esc(b.where || '')}</span>
+        <span class="bm-time">${esc(when)}</span>
+      </div>
+      <div class="bm-body">${esc(bodyText)}</div>
+      ${attHTML}
+      <div class="bm-actions">
+        ${bodyText ? `<button type="button" class="bm-btn" data-bm-copy="${esc(b.id)}">Copy Text</button>` : ''}
+        <button type="button" class="bm-btn bm-btn-del" data-bm-del="${esc(b.id)}">Remove</button>
+      </div>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.msg-fwd-img').forEach(img => {
+    img.onclick = () => openImageViewer(img.src, img.alt || 'Image');
+  });
+  list.querySelectorAll('[data-bm-copy]').forEach(btn => {
+    btn.onclick = () => {
+      const b = myBookmarks.find(x => x.id === btn.dataset.bmCopy);
+      if (b) copyText(b.text || b.preview || '', 'Saved message copied.');
+    };
+  });
+  list.querySelectorAll('[data-bm-del]').forEach(btn => {
+    btn.onclick = async () => {
+      const id = btn.dataset.bmDel;
+      const next = myBookmarks.filter(x => x.id !== id);
+      myBookmarks = next;
+      syncBookmarksUI();
+      try { await persistBookmarks(next); toast('Removed from Saved Messages.'); }
+      catch (e) { toast(e.message || 'Could not remove bookmark.', 'error'); }
+    };
+  });
+}
+function openBookmarksModal() {
+  $('bookmarks-search').value = '';
+  renderBookmarksModal();
+  openModal('bookmarks-modal');
+}
+$('bookmarks-toggle').addEventListener('click', () => openBookmarksModal());
+$('bookmarks-toggle').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBookmarksModal(); } });
+$('bookmarks-search').addEventListener('input', () => renderBookmarksModal());
+$('bookmarks-modal').addEventListener('click', e => { if (e.target === $('bookmarks-modal')) closeModal('bookmarks-modal'); });
+
+// ============================================================
+// MESSAGE FORWARDING (v4.77)
+// Forward any message to a DM, group chat, or server channel.
+// ============================================================
+let forwardSource = null;
+let forwardTargetsCache = [];
+
+function forwardedCardHTML(f) {
+  if (!f || typeof f !== 'object') return '';
+  const from = f.from || 'Unknown';
+  const where = f.where ? ` · ${f.where}` : '';
+  let content = '';
+  if (f.text) content += `<div class="msg-fwd-text">${msgTextHTML({ text: String(f.text) })}</div>`;
+  if (f.sticker && f.sticker.dataUrl && /^data:image\//i.test(String(f.sticker.dataUrl))) {
+    content += `<img class="msg-fwd-sticker" src="${esc(f.sticker.dataUrl)}" alt="${esc(f.sticker.name || 'Sticker')}">`;
+  }
+  const atts = Array.isArray(f.attachments) ? f.attachments : [];
+  const gif = f.gifUrl ? ovSafeUrl(f.gifUrl) : '';
+  if (atts.length || gif) {
+    let aHtml = '';
+    atts.forEach(a => {
+      const safe = ovSafeUrl(a.url);
+      if (!safe) return;
+      aHtml += a.type === 'image'
+        ? `<img class="msg-fwd-img" src="${esc(safe)}" alt="${esc(a.name || 'Image')}" loading="lazy">`
+        : `<a class="msg-fwd-file" href="${esc(safe)}" target="_blank" rel="noopener noreferrer">${icon('file')}<span>${esc(a.name || 'File')}</span></a>`;
+    });
+    if (gif) aHtml += `<img class="msg-fwd-img" src="${esc(gif)}" alt="GIF" loading="lazy">`;
+    if (aHtml) content += `<div class="msg-fwd-atts">${aHtml}</div>`;
+  }
+  if (!content) content = `<div class="msg-fwd-text">Forwarded message</div>`;
+  return `<div class="msg-forwarded"><div class="msg-fwd-head">${icon('forward')}<span class="msg-fwd-label">Forwarded</span><span class="msg-fwd-who">${esc(from)}</span>${where ? `<span class="msg-fwd-where">${esc(where)}</span>` : ''}</div>${content}</div>`;
+}
+function buildForwardSnapshot(m) {
+  if (m.forwarded && !m.text && !(m.attachments && m.attachments.length) && !m.attachment && !m.sticker && !m.gifUrl) {
+    return { ...m.forwarded };
+  }
+  const p = profileCache[m.uid] || { username: m.username || m.uid || 'Unknown' };
+  const rawAtts = m.attachments || (m.attachment ? [m.attachment] : []);
+  const atts = rawAtts.slice(0, 4).map(a => ({ url: a.url || '', type: a.type || 'file', name: a.name || 'File', size: a.size || 0 })).filter(a => a.url);
+  const out = {
+    from: displayNameOf(p),
+    uid: m.uid || '',
+    where: currentPlaceLabel(),
+    text: String(m.text || '').slice(0, 2000),
+  };
+  if (atts.length) out.attachments = atts;
+  if (m.gifUrl) out.gifUrl = m.gifUrl;
+  if (m.sticker && m.sticker.dataUrl) out.sticker = { name: m.sticker.name || 'Sticker', dataUrl: m.sticker.dataUrl };
+  return out;
+}
+async function loadForwardTargets() {
+  const targets = [];
+  (window.__myDMs || []).slice().sort((a, b) => convTime(b) - convTime(a)).forEach(dm => {
+    const otherUid = (dm.participants || []).find(u => u !== myUid);
+    if (!otherUid || isBlocked(otherUid)) return;
+    const p = profileCache[otherUid] || { username: otherUid };
+    targets.push({ key: 'dm:' + dm.id, kind: 'dm', group: 'Direct Messages', id: dm.id, otherUid, name: '@' + displayNameOf(p), sub: 'Direct Message' });
+  });
+  (window.__myGroupDMs || []).slice().sort((a, b) => convTime(b) - convTime(a)).forEach(g => {
+    targets.push({ key: 'gdm:' + g.id, kind: 'gdm', group: 'Group Chats', id: g.id, name: groupDMDisplayName(g), sub: `${(g.participants || []).length} members` });
+  });
+  const servers = [...(window.__myServers || [])].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  await Promise.all(servers.map(async s => {
+    if (!isServerOwnerLevel(s, myUid) && !hasServerPerm(s, myUid, 'administrator') && timeoutUntil(s, myUid)) return;
+    let chans = [];
+    if (s.id === currentServerId && lastChannelsList.length) {
+      chans = lastChannelsList;
+    } else {
+      try {
+        const snap = await db.collection('servers').doc(s.id).collection('channels').orderBy('createdAt', 'asc').get();
+        snap.forEach(d => chans.push({ id: d.id, ...d.data() }));
+      } catch (e) { return; }
+    }
+    chans.forEach(ch => {
+      if (!canViewChannel(ch, s, myUid) || !hasChannelPerm(ch, s, myUid, 'sendMessages')) return;
+      targets.push({ key: `ch:${s.id}:${ch.id}`, kind: 'channel', group: 'Server Channels', sid: s.id, cid: ch.id, server: s, channel: ch, name: '#' + ch.name, sub: s.name || 'Server' });
+    });
+  }));
+  return targets;
+}
+function renderForwardTargets() {
+  const wrap = $('forward-targets');
+  const q = ($('forward-search').value || '').trim().toLowerCase();
+  const list = q ? forwardTargetsCache.filter(t => `${t.name} ${t.sub}`.toLowerCase().includes(q)) : forwardTargetsCache;
+  if (!list.length) {
+    wrap.innerHTML = '<div class="bm-empty">No matching destinations found.</div>';
+    return;
+  }
+  const groups = ['Direct Messages', 'Group Chats', 'Server Channels'];
+  let html = '';
+  groups.forEach(g => {
+    const rows = list.filter(t => t.group === g);
+    if (!rows.length) return;
+    html += `<div class="fwd-group-lbl">${esc(g)}</div>`;
+    rows.forEach(t => {
+      html += `<div class="fwd-target-row" data-fwd-key="${esc(t.key)}">
+        <div class="fwd-target-info"><div class="fwd-target-name">${esc(t.name)}</div><div class="fwd-target-sub">${esc(t.sub)}</div></div>
+        <button type="button" class="fwd-send-btn" data-fwd-send="${esc(t.key)}"${t.sent ? ' disabled' : ''}>${t.sent ? 'Sent' : 'Send'}</button>
+      </div>`;
+    });
+  });
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('[data-fwd-send]').forEach(btn => {
+    btn.onclick = async () => {
+      const t = forwardTargetsCache.find(x => x.key === btn.dataset.fwdSend);
+      if (!t || t.sent || !forwardSource) return;
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+      const ok = await sendForwardedMessage(t, forwardSource, ($('forward-note').value || '').trim());
+      if (ok) {
+        t.sent = true;
+        btn.textContent = 'Sent';
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'Send';
+      }
+    };
+  });
+}
+async function sendForwardedMessage(target, fwd, note) {
+  if (isSiteMuted()) { toast(siteMuteText(), 'error'); return false; }
+  const cleanNote = note ? applyMessageFilter(note.slice(0, 400)) : '';
+  const combinedCheck = [cleanNote, fwd.text || ''].filter(Boolean).join(' ');
+  const tooLong = messageTooLong(cleanNote);
+  if (tooLong) { toast(tooLong, 'error'); return false; }
+
+  const payload = {
+    text: cleanNote,
+    forwarded: fwd,
+    uid: myUid,
+    username: myProfile.username,
+    createdAt: FieldValue.serverTimestamp(),
+  };
+  try {
+    if (target.kind === 'dm') {
+      const ref = db.collection('dms').doc(target.id);
+      const sent = await ref.collection('messages').add(payload);
+      await ref.update({
+        updatedAt: FieldValue.serverTimestamp(),
+        lastMessage: { text: previewForMessage(payload), username: myProfile.username },
+      });
+      pushOut({ kind: 'dm', id: target.id, mid: sent.id });
+    } else if (target.kind === 'gdm') {
+      const ref = db.collection('groupDMs').doc(target.id);
+      const sent = await ref.collection('messages').add(payload);
+      await ref.update({
+        updatedAt: FieldValue.serverTimestamp(),
+        lastMessage: { text: previewForMessage(payload), username: myProfile.username },
+      });
+      pushOut({ kind: 'gdm', id: target.id, mid: sent.id });
+    } else if (target.kind === 'channel') {
+      const s = target.server, ch = target.channel;
+      if (!isServerOwnerLevel(s, myUid) && !hasServerPerm(s, myUid, 'administrator') && timeoutUntil(s, myUid)) {
+        toast(`You are timed out in ${s.name}.`, 'error'); return false;
+      }
+      const amRes = checkServerAutoMod(s, combinedCheck);
+      if (amRes.blocked) { toast(amRes.reason, 'error'); return false; }
+      const bypass = ['bypassSlowmode', 'manageChannels', 'manageMessages'].some(p => hasChannelPerm(ch, s, myUid, p));
+      if (ch.slowmode && !bypass) {
+        const left = Math.max(0, Math.ceil(((lastChannelSendAt[ch.id] || 0) + ch.slowmode * 1000 - Date.now()) / 1000));
+        if (left > 0) { toast(`Slowmode is on in #${ch.name}. Wait ${left}s.`); return false; }
+      }
+      if (/(^|[\s(>])@(everyone|here)\b/i.test(cleanNote) && !hasChannelPerm(ch, s, myUid, 'mentionEveryone')) payload.everyoneBlocked = true;
+      if (ch.slowmode) lastChannelSendAt[ch.id] = Date.now();
+      const sent = await addChannelMessage(target.sid, target.cid, ch, payload);
+      noteChannelMessage(target.sid, target.cid, payload, sent, null, ch.name);
+      if (mayNotify(payload)) pushOut({ kind: 'ch', sid: target.sid, cid: target.cid, mid: sent.id });
+      bridgeOut(target.sid, target.cid, sent, ch);
+    }
+    db.collection('users').doc(myUid).update({
+      'stats.messagesSent': FieldValue.increment(1),
+      'dailyStats.messagesSent': FieldValue.increment(1),
+    }).catch(() => {});
+    toast(`Forwarded to ${target.name}.`);
+    eggFindOnce('passiton');
+    return true;
+  } catch (e) {
+    toast(e.message || 'Could not forward message.', 'error');
+    return false;
+  }
+}
+async function openForwardModal(msgId) {
+  const m = lastRawMessages.find(x => x.id === msgId);
+  if (!m || m.system || m.ephemeral) return;
+  forwardSource = buildForwardSnapshot(m);
+  $('forward-note').value = '';
+  $('forward-search').value = '';
+  const prevText = forwardSource.text || previewForMessage(m);
+  $('forward-preview').innerHTML = `<div class="fwd-preview-meta">${esc(forwardSource.from)} · ${esc(forwardSource.where)}</div><div class="fwd-preview-text">${esc(prevText.slice(0, 260))}</div>`;
+  $('forward-targets').innerHTML = '<div class="bm-empty">Loading destinations...</div>';
+  openModal('forward-modal');
+  forwardTargetsCache = await loadForwardTargets();
+  renderForwardTargets();
+}
+$('forward-search').addEventListener('input', () => renderForwardTargets());
+$('forward-modal').addEventListener('click', e => { if (e.target === $('forward-modal')) closeModal('forward-modal'); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (!$('forward-modal').classList.contains('hidden')) closeModal('forward-modal');
+  else if (!$('bookmarks-modal').classList.contains('hidden')) closeModal('bookmarks-modal');
 });

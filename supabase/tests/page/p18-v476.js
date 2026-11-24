@@ -38,8 +38,8 @@ check('Tester (Owner) logs in', await T.login('Tester'));
 await until(async () => Array.isArray((await doc('users/Tester')).ownedThemes), 6000);
 hideModals();
 
-check('v4.76: UPDATES top is 4.76 and EGGS total is 99',
-  UPDATES[0].v === '4.76' && EGGS.length === 99 && !!EGG_BY_ID.supernovae && !!EGG_BY_ID.coownerbot && !!EGG_BY_ID.cosmicwardrobe,
+check('v4.76: UPDATES has 4.76 and EGGS has all v4.76 eggs',
+  UPDATES.some(u => u.v === '4.76') && EGGS.length >= 99 && !!EGG_BY_ID.supernovae && !!EGG_BY_ID.coownerbot && !!EGG_BY_ID.cosmicwardrobe,
   { v: UPDATES[0].v, count: EGGS.length });
 
 // ---------- 3. #86: 4 new animated W themes + Shop preview + Cosmic Drip egg ----------
