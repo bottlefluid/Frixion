@@ -17,11 +17,20 @@ await patch('users/Sumi', { coowner: true });
 check('Sumi (Co-Owner) logs in', await T.login('Sumi'));
 hideModals();
 openGame('snake');
+check('v4.76 (request 91): Co-Owner CAN see and toggle the Game BOT',
+  !!botBtn() && !botBtn().classList.contains('hidden') && gameBotAllowed());
 gameBotToggle();
-check('v4.73: Co-Owner cannot see or turn on the Game BOT (strictly OWNER only)',
+check('v4.76 (request 91): Co-Owner turns BOT ON cleanly', gameBotOn === true);
+gameBotSet(false);
+closeGame();
+await patch('users/Sumi', { coowner: false, op: true });
+await until(() => myProfile && !myProfile.coowner && myProfile.op === true, 5000);
+openGame('snake');
+gameBotToggle();
+check('v4.76: Mod/OP still cannot see or turn on the Game BOT',
   !!botBtn() && botBtn().classList.contains('hidden') && !gameBotAllowed() && !gameBotOn);
 closeGame();
-await patch('users/Sumi', { coowner: false });
+await patch('users/Sumi', { op: false });
 
 // ---------- 2. Owner sees the BOT, and /sfmode hides & stops it ----------
 check('Tester (Owner) logs in', await T.login('Tester'));

@@ -2820,8 +2820,76 @@ body.shop-anim-blackhole::after, .sic-theme-preview.sic-theme-blackhole::before 
   animation: shopBlackHoleTurn 60s linear infinite;
 }
 .sic-theme-preview.sic-theme-blackhole::before { position: absolute; z-index: 0; right: -34px; bottom: -52px; width: 190px; height: 190px; animation-duration: 24s; }
-.sic-theme-blackhole .sic-theme-overlay { position: relative; z-index: 1; }
+.sic-theme-blackhole .sic-theme-overlay,
+.sic-theme-supernova .sic-theme-overlay,
+.sic-theme-eclipse .sic-theme-overlay,
+.sic-theme-nebula .sic-theme-overlay,
+.sic-theme-crimsonrift .sic-theme-overlay { position: relative; z-index: 1; }
 @keyframes shopBlackHoleTurn { to { transform: rotate(360deg); } }
+
+/* ============ MORE W ANIMATED THEMES (v4.76, request 86) ============
+   Supernova, Solar Eclipse, Cosmic Nebula, and Crimson Rift — each paints a
+   slow ambient celestial centerpiece behind the translucent panels and a mini
+   version on its Shop card. All four pause in Epilepsy mode and reduced motion. */
+body.shop-anim-supernova::after, .sic-theme-preview.sic-theme-supernova::before {
+  content: ''; position: fixed; z-index: -1; pointer-events: none; border-radius: 50%;
+  right: -14vmin; bottom: -14vmin; width: 74vmin; height: 74vmin;
+  background:
+    radial-gradient(circle, #fff8ec 0 6%, #ffd166 11%, rgba(255,77,148,.85) 18%, rgba(255,77,148,.12) 26%, rgba(255,209,102,.52) 31%, rgba(168,30,110,.15) 37%, transparent 50%),
+    conic-gradient(rgba(255,77,148,0), rgba(255,209,102,.55) 28deg, rgba(255,77,148,.65) 75deg, rgba(168,30,110,.15) 125deg, rgba(255,236,190,.6) 185deg, rgba(255,77,148,.55) 250deg, rgba(130,40,210,.35) 310deg, rgba(255,77,148,0));
+  -webkit-mask: radial-gradient(circle, #000 0 46%, transparent 72%);
+  mask: radial-gradient(circle, #000 0 46%, transparent 72%);
+  animation: shopBlackHoleTurn 48s linear infinite;
+}
+.sic-theme-preview.sic-theme-supernova::before { position: absolute; z-index: 0; right: -36px; bottom: -54px; width: 200px; height: 200px; animation-duration: 20s; }
+
+body.shop-anim-eclipse::after, .sic-theme-preview.sic-theme-eclipse::before {
+  content: ''; position: fixed; z-index: -1; pointer-events: none; border-radius: 50%;
+  right: -15vmin; bottom: -15vmin; width: 70vmin; height: 70vmin;
+  background:
+    radial-gradient(circle at 39% 39%, #fffdf5 0 3.2%, rgba(255,232,160,.85) 6.5%, transparent 15%),
+    radial-gradient(circle, #010104 0 21%, #fff7df 22.3%, rgba(255,224,130,.85) 24.5%, rgba(255,190,85,.35) 31%, rgba(120,95,40,.12) 42%, transparent 55%),
+    conic-gradient(from 25deg, rgba(255,224,130,.12), rgba(255,247,214,.65) 40deg, rgba(255,200,90,.2) 110deg, rgba(255,240,190,.55) 210deg, rgba(255,180,70,.18) 295deg, rgba(255,224,130,.12));
+  -webkit-mask: radial-gradient(circle, #000 0 48%, transparent 72%);
+  mask: radial-gradient(circle, #000 0 48%, transparent 72%);
+  animation: shopBlackHoleTurn 70s linear infinite;
+}
+.sic-theme-preview.sic-theme-eclipse::before { position: absolute; z-index: 0; right: -34px; bottom: -52px; width: 192px; height: 192px; animation-duration: 28s; }
+
+body.shop-anim-nebula::after, .sic-theme-preview.sic-theme-nebula::before {
+  content: ''; position: fixed; z-index: -1; pointer-events: none; border-radius: 50%;
+  right: -18vmin; bottom: -18vmin; width: 82vmin; height: 82vmin;
+  background:
+    radial-gradient(1.6px 1.6px at 32% 38%, #fff, transparent),
+    radial-gradient(1.4px 1.4px at 56% 29%, #c7f9ff, transparent),
+    radial-gradient(1.8px 1.8px at 44% 58%, #f0d6ff, transparent),
+    radial-gradient(1.3px 1.3px at 66% 52%, #fff, transparent),
+    radial-gradient(circle at 42% 45%, rgba(44,230,255,.55) 0%, rgba(44,230,255,.15) 24%, transparent 45%),
+    radial-gradient(circle at 60% 56%, rgba(192,132,252,.58) 0%, rgba(124,58,237,.22) 26%, transparent 50%),
+    conic-gradient(rgba(44,230,255,.08), rgba(44,230,255,.45) 85deg, rgba(192,132,252,.55) 175deg, rgba(236,72,153,.35) 255deg, rgba(56,189,248,.4) 320deg, rgba(44,230,255,.08));
+  -webkit-mask: radial-gradient(circle, #000 0 46%, transparent 72%);
+  mask: radial-gradient(circle, #000 0 46%, transparent 72%);
+  animation: shopBlackHoleTurn 64s linear infinite reverse;
+}
+.sic-theme-preview.sic-theme-nebula::before { position: absolute; z-index: 0; right: -40px; bottom: -56px; width: 210px; height: 210px; animation-duration: 26s; }
+
+body.shop-anim-crimsonrift::after, .sic-theme-preview.sic-theme-crimsonrift::before {
+  content: ''; position: fixed; z-index: -1; pointer-events: none; border-radius: 50%;
+  right: -16vmin; bottom: -16vmin; width: 72vmin; height: 72vmin;
+  background:
+    radial-gradient(circle, #050002 0 18%, rgba(255,210,220,.92) 19.4%, rgba(255,41,87,.85) 22.5%, rgba(180,12,50,.35) 31%, rgba(90,6,34,.15) 42%, transparent 54%),
+    conic-gradient(rgba(255,41,87,.05), rgba(255,60,100,.72) 55deg, rgba(255,190,205,.75) 105deg, rgba(220,20,60,.45) 175deg, rgba(140,10,60,.3) 245deg, rgba(255,41,87,.5) 315deg, rgba(255,41,87,.05));
+  -webkit-mask: radial-gradient(circle, #000 0 48%, transparent 71%);
+  mask: radial-gradient(circle, #000 0 48%, transparent 71%);
+  animation: shopBlackHoleTurn 52s linear infinite;
+}
+.sic-theme-preview.sic-theme-crimsonrift::before { position: absolute; z-index: 0; right: -34px; bottom: -52px; width: 194px; height: 194px; animation-duration: 22s; }
+@media (prefers-reduced-motion: reduce) {
+  body.shop-anim-supernova::after, .sic-theme-preview.sic-theme-supernova::before,
+  body.shop-anim-eclipse::after, .sic-theme-preview.sic-theme-eclipse::before,
+  body.shop-anim-nebula::after, .sic-theme-preview.sic-theme-nebula::before,
+  body.shop-anim-crimsonrift::after, .sic-theme-preview.sic-theme-crimsonrift::before { animation: none !important; }
+}
 .shop-collection .sic-kind { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-faint); margin-bottom: -4px; }
 
 
@@ -4151,6 +4219,14 @@ html[data-epilepsy] .nameplate-galaxy::before,
 html[data-epilepsy] .frame-plasma,
 html[data-epilepsy] body.shop-anim-blackhole::after,
 html[data-epilepsy] .sic-theme-blackhole::before,
+html[data-epilepsy] body.shop-anim-supernova::after,
+html[data-epilepsy] .sic-theme-supernova::before,
+html[data-epilepsy] body.shop-anim-eclipse::after,
+html[data-epilepsy] .sic-theme-eclipse::before,
+html[data-epilepsy] body.shop-anim-nebula::after,
+html[data-epilepsy] .sic-theme-nebula::before,
+html[data-epilepsy] body.shop-anim-crimsonrift::after,
+html[data-epilepsy] .sic-theme-crimsonrift::before,
 html[data-epilepsy] .nameplate-blackhole::before,
 html[data-epilepsy] .frame-eventhorizon::before,
 html[data-epilepsy] .fg-window .gg-plot.ready,

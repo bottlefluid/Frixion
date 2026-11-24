@@ -25,7 +25,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=123">
+<link rel="stylesheet" href="style.css?v=124">
 <link rel="stylesheet" href="casino.css?v=2">
 </head>
 <body>
@@ -439,6 +439,7 @@
             <button type="button" class="ss-icon-btn" id="ss-fs-btn" title="Fullscreen">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
             </button>
+            <button type="button" class="ss-btn hidden" id="ss-switch-btn">Switch Window</button>
             <button type="button" class="ss-btn hidden" id="ss-hide-preview-btn">Hide Preview</button>
             <button type="button" class="ss-btn hidden" id="ss-leave-btn">Leave</button>
             <button type="button" class="ss-btn ss-btn-danger hidden" id="ss-stop-btn">Stop Sharing</button>
@@ -2064,7 +2065,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
 <script defer src="fdb.js?v=2"></script>
-<script defer src="script.js?v=164"></script>
+<script defer src="script.js?v=165"></script>
 <script defer src="casino.js?v=4"></script>
 </body>
 </html>

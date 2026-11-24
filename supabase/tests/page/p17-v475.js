@@ -35,8 +35,8 @@ check('Tester (Owner) logs in', await T.login('Tester'));
 await until(async () => Array.isArray((await doc('users/Tester')).ownedThemes), 6000);
 hideModals();
 
-check('v4.75: UPDATES top entry is 4.75 and EGGS has 96 entries',
-  UPDATES[0].v === '4.75' && EGGS.length === 96 && !!EGG_BY_ID.watchparty && !!EGG_BY_ID.screensaver && !!EGG_BY_ID.golive,
+check('v4.75: UPDATES contains 4.75 and EGGS has all v4.75 entries',
+  UPDATES.some(u => u.v === '4.75') && EGGS.length >= 96 && !!EGG_BY_ID.watchparty && !!EGG_BY_ID.screensaver && !!EGG_BY_ID.golive,
   { v: UPDATES[0].v, count: EGGS.length });
 
 // Header button must be hidden on non-chat views (Friends)

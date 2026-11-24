@@ -1087,6 +1087,11 @@ const SHOP_THEMES = [
   { id: 'infrared', name: 'Infrared', desc: 'Deep infrared heat red.', price: 225, bg: ['#090015', '#201640', '#920128'], accent: '#ff0055', accent2: '#ff2266' },
   // the black hole and space set (v4.72, request 84): a black hole turns in the corner of the screen (anim)
   { id: 'blackhole', name: 'Black Hole', desc: 'Pitch black, with a black hole slowly turning in the corner of your screen.', price: 1500, bg: ['#020103', '#0c0612', '#4a2a10'], accent: '#ff9a3c', accent2: '#ffc27a', anim: 'blackhole', collection: 'space' },
+  // more W animated space themes like Black Hole (v4.76, request 86)
+  { id: 'supernova', name: 'Supernova', desc: 'Deep magenta cosmos, with a glowing supernova star and shockwave rings turning in the corner.', price: 1750, bg: ['#11021c', '#2c0742', '#a81e6e'], accent: '#ff4d94', accent2: '#ffd166', anim: 'supernova', featured: true },
+  { id: 'eclipse', name: 'Solar Eclipse', desc: 'Total darkness, with a solar eclipse and a blazing diamond-ring corona turning in the corner.', price: 1500, bg: ['#04050c', '#121524', '#6b5518'], accent: '#ffe082', accent2: '#fff7d6', anim: 'eclipse', featured: true },
+  { id: 'nebula', name: 'Cosmic Nebula', desc: 'Starlit indigo, with drifting cyan and violet nebula clouds glowing behind your chats.', price: 1400, bg: ['#010c1c', '#072448', '#46187a'], accent: '#2ce6ff', accent2: '#c084fc', anim: 'nebula', featured: true },
+  { id: 'crimsonrift', name: 'Crimson Rift', desc: 'Pitch crimson, with a glowing scarlet dimensional vortex turning in the corner.', price: 1600, bg: ['#0d0006', '#280314', '#a30c34'], accent: '#ff2957', accent2: '#ff7a96', anim: 'crimsonrift', featured: true },
 ];
 let customThemes = [];
 let customThemesLoaded = false;
@@ -1115,7 +1120,7 @@ const SHOP_SECTION_DEFAULTS = {
     Warm: ['sunset', 'blood', 'lava', 'gold', 'copper', 'amber', 'wine', 'coffee', 'fire', 'rust', 'coral', 'bloodmoon', 'solar'],
     Cool: ['ocean', 'arctic', 'ice', 'storm', 'steel', 'aqua', 'deepsea', 'midnight'],
     Nature: ['forest', 'emerald', 'mint', 'aurora', 'cherry', 'rose', 'sakura'],
-    'Dark & Space': ['blackhole', 'plasma', 'galaxy', 'void', 'obsidian', 'purplerain', 'violet', 'lavender', 'ash'],
+    'Dark & Space': ['blackhole', 'supernova', 'eclipse', 'nebula', 'crimsonrift', 'plasma', 'galaxy', 'void', 'obsidian', 'purplerain', 'violet', 'lavender', 'ash'],
   }),
 };
 const cleanSectionName = s => (typeof s === 'string' ? s.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 30) : '');
@@ -1171,7 +1176,8 @@ function applyShopTheme(themeId) {
   // arrive from Firestore asynchronously) is left alone rather than reset —
   // subscribeCustomThemes re-applies once it knows about it.
   if (themeId && !t && !customThemesLoaded) return;
-  body.classList.remove('shop-anim-hue', 'shop-anim-holo', 'shop-anim-aurora', 'shop-anim-blackhole');
+  const SHOP_ANIM_CLASSES = ['shop-anim-hue', 'shop-anim-holo', 'shop-anim-aurora', 'shop-anim-blackhole', 'shop-anim-supernova', 'shop-anim-eclipse', 'shop-anim-nebula', 'shop-anim-crimsonrift'];
+  body.classList.remove(...SHOP_ANIM_CLASSES);
   if (!t) {
     ['--shop-theme-bg', '--bg-deepest', '--bg-secondary', '--bg-primary', '--bg-tertiary', '--bg-floating',
      '--bg-input', '--accent', '--accent-hover', '--accent-soft', '--text-link']
@@ -1204,10 +1210,7 @@ function applyShopTheme(themeId) {
   body.style.setProperty('--accent-hover', darkenHex(t.accent, 24));
   body.style.setProperty('--accent-soft', hexToRgbaStr(t.accent, 0.15));
   body.style.setProperty('--text-link', t.accent2 || t.accent);
-  if (t.anim === 'hue') body.classList.add('shop-anim-hue');
-  if (t.anim === 'holo') body.classList.add('shop-anim-holo');
-  if (t.anim === 'aurora') body.classList.add('shop-anim-aurora');
-  if (t.anim === 'blackhole') body.classList.add('shop-anim-blackhole');   // (v4.72: drawn in the corner, behind the app)
+  if (t.anim && SHOP_ANIM_CLASSES.includes('shop-anim-' + t.anim)) body.classList.add('shop-anim-' + t.anim);
 }
 
 
@@ -1258,6 +1261,16 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.76', date: '2026-11-24', title: '4 new space themes, Co-Owner Game Bot, Equinox cover art and fixes',
+    notes: [
+      '4 new Black Hole-tier animated themes in the Shop (Featured & Dark & Space): Supernova, Solar Eclipse, Cosmic Nebula, and Crimson Rift — each with its own glowing corner centerpiece and live Shop preview.',
+      'Co-Owners can now toggle the Game BOT in mini-games alongside the Owner (still hidden in /sfmode).',
+      'Playing Equinox music now shows Equinox cover art in your "Listening to" Activity Status instead of generic headphones.',
+      'Gifted/bought 3-day Frixion Premium codes are now hidden from the Admin/Owner Codes panel so promo codes stay clean and easy to read.',
+      'Fixed Matching Set and Lost in Space (and other Shop equip eggs) re-showing their toast when equipping music or other items.',
+      'Screenshare now opens the browser Window picker first (so you can share one window instead of everything) and adds a live Switch Window button to change windows mid-stream without disconnecting viewers.',
+      '3 new easter eggs. That makes 99.',
+    ] },
   { v: '4.75', date: '2026-11-23', title: 'Screenshare in DMs, group chats and server channels',
     notes: [
       'Share your screen directly inside any DM, group chat or server channel (including threads) using the Share Screen button in the chat header — video only (silent), peer-to-peer.',
@@ -3563,9 +3576,10 @@ function computeMyActivity() {
   }
   if (rpcMedia) return cleanActivity({ type: rpcMedia.type, name: rpcMedia.name, details: 'in a Frixion chat', startedAt: rpcMedia.startedAt, source: 'media' });
   if (musicTrack) {
-    // Built-in songs keep their banner on this site (Banners/...). Friends need the full address to load it.
+    // Built-in songs keep their banner (or dedicated rpcImage, e.g. Equinox) on this site. Friends need the full address.
     let image = null;
-    try { image = musicTrack.banner ? new URL(musicTrack.banner, location.href).href : null; } catch (e) {}
+    const cover = musicTrack.rpcImage || musicTrack.banner;
+    try { image = cover ? new URL(cover, location.href).href : null; } catch (e) {}
     return cleanActivity({ type: 'listening', name: musicTrack.name, details: 'on Frixion', image, startedAt: musicStartedAt || null, source: 'music' });
   }
   return null;
@@ -14490,7 +14504,7 @@ async function createRedeemCode(type, value, createdBy, customCode, maxUses = 1)
   const existing = await db.collection('redeemCodes').doc(code).get();
   if (existing.exists) throw new Error('That code is already in use.');
   await db.collection('redeemCodes').doc(code).set({
-    code, type, value, createdBy, maxUses, uses: 0, usedBy: [], redeemedBy: null, createdAt: FieldValue.serverTimestamp(), redeemedAt: null,
+    code, type, value, createdBy, source: 'admin', maxUses, uses: 0, usedBy: [], redeemedBy: null, createdAt: FieldValue.serverTimestamp(), redeemedAt: null,
   });
   return code;
 }
@@ -14532,7 +14546,7 @@ async function buyPremiumCode(days, gift) {
         // a gift also counts toward the Gifting badge (v4.65), in the same write that pays for it, which is the only way
         // the rules let that count go up (infinite Orbs pay nothing, so they don't count)
         if (!inf) tx.update(userRef, { orbs: FieldValue.increment(-PREMIUM_COST_ORBS), ...(gift ? { 'stats.giftsGiven': FieldValue.increment(1) } : {}) });
-        tx.set(codeRef, { code: candidate, type: 'premium', value: days, createdBy: myUid, maxUses: 1, uses: 0, usedBy: [], redeemedBy: null, createdAt: FieldValue.serverTimestamp(), redeemedAt: null });
+        tx.set(codeRef, { code: candidate, type: 'premium', value: days, createdBy: myUid, bought: true, gifted: !!gift, maxUses: 1, uses: 0, usedBy: [], redeemedBy: null, createdAt: FieldValue.serverTimestamp(), redeemedAt: null });
         return candidate;
       });
     }
@@ -14778,7 +14792,7 @@ function resetScreenShake() {
 //   3. Do not add a changelog entry for a song unless the owner asks for one.
 // ============================================================
 const MUSIC_TRACKS = [
-  { id: 'equinox', name: '『 EQUILIBRIUM INCARNATE, EQUINOX 』', price: 1000000, featured: true, hero: true, fx: 'equinox',
+  { id: 'equinox', name: '『 EQUILIBRIUM INCARNATE, EQUINOX 』', price: 1000000, featured: true, hero: true, fx: 'equinox', rpcImage: 'Banners/equinox-icon.png',
     desc: 'Plays on a loop and shakes your screen to the beat. Buying it plays two cutscenes. You can turn the shaking off in Settings > Accessibility.',
     src: 'Music/equinox-music.mp3', shake: true,
     // Videos shown in order the first time it is bought. Each one can be replayed on its own from the Shop.
@@ -15053,7 +15067,8 @@ function shopItemPreviewHTML(key, item) {
   // the name sits on top of it (with a dark scrim behind the text for
   // legibility) instead of living in a separate line below — this is
   // also why themes skip the usual .sic-name block in shopItemCardHTML.
-  if (key === 'themes') return `<div class="sic-theme-preview${item.anim === 'blackhole' ? ' sic-theme-blackhole' : ''}" style="background:linear-gradient(135deg, ${item.bg[0]} 0%, ${item.bg[1]} 55%, ${item.bg[2]} 100%);">
+  const CORNER_THEME_ANIMS = ['blackhole', 'supernova', 'eclipse', 'nebula', 'crimsonrift'];
+  if (key === 'themes') return `<div class="sic-theme-preview${CORNER_THEME_ANIMS.includes(item.anim) ? ' sic-theme-' + item.anim : ''}" style="background:linear-gradient(135deg, ${item.bg[0]} 0%, ${item.bg[1]} 55%, ${item.bg[2]} 100%);">
     <div class="sic-theme-overlay">
       <span class="sic-theme-name">${esc(item.name)}</span>
     </div>
@@ -15324,17 +15339,22 @@ async function equipShopItem(key, id) {
 let freshPaintLog = [];
 function shopEquipEggs(key, id) {
   const builtinPlate = x => NAMEPLATES.some(n => n.id === x);
-  if (key === 'nameplates' && builtinPlate(id)) eggFind('smoothplate');
-  if (key === 'themes') {
+  if (key === 'nameplates' && builtinPlate(id) && !eggFoundSet.has('smoothplate')) eggFind('smoothplate');
+  if (key === 'themes' && !eggFoundSet.has('freshpaint')) {
     const now = Date.now();
     freshPaintLog = freshPaintLog.filter(x => now - x.at < 120000 && x.id !== id).concat({ id, at: now });
     if (freshPaintLog.length >= 3) eggFind('freshpaint');
   }
-  const plate = key === 'nameplates' ? id : myProfile.equippedNameplate, theme = key === 'themes' ? id : myProfile.equippedTheme;
-  if (plate && plate === theme && builtinPlate(plate) && SHOP_THEMES.some(t => t.id === theme)) eggFind('matchingset');
-  const worn = { ...myProfile, [SHOP_CATEGORY_DEFS[key].equipField]: id };
-  if (worn.equippedTheme === 'blackhole' && worn.equippedNameplate === 'blackhole' && worn.equippedProfileEffect === 'fx-blackhole'
-    && worn.equippedProfileFrame === 'eventhorizon' && worn.equippedDecoration === 'pocket-blackhole') eggFind('lostinspace');
+  if (key === 'themes' && ['supernova', 'eclipse', 'nebula', 'crimsonrift'].includes(id) && !eggFoundSet.has('cosmicwardrobe')) eggFind('cosmicwardrobe');
+  if ((key === 'nameplates' || key === 'themes') && !eggFoundSet.has('matchingset')) {
+    const plate = key === 'nameplates' ? id : myProfile.equippedNameplate, theme = key === 'themes' ? id : myProfile.equippedTheme;
+    if (plate && plate === theme && builtinPlate(plate) && SHOP_THEMES.some(t => t.id === theme)) eggFind('matchingset');
+  }
+  if (['themes', 'nameplates', 'profile_effects', 'profile_frames', 'decorations'].includes(key) && !eggFoundSet.has('lostinspace')) {
+    const worn = { ...myProfile, [SHOP_CATEGORY_DEFS[key].equipField]: id };
+    if (worn.equippedTheme === 'blackhole' && worn.equippedNameplate === 'blackhole' && worn.equippedProfileEffect === 'fx-blackhole'
+      && worn.equippedProfileFrame === 'eventhorizon' && worn.equippedDecoration === 'pocket-blackhole') eggFind('lostinspace');
+  }
 }
 
 function openShop() {
@@ -16093,13 +16113,26 @@ async function renderAdminStickerList() {
   } catch (e) { wrap.innerHTML = '<div class="empty">Could not load stickers.</div>'; }
 }
 
+function isGiftedPremiumCode(r) {
+  if (!r || r.type !== 'premium') return false;
+  if (r.gifted === true || r.bought === true) return true;
+  if (r.source === 'admin') return false;
+  return Number(r.value) === 3 && codeUsage(r).maxUses === 1 && /^FRX-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/.test(r.code || '');
+}
+
 async function renderAdminCodesList() {
   const wrap = $('admin-codes-list');
   wrap.innerHTML = '<div class="empty">Loading...</div>';
   try {
-    const snap = await db.collection('redeemCodes').orderBy('createdAt', 'desc').limit(50).get();
+    const snap = await db.collection('redeemCodes').orderBy('createdAt', 'desc').limit(150).get();
     const rows = [], usedUp = [];
-    snap.forEach(d => { if (codeUsage(d.data()).usedUp) usedUp.push(d.id); else rows.push(d.data()); });
+    let hiddenGifts = 0;
+    snap.forEach(d => {
+      const data = d.data();
+      if (codeUsage(data).usedUp) usedUp.push(d.id);
+      else if (isGiftedPremiumCode(data)) hiddenGifts++;
+      else rows.push(data);
+    });
     // A code is deleted once it's used up (v4.68, request 66). The server does that on the last use; codes used up
     // before then go now.
     usedUp.forEach(id => db.collection('redeemCodes').doc(id).delete().catch(() => {}));
@@ -16108,12 +16141,13 @@ async function renderAdminCodesList() {
       if (u.maxUses === 1) return u.uses ? 'Used by ' + esc(u.usedBy[0] || r.redeemedBy || '?') : 'Unused';
       return u.maxUses === 0 ? `${u.uses} used · unlimited` : `${u.uses}/${u.maxUses} used`;
     };
-    wrap.innerHTML = rows.length ? rows.map(r => `
+    const giftNote = hiddenGifts ? `<div class="ab-note" style="padding:6px 4px;opacity:.75;">${hiddenGifts} gifted Premium ${hiddenGifts === 1 ? 'code' : 'codes'} hidden.</div>` : '';
+    wrap.innerHTML = (rows.length ? rows.map(r => `
       <div class="admin-row" style="cursor:default;"${codeUsage(r).usedBy.length > 1 ? ` title="${esc('Redeemed by ' + codeUsage(r).usedBy.join(', '))}"` : ''}>
         <span class="ar-name" style="font-family:monospace;">${esc(r.code)}</span>
         <span class="ab-note">${r.type === 'premium' ? esc(r.value) + 'd Premium' : esc(r.value) + ' Orbs'}</span>
         <span class="${codeUsage(r).usedUp ? 'ban-tag' : 'op-tag'}">${usageLabel(r)}</span>
-      </div>`).join('') : '<div class="empty">No codes generated yet.</div>';
+      </div>`).join('') : '<div class="empty">No codes generated yet.</div>') + giftNote;
   } catch (e) { wrap.innerHTML = '<div class="empty">Could not load codes.</div>'; }
 }
 
@@ -21206,7 +21240,7 @@ function ensureGameWindow() {
   gameWin.innerHTML =
     '<div class="fg-window" role="dialog" aria-modal="true" aria-labelledby="fg-title">' +
     '<header class="fg-bar"><h3 class="fg-title" id="fg-title"></h3>' +
-    '<button type="button" class="fg-bot-btn hidden" id="fg-bot-btn" aria-pressed="false" title="Owner only: auto-play at top speed and accuracy">' +
+    '<button type="button" class="fg-bot-btn hidden" id="fg-bot-btn" aria-pressed="false" title="Owner & Co-Owner: auto-play at top speed and accuracy">' +
     '<span class="fg-bot-dot" aria-hidden="true"></span><span class="fg-bot-label">BOT: OFF</span></button>' +
     '<span class="fg-chip"><span class="orb-ic"></span><b class="fg-orbs">0</b></span>' +
     '<button class="fg-x" aria-label="Close game">✕</button></header>' +
@@ -21255,7 +21289,7 @@ function closeGame() {
 // ============================================================
 let gameBotOn = false, gameBotTimer = 0, gameBotSilent = false, gameBotLockInstalled = false;
 let gameBotLastBuy = 0, gameBotLastFloat = 0, gameBotLastSave = 0, gameBotLastStep = 0;
-const gameBotAllowed = () => !!(typeof realOwner === 'function' && realOwner());
+const gameBotAllowed = () => !sfMode && !!(myProfile && (myProfile.owner === true || myProfile.coowner === true));
 const gameBotActive = id => gameBotOn && gameBotAllowed() && (!id || currentGameId === id);
 const gameBotLocked = () => !!(gameBotOn && gameBotAllowed() && currentGameId && gameWin && !gameWin.hidden);
 
@@ -22402,6 +22436,10 @@ const EGGS = [
   { id: 'watchparty', t: 'e', name: 'Front Row', how: 'Share your screen or watch someone else\'s screenshare in any DM, group chat or server channel.', hint: 'Pull up a chair for a live screen.' },
   { id: 'screensaver', t: 'e', name: 'Screen Saver', how: 'Type "screenshare" anywhere.', hint: 'What\'s the new feature called? One word.' },
   { id: 'golive', t: 'e', name: 'Going Live', how: 'Type "golive" anywhere.', hint: 'Ready to stream? Two words, no space.' },
+  // v4.76
+  { id: 'supernovae', t: 'e', name: 'Starburst', how: 'Type "supernova" anywhere.', hint: 'An exploding star. One word.' },
+  { id: 'coownerbot', t: 'e', name: 'Double Shift', how: 'Type "coowner" anywhere.', hint: 'Second in command. No hyphen, no space.' },
+  { id: 'cosmicwardrobe', t: 'm', name: 'Cosmic Drip', how: 'Equip any of the 4 new space themes: Supernova, Solar Eclipse, Cosmic Nebula or Crimson Rift.', hint: 'Try on one of the newest space themes in the Shop.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -22655,11 +22693,14 @@ function eggEffect(id, first) {
     case 'watchparty': eggToast('Front Row', 'Best seat in the house.'); return;
     case 'screensaver': eggToast('Screen Saver', 'Don\'t let the pixels burn in.'); return;
     case 'golive': eggToast('Going Live', 'Quiet on the set — you\'re on air.'); return;
+    case 'supernovae': eggToast('Starburst', 'Bright enough to outshine a galaxy.'); return;
+    case 'coownerbot': eggToast('Double Shift', 'Now there are two of them.'); return;
+    case 'cosmicwardrobe': eggToast('Cosmic Drip', 'Looking out of this world.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
 // ---- the triggers that live here (the rest are in the code they belong to: search for eggFind) ----
-const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot', hawking: 'hawking', autopilot: 'autopilot', beepboop: 'beepboop', gdwave: 'ninecircles', screensaver: 'screenshare', golive: 'golive' };
+const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot', hawking: 'hawking', autopilot: 'autopilot', beepboop: 'beepboop', gdwave: 'ninecircles', screensaver: 'screenshare', golive: 'golive', supernovae: 'supernova', coownerbot: 'coowner' };
 const EGG_SEQS = {
   oldcode: ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'KeyB', 'KeyA'],
   spin: ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'],
@@ -22781,6 +22822,7 @@ const EGG_GROUPS = [
   ['Game Bot (v4.73)', ['autopilot', 'beepboop', 'arcadepro']],
   ['Hard Dash & Mobile Maze (v4.74)', ['liquiddash', 'pocketmaze', 'gdwave']],
   ['Screenshare (v4.75)', ['watchparty', 'screensaver', 'golive']],
+  ['Space Themes & Fixes (v4.76)', ['supernovae', 'coownerbot', 'cosmicwardrobe']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {
@@ -23920,18 +23962,12 @@ function ssSyncHostViewerCount() {
   ssRenderUI();
 }
 
-async function ssStartSharing() {
-  if (!ssCanShare()) { toast('Screen sharing is not supported in this browser.', 'error'); return; }
-  const meta = ssCurrentRoomMeta();
-  if (!meta) return;
-  if (ssLocalStream && ssHostRoom === meta.key) { ssStopSharing(); return; }
-  if (ssLocalStream) ssStopSharing({ silent: true });
-
+async function ssCaptureDisplay() {
   let stream = null;
   let lastErr = null;
   try {
     stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: { ideal: 30, max: 60 }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      video: { displaySurface: 'window', frameRate: { ideal: 30, max: 60 }, width: { ideal: 1920 }, height: { ideal: 1080 } },
       audio: false,
     });
   } catch (err) {
@@ -23943,18 +23979,31 @@ async function ssStartSharing() {
   }
   if (!stream) {
     if (lastErr && lastErr.name === 'NotSupportedError') {
-      toast("Screen sharing isn't supported in this app window yet — use a browser tab to share (you can still watch here).", 'error');
+      toast("Screen sharing isn't supported in this app window yet — use a browser tab or update the Frixion desktop app.", 'error');
     } else if (lastErr && lastErr.name !== 'NotAllowedError' && lastErr.name !== 'AbortError') {
       toast('Could not start screen share: ' + (lastErr.message || lastErr.name), 'error');
     }
-    return;
+    return null;
   }
   const vTrack = stream.getVideoTracks()[0];
   if (!vTrack) {
     stream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
     toast('No video screen track was returned.', 'error');
-    return;
+    return null;
   }
+  return stream;
+}
+
+async function ssStartSharing() {
+  if (!ssCanShare()) { toast('Screen sharing is not supported in this browser.', 'error'); return; }
+  const meta = ssCurrentRoomMeta();
+  if (!meta) return;
+  if (ssLocalStream && ssHostRoom === meta.key) { ssStopSharing(); return; }
+  if (ssLocalStream) ssStopSharing({ silent: true });
+
+  const stream = await ssCaptureDisplay();
+  if (!stream) return;
+  const vTrack = stream.getVideoTracks()[0];
   // If room changed while user was in the OS screen picker, bind to the room they clicked Share from.
   if (ssWatchingUid) ssStopWatching({ quiet: true });
   meta.since = Date.now();
@@ -23973,6 +24022,32 @@ async function ssStartSharing() {
   }
   eggFindOnce('watchparty');
   ssRenderUI();
+}
+
+async function ssSwitchScreen() {
+  if (!ssLocalStream || !ssHostRoom || !ssCanShare()) return;
+  const nextStream = await ssCaptureDisplay();
+  if (!nextStream) return;   // cancelled: keep current stream running
+  if (!ssLocalStream || !ssHostRoom) {
+    nextStream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+    return;
+  }
+  const newTrack = nextStream.getVideoTracks()[0];
+  const oldStream = ssLocalStream;
+  ssLocalStream = nextStream;
+  newTrack.addEventListener('ended', () => {
+    if (ssLocalStream === nextStream) ssStopSharing();
+  });
+  for (const peer of ssHostPeers.values()) {
+    try {
+      const sender = peer.pc.getSenders().find(s => !s.track || s.track.kind === 'video');
+      if (sender && typeof sender.replaceTrack === 'function') await sender.replaceTrack(newTrack);
+    } catch (e) {}
+  }
+  ssTuneHostBitrates();
+  oldStream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+  ssRenderUI();
+  toast('Switched shared window.');
 }
 
 function ssStopSharing(opts) {
@@ -24365,6 +24440,7 @@ function ssRenderUI() {
   const overlayMsg = $('ss-overlay-msg');
   const retryBtn = $('ss-retry-btn');
   const pipBtn = $('ss-pip-btn');
+  const switchBtn = $('ss-switch-btn');
   const hidePreviewBtn = $('ss-hide-preview-btn');
   const leaveBtn = $('ss-leave-btn');
   const stopBtn = $('ss-stop-btn');
@@ -24372,6 +24448,7 @@ function ssRenderUI() {
   pipBtn.classList.toggle('hidden', !(document.pictureInPictureEnabled && !vid.disablePictureInPicture));
 
   if (watchingHere) {
+    switchBtn.classList.add('hidden');
     hidePreviewBtn.classList.add('hidden');
     stopBtn.classList.add('hidden');
     leaveBtn.classList.remove('hidden');
@@ -24413,6 +24490,7 @@ function ssRenderUI() {
     }
   } else {
     // Local host preview
+    switchBtn.classList.remove('hidden');
     hidePreviewBtn.classList.remove('hidden');
     stopBtn.classList.remove('hidden');
     leaveBtn.classList.add('hidden');
@@ -24436,6 +24514,7 @@ function ssRenderUI() {
 $('screenshare-toggle').addEventListener('click', () => ssStartSharing());
 $('screenshare-toggle').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ssStartSharing(); } });
 $('ss-stop-btn').addEventListener('click', () => ssStopSharing());
+$('ss-switch-btn').addEventListener('click', () => ssSwitchScreen());
 $('ss-away-stop').addEventListener('click', () => ssStopSharing());
 $('ss-away-return').addEventListener('click', () => ssReturnToHostRoom());
 $('ss-leave-btn').addEventListener('click', () => ssStopWatching({ quiet: true }));
