@@ -207,6 +207,23 @@ check('v4.78: UPDATES top is 4.78, EGGS total is 105, all 3 new eggs registered 
     fl.classList.contains('frame-custom-gradient') && /linear-gradient\(/i.test(fl.style.getPropertyValue('--ring-bg')),
     { cls: fl.className, ringBg: fl.style.getPropertyValue('--ring-bg') });
   closeModal('profile-modal');
+
+  // Buy Entire Shop button (all categories in one click)
+  await patch('users/Tester', { infOrbs: true });
+  await until(() => myProfile && myProfile.infOrbs === true, 4000);
+  document.querySelector('.shop-tab[data-shop-tab="featured"]').click();
+  await wait(80);
+  const entireBtn = $('shop-buy-entire-hero');
+  check('Buy Entire Shop button renders on Shop Featured & topbar', !!entireBtn && !!$('shop-buy-entire-btn') && /Buy Entire Shop/.test(entireBtn.textContent));
+  entireBtn.click();
+  await until(() => !$('confirm-modal').classList.contains('hidden'), 3000);
+  $('confirm-modal-confirm-btn').click();
+  const ownedEverything = await until(() => shopUnownedSummary().count === 0, 8000);
+  check('Buy Entire Shop buys every item across all categories and switches button to Entire Shop Owned',
+    !!ownedEverything && (myProfile.ownedThemes || []).length >= 1050 && (myProfile.ownedBanners || []).length >= 800
+    && (myProfile.ownedProfileFrames || []).length >= 800 && /Entire Shop Owned/.test($('shop-buy-entire-btn').textContent),
+    { left: shopUnownedSummary().count, th: (myProfile.ownedThemes || []).length, bn: (myProfile.ownedBanners || []).length });
+  await patch('users/Tester', { infOrbs: false });
 }
 
 // ---------- 6. #99 Admin/Owner Panel Gradient Profile Frames creator ----------

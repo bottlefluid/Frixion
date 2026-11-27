@@ -25,7 +25,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=128">
+<link rel="stylesheet" href="style.css?v=129">
 <link rel="stylesheet" href="casino.css?v=2">
 </head>
 <body>
@@ -403,6 +403,7 @@
           </div>
         </div>
         <div class="shop-topbar-right">
+          <button type="button" id="shop-buy-entire-btn" class="shop-buy-entire-top" title="Buy every unowned item across all Shop categories"></button>
           <input type="text" id="shop-search" class="shop-search" placeholder="Search the Shop" autocomplete="off">
           <span class="orb-chip shop-orb-chip" title="Your Orbs. Counting them won't make more."><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.6" fill="#fff" opacity=".55"/></svg><span id="shop-orb-amt">0</span></span>
         </div>
@@ -2164,7 +2165,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
 <script defer src="fdb.js?v=2"></script>
-<script defer src="script.js?v=171"></script>
+<script defer src="script.js?v=172"></script>
 <script defer src="casino.js?v=4"></script>
 </body>
 </html>

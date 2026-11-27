@@ -166,6 +166,19 @@ check('v4.78: out-of-range GSR id is rejected (404)', x.status === 404, x);
 await put('shopPrices/builtin', { p: { themes: { midnight_test: 100, gsr_th_0002: 77 } } });
 x = await call('admin', 'buy', { token: nova, cat: 'themes', id: 'gsr_th_0002' });
 check('v4.78: staff price override in shopPrices/builtin still overrides GSR default price', x.ok && x.price === 77, x);
+// Buy Entire Shop (/api/admin/buyshop): buys every unowned item across ALL categories (built-in, GSR, and staff-made) in one commit
+await put('shopBanners/custom_ban_1', { name: 'Staff Banner', desc: 'Test', price: 250, colors: ['#ff0000', '#0000ff'], angle: 90 });
+x = await call('admin', 'buyshop', { token: sumi });
+check('buyshop: refuses when caller cannot afford the entire Shop (402)', x.status === 402, x);
+x = await call('admin', 'buyshop', { token: nova });
+const novaAll = await doc('users/Nova');
+check('buyshop: Nova (infinite Orbs) buys every remaining Shop item across all categories in one commit',
+  x.ok && x.count >= 4195 && x.total > 0 && novaAll.ownedThemes.length >= 1000 && novaAll.ownedBanners.includes('custom_ban_1')
+  && novaAll.ownedNameplates.length >= 850 && novaAll.ownedProfileFrames.length >= 800 && novaAll.ownedDecorations.length >= 350
+  && novaAll.ownedProfileEffects.length >= 250 && novaAll.ownedBadges.length >= 150,
+  { ok: x.ok, count: x.count, total: x.total, th: novaAll.ownedThemes.length, bn: novaAll.ownedBanners.length });
+x = await call('admin', 'buyshop', { token: nova });
+check('buyshop: calling again once everything is owned returns 409', x.status === 409, x);
 
 section('v4.67 on the server: Provably Fair, bets without a top limit, referrals');
 const fairJs = await import(new URL('../../casino-fair.js', import.meta.url).href);

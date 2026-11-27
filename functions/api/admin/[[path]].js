@@ -82,6 +82,7 @@ export async function onRequest({ request, env, params }) {
     if (route === 'earn' && request.method === 'POST') return json(await earn(env, await request.json().catch(() => ({}))));
     if (route === 'buy' && request.method === 'POST') return json(await buy(env, await request.json().catch(() => ({}))));
     if (route === 'buyall' && request.method === 'POST') return json(await buyAll(env, await request.json().catch(() => ({}))));
+    if (route === 'buyshop' && request.method === 'POST') return json(await buyShop(env, await request.json().catch(() => ({}))));
     if (route === 'banner' && request.method === 'POST') return json(await setBanner(env, await request.json().catch(() => ({}))));
     if (route === 'loan' && request.method === 'POST') return json(await loanRoute(env, await request.json().catch(() => ({}))));
     if (route === 'referral' && request.method === 'POST') return json(await referralRoute(env, await request.json().catch(() => ({}))));
@@ -616,6 +617,82 @@ async function buyAll(env, { token, cat, ids }) {
       currentDocument: { updateTime: prof.updateTime },
     }]);
     if (done) return { ok: true, bought, total, orbs: inf ? Number(u.orbs) || 0 : orbsAfter(done, 0) };
+  }
+  fail(409, 'Frixion is busy. Try again.');
+}
+
+// Lists up to 300 documents in a top-level collection (used by buyShop to include every staff-published Shop item).
+async function fsList(env, coll) {
+  const r = await fetch(`${fsBase(env)}/${coll}?pageSize=300`, { headers: { Authorization: 'Bearer ' + await googleToken(env) } });
+  if (r.status === 429) fail(503, OUT_OF_READS);
+  if (!r.ok) fail(502, 'Could not read Frixion.');
+  const j = await r.json().catch(() => ({}));
+  return (j.documents || []).map(d => ({ id: String(d.name || '').split('/').pop(), data: decFields(d.fields) }));
+}
+// Buy Entire Shop: buys every unowned item across ALL Shop categories (built-in, Great Shop Rush, and staff-made) in one atomic commit.
+async function buyShop(env, { token }) {
+  const me = await caller(env, token);
+  slowDown('buy:' + me.name, 10);
+  const colls = [...new Set(Object.values(SHOP).map(x => x[2]).filter(Boolean))];
+  const listed = Object.fromEntries(await Promise.all(colls.map(async c => [c, await fsList(env, c)])));
+  for (let i = 0; i < 6; i++) {
+    const [prof, builtin, customMusicDoc] = await fsGetMany(env, [`users/${me.name}`, 'shopPrices/builtin', 'config/customMusic']);
+    const u = mine(prof, me), inf = infinite(u);
+    const byField = {};
+    for (const [owned] of Object.values(SHOP)) {
+      if (!byField[owned]) byField[owned] = { have: new Set(Array.isArray(u[owned]) ? u[owned] : []), add: [], seen: new Set() };
+    }
+    let total = 0, count = 0;
+    for (const cat of Object.keys(SHOP)) {
+      const [owned, , coll] = SHOP[cat], slot = byField[owned];
+      const customMap = new Map();
+      if (coll) {
+        for (const d of (listed[coll] || [])) {
+          if (!d || !d.id || !ITEM_ID.test(d.id)) continue;
+          if (coll === 'shopDecorations' && (d.data.mask === true) !== (cat === 'masks')) continue;
+          customMap.set(d.id, d.data);
+        }
+      } else if (customMusicDoc && customMusicDoc.data) {
+        for (const id of Object.keys(customMusicDoc.data)) {
+          if (ITEM_ID.test(id)) customMap.set(id, customMusicDoc.data[id]);
+        }
+      }
+      const candidates = new Set();
+      const bCat = builtin && builtin.data.p && builtin.data.p[cat];
+      if (bCat && typeof bCat === 'object') for (const id of Object.keys(bCat)) candidates.add(id);
+      const gsr = own(GSR_CATS, cat) ? GSR_CATS[cat] : null;
+      if (gsr) {
+        const [code, max] = gsr;
+        for (let k = 1; k <= max; k++) candidates.add(`gsr_${code}_${String(k).padStart(4, '0')}`);
+      }
+      for (const id of customMap.keys()) candidates.add(id);
+      for (const id of candidates) {
+        if (!ITEM_ID.test(id) || slot.have.has(id) || slot.seen.has(id)) continue;
+        const customDoc = coll ? (customMap.has(id) ? { data: customMap.get(id) } : null) : customMusicDoc;
+        const p = priceOf(cat, id, builtin, customDoc);
+        if (p == null) continue;
+        slot.seen.add(id);
+        slot.add.push(id);
+        total += p;
+        count++;
+      }
+    }
+    if (!count) fail(409, 'You already own the entire Shop!');
+    if (!inf && (Number(u.orbs) || 0) < total) fail(402, `Buying the entire Shop costs ${total.toLocaleString('en-US')} Orbs. You don't have enough.`);
+    const fields = {};
+    const added = {};
+    for (const [owned, slot] of Object.entries(byField)) {
+      if (!slot.add.length) continue;
+      added[owned] = slot.add;
+      fields[owned] = encAny([...slot.have, ...slot.add]);
+    }
+    const done = await fsCommit(env, [{
+      update: { name: docName(env, `users/${me.name}`), fields },
+      updateMask: { fieldPaths: Object.keys(fields) },
+      ...(inf ? {} : { updateTransforms: [{ fieldPath: 'orbs', increment: enc(-total) }] }),
+      currentDocument: { updateTime: prof.updateTime },
+    }]);
+    if (done) return { ok: true, count, total, added, orbs: inf ? Number(u.orbs) || 0 : orbsAfter(done, 0) };
   }
   fail(409, 'Frixion is busy. Try again.');
 }

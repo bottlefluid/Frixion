@@ -15718,6 +15718,64 @@ function shopCatalogCounts() {
   });
   return { total, counts };
 }
+function shopUnownedSummary() {
+  let count = 0, total = 0;
+  const seenByField = {};
+  Object.values(SHOP_CATEGORY_DEFS).forEach(def => {
+    const have = new Set((myProfile && myProfile[def.ownedField]) || []);
+    const seen = seenByField[def.ownedField] || (seenByField[def.ownedField] = new Set());
+    def.catalog.forEach(item => {
+      if (!item || item.disabled || have.has(item.id) || seen.has(item.id)) return;
+      seen.add(item.id);
+      count++;
+      total += Number(item.price) || 0;
+    });
+  });
+  return { count, total };
+}
+function updateBuyEntireShopBtn() {
+  const top = $('shop-buy-entire-btn');
+  if (!top || !myProfile) return;
+  const { count, total } = shopUnownedSummary();
+  if (!count) {
+    top.classList.add('is-done');
+    top.disabled = true;
+    top.innerHTML = 'Entire Shop Owned';
+  } else {
+    top.classList.remove('is-done');
+    top.disabled = false;
+    top.innerHTML = `Buy Entire Shop ${orbIconSVG(12)}<span>${fmtOrbs(total)}</span>`;
+    top.title = `Buy all ${count.toLocaleString()} remaining items across every category (${total.toLocaleString()} Orbs)`;
+  }
+}
+function promptBuyEntireShop() {
+  if (!myProfile || shopBuying) return;
+  const { count, total } = shopUnownedSummary();
+  if (!count) { toast('You already own the entire Shop!'); return; }
+  if (!hasOrbsFor(total)) { toast(`Buying the entire Shop costs ${fmtOrbs(total)} Orbs. You don't have enough.`, 'error'); return; }
+  const body = hasInfiniteOrbs(myProfile)
+    ? `Buy all ${count.toLocaleString()} remaining items across EVERY category in the Shop? Nothing gets equipped.`
+    : `Buy all ${count.toLocaleString()} remaining items across EVERY category in the Shop for ${fmtOrbs(total)} Orbs (${total.toLocaleString()} Orbs)? Nothing gets equipped.`;
+  confirmAction({ title: 'Buy Entire Shop', body, confirmLabel: 'Buy Entire Shop', danger: false, onConfirm: buyEntireShop });
+}
+async function buyEntireShop() {
+  if (shopBuying) return;
+  shopBuying = true;
+  try {
+    await flushEarn();
+    if (myProfile && platformRank(myProfile) >= 2) await syncShopPrices();
+    const r = await orbsCall('buyshop', {});
+    Object.entries(r.added || {}).forEach(([field, ids]) => {
+      myProfile[field] = [...new Set([...(myProfile[field] || []), ...ids])];
+    });
+    if (r.orbs != null) myProfile.orbs = r.orbs;
+    toast(`Bought ${Number(r.count || 0).toLocaleString()} items across the entire Shop for ${fmtOrbs(r.total)} Orbs!`);
+    checkAllBadges();
+    refreshOpenShopPanes();
+  } catch (e) { toast(e.message || 'Could not buy the entire Shop.', 'error'); }
+  finally { shopBuying = false; }
+}
+if ($('shop-buy-entire-btn')) $('shop-buy-entire-btn').onclick = promptBuyEntireShop;
 function renderShopFeatured() {
   const wrap = $('shop-pane-featured');
   const keys = SHOP_FEATURED_ORDER.concat(Object.keys(SHOP_CATEGORY_DEFS).filter(k => !SHOP_FEATURED_ORDER.includes(k)));
@@ -15743,9 +15801,16 @@ function renderShopFeatured() {
     return;
   }
   const { total, counts } = shopCatalogCounts();
+  const rem = shopUnownedSummary();
   const pillOrder = ['themes', 'nameplates', 'profile_frames', 'banners', 'decorations', 'profile_effects', 'badges', 'music'];
   const rushBanner = `<div class="shop-rush-banner">
-    <div class="shop-rush-head"><span class="shop-rush-title">THE GREAT SHOP RUSH</span><span class="shop-rush-count">${total.toLocaleString()} items in stock</span></div>
+    <div class="shop-rush-head">
+      <span class="shop-rush-title">THE GREAT SHOP RUSH</span>
+      <div class="shop-rush-actions">
+        <span class="shop-rush-count">${total.toLocaleString()} items in stock</span>
+        <button type="button" class="shop-buy-entire-btn${rem.count ? '' : ' is-done'}" id="shop-buy-entire-hero"${rem.count ? '' : ' disabled'}>${rem.count ? `Buy Entire Shop (${rem.count.toLocaleString()}) ${orbIconSVG(12)}<span>${fmtOrbs(rem.total)}</span>` : 'Entire Shop Owned'}</button>
+      </div>
+    </div>
     <div class="shop-rush-sub">Over 4,200 new Themes, Nameplates, Gradient Profile Frames, Banners, Avatar Decorations, Profile Effects &amp; Badges. Search everything above or jump straight to a category:</div>
     <div class="shop-rush-pills">${pillOrder.filter(k => counts[k] > 0).map(k => `<button type="button" class="shop-rush-pill" data-jump-tab="${k}">${esc(SHOP_CATEGORY_DEFS[k].label)} <span>${counts[k].toLocaleString()}</span></button>`).join('')}</div>
   </div>`;
@@ -15764,6 +15829,8 @@ function renderShopFeatured() {
     sections.push(`<div class="shop-section-label">${esc(def.label)}</div><div class="${shopGridClass(key)}">${items.map(item => shopItemCardHTML(key, item)).join('')}</div>`);
   });
   wrap.innerHTML = sections.join('') || '<div class="shop-empty-state"><b>Nothing featured right now</b><span>Check the other tabs.</span></div>';
+  const heroBuyAll = wrap.querySelector('#shop-buy-entire-hero');
+  if (heroBuyAll) heroBuyAll.onclick = promptBuyEntireShop;
   wrap.querySelectorAll('[data-jump-tab]').forEach(b => {
     b.onclick = () => {
       const k = b.dataset.jumpTab;
@@ -15924,6 +15991,7 @@ async function buyAllShopItems(key, ids) {
 function refreshOpenShopPanes() {
   if ($('shop-view').classList.contains('hidden')) return;
   $('shop-orb-amt').textContent = orbsLabel(myProfile);
+  updateBuyEntireShopBtn();
   if (shopActiveTab === 'featured') renderShopFeatured();
   else if (SHOP_CATEGORY_DEFS[shopActiveTab]) renderShopCategoryPane(shopActiveTab);
 }
@@ -16030,6 +16098,7 @@ function openShop() {
   shopActiveTab = 'featured';
   Object.keys(shopLimits).forEach(k => delete shopLimits[k]);
   $('shop-orb-amt').textContent = orbsLabel(myProfile);
+  updateBuyEntireShopBtn();
   document.querySelectorAll('.shop-tab').forEach(t => t.classList.remove('on'));
   document.querySelector('.shop-tab[data-shop-tab="featured"]').classList.add('on');
   document.querySelectorAll('.shop-pane').forEach(p => p.classList.add('hidden'));
