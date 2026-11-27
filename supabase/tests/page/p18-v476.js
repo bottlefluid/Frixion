@@ -148,33 +148,34 @@ for (const [w, id] of [['supernova', 'supernovae'], ['coowner', 'coownerbot']]) 
 }
 box.value = '';
 
-// ---------- 9. #85: Accessibility > "Don't repeat easter eggs" toggle ----------
+// ---------- 9. #85: Accessibility > "Don't repeat easter eggs" toggle (ON by default) ----------
 const nrToggle = $('a11y-no-repeat-eggs-toggle');
-check('85: Accessibility has "Don\'t repeat easter eggs" toggle (off by default)', !!nrToggle && !noRepeatEggsOn() && !nrToggle.checked);
-// With toggle OFF, re-triggering an already-found egg replays its toast
-document.querySelectorAll('.egg-toast').forEach(el => el.remove());
-await eggFind('supernovae');
-await wait(120);
-check('85: with toggle OFF, re-triggering an already-found egg still replays its toast',
-  document.querySelectorAll('.egg-toast').length >= 1);
-
-// Turn toggle ON via UI checkbox -> saves to localStorage & user profile, blocks repeats, still allows new eggs!
-nrToggle.checked = true;
-nrToggle.dispatchEvent(new Event('change'));
-await until(async () => (await doc('users/Tester')).a11yNoRepeatEggs === true, 5000);
+check('85: Accessibility has "Don\'t repeat easter eggs" toggle (on by default)', !!nrToggle && noRepeatEggsOn() && nrToggle.checked);
+// With default ON, already-found egg does NOT replay its toast/effects
 document.querySelectorAll('.egg-toast').forEach(el => el.remove());
 await eggFind('supernovae');
 await wait(150);
-check('85: with toggle ON, already-found egg does NOT replay its toast/effects and persists to profile',
-  noRepeatEggsOn() && document.querySelectorAll('.egg-toast').length === 0 && (await doc('users/Tester')).a11yNoRepeatEggs === true);
+check('85: with default ON, already-found egg does NOT replay its toast/effects',
+  noRepeatEggsOn() && document.querySelectorAll('.egg-toast').length === 0);
 
 // Unfound egg ("hello") MUST still work and pay Orbs even with toggle ON!
 await eggFind('hello');
 check('85: with toggle ON, brand-new unfound eggs still trigger and save normally',
   !!(await until(() => eggFoundSet.has('hello'), 5000)) && document.querySelectorAll('.egg-toast').length >= 1);
 
-// Clean up localStorage setting so it doesn't leak into subsequent tests
+// Turn toggle OFF via UI checkbox -> saves to localStorage & user profile, re-triggering replays toast!
 nrToggle.checked = false;
 nrToggle.dispatchEvent(new Event('change'));
+await until(async () => (await doc('users/Tester')).a11yNoRepeatEggs === false, 5000);
+document.querySelectorAll('.egg-toast').forEach(el => el.remove());
+await eggFind('supernovae');
+await wait(120);
+check('85: turning toggle OFF persists to profile and lets already-found eggs replay their toast',
+  !noRepeatEggsOn() && document.querySelectorAll('.egg-toast').length >= 1 && (await doc('users/Tester')).a11yNoRepeatEggs === false);
+
+// Restore default ON cleanly
+nrToggle.checked = true;
+nrToggle.dispatchEvent(new Event('change'));
+await until(async () => (await doc('users/Tester')).a11yNoRepeatEggs === true, 5000);
 
 return T.report();

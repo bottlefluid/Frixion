@@ -14777,7 +14777,7 @@ function syncEpilepsyFromProfile(p) {
 // Saved on the device and mirrored onto the account (a11yNoRepeatEggs).
 // ============================================================
 const NO_REPEAT_EGGS_KEY = 'frixion_no_repeat_eggs';
-function noRepeatEggsOn() { try { return localStorage.getItem(NO_REPEAT_EGGS_KEY) === '1'; } catch (e) { return false; } }
+function noRepeatEggsOn() { try { return localStorage.getItem(NO_REPEAT_EGGS_KEY) !== '0'; } catch (e) { return true; } }
 function applyNoRepeatEggs() {
   const t = $('a11y-no-repeat-eggs-toggle'); if (t) t.checked = noRepeatEggsOn();
 }
