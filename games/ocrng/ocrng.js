@@ -47,39 +47,46 @@ export async function open() {
   const api = API();
   const me = api.me();
   const rank = api.rank();
-  G = {
+  const g = G = {
     me: { uid: me.uid, name: me.name, rank, owner: rank >= 3, staff: rank >= 2 },
     root: buildShell(), listeners: [], others: new Map(), input: { keys: {}, joy: { x: 0, y: 0 } },
     env: { time: 'day', weather: 'clear', jester: false, progress: 0 }, worldState: {}, effects: [], queued: [], rollBuffs: [],
     rolling: false, nextRollAt: 0, cam: { yaw: 0, pitch: 0.32, dist: 18, zoom: 18 }, panel: null, closed: false, shiftLock: false,
     fxObjects: [], pickups: [], bubbles: new Map(), moveCd: {}, moves: [], konami: [],
   };
-  document.body.appendChild(G.root);
+  const gone = () => !g || g.closed || G !== g;
+  document.body.appendChild(g.root);
   document.body.classList.add('ocrng-open');
   // Testing on your own computer only: lets a test script look inside the running game. Never on the live site.
   if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ocrngDebug = { state: () => G, interact: () => interact(), admin: a => adminAction(a), panel: id => openPanel(id), cut: key => cutscene(auraKey(key)), move: k => useMove(k), chat: t => G.chat && G.chat.system(t), spawn: id => spawnPickup(id, true), equip: k => equip(k), hurt: (d, o) => hurtMe(d, o), potion: id => usePotion(id, true), tp: (x, y, z) => teleportTo(new THREE.Vector3(x, y, z), 'Test teleport.'), zoom: s => zoomBy(s) };
   try {
     setLoading('Loading the engine', 0.1);
     await sleep(60);
+    if (gone()) return;
     const quality = qualityFor();
-    G.quality = quality;
+    g.quality = quality;
     setupRenderer(quality);
     setLoading('Building the island', 0.35);
     await sleep(30);
-    G.world = createWorld(G.scene, quality);
+    if (gone()) return;
+    g.world = createWorld(g.scene, quality);
     setLoading('Loading your auras', 0.6);
     await claimSession();
+    if (gone()) return;
     await loadSave();
+    if (gone()) return;
     setLoading('Placing the studs', 0.8);
     buildPlayer();
     setupInput();
     refreshWorldFlags();
-    G.clock = new THREE.Clock();
+    g.clock = new THREE.Clock();
     loop();
     setLoading('Ready', 1);
     await sleep(500);
+    if (gone()) return;
     showTitle();
   } catch (e) {
+    if (gone()) return;   // closed mid-load (e.g. Quick Open toggled shut): cancel silently, never show an error toast
     console.error(e);
     api.toast('Overcontrol RNG hit a problem while loading. Try again in a moment.', 'error');
     close();

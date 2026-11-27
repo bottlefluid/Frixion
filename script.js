@@ -274,7 +274,7 @@ const AVATAR_DECORATIONS = [
 // alongside the built-in catalog everywhere a decoration can be looked up
 // or bought, so they behave exactly like any other item once published.
 let customDecorations = [];
-function decorationById(id) { return AVATAR_DECORATIONS.find(d => d.id === id) || customDecorations.find(d => d.id === id) || null; }
+function decorationById(id) { return AVATAR_DECORATIONS.find(d => d.id === id) || (typeof GSR_MAP !== 'undefined' && GSR_MAP.decorations.get(id)) || customDecorations.find(d => d.id === id) || null; }
 
 // Nameplates — a decorative background that sits behind the name/status
 // block in the profile popup. All CSS-driven (gradient + pattern, some
@@ -299,13 +299,13 @@ let customNameplates = [];
 // When equipped, they replace the solid/gradient banner picked in Profile
 // settings. Stored in the shopBanners Firestore collection.
 let customBanners = [];
-function bannerById(id) { return id ? customBanners.find(b => b.id === id) || null : null; }
+function bannerById(id) { return id ? customBanners.find(b => b.id === id) || (typeof GSR_MAP !== 'undefined' && GSR_MAP.banners.get(id)) || null : null; }
 function bannerGradientCSS(b) {
   const colors = (b && b.colors && b.colors.length ? b.colors : ['#5865f2', '#eb459e']).map(c => String(c).replace(/[^#a-z0-9(),.% ]/gi, ''));
   const angle = Number.isFinite(Number(b && b.angle)) ? Number(b.angle) : 135;
   return `linear-gradient(${angle}deg, ${colors.join(', ')})`;
 }
-function nameplateById(id) { return NAMEPLATES.find(d => d.id === id) || customNameplates.find(d => d.id === id) || null; }
+function nameplateById(id) { return NAMEPLATES.find(d => d.id === id) || (typeof GSR_MAP !== 'undefined' && GSR_MAP.nameplates.get(id)) || customNameplates.find(d => d.id === id) || null; }
 
 // Profile Effects — an animated overlay across the whole profile card
 // (falling particles, ambient sparkles, etc.), independent of both the
@@ -347,7 +347,7 @@ const PROFILE_EFFECTS = [
   { id: 'fx-blackhole', name: 'Black Hole', desc: 'A black hole opens behind your card and pulls the stars into a glowing disk that keeps turning. Every so often it swallows one more.', price: 3600, fx: 'blackhole', animated: true, collection: 'space' },
 ];
 let customProfileEffects = [];
-function profileEffectById(id) { return PROFILE_EFFECTS.find(d => d.id === id) || customProfileEffects.find(d => d.id === id) || null; }
+function profileEffectById(id) { return PROFILE_EFFECTS.find(d => d.id === id) || (typeof GSR_MAP !== 'undefined' && GSR_MAP.profile_effects.get(id)) || customProfileEffects.find(d => d.id === id) || null; }
 // Shared particle markup for all profile effects — which effect it actually
 // looks like is entirely down to the CSS class on the parent overlay
 // (.effect-snowfall .particle, .effect-petals .particle, etc.), so the same
@@ -1029,7 +1029,27 @@ const PROFILE_FRAMES = [
   { id: 'eventhorizon', name: 'Event Horizon', desc: 'A ring of hot, falling light that slowly turns all the way round your card.', price: 800, cssClass: 'frame-eventhorizon', animated: true, collection: 'space' },
 ];
 let customProfileFrames = [];
-function profileFrameById(id) { return PROFILE_FRAMES.find(d => d.id === id) || customProfileFrames.find(d => d.id === id) || null; }
+function profileFrameById(id) { return PROFILE_FRAMES.find(d => d.id === id) || (typeof GSR_MAP !== 'undefined' && GSR_MAP.profile_frames.get(id)) || customProfileFrames.find(d => d.id === id) || null; }
+function frameGradientCSS(f) {
+  if (!f || !Array.isArray(f.colors) || f.colors.length < 2) return '';
+  const colors = f.colors.slice(0, 8).map(c => String(c).replace(/[^#a-z0-9(),.% ]/gi, ''));
+  const angle = Number.isFinite(Number(f.angle)) ? Number(f.angle) : 135;
+  return `linear-gradient(${angle}deg, ${colors.join(', ')})`;
+}
+function applyProfileFrameVisual(el, frame, baseCls) {
+  if (!el) return;
+  const grad = frame && !frame.cssClass ? frameGradientCSS(frame) : '';
+  const solid = !grad && frame && !frame.cssClass && frame.color ? frame.color : '';
+  const glowCol = (frame && (frame.color || (Array.isArray(frame.colors) && frame.colors[0]))) || '';
+  el.className = baseCls
+    + (frame && frame.cssClass ? ' ' + frame.cssClass : '')
+    + (grad ? ' frame-custom-gradient' + (frame.gradAnim ? ' frame-grad-anim' : '') : '')
+    + (frame && frame.glow ? ' frame-custom-glow' : '');
+  el.style.border = solid ? `3px solid ${solid}` : '';
+  if (grad) el.style.setProperty('--ring-bg', grad);
+  else el.style.removeProperty('--ring-bg');
+  el.style.setProperty('--custom-frame-color', glowCol);
+}
 
 // ---------- Shop Themes (ported from Toblox, same ids/names/colors/prices) ----------
 // Applying one dynamically overrides Frixion's own CSS custom properties
@@ -1095,7 +1115,7 @@ const SHOP_THEMES = [
 ];
 let customThemes = [];
 let customThemesLoaded = false;
-function shopThemeById(id) { return SHOP_THEMES.find(t => t.id === id) || customThemes.find(t => t.id === id) || null; }
+function shopThemeById(id) { return SHOP_THEMES.find(t => t.id === id) || (typeof GSR_MAP !== 'undefined' && GSR_MAP.themes.get(id)) || customThemes.find(t => t.id === id) || null; }
 
 // ---------- Shop sections (v4.62) ----------
 // Avatar Decorations, Avatar Masks and Themes are sorted into sections in the Shop, instead of one "Animated / Not
@@ -1214,22 +1234,367 @@ function applyShopTheme(themeId) {
 }
 
 
+// ============================================================
+// THE GREAT SHOP RUSH (v4.78, request 98): 4,200 deterministic Shop items
+// across Themes, Nameplates, Profile Frames (solid & gradient), Banners,
+// Avatar Decorations, Profile Effects, and Badges. Pricing formula matches
+// gsrPriceOf() in functions/api/admin/[[path]].js so every item is server-
+// verified on purchase with zero database bloat and instant O(1) lookups.
+// ============================================================
+const GSR_CATS = {
+  themes: ['th', 1000, [75, 100, 125, 150, 200, 250, 350, 500, 750, 1000, 1500, 2500, 5000, 10000]],
+  nameplates: ['np', 850, [100, 150, 200, 250, 350, 500, 750, 1000, 1500, 2500, 5000, 10000]],
+  profile_frames: ['pf', 800, [125, 175, 250, 350, 500, 750, 1000, 1500, 2500, 5000, 10000]],
+  banners: ['bn', 800, [100, 150, 200, 300, 450, 650, 1000, 1500, 3000, 7500]],
+  decorations: ['dc', 350, [150, 225, 300, 450, 600, 850, 1250, 2000, 4000, 8000]],
+  profile_effects: ['pe', 250, [150, 250, 350, 500, 750, 1200, 2000, 3500, 6000]],
+  badges: ['bd', 150, [150, 250, 400, 600, 900, 1500, 2500, 5000, 10000]],
+};
+function gsrPriceFor(cat, idx) {
+  const cfg = GSR_CATS[cat];
+  if (!cfg || idx < 1 || idx > cfg[1]) return 250;
+  const tiers = cfg[2];
+  const h = (Math.imul(idx, 2654435761) >>> 0) % 100;
+  const ti = h < 18 ? 0 : h < 34 ? 1 : h < 48 ? 2 : h < 60 ? 3 : h < 71 ? 4 : h < 80 ? 5 : h < 87 ? 6 : h < 92 ? 7 : h < 96 ? 8 : Math.min(tiers.length - 1, 9 + (h - 96));
+  return tiers[Math.min(ti, tiers.length - 1)];
+}
+const { GSR, GSR_MAP } = (() => {
+  const hslHex = (h, s, l) => {
+    h = ((h % 360) + 360) % 360;
+    s = Math.max(0, Math.min(100, s)) / 100;
+    l = Math.max(0, Math.min(100, l)) / 100;
+    const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - c / 2;
+    let r = 0, g = 0, b = 0;
+    if (h < 60) [r, g, b] = [c, x, 0];
+    else if (h < 120) [r, g, b] = [x, c, 0];
+    else if (h < 180) [r, g, b] = [0, c, x];
+    else if (h < 240) [r, g, b] = [0, x, c];
+    else if (h < 300) [r, g, b] = [x, 0, c];
+    else [r, g, b] = [c, 0, x];
+    const f = v => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+    return `#${f(r)}${f(g)}${f(b)}`;
+  };
+  const pad4 = n => String(n).padStart(4, '0');
+  const rng = seed => {
+    let a = seed >>> 0;
+    return () => { a = (a + 0x6D2B79F5) >>> 0; let t = Math.imul(a ^ (a >>> 15), a | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  };
+
+  // ---- 1,000 Themes ----
+  const thCols = [
+    { sec: 'Cyberpunk', hues: [315, 185, 275, 50], s: [82, 96], d: 'High-voltage neon contrast built for late nights.' },
+    { sec: 'Cosmic', hues: [255, 225, 290, 195], s: [68, 90], d: 'Deep-space palette glowing with starlit accents.' },
+    { sec: 'Pastel Night', hues: [330, 210, 155, 270, 25], s: [55, 75], d: 'Soft twilight tones with gentle pastel highlights.' },
+    { sec: 'Gemstone', hues: [155, 345, 215, 45, 285], s: [70, 92], d: 'Faceted jewel tones cut against velvet shadows.' },
+    { sec: 'Elemental', hues: [15, 200, 130, 35, 260], s: [72, 92], d: 'Forged from fire, tide, storm, and earth.' },
+    { sec: 'Retro Arcade', hues: [300, 175, 40, 115], s: [80, 98], d: 'CRT glow straight out of a neon cabinet.' },
+    { sec: 'Vaporwave', hues: [320, 190, 265, 350], s: [70, 92], d: 'Dreamy magenta, teal, and sunset haze.' },
+    { sec: 'Royal', hues: [270, 350, 220, 42], s: [64, 86], d: 'Rich courtly shadows trimmed in regal light.' },
+    { sec: 'Deep Ocean', hues: [195, 175, 215, 160], s: [66, 88], d: 'Abyssal blues lit by bioluminescent currents.' },
+    { sec: 'Obsidian Gold', hues: [42, 28, 355, 265], s: [52, 85], d: 'Pitch-dark glass accented with warm brilliance.' },
+  ];
+  const thAdj = [
+    'Crimson', 'Azure', 'Emerald', 'Violet', 'Amber', 'Cobalt', 'Scarlet', 'Jade', 'Indigo', 'Coral',
+    'Obsidian', 'Ivory', 'Velvet', 'Neon', 'Electric', 'Radiant', 'Astral', 'Solar', 'Lunar', 'Frost',
+    'Molten', 'Spectral', 'Prism', 'Chrome', 'Velour', 'Phantom', 'Glacier', 'Cinder', 'Opal', 'Garnet',
+    'Sapphire', 'Topaz', 'Onyx', 'Quartz', 'Mirage', 'Zenith', 'Horizon', 'Vortex', 'Pulse', 'Hyper',
+  ];
+  const thNoun = [
+    'Drift', 'Glow', 'Veil', 'Nova', 'Pulse', 'Shift', 'Rift', 'Haze', 'Crest', 'Wave',
+    'Spark', 'Dusk', 'Dawn', 'Core', 'Aura', 'Tide', 'Flux', 'Shade', 'Bloom', 'Echo',
+    'Flare', 'Mist', 'Gleam', 'Spire', 'Realm',
+  ];
+  const thAnims = ['hue', 'holo', 'aurora'];
+  const themes = [];
+  for (let i = 0; i < 1000; i++) {
+    const idx = i + 1, R = rng(100001 + idx * 97);
+    const col = thCols[i % thCols.length];
+    const baseHue = (col.hues[Math.floor(R() * col.hues.length)] + (R() - 0.5) * 44 + 360) % 360;
+    const shiftHue = (baseHue + (R() < 0.5 ? 28 : -32) + R() * 55 + 360) % 360;
+    const sat = col.s[0] + R() * (col.s[1] - col.s[0]);
+    const c1 = hslHex(baseHue, Math.min(82, sat * 0.72), 4 + R() * 4);
+    const c2 = hslHex((baseHue + 12) % 360, Math.min(86, sat * 0.78), 8 + R() * 6);
+    const c3 = hslHex(shiftHue, Math.min(92, sat * 0.85), 14 + R() * 11);
+    const accHue = R() < 0.65 ? baseHue : shiftHue;
+    const accent = hslHex(accHue, Math.max(70, sat), 56 + R() * 14);
+    const accent2 = hslHex((accHue + 22) % 360, Math.max(68, sat), 68 + R() * 12);
+    const price = gsrPriceFor('themes', idx);
+    const anim = price >= 2500 ? thAnims[idx % thAnims.length] : null;
+    themes.push({
+      id: 'gsr_th_' + pad4(idx),
+      name: `${thAdj[Math.floor(i / thNoun.length)]} ${thNoun[i % thNoun.length]}`,
+      desc: col.d,
+      price,
+      bg: [c1, c2, c3],
+      accent,
+      accent2,
+      section: col.sec,
+      gsr: true,
+      ...(anim ? { anim } : {}),
+    });
+  }
+
+  // ---- 850 Nameplates ----
+  const npCols = ['Neon Rush', 'Nebula', 'Sunset', 'Gemstone', 'Frostbite', 'Inferno', 'Pastel', 'Arcade', 'Royal', 'Abyss'];
+  const npAdj = [
+    'Blazing', 'Starlit', 'Velvet', 'Electric', 'Hyper', 'Cyber', 'Lunar', 'Solar', 'Prism', 'Frost',
+    'Crimson', 'Cobalt', 'Emerald', 'Violet', 'Golden', 'Silver', 'Obsidian', 'Coral', 'Indigo', 'Jade',
+    'Scarlet', 'Amber', 'Quartz', 'Opal', 'Plasma', 'Astral', 'Glacier', 'Molten', 'Mirage', 'Zenith',
+    'Phantom', 'Radiant', 'Nova', 'Pulse',
+  ];
+  const npNoun = [
+    'Ribbon', 'Banner', 'Streak', 'Gleam', 'Beam', 'Flash', 'Wave', 'Glow', 'Drift', 'Bar',
+    'Edge', 'Line', 'Rush', 'Tide', 'Veil', 'Arc', 'Flare', 'Spark', 'Mist', 'Horizon',
+    'Crest', 'Bloom', 'Trail', 'Aura', 'Vibe',
+  ];
+  const nameplates = [];
+  for (let i = 0; i < 850; i++) {
+    const idx = i + 1, R = rng(200001 + idx * 131);
+    const h1 = Math.floor(R() * 360), spread = 35 + Math.floor(R() * 110);
+    const stops = R() < 0.45 ? 3 : 2;
+    const colors = Array.from({ length: stops }, (_, k) => hslHex(h1 + k * spread, 68 + R() * 26, 30 + R() * 22));
+    const price = gsrPriceFor('nameplates', idx);
+    const animated = (idx % 3 === 0) || price >= 1500;
+    const sec = npCols[i % npCols.length];
+    nameplates.push({
+      id: 'gsr_np_' + pad4(idx),
+      name: `${npAdj[Math.floor(i / npNoun.length)]} ${npNoun[i % npNoun.length]}`,
+      desc: animated ? `Shimmering ${sec.toLowerCase()} gradient behind your name.` : `Smooth ${sec.toLowerCase()} gradient behind your name.`,
+      price,
+      colors,
+      animated,
+      section: sec,
+      gsr: true,
+    });
+  }
+
+  // ---- 800 Profile Frames (650 Gradient Frames + 150 Solid Glowing Frames) ----
+  const pfCols = ['Prism Gradient', 'Neon Ring', 'Cosmic Edge', 'Gemstone Rim', 'Elemental', 'Pastel Glow', 'Royal Trim', 'Obsidian'];
+  const pfAdj = [
+    'Prism', 'Chroma', 'Aurora', 'Solar', 'Lunar', 'Crimson', 'Cobalt', 'Emerald', 'Amethyst', 'Topaz',
+    'Ruby', 'Sapphire', 'Opal', 'Jade', 'Obsidian', 'Platinum', 'Rose', 'Cyber', 'Plasma', 'Arctic',
+    'Volcanic', 'Electric', 'Velvet', 'Mirage', 'Astral', 'Radiant', 'Neon', 'Glacier', 'Phantom', 'Zenith',
+    'Hyper', 'Imperial',
+  ];
+  const pfNoun = [
+    'Border', 'Ring', 'Halo', 'Trim', 'Crest', 'Edge', 'Band', 'Aura', 'Frame', 'Outline',
+    'Crown', 'Rim', 'Loop', 'Arc', 'Bezel', 'Ribbon', 'Circuit', 'Orbit', 'Glow', 'Veil',
+    'Vortex', 'Pulse', 'Shard', 'Beam', 'Weave',
+  ];
+  const profile_frames = [];
+  for (let i = 0; i < 800; i++) {
+    const idx = i + 1, R = rng(300001 + idx * 149);
+    const h1 = Math.floor(R() * 360), sec = pfCols[i % pfCols.length];
+    const price = gsrPriceFor('profile_frames', idx);
+    const isGradient = idx <= 650;
+    if (isGradient) {
+      const stops = R() < 0.45 ? 3 : R() < 0.8 ? 2 : 4;
+      const spread = 45 + Math.floor(R() * 85);
+      const colors = Array.from({ length: stops }, (_, k) => hslHex(h1 + k * spread, 76 + R() * 22, 52 + R() * 18));
+      const angle = Math.floor(R() * 72) * 5;
+      const gradAnim = (idx % 4 === 0) || price >= 2500;
+      const glow = (idx % 5 === 0) || price >= 1500;
+      profile_frames.push({
+        id: 'gsr_pf_' + pad4(idx),
+        name: `${pfAdj[Math.floor(i / pfNoun.length)]} ${pfNoun[i % pfNoun.length]}`,
+        desc: gradAnim ? `Flowing ${stops}-color gradient border for your profile card.` : `Crisp ${stops}-color gradient border for your profile card.`,
+        price,
+        colors,
+        angle,
+        color: colors[0],
+        glow,
+        gradAnim,
+        animated: !!(gradAnim || glow),
+        section: sec,
+        gsr: true,
+      });
+    } else {
+      const color = hslHex(h1, 78 + R() * 20, 56 + R() * 16);
+      const glow = (idx % 2 === 0) || price >= 1000;
+      profile_frames.push({
+        id: 'gsr_pf_' + pad4(idx),
+        name: `${pfAdj[Math.floor(i / pfNoun.length)]} ${pfNoun[i % pfNoun.length]}`,
+        desc: glow ? 'A pulsing single-color glow frame around your profile.' : 'A clean bold border around your profile card.',
+        price,
+        color,
+        glow,
+        animated: glow,
+        section: sec,
+        gsr: true,
+      });
+    }
+  }
+
+  // ---- 800 Banners ----
+  const bnCols = ['Horizon', 'Nebula', 'Cyber Glow', 'Gemstone', 'Oceanic', 'Sunset', 'Pastel', 'Royal'];
+  const bnAdj = [
+    'Twilight', 'Sunrise', 'Starlight', 'Midnight', 'Neon', 'Velvet', 'Electric', 'Crimson', 'Azure', 'Emerald',
+    'Violet', 'Golden', 'Arctic', 'Molten', 'Prism', 'Sapphire', 'Ruby', 'Opal', 'Jade', 'Cobalt',
+    'Obsidian', 'Indigo', 'Coral', 'Amber', 'Glacier', 'Astral', 'Hyper', 'Phantom', 'Solar', 'Lunar',
+    'Radiant', 'Mirage',
+  ];
+  const bnNoun = [
+    'Sky', 'Dusk', 'Horizon', 'Vista', 'Drift', 'Nebula', 'Tide', 'Canopy', 'Ridge', 'Valley',
+    'Coast', 'Peak', 'Aurora', 'Stream', 'Meadow', 'Lagoon', 'Canyon', 'Oasis', 'Cloud', 'Storm',
+    'Eclipse', 'Comet', 'Breeze', 'Garden', 'Summit',
+  ];
+  const banners = [];
+  for (let i = 0; i < 800; i++) {
+    const idx = i + 1, R = rng(400001 + idx * 173);
+    const h1 = Math.floor(R() * 360), stops = R() < 0.5 ? 3 : R() < 0.82 ? 2 : 4;
+    const spread = 35 + Math.floor(R() * 75);
+    const colors = Array.from({ length: stops }, (_, k) => hslHex(h1 + k * spread, 68 + R() * 28, 32 + R() * 28));
+    const angle = Math.floor(R() * 72) * 5;
+    const price = gsrPriceFor('banners', idx);
+    const animated = (idx % 3 === 0) || price >= 1500;
+    const sec = bnCols[i % bnCols.length];
+    banners.push({
+      id: 'gsr_bn_' + pad4(idx),
+      name: `${bnAdj[Math.floor(i / bnNoun.length)]} ${bnNoun[i % bnNoun.length]}`,
+      desc: animated ? `Flowing ${sec.toLowerCase()} gradient banner for your profile.` : `Multi-stop ${sec.toLowerCase()} gradient banner for your profile.`,
+      price,
+      colors,
+      angle,
+      animated,
+      section: sec,
+      gsr: true,
+    });
+  }
+
+  // ---- 350 Avatar Decorations (14 crisp SVG motifs x 25 curated color palettes) ----
+  const dcPalettes = [
+    ['Gold', '#f5c542', '#fff0a8'], ['Crimson', '#ff3b5c', '#ff99aa'], ['Cobalt', '#3b82f6', '#93c5fd'],
+    ['Emerald', '#10b981', '#6ee7b7'], ['Violet', '#8b5cf6', '#d8b4fe'], ['Cyan', '#06b6d4', '#a5f3fc'],
+    ['Magenta', '#ec4899', '#fbcfe8'], ['Amber', '#f97316', '#fed7aa'], ['Arctic', '#7dd3fc', '#f0f9ff'],
+    ['Jade', '#14b8a6', '#99f6e4'], ['Ruby', '#e11d48', '#fda4af'], ['Solar', '#eab308', '#fef08a'],
+    ['Plasma', '#a855f7', '#38bdf8'], ['Sunset', '#ff5e5e', '#ffb347'], ['Aurora', '#2de2b4', '#a78bfa'],
+    ['Cyber', '#00ff88', '#00d4ff'], ['Inferno', '#ff4500', '#ffd000'], ['Sakura', '#ff85b3', '#ffe4f0'],
+    ['Obsidian', '#52525b', '#e4e4e7'], ['Opal', '#94a3b8', '#f8fafc'], ['Royal', '#6366f1', '#facc15'],
+    ['Toxic', '#84cc16', '#d9f99d'], ['Rosegold', '#f472b6', '#fcd34d'], ['Midnight', '#4338ca', '#818cf8'],
+    ['Prism', '#ff4d94', '#2ce6ff'],
+  ];
+  const dcMotifs = [
+    { name: 'Aura Ring', sec: 'All Around', d: 'A crisp double ring framing your avatar.', fn: (c1, c2) => `<circle cx="50" cy="50" r="45" fill="none" stroke="${c1}" stroke-width="4.5"/><circle cx="50" cy="50" r="41" fill="none" stroke="${c2}" stroke-width="1.6" stroke-dasharray="10 6"/>` },
+    { name: 'Prism Halo', sec: 'Hats & Crowns', d: 'A luminous floating halo overhead.', fn: (c1, c2) => `<ellipse cx="50" cy="12" rx="28" ry="6.5" fill="none" stroke="${c1}" stroke-width="4"/><ellipse cx="50" cy="12" rx="28" ry="6.5" fill="none" stroke="${c2}" stroke-width="1.5"/>` },
+    { name: 'Star Crown', sec: 'Hats & Crowns', d: 'A sharp jeweled crown perched on top.', fn: (c1, c2) => `<path d="M26 24 L32 8 L43 18 L50 5 L57 18 L68 8 L74 24 Z" fill="${c1}" stroke="${c2}" stroke-width="1.8" stroke-linejoin="round"/><circle cx="50" cy="5" r="2.8" fill="${c2}"/>` },
+    { name: 'Twin Orbit', sec: 'All Around', d: 'Tilted orbital rings circling your picture.', fn: (c1, c2) => `<ellipse cx="50" cy="50" rx="46" ry="18" fill="none" stroke="${c1}" stroke-width="3" transform="rotate(-24 50 50)"/><ellipse cx="50" cy="50" rx="46" ry="18" fill="none" stroke="${c2}" stroke-width="2" transform="rotate(24 50 50)"/><circle cx="14" cy="36" r="4" fill="${c2}"/><circle cx="86" cy="64" r="4" fill="${c1}"/>` },
+    { name: 'Crystal Horns', sec: 'Ears & Horns', d: 'Faceted twin crystal horns.', fn: (c1, c2) => `<path d="M24 30 Q14 14 26 4 Q27 16 35 22 Z" fill="${c1}" stroke="${c2}" stroke-width="1.5"/><path d="M76 30 Q86 14 74 4 Q73 16 65 22 Z" fill="${c1}" stroke="${c2}" stroke-width="1.5"/>` },
+    { name: 'Sparkle Crest', sec: 'All Around', d: 'Four-point stars shimmering around the edge.', fn: (c1, c2) => `<circle cx="50" cy="50" r="44" fill="none" stroke="${c1}" stroke-width="2.5" opacity=".75"/><path d="M16 12 L18 18 L24 20 L18 22 L16 28 L14 22 L8 20 L14 18 Z" fill="${c2}"/><path d="M84 14 L85.5 18.5 L90 20 L85.5 21.5 L84 26 L82.5 21.5 L78 20 L82.5 18.5 Z" fill="${c1}"/><path d="M82 72 L84 78 L90 80 L84 82 L82 88 L80 82 L74 80 L80 78 Z" fill="${c2}"/>` },
+    { name: 'Cyber Visor', sec: 'Hats & Crowns', d: 'A sleek futuristic visor band.', fn: (c1, c2) => `<path d="M12 42 Q50 28 88 42 L84 54 Q50 42 16 54 Z" fill="${c1}" opacity=".82" stroke="${c2}" stroke-width="2"/><path d="M22 44 L44 39" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".7"/>` },
+    { name: 'Moon Arc', sec: 'All Around', d: 'Crescent moon accents framing your icon.', fn: (c1, c2) => `<circle cx="50" cy="50" r="44" fill="none" stroke="${c1}" stroke-width="2.5" stroke-dasharray="140 60"/><path d="M82 14 A9 9 0 1 0 90 26 A7 7 0 1 1 82 14 Z" fill="${c2}"/>` },
+    { name: 'Hex Shield', sec: 'All Around', d: 'A crisp geometric hexagon frame.', fn: (c1, c2) => `<polygon points="50,4 90,27 90,73 50,96 10,73 10,27" fill="none" stroke="${c1}" stroke-width="4" stroke-linejoin="round"/><polygon points="50,9 85,29 85,71 50,91 15,71 15,29" fill="none" stroke="${c2}" stroke-width="1.4" opacity=".8"/>` },
+    { name: 'Diamond Crest', sec: 'Hats & Crowns', d: 'A gleaming floating diamond emblem.', fn: (c1, c2) => `<polygon points="50,2 62,15 50,28 38,15" fill="${c1}" stroke="${c2}" stroke-width="2"/><circle cx="50" cy="50" r="45" fill="none" stroke="${c1}" stroke-width="2.5" opacity=".7"/>` },
+    { name: 'Winged Edge', sec: 'All Around', d: 'Stylized twin wings flanking your avatar.', fn: (c1, c2) => `<path d="M14 62 Q-2 42 8 18 Q16 34 24 34 Q12 48 20 58 Z" fill="${c1}" stroke="${c2}" stroke-width="1.6"/><path d="M86 62 Q102 42 92 18 Q84 34 76 34 Q88 48 80 58 Z" fill="${c1}" stroke="${c2}" stroke-width="1.6"/>` },
+    { name: 'Cat Ears', sec: 'Ears & Horns', d: 'Pointed ears resting atop your avatar.', fn: (c1, c2) => `<polygon points="18,32 22,6 42,20" fill="${c1}" stroke="${c2}" stroke-width="1.8" stroke-linejoin="round"/><polygon points="82,32 78,6 58,20" fill="${c1}" stroke="${c2}" stroke-width="1.8" stroke-linejoin="round"/>` },
+    { name: 'Bolt Ring', sec: 'All Around', d: 'Charged ring with twin lightning bolts.', fn: (c1, c2) => `<circle cx="50" cy="50" r="44" fill="none" stroke="${c1}" stroke-width="3.5"/><path d="M18 10 L10 24 L17 24 L13 36 L25 20 L18 20 Z" fill="${c2}"/><path d="M86 64 L78 78 L85 78 L81 90 L93 74 L86 74 Z" fill="${c2}"/>` },
+    { name: 'Corner Brackets', sec: 'All Around', d: 'Sharp HUD targeting corners around your icon.', fn: (c1, c2) => `<path d="M10 28 V10 H28 M72 10 H90 V28 M90 72 V90 H72 M28 90 H10 V72" fill="none" stroke="${c1}" stroke-width="4.5" stroke-linecap="round"/><path d="M14 26 V14 H26 M74 14 H86 V26 M86 74 V86 H74 M26 86 H14 V74" fill="none" stroke="${c2}" stroke-width="1.6" stroke-linecap="round"/>` },
+  ];
+  const decorations = [];
+  for (let m = 0; m < dcMotifs.length; m++) {
+    for (let p = 0; p < dcPalettes.length; p++) {
+      const idx = m * dcPalettes.length + p + 1;
+      const [pname, c1, c2] = dcPalettes[p], mot = dcMotifs[m];
+      const inner = mot.fn(c1, c2);
+      decorations.push({
+        id: 'gsr_dc_' + pad4(idx),
+        name: `${pname} ${mot.name}`,
+        desc: mot.d,
+        price: gsrPriceFor('decorations', idx),
+        section: mot.sec,
+        gsr: true,
+        svg: s => `<svg viewBox="0 0 100 100" width="${s}" height="${s}">${inner}</svg>`,
+      });
+    }
+  }
+
+  // ---- 250 Profile Effects ----
+  const peStyles = ['falling', 'rising', 'floating', 'twinkling'];
+  const peStyleNames = { falling: 'Cascade', rising: 'Embers', floating: 'Drift', twinkling: 'Sparkle' };
+  const peAdj = [
+    'Crimson', 'Azure', 'Emerald', 'Violet', 'Golden', 'Arctic', 'Cobalt', 'Sakura', 'Solar', 'Lunar',
+    'Neon', 'Cyber', 'Plasma', 'Jade', 'Amber', 'Coral', 'Indigo', 'Ruby', 'Topaz', 'Opal',
+    'Sapphire', 'Silver', 'Magenta', 'Mint', 'Obsidian',
+  ];
+  const peNoun = ['Dust', 'Rain', 'Sparks', 'Petals', 'Stars', 'Motes', 'Flakes', 'Orbs', 'Glow', 'Shimmer'];
+  const profile_effects = [];
+  for (let i = 0; i < 250; i++) {
+    const idx = i + 1, R = rng(500001 + idx * 197);
+    const style = peStyles[i % peStyles.length];
+    const color = hslHex(Math.floor(R() * 360), 74 + R() * 24, 58 + R() * 20);
+    profile_effects.push({
+      id: 'gsr_pe_' + pad4(idx),
+      name: `${peAdj[Math.floor(i / peNoun.length)]} ${peNoun[i % peNoun.length]}`,
+      desc: `${peStyleNames[style]} particles glowing across your profile.`,
+      price: gsrPriceFor('profile_effects', idx),
+      color,
+      style,
+      animated: true,
+      section: peStyleNames[style],
+      gsr: true,
+    });
+  }
+
+  // ---- 150 Badges (15 SVG emblems x 10 finishes) ----
+  const bdFinishes = [
+    ['Gold', '#f5c542'], ['Crimson', '#ff4d6d'], ['Cobalt', '#4f8cff'], ['Emerald', '#22c55e'], ['Amethyst', '#a855f7'],
+    ['Arctic', '#67e8f9'], ['Solar', '#fb923c'], ['Rose', '#f472b6'], ['Platinum', '#e2e8f0'], ['Neon', '#34d399'],
+  ];
+  const bdShapes = [
+    ['Prism', '<polygon points="12,2 22,19 2,19"/>'],
+    ['Shield', '<path d="M12 2L4 5v6c0 5.2 3.4 9.7 8 11 4.6-1.3 8-5.8 8-11V5l-8-3z"/>'],
+    ['Nova', '<path d="M12 1l2.8 7.2L22 11l-7.2 2.8L12 21l-2.8-7.2L2 11l7.2-2.8z"/>'],
+    ['Compass', '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><polygon points="12,5 15,12 12,19 9,12"/>'],
+    ['Crystal', '<polygon points="12,1.5 19,8 16,22 8,22 5,8"/>'],
+    ['Bolt', '<path d="M13.5 2L4.5 13h6L9 22l10.5-12h-6z"/>'],
+    ['Crown', '<path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/>'],
+    ['Crescent', '<path d="M16 3a9 9 0 1 0 5.5 15.2A7.5 7.5 0 0 1 16 3z"/>'],
+    ['Flame', '<path d="M12 2c2 4 6.5 6.8 6.5 12a6.5 6.5 0 1 1-13 0c0-3 1.7-4.8 3-6.2.4 1.8 1.2 2.9 2.4 3.4C10 8.5 10.7 5.5 12 2z"/>'],
+    ['Hex', '<polygon points="12,2 21,7 21,17 12,22 3,17 3,7"/>'],
+    ['Gem', '<path d="M6 3h12l4 6-10 13L2 9z"/>'],
+    ['Star', '<path d="M12 2l3 6.2 6.8 1-4.9 4.7 1.2 6.8L12 17.5 5.9 20.7l1.2-6.8-4.9-4.7 6.8-1z"/>'],
+    ['Ring', '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="12" cy="12" r="3"/>'],
+    ['Wing', '<path d="M3 18C5 10 11 4 21 3c-2 5-5 8-9 9 3 1 5 0 7-1-2 5-6 8-12 9l-4-2z"/>'],
+    ['Spark', '<path d="M12 2l2 8 8 2-8 2-2 8-2-8-8-2 8-2z"/>'],
+  ];
+  const badges = [];
+  for (let s = 0; s < bdShapes.length; s++) {
+    for (let f = 0; f < bdFinishes.length; f++) {
+      const idx = s * bdFinishes.length + f + 1;
+      const [sname, svg] = bdShapes[s], [fname, color] = bdFinishes[f];
+      badges.push({
+        id: 'gsr_bd_' + pad4(idx),
+        name: `${fname} ${sname}`,
+        desc: `${fname} ${sname.toLowerCase()} emblem for your profile.`,
+        price: gsrPriceFor('badges', idx),
+        color,
+        svg,
+        section: fname,
+        gsr: true,
+      });
+    }
+  }
+
+  const GSR = { themes, nameplates, profile_frames, banners, decorations, profile_effects, badges };
+  const GSR_MAP = Object.fromEntries(Object.entries(GSR).map(([k, list]) => [k, new Map(list.map(x => [x.id, x]))]));
+  return { GSR, GSR_MAP };
+})();
+
 // A generic registry tying each shop category to its catalog and the
 // profile fields it reads/writes — lets the shop's render/buy/equip code
 // stay generic instead of four near-identical copies of the same logic.
 const SHOP_CATEGORY_DEFS = {
-  decorations: { label: 'Avatar Decorations', get catalog() { return [...AVATAR_DECORATIONS, ...customDecorations.filter(d => !d.mask)]; }, ownedField: 'ownedDecorations', equipField: 'equippedDecoration' },
+  decorations: { label: 'Avatar Decorations', get catalog() { return [...AVATAR_DECORATIONS, ...customDecorations.filter(d => !d.mask), ...GSR.decorations]; }, ownedField: 'ownedDecorations', equipField: 'equippedDecoration' },
   // Full avatar masks are decorations flagged `mask` in the admin editor. They have their own
   // equip slot (equippedMask), so a mask and a decoration can be worn at the same time.
   masks: { label: 'Avatar Masks', get catalog() { return customDecorations.filter(d => d.mask); }, ownedField: 'ownedDecorations', equipField: 'equippedMask' },
-  nameplates: { label: 'Nameplates', get catalog() { return [...NAMEPLATES, ...customNameplates]; }, ownedField: 'ownedNameplates', equipField: 'equippedNameplate' },
-  profile_effects: { label: 'Profile Effects', get catalog() { return [...PROFILE_EFFECTS, ...customProfileEffects]; }, ownedField: 'ownedProfileEffects', equipField: 'equippedProfileEffect' },
-  profile_frames: { label: 'Profile Frames', get catalog() { return [...PROFILE_FRAMES, ...customProfileFrames]; }, ownedField: 'ownedProfileFrames', equipField: 'equippedProfileFrame' },
+  nameplates: { label: 'Nameplates', get catalog() { return [...NAMEPLATES, ...customNameplates, ...GSR.nameplates]; }, ownedField: 'ownedNameplates', equipField: 'equippedNameplate' },
+  profile_effects: { label: 'Profile Effects', get catalog() { return [...PROFILE_EFFECTS, ...customProfileEffects, ...GSR.profile_effects]; }, ownedField: 'ownedProfileEffects', equipField: 'equippedProfileEffect' },
+  profile_frames: { label: 'Profile Frames', get catalog() { return [...PROFILE_FRAMES, ...customProfileFrames, ...GSR.profile_frames]; }, ownedField: 'ownedProfileFrames', equipField: 'equippedProfileFrame' },
   // Badges (v4.65): every one you own shows on your profile, next to the ones you earn, so there's nothing to equip
-  badges: { label: 'Badges', get catalog() { return SHOP_BADGES; }, ownedField: 'ownedBadges', equipField: 'equippedBadge' },
+  badges: { label: 'Badges', get catalog() { return [...SHOP_BADGES, ...GSR.badges]; }, ownedField: 'ownedBadges', equipField: 'equippedBadge' },
   // (no "Animated" tag on themes since v4.62: the three with a moving background barely showed it, so the Owner had it removed)
-  themes: { label: 'Themes', get catalog() { return [...SHOP_THEMES, ...customThemes]; }, ownedField: 'ownedThemes', equipField: 'equippedTheme' },
-  banners: { label: 'Banners', get catalog() { return customBanners; }, ownedField: 'ownedBanners', equipField: 'equippedBanner' },
+  themes: { label: 'Themes', get catalog() { return [...SHOP_THEMES, ...customThemes, ...GSR.themes]; }, ownedField: 'ownedThemes', equipField: 'equippedTheme' },
+  banners: { label: 'Banners', get catalog() { return [...customBanners, ...GSR.banners]; }, ownedField: 'ownedBanners', equipField: 'equippedBanner' },
   music: { label: 'Music', get catalog() { return allMusicTracks(); }, ownedField: 'ownedMusic', equipField: 'equippedMusic' },
 };
 const PREMIUM_DURATION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
@@ -1261,6 +1626,15 @@ function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(
 //      ACCESSIBILITY — SCREEN SHAKE comment (shakeAllowed()) further down.
 // ============================================================
 const UPDATES = [
+  { v: '4.78', date: '2026-11-27', title: 'The Great Shop Rush (4,000+ Items), Closing DMs & Gradient Profile Frames',
+    notes: [
+      'THE GREAT SHOP RUSH: Added 4,200+ brand-new Shop items across Themes, Nameplates, Profile Frames, Banners, Avatar Decorations, Profile Effects, and Badges — with instant search across the whole catalog, collection & sort filters, and fast page-by-page loading.',
+      'Closing DMs like Discord: Hover any DM (or tap × on mobile) to close it from your Direct Messages list without deleting your history. It stays hidden until a new message arrives or you open it again.',
+      'Gradient Profile Frames in the Panel: Staff can now create and edit multi-color gradient profile frames (2 to 8 colors, custom angle, flowing gradient animation, and pulsing glow) right from the Shop creator.',
+      'Fixed Overcontrol RNG showing an error toast if you undo/toggle its Quick Open shortcut while it is loading.',
+      'Fixed Blox Merge and Block Blast game-over screens appearing behind game tiles, and improved mobile typing stability so chat stops randomly scrolling while you type.',
+      '3 new easter eggs. That makes 105.',
+    ] },
   { v: '4.77', date: '2026-11-24', title: 'Live screenshare badges, Server AutoMod, Message Forwarding, Bookmarks & 100th Easter Egg',
     notes: [
       'Live sidebar LIVE badges: DMs, group chats, server channels, and threads now show a green LIVE pill whenever someone is sharing their screen there — and Frixion will no longer auto-reload for an update while you are actively sharing or watching.',
@@ -2290,6 +2664,7 @@ function cleanCatalogItem(raw) {
   if (Array.isArray(it.cutscenes)) it.cutscenes = it.cutscenes.filter(c => c && safeUrl(c.src, 'media')).slice(0, 3);
   if (it.bannerPos != null && !/^[\w\s.%-]{1,40}$/.test(String(it.bannerPos))) it.bannerPos = null;
   ['fx', 'cssClass', 'style'].forEach(k => { if (it[k] != null && !/^[\w -]{1,60}$/.test(String(it[k]))) delete it[k]; });
+  if ('angle' in it) { const a = Number(it.angle); it.angle = Number.isFinite(a) ? Math.max(0, Math.min(360, Math.round(a))) : 135; }
   if ('price' in it) it.price = Number(it.price) || 0;
   return it;
 }
@@ -2998,6 +3373,12 @@ function badgesFor(p, self) {
   if (ct && (self || p.hideOrbs !== true)) out.push({ key: 'casino', color: ct[2], title: 'Casino', tier: ct[1], text: `${fmtOrbs(bet)} Orbs bet in the Casino` });
   if (p.cracker === true) out.push({ key: 'cracker', color: '#ff4d4f', title: 'Easter Eggs', tier: 'CRACKER', text: 'Found every easter egg' });
   SHOP_BADGES.forEach(b => { if ((p.ownedBadges || []).includes(b.id)) out.push({ key: 'shop:' + b.id, svg: b.svg, color: b.color, title: 'Shop Badge', tier: b.name.toUpperCase(), text: b.desc }); });
+  if (typeof GSR_MAP !== 'undefined' && GSR_MAP.badges) {
+    (p.ownedBadges || []).forEach(id => {
+      const b = GSR_MAP.badges.get(id);
+      if (b) out.push({ key: 'shop:' + b.id, svg: b.svg, color: b.color, title: 'Shop Badge', tier: b.name.toUpperCase(), text: b.desc });
+    });
+  }
   return out;
 }
 function badgeIcon(b, size) { return badgeSvg(b.svg || BADGE_PATHS[b.key] || '', b.color, size); }
@@ -5057,9 +5438,11 @@ function cleanupAllListeners() {
   if (unsub.events) { unsub.events(); unsub.events = null; }
   if (unsub.blocks) unsub.blocks();
   if (unsub.bookmarks) unsub.bookmarks();
+  if (unsub.closedDMs) unsub.closedDMs();
   if (typeof ssTeardownAll === 'function') ssTeardownAll();
   myBlocks = []; revealedBlocked.clear();
   if (typeof myBookmarks !== 'undefined') myBookmarks = [];
+  if (typeof myClosedDMs !== 'undefined') myClosedDMs = {};
   stopServerChannelListeners();
   catalogUnsubs.forEach(u => { try { u(); } catch (e) {} });
   catalogUnsubs = [];
@@ -5391,6 +5774,7 @@ function initAppForUser() {
   subscribeMentions();
   subscribeReadSync();
   subscribeBookmarks();
+  subscribeClosedDMs();
   subscribeCustomEmojis();
   subscribeCustomDecorations();
   subscribeCustomThemes();
@@ -5733,26 +6117,32 @@ function syncMobileViewport() {
   if (!isTouchDevice()) {
     root.style.removeProperty('--mobile-viewport-height');
     document.body.style.transform = '';
+    document.body.classList.remove('keyboard-open');
     return;
   }
   const vv = window.visualViewport;
   const visibleHeight = Math.round(vv ? vv.height : window.innerHeight);
-  // (v4.64) Only change things that really moved: iOS fires these events many times a second while you type, and
-  // re-setting the height and the shift every time made the screen bounce up and down.
-  if (Math.abs(visibleHeight - lastVisibleHeight) >= 2) {
+  const kbOpen = !!vv && (window.innerHeight - vv.height) > 120;
+  const kbChanged = kbOpen !== document.body.classList.contains('keyboard-open');
+  document.body.classList.toggle('keyboard-open', kbOpen);
+  // While the keyboard is up and a text box is focused, ignore small (<8px) WebKit jitter
+  // from predictive text / autocorrect bars so #messages doesn't jump mid-word (v4.78, request 96).
+  const activeField = document.activeElement && document.activeElement.matches && document.activeElement.matches('input, textarea');
+  const threshold = (kbOpen && activeField && !kbChanged) ? 8 : 2;
+  if (lastVisibleHeight < 0 || kbChanged || Math.abs(visibleHeight - lastVisibleHeight) >= threshold) {
     lastVisibleHeight = visibleHeight;
     root.style.setProperty('--mobile-viewport-height', `${visibleHeight}px`);
   }
-  // Shift <body> itself (not #app inside it). Body has overflow:hidden and
-  // is only visibleHeight tall, so translating a CHILD of body pushed the
-  // composer and newest messages outside body's clip box — that's why the
-  // DM went blank and the text box vanished while the iOS keyboard was up.
+  // Pin outer page scroll to 0 on iOS when keyboard is open so WebKit's focused-input pan
+  // doesn't drag the whole layout away; only compensate with translateY if offsetTop still persists.
+  if (kbOpen && (window.scrollY || window.scrollX)) {
+    try { window.scrollTo(0, 0); } catch (e) {}
+  }
   const shift = vv && vv.offsetTop > 0 ? Math.round(vv.offsetTop) : 0;
   if (Math.abs(shift - lastBodyShift) >= 2 || (shift === 0) !== (lastBodyShift === 0)) {
     lastBodyShift = shift;
     document.body.style.transform = shift ? `translateY(${shift}px)` : '';
   }
-  document.body.classList.toggle('keyboard-open', !!vv && (window.innerHeight - vv.height) > 120);
 }
 let lastVisibleHeight = -1, lastBodyShift = 0, viewportFrame = 0;
 // at most once a frame, however many viewport events come in
@@ -5767,7 +6157,7 @@ function queueViewportSync() {
 (function keepMessagesAnchored() {
   const wrap = $('messages');
   if (!wrap || typeof ResizeObserver === 'undefined') return;
-  let distFromBottom = 0, touching = false, lastScroll = 0;
+  let distFromBottom = 0, touching = false, lastScroll = 0, prevHeight = wrap.clientHeight;
   wrap.addEventListener('scroll', () => {
     distFromBottom = wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight;
     lastScroll = Date.now();
@@ -5778,16 +6168,27 @@ function queueViewportSync() {
   wrap.addEventListener('touchend', () => { touching = false; }, { passive: true });
   wrap.addEventListener('touchcancel', () => { touching = false; }, { passive: true });
   new ResizeObserver(() => {
-    if (touching || (isTouchDevice() && Date.now() - lastScroll < 250 && distFromBottom >= 80)) return;
-    wrap.scrollTop = wrap.scrollHeight - wrap.clientHeight - (distFromBottom < 80 ? 0 : distFromBottom);
+    const h = wrap.clientHeight;
+    if (h === prevHeight) return;   // ignore non-height relayouts so typing never jumps the scroll (v4.78)
+    const dh = prevHeight - h;
+    prevHeight = h;
+    if (touching || (isTouchDevice() && Date.now() - lastScroll < 300 && distFromBottom >= 80)) return;
+    if (distFromBottom < 80) wrap.scrollTop = wrap.scrollHeight - h;
+    else wrap.scrollTop = Math.max(0, wrap.scrollTop + dh);
   }).observe(wrap);
 })();
-// (v4.68, request 70) iPhone with the keyboard up: the page is taller than what shows, and iOS lets a drag move the whole
+// (v4.68, request 70; strengthened v4.78, request 96) iPhone with the keyboard up: the page is taller than what shows, and iOS lets a drag or keystroke move the whole
 // page (and everything with it) whenever the list under the finger can't scroll that way any more, or there's no list
-// there. That's what made the screen jump around while typing and the messages seem stuck. Those drags are stopped
-// now; lists, the message box (moving the caret) and sideways drags work as before.
+// there. Those drifts and drags are stopped now; lists, the message box (moving the caret) and sideways drags work as before.
 (function stopPagePanWhileTyping() {
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (isTouchDevice()) {
+    window.addEventListener('scroll', () => {
+      if (document.body.classList.contains('keyboard-open') && (window.scrollY || window.scrollX)) {
+        window.scrollTo(0, 0);
+      }
+    }, { passive: true });
+  }
   if (!ios) return;
   let lx = 0, ly = 0;
   const canScroll = (el, dy) => {
@@ -6850,11 +7251,55 @@ function groupIconHTML(g, size, typing) {
 // DMs and groups are one list (v4.62), newest message first, like Discord: a group with a new message goes above every
 // DM too, not just above the other groups.
 const convTime = c => timeValue(c.updatedAt) || timeValue((c.lastMessage || {}).createdAt) || timeValue(c.createdAt);
+// Closing DMs like Discord (v4.78, request 94): hidden privately in users/{uid}/meta/closedDMs until a newer message arrives or you open it again.
+let myClosedDMs = {};
+function isDMClosed(dm) {
+  if (!dm || !dm.id) return false;
+  const closedAt = Number(myClosedDMs[dm.id]);
+  if (!Number.isFinite(closedAt) || closedAt <= 0) return false;
+  return (convTime(dm) || 0) <= closedAt;
+}
+function subscribeClosedDMs() {
+  if (unsub.closedDMs) { unsub.closedDMs(); unsub.closedDMs = null; }
+  if (!myUid) return;
+  unsub.closedDMs = db.collection('users').doc(myUid).collection('meta').doc('closedDMs')
+    .onSnapshot(snap => {
+      const d = snap.exists ? snap.data() : null;
+      myClosedDMs = (d && d.map && typeof d.map === 'object') ? { ...d.map } : {};
+      renderDMRows();
+    }, () => {});
+}
+async function persistClosedDMs() {
+  if (!myUid) return;
+  try { await db.collection('users').doc(myUid).collection('meta').doc('closedDMs').set({ map: myClosedDMs }); } catch (e) {}
+}
+function reopenDM(dmId) {
+  if (!dmId || !(dmId in myClosedDMs)) return;
+  delete myClosedDMs[dmId];
+  persistClosedDMs();
+}
+function closeDM(dmId) {
+  if (!myUid || !dmId) return;
+  const dm = (window.__myDMs || []).find(c => c.id === dmId);
+  myClosedDMs[dmId] = Math.max(Date.now(), (dm ? convTime(dm) : 0) + 1);
+  persistClosedDMs();
+  if (currentView === 'dm' && currentDMId === dmId) {
+    if (unsub.messages) { unsub.messages(); unsub.messages = null; }
+    if (unsub.typing) { unsub.typing(); unsub.typing = null; }
+    currentDMId = null; currentDMOtherUid = null; currentView = 'none';
+    if (isMobile()) { showWelcome(); setMobilePane('list'); }
+    else goHomePage('friends');
+  }
+  renderDMRows();
+  eggFindOnce('cleandms');
+}
 function renderDMRows() {
   const wrap = $('dm-rows');
   wrap.innerHTML = '';
-  const convs = [...(window.__myDMs || []).map(c => ({ kind: 'dm', c })), ...(window.__myGroupDMs || []).map(c => ({ kind: 'gdm', c }))]
-    .sort((a, b) => convTime(b.c) - convTime(a.c));
+  const convs = [
+    ...(window.__myDMs || []).filter(c => !isDMClosed(c)).map(c => ({ kind: 'dm', c })),
+    ...(window.__myGroupDMs || []).map(c => ({ kind: 'gdm', c })),
+  ].sort((a, b) => convTime(b.c) - convTime(a.c));
   convs.forEach(({ kind, c }) => {
     const row = document.createElement('div');
     if (kind === 'dm') {
@@ -6864,12 +7309,15 @@ function renderDMRows() {
       const nameplate = nameplateById(p.equippedNameplate);
       const rk = 'dm:' + dm.id;
       row.dataset.room = rk;
+      row.dataset.dmId = dm.id;
       row.className = 'dm-row' + (currentDMId === dm.id ? ' active' : '') + (isConversationUnread(dm) ? ' unread' : '') + (nameplate ? ' has-nameplate' : '');
       row.innerHTML = nameplateBgHTML(nameplate) +
         avatarHTML(32, p.avatarColor, initials(p.username), computeDisplayStatus(otherUid), p.avatarUrl, p.equippedDecoration, otherUid, p.equippedMask, typersIn('dm', dm).includes(otherUid)) +
         `<div class="dm-copy"><span class="dm-name">${gapUnderscores(esc(displayNameOf(p)))}${premiumStar(p)}${roleTag(p)}${botTag(p)}</span><span class="dm-preview">${esc(previewForMessage(dm.lastMessage || conversationPreviewCache.get(`dms:${dm.id}`)))}</span></div>` +
         (typeof ssIsRoomLive === 'function' && ssIsRoomLive(rk) ? '<span class="ss-side-live">LIVE</span>' : '') +
-        `<span class="dm-time">${esc(shortAgo(timeValue(dm.updatedAt) || timeValue((dm.lastMessage || {}).createdAt)))}</span>`;
+        `<span class="dm-time">${esc(shortAgo(timeValue(dm.updatedAt) || timeValue((dm.lastMessage || {}).createdAt)))}</span>` +
+        `<button type="button" class="dm-close-btn" title="Close DM" aria-label="Close DM">&times;</button>`;
+      row.querySelector('.dm-close-btn').onclick = (e) => { e.stopPropagation(); closeDM(dm.id); };
       row.onclick = () => selectDM(dm.id, otherUid);
     } else {
       const g = c;
@@ -6996,6 +7444,7 @@ function openConversationSheet(kind) {
 }
 
 async function selectDM(id, otherUid) {
+  reopenDM(id);
   clearReplyTarget();
   clearMyTypingDoc();
   currentServerId = null; currentServerData = null; currentChannelId = null; currentGroupDMId = null; currentThreadId = null; currentThreadData = null;
@@ -7528,9 +7977,8 @@ async function openProfileModal(username) {
   // The frame goes on its own layer over the card (v4.62). On the card itself, the card's pop-in animation replaced
   // the frame's animation, so moving frames like Rainbow stood still.
   const frameLayer = $('profile-frame-layer');
-  frameLayer.className = 'profile-frame-layer' + (frame && frame.cssClass ? ' ' + frame.cssClass : '') + (frame && frame.glow ? ' frame-custom-glow' : '') + (frame ? '' : ' hidden');
-  frameLayer.style.border = (frame && frame.color) ? `3px solid ${frame.color}` : '';
-  frameLayer.style.setProperty('--custom-frame-color', (frame && frame.color) || '');
+  applyProfileFrameVisual(frameLayer, frame, 'profile-frame-layer');
+  if (!frame) frameLayer.classList.add('hidden');
   $('profile-username').innerHTML = gapUnderscores(esc(displayNameOf(p))) + premiumStar(p) + roleTag(p) + botTag(p);
   hideBadgeTip(); renderProfileBadges(p, isSelf);   // (v4.65)
   const showHandle = p.displayName && p.displayName !== p.username;
@@ -12417,7 +12865,19 @@ if (isMobile()) $('composer-input').setAttribute('enterkeyhint', 'enter');
 $('composer-input').addEventListener('keyup', (e) => {
   if (e.key === ' ' && !(ckField && ckField.el === e.target)) ckWordBoundaryCheck(e.target);
 });
-function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 200) + 'px'; }
+function autoResize(el) {
+  if (!el) return;
+  if (!el.value) { if (el.style.height) el.style.height = ''; return; }
+  // Avoid collapsing height to 'auto' when single-line text hasn't wrapped — collapsing triggers
+  // iOS WebKit's focused-input auto-scroll on every keystroke (v4.78, request 96).
+  const curH = el.offsetHeight;
+  if (!el.value.includes('\n') && el.scrollHeight <= Math.max(curH, 44) && (!el.style.height || parseInt(el.style.height, 10) <= 44)) return;
+  const prevTop = isTouchDevice() ? window.scrollY : 0;
+  el.style.height = 'auto';
+  const next = Math.min(el.scrollHeight, 200);
+  el.style.height = next + 'px';
+  if (isTouchDevice() && window.scrollY !== prevTop) { try { window.scrollTo(0, prevTop); } catch (e) {} }
+}
 
 // ---------- composer character count ----------
 // Positioned with CSS (position:absolute, tucked into the composer's own
@@ -15146,8 +15606,13 @@ function shopItemPreviewHTML(key, item) {
     return `<div class="${cls}" style="${style}">${PROFILE_EFFECT_PARTICLES_HTML}</div>`;
   }
   if (key === 'profile_frames') {
-    const cls = 'sic-frame-preview' + (item.cssClass ? ' ' + item.cssClass : '') + (item.glow ? ' frame-custom-glow' : '');
-    const style = item.color ? `border:3px solid ${esc(item.color)};--custom-frame-color:${esc(item.color)};` : '';
+    const grad = !item.cssClass ? frameGradientCSS(item) : '';
+    const solid = !grad && !item.cssClass && item.color ? item.color : '';
+    const glowCol = item.color || (Array.isArray(item.colors) && item.colors[0]) || '';
+    const cls = 'sic-frame-preview' + (item.cssClass ? ' ' + item.cssClass : '') + (grad ? ' frame-custom-gradient' + (item.gradAnim ? ' frame-grad-anim' : '') : '') + (item.glow ? ' frame-custom-glow' : '');
+    const style = grad
+      ? `--ring-bg:${esc(grad)};${glowCol ? `--custom-frame-color:${esc(glowCol)};` : ''}`
+      : solid ? `border:3px solid ${esc(solid)};--custom-frame-color:${esc(solid)};` : '';
     return `<div class="${cls}" style="${style}">${avatarHTML(56, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl)}</div>`;
   }
   // Big LiquidType-style swatch: the gradient fills the whole preview and
@@ -15227,13 +15692,64 @@ function wireShopCardButtons(wrap) {
 const SHOP_FEATURED_ORDER = ['music', 'themes', 'banners', 'decorations', 'masks', 'nameplates', 'profile_effects', 'profile_frames'];
 // Sets of items shown together at the top of Featured, whatever kind each one is (items say which with collection)
 const SHOP_COLLECTIONS = [{ id: 'space', label: 'New: black hole and space' }];
+const SHOP_PAGE_SIZE = 48;
+let shopActiveTab = 'featured';
+const shopLimits = {};
+const shopFilters = {};
 function shopGridClass(key) {
   return 'shop-grid' + (key === 'music' ? ' music-shop-grid' : (key === 'themes' || key === 'banners') ? ' theme-shop-grid' : '');
+}
+function shopFilterOf(key) {
+  if (!shopFilters[key]) shopFilters[key] = { sec: 'all', owned: 'all', sort: 'default' };
+  return shopFilters[key];
+}
+function shopItemMatchesQuery(item, q) {
+  if (!q) return true;
+  return (item.name && item.name.toLowerCase().includes(q))
+    || (item.section && item.section.toLowerCase().includes(q))
+    || (item.desc && item.desc.toLowerCase().includes(q));
+}
+function shopCatalogCounts() {
+  let total = 0;
+  const counts = {};
+  Object.entries(SHOP_CATEGORY_DEFS).forEach(([k, def]) => {
+    const n = def.catalog.filter(i => !i.disabled).length;
+    counts[k] = n; total += n;
+  });
+  return { total, counts };
 }
 function renderShopFeatured() {
   const wrap = $('shop-pane-featured');
   const keys = SHOP_FEATURED_ORDER.concat(Object.keys(SHOP_CATEGORY_DEFS).filter(k => !SHOP_FEATURED_ORDER.includes(k)));
-  const sections = [];
+  const q = ($('shop-search').value || '').trim().toLowerCase();
+  if (q) {
+    // Global search across all 4,300+ Shop items directly from Featured (v4.78)
+    const hits = [];
+    keys.forEach(key => {
+      const def = SHOP_CATEGORY_DEFS[key];
+      if (!def) return;
+      def.catalog.forEach(item => { if (!item.disabled && shopItemMatchesQuery(item, q)) hits.push({ key, item }); });
+    });
+    const lim = shopLimits.featured || SHOP_PAGE_SIZE;
+    const shown = hits.slice(0, lim);
+    wrap.innerHTML = hits.length
+      ? `<div class="shop-section-label">Search results across the whole Shop (${hits.length.toLocaleString()} found)</div>`
+        + `<div class="shop-grid">${shown.map(h => shopItemCardHTML(h.key, h.item, true)).join('')}</div>`
+        + (hits.length > shown.length ? `<div class="shop-load-more-wrap"><button type="button" class="shop-load-more-btn" data-shop-more="featured">Load ${Math.min(SHOP_PAGE_SIZE, hits.length - shown.length)} more</button><div class="shop-load-more-sub">Showing ${shown.length.toLocaleString()} of ${hits.length.toLocaleString()} results</div></div>` : '')
+      : '<div class="shop-empty-state"><b>Nothing found</b><span>Try a different search across the Shop.</span></div>';
+    wireShopCardButtons(wrap);
+    const more = wrap.querySelector('[data-shop-more]');
+    if (more) more.onclick = () => { shopLimits.featured = (shopLimits.featured || SHOP_PAGE_SIZE) + SHOP_PAGE_SIZE; renderShopFeatured(); };
+    return;
+  }
+  const { total, counts } = shopCatalogCounts();
+  const pillOrder = ['themes', 'nameplates', 'profile_frames', 'banners', 'decorations', 'profile_effects', 'badges', 'music'];
+  const rushBanner = `<div class="shop-rush-banner">
+    <div class="shop-rush-head"><span class="shop-rush-title">THE GREAT SHOP RUSH</span><span class="shop-rush-count">${total.toLocaleString()} items in stock</span></div>
+    <div class="shop-rush-sub">Over 4,200 new Themes, Nameplates, Gradient Profile Frames, Banners, Avatar Decorations, Profile Effects &amp; Badges. Search everything above or jump straight to a category:</div>
+    <div class="shop-rush-pills">${pillOrder.filter(k => counts[k] > 0).map(k => `<button type="button" class="shop-rush-pill" data-jump-tab="${k}">${esc(SHOP_CATEGORY_DEFS[k].label)} <span>${counts[k].toLocaleString()}</span></button>`).join('')}</div>
+  </div>`;
+  const sections = [rushBanner];
   // New sets first, every kind of item in one row (and not again below)
   SHOP_COLLECTIONS.forEach(col => {
     const cards = keys.flatMap(key => (SHOP_CATEGORY_DEFS[key] ? SHOP_CATEGORY_DEFS[key].catalog : [])
@@ -15248,6 +15764,13 @@ function renderShopFeatured() {
     sections.push(`<div class="shop-section-label">${esc(def.label)}</div><div class="${shopGridClass(key)}">${items.map(item => shopItemCardHTML(key, item)).join('')}</div>`);
   });
   wrap.innerHTML = sections.join('') || '<div class="shop-empty-state"><b>Nothing featured right now</b><span>Check the other tabs.</span></div>';
+  wrap.querySelectorAll('[data-jump-tab]').forEach(b => {
+    b.onclick = () => {
+      const k = b.dataset.jumpTab;
+      const topTab = document.querySelector(`.shop-tab[data-shop-tab="${k}"]`) || $('shop-browse-toggle');
+      switchShopTab(k, topTab);
+    };
+  });
   wireShopCardButtons(wrap);
 }
 
@@ -15256,65 +15779,120 @@ function renderShopCategoryPane(key) {
   const wrap = $('shop-pane-' + key);
   if (!def || !wrap) return;
   const q = ($('shop-search').value || '').trim().toLowerCase();
-  const matches = (item) => !q || item.name.toLowerCase().includes(q);
-  const animated = def.catalog.filter(i => i.animated && matches(i));
-  const staticOnes = def.catalog.filter(i => !i.animated && matches(i));
-  const gridCls = 'shop-grid' + ((key === 'themes' || key === 'banners') ? ' theme-shop-grid' : '');
-  // Decorations, masks and themes: one block per section (v4.62). Themes start with the free Settings looks.
-  if (SHOP_SECTIONED.includes(key)) {
-    const list = def.catalog.filter(i => !i.disabled && matches(i));
-    let html = '';
-    if (key === 'themes') {
-      const free = THEMES.filter(t => !q || t.name.toLowerCase().includes(q));
-      if (free.length) html += `<div class="shop-section-label">Free</div><div class="${gridCls}">${free.map(freeThemeCardHTML).join('')}</div>`;
-    }
-    shopSectionsFor(key, list).forEach(sec => {
-      const items = list.filter(i => shopSectionOf(key, i) === sec);
-      html += `<div class="shop-section-label">${esc(sec)}${buyAllBtn(key, items)}</div><div class="${gridCls}">${items.map(i => shopItemCardHTML(key, i)).join('')}</div>`;
-    });
-    wrap.innerHTML = html || `<div class="shop-empty-state"><b>${q ? 'Nothing found' : 'Nothing here yet'}</b><span>${q ? 'Try a different search.' : key === 'masks' ? 'Full avatar masks published by Frixion staff will show up here.' : 'New items will show up here.'}</span></div>`;
-    wireShopCardButtons(wrap);
-    wireFreeThemeButtons(wrap);
-    wireBuyAll(wrap);
-    return;
-  }
+  const f = shopFilterOf(key);
+  const haveSet = new Set(myProfile[def.ownedField] || []);
+  const gridCls = shopGridClass(key);
+  const allEnabled = def.catalog.filter(i => !i.disabled);
+
   if (key === 'music') {
-    const list = def.catalog.filter(i => !i.disabled && matches(i));
+    const list = allEnabled.filter(i => shopItemMatchesQuery(i, q));
     const now = def.catalog.find(t => t.id === myProfile.equippedMusic);
     wrap.innerHTML = `<div class="shop-section-label">Music${buyAllBtn(key, list)}</div>
       <div class="music-toolbar">
         <div class="mt-now">${now ? `<span class="mt-label">Now playing</span> ${esc(now.name)}` : 'Nothing equipped.'}</div>
         <label class="mt-vol"><span>Volume</span><input type="range" id="music-volume" min="0" max="100" value="${Math.round(musicVolume() * 100)}" aria-label="Music volume"></label>
       </div>` + (list.length
-        ? `<div class="${shopGridClass(key)}">${list.map(i => shopItemCardHTML(key, i)).join('')}</div>`
+        ? `<div class="${gridCls}">${list.map(i => shopItemCardHTML(key, i)).join('')}</div>`
         : `<div class="shop-empty-state"><b>${q ? 'No music found' : 'No music yet'}</b><span>${q ? 'Try a different search.' : 'New tracks will show up here.'}</span></div>`);
     wireShopCardButtons(wrap);
     wireBuyAll(wrap);
     $('music-volume').oninput = e => setMusicVolume(e.target.value / 100);
     return;
   }
-  if (key === 'banners' && !def.catalog.length) {
-    wrap.innerHTML = `<div class="shop-section-label">Banners</div><div class="shop-empty-state"><b>No banners yet</b><span>Gradient banners published by Frixion staff will show up here.</span></div>`;
-    return;
+
+  // Collect available sections for the filter bar
+  const secList = SHOP_SECTIONED.includes(key)
+    ? shopSectionsFor(key, allEnabled)
+    : [...new Set(allEnabled.map(i => cleanSectionName(i.section) || (i.animated ? 'Animated' : 'Classic')).filter(Boolean))];
+  if (f.sec !== 'all' && !secList.includes(f.sec)) f.sec = 'all';
+
+  let list = allEnabled.filter(i => {
+    if (!shopItemMatchesQuery(i, q)) return false;
+    if (f.owned === 'owned' && !haveSet.has(i.id)) return false;
+    if (f.owned === 'unowned' && haveSet.has(i.id)) return false;
+    if (f.sec !== 'all') {
+      const s = SHOP_SECTIONED.includes(key) ? shopSectionOf(key, i) : (cleanSectionName(i.section) || (i.animated ? 'Animated' : 'Classic'));
+      if (s !== f.sec) return false;
+    }
+    return true;
+  });
+  if (f.sort === 'price_asc') list = [...list].sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
+  else if (f.sort === 'price_desc') list = [...list].sort((a, b) => (Number(b.price) || 0) - (Number(a.price) || 0));
+  else if (f.sort === 'name') list = [...list].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+  const lim = shopLimits[key] || SHOP_PAGE_SIZE;
+  const shown = list.slice(0, lim);
+  const showToolbar = allEnabled.length > 24;
+  const toolbarHTML = showToolbar ? `<div class="shop-filter-bar" data-shop-toolbar="${key}">
+    <span class="shop-filter-count">${list.length.toLocaleString()} ${list.length === 1 ? 'item' : 'items'}${list.length > shown.length ? ` · showing ${shown.length.toLocaleString()}` : ''}</span>
+    ${secList.length > 1 ? `<select class="shop-filter-select" data-sf="sec" aria-label="Collection"><option value="all">All collections (${secList.length})</option>${secList.map(s => `<option value="${esc(s)}"${f.sec === s ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>` : ''}
+    <select class="shop-filter-select" data-sf="owned" aria-label="Ownership">
+      <option value="all"${f.owned === 'all' ? ' selected' : ''}>All items</option>
+      <option value="unowned"${f.owned === 'unowned' ? ' selected' : ''}>Not owned</option>
+      <option value="owned"${f.owned === 'owned' ? ' selected' : ''}>Owned</option>
+    </select>
+    <select class="shop-filter-select" data-sf="sort" aria-label="Sort">
+      <option value="default"${f.sort === 'default' ? ' selected' : ''}>Sort: Featured</option>
+      <option value="price_asc"${f.sort === 'price_asc' ? ' selected' : ''}>Price: Low to High</option>
+      <option value="price_desc"${f.sort === 'price_desc' ? ' selected' : ''}>Price: High to Low</option>
+      <option value="name"${f.sort === 'name' ? ' selected' : ''}>Name: A–Z</option>
+    </select>
+  </div>` : '';
+
+  const moreHTML = list.length > shown.length
+    ? `<div class="shop-load-more-wrap"><button type="button" class="shop-load-more-btn" data-shop-more="${key}">Load ${Math.min(SHOP_PAGE_SIZE, list.length - shown.length)} more</button><div class="shop-load-more-sub">Showing ${shown.length.toLocaleString()} of ${list.length.toLocaleString()} ${esc(def.label.toLowerCase())}</div></div>`
+    : '';
+
+  let html = toolbarHTML;
+  if (key === 'badges') {
+    html += '<div class="shop-note">Badges you buy show on your profile next to the ones you earn (Account Age, Game Time, Gifting and more). Hover any badge on a profile to read it. Some people collect them all.</div>';
   }
-  const section = (label, items, none) => `<div class="shop-section-label">${label}${buyAllBtn(key, items)}</div>`
-    + `<div class="${gridCls}">${items.map(i => shopItemCardHTML(key, i)).join('') || `<div class="empty">${none}</div>`}</div>`;
-  // Every profile effect moves, so they're one list with no Animated tag (v4.64).
-  wrap.innerHTML = key === 'profile_effects'
-    ? section('Profile Effects', def.catalog.filter(i => matches(i)), 'No profile effects found.')
-    : key === 'badges'
-    ? '<div class="shop-note">Badges you buy show on your profile next to the ones you earn (Account Age, Game Time, Gifting and more). Hover any badge on a profile to read it. Some people collect them all.</div>' + section('Badges', def.catalog.filter(i => matches(i)), 'No badges found.')
-    : section('Animated', animated, 'No animated items found.') + section('Not Animated', staticOnes, 'No items found.');
+  if (key === 'themes' && f.owned !== 'owned' && f.sec === 'all') {
+    const free = THEMES.filter(t => !q || t.name.toLowerCase().includes(q));
+    if (free.length) html += `<div class="shop-section-label">Free</div><div class="${gridCls}">${free.map(freeThemeCardHTML).join('')}</div>`;
+  }
+
+  if (!shown.length) {
+    html += `<div class="shop-empty-state"><b>${q || f.sec !== 'all' || f.owned !== 'all' ? 'Nothing found' : 'Nothing here yet'}</b><span>${q || f.sec !== 'all' || f.owned !== 'all' ? 'Try clearing your search or filters.' : key === 'masks' ? 'Full avatar masks published by Frixion staff will show up here.' : 'New items will show up here.'}</span></div>`;
+  } else if (SHOP_SECTIONED.includes(key) && f.sort === 'default') {
+    // Group the visible page cleanly by section while keeping DOM capped at `shown.length`
+    shopSectionsFor(key, shown).forEach(sec => {
+      const secItems = shown.filter(i => shopSectionOf(key, i) === sec);
+      html += `<div class="shop-section-label">${esc(sec)}${buyAllBtn(key, secItems)}</div><div class="${gridCls}">${secItems.map(i => shopItemCardHTML(key, i)).join('')}</div>`;
+    });
+  } else if (f.sort === 'default' && !showToolbar && key !== 'profile_effects' && key !== 'badges') {
+    const animated = shown.filter(i => i.animated);
+    const staticOnes = shown.filter(i => !i.animated);
+    if (animated.length) html += `<div class="shop-section-label">Animated${buyAllBtn(key, animated)}</div><div class="${gridCls}">${animated.map(i => shopItemCardHTML(key, i)).join('')}</div>`;
+    if (staticOnes.length) html += `<div class="shop-section-label">Not Animated${buyAllBtn(key, staticOnes)}</div><div class="${gridCls}">${staticOnes.map(i => shopItemCardHTML(key, i)).join('')}</div>`;
+  } else {
+    html += `<div class="shop-section-label">${esc(f.sec !== 'all' ? f.sec : def.label)}${buyAllBtn(key, shown)}</div><div class="${gridCls}">${shown.map(i => shopItemCardHTML(key, i)).join('')}</div>`;
+  }
+  html += moreHTML;
+
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('[data-sf]').forEach(sel => {
+    sel.onchange = () => {
+      shopFilterOf(key)[sel.dataset.sf] = sel.value;
+      shopLimits[key] = SHOP_PAGE_SIZE;
+      renderShopCategoryPane(key);
+    };
+  });
+  const more = wrap.querySelector('[data-shop-more]');
+  if (more) more.onclick = () => { shopLimits[key] = (shopLimits[key] || SHOP_PAGE_SIZE) + SHOP_PAGE_SIZE; renderShopCategoryPane(key); };
   wireShopCardButtons(wrap);
+  wireFreeThemeButtons(wrap);
   wireBuyAll(wrap);
 }
-// Buy All (v4.64): a section's button buys every item in it you don't have yet, in one go (functions/api/admin/buyall).
+// Buy All (v4.64; capped to 60 per batch in v4.78 for the 4,000+ Shop Rush): buys up to 60 unowned items in one server commit.
 function buyAllBtn(key, items) {
   const def = SHOP_CATEGORY_DEFS[key], have = myProfile[def.ownedField] || [];
   const left = items.filter(i => !i.disabled && !have.includes(i.id));
   if (left.length < 2) return '';
-  const total = left.reduce((s, i) => s + (Number(i.price) || 0), 0);
-  return `<button type="button" class="shop-buyall" data-buyall="${key}" data-ids="${esc(left.map(i => i.id).join(','))}" title="Buy every item here you don't own yet">Buy all ${left.length} ${orbIconSVG(12)}${fmtOrbs(total)}</button>`;
+  const batch = left.slice(0, 60);
+  const total = batch.reduce((s, i) => s + (Number(i.price) || 0), 0);
+  const txt = left.length > 60 ? `Buy next ${batch.length}` : `Buy all ${batch.length}`;
+  return `<button type="button" class="shop-buyall" data-buyall="${key}" data-ids="${esc(batch.map(i => i.id).join(','))}" title="Buy these items in one go">${txt} ${orbIconSVG(12)}${fmtOrbs(total)}</button>`;
 }
 function wireBuyAll(wrap) {
   wrap.querySelectorAll('[data-buyall]').forEach(b => {
@@ -15346,8 +15924,8 @@ async function buyAllShopItems(key, ids) {
 function refreshOpenShopPanes() {
   if ($('shop-view').classList.contains('hidden')) return;
   $('shop-orb-amt').textContent = orbsLabel(myProfile);
-  renderShopFeatured();
-  Object.keys(SHOP_CATEGORY_DEFS).forEach(renderShopCategoryPane);
+  if (shopActiveTab === 'featured') renderShopFeatured();
+  else if (SHOP_CATEGORY_DEFS[shopActiveTab]) renderShopCategoryPane(shopActiveTab);
 }
 
 let shopBuying = false;
@@ -15442,9 +16020,15 @@ function shopEquipEggs(key, id) {
     if (worn.equippedTheme === 'blackhole' && worn.equippedNameplate === 'blackhole' && worn.equippedProfileEffect === 'fx-blackhole'
       && worn.equippedProfileFrame === 'eventhorizon' && worn.equippedDecoration === 'pocket-blackhole') eggFind('lostinspace');
   }
+  if (key === 'profile_frames' && !eggFoundSet.has('prismframe')) {
+    const pf = profileFrameById(id);
+    if (pf && Array.isArray(pf.colors) && pf.colors.length >= 2) eggFind('prismframe');
+  }
 }
 
 function openShop() {
+  shopActiveTab = 'featured';
+  Object.keys(shopLimits).forEach(k => delete shopLimits[k]);
   $('shop-orb-amt').textContent = orbsLabel(myProfile);
   document.querySelectorAll('.shop-tab').forEach(t => t.classList.remove('on'));
   document.querySelector('.shop-tab[data-shop-tab="featured"]').classList.add('on');
@@ -15452,15 +16036,17 @@ function openShop() {
   $('shop-pane-featured').classList.remove('hidden');
   $('shop-search').value = '';
   renderShopFeatured();
-  Object.keys(SHOP_CATEGORY_DEFS).forEach(renderShopCategoryPane);
 }
 
 function switchShopTab(tabKey, tabEl) {
+  shopActiveTab = tabKey;
   document.querySelectorAll('.shop-tab').forEach(t => t.classList.remove('on'));
-  tabEl.classList.add('on');
+  if (tabEl) tabEl.classList.add('on');
   document.querySelectorAll('.shop-pane').forEach(p => p.classList.add('hidden'));
   $('shop-pane-' + tabKey).classList.remove('hidden');
   $('shop-browse-menu').classList.add('hidden');
+  if (tabKey === 'featured') renderShopFeatured();
+  else if (SHOP_CATEGORY_DEFS[tabKey]) renderShopCategoryPane(tabKey);
 }
 document.querySelectorAll('.shop-tab[data-shop-tab]').forEach(tab => {
   tab.onclick = () => switchShopTab(tab.dataset.shopTab, tab);
@@ -15471,10 +16057,9 @@ document.querySelectorAll('.shop-browse-opt').forEach(opt => {
 $('shop-browse-toggle').onclick = (e) => { e.stopPropagation(); $('shop-browse-menu').classList.toggle('hidden'); };
 document.addEventListener('click', (e) => { if (!e.target.closest('.shop-browse-wrap')) $('shop-browse-menu').classList.add('hidden'); });
 $('shop-search').addEventListener('input', () => {
-  const openPane = document.querySelector('.shop-pane:not(.hidden)');
-  if (!openPane) return;
-  const key = openPane.id.replace('shop-pane-', '');
-  if (SHOP_CATEGORY_DEFS[key]) renderShopCategoryPane(key);
+  shopLimits[shopActiveTab] = SHOP_PAGE_SIZE;
+  if (shopActiveTab === 'featured') renderShopFeatured();
+  else if (SHOP_CATEGORY_DEFS[shopActiveTab]) renderShopCategoryPane(shopActiveTab);
 });
 
 // Settings' Themes moved into the Shop (v4.62): Dark, Light, Sync, Ash and Onyx are the Free section of its Themes tab.
@@ -16875,21 +17460,53 @@ function renderAdminProfileEffectList() {
   finishAdminShopList(wrap, 'profile_effects');
 }
 
-// ---------- Profile Frame creator (admin/owner only) ----------
+// ---------- Profile Frame creator (admin/owner only — Solid or Gradient, v4.78 request 99) ----------
 let frameEditorInitialized = false;
+let frameEditorMode = 'solid';
+function currentFrameDraft() {
+  if (frameEditorMode === 'gradient') {
+    const colors = colorListValues('frame-colors');
+    const angle = parseInt($('frame-angle-input').value, 10) || 0;
+    const gradAnim = $('frame-animated-input').checked;
+    const glow = $('frame-glow-input').checked;
+    return { colors, angle, color: colors[0] || '#ff2957', glow, gradAnim, animated: !!(gradAnim || glow) };
+  }
+  const color = $('frame-color-input').value;
+  const glow = $('frame-glow-input').checked;
+  return { color, glow, animated: !!glow };
+}
+function setFrameEditorMode(mode) {
+  frameEditorMode = mode === 'gradient' ? 'gradient' : 'solid';
+  document.querySelectorAll('.frame-mode-btn').forEach(b => b.classList.toggle('on', b.dataset.mode === frameEditorMode));
+  $('frame-solid-fields').classList.toggle('hidden', frameEditorMode !== 'solid');
+  $('frame-gradient-fields').classList.toggle('hidden', frameEditorMode !== 'gradient');
+  updateFramePreview();
+}
 function updateFramePreview() {
   const swatch = $('frame-preview-swatch');
-  const color = $('frame-color-input').value;
-  swatch.className = 'sic-frame-preview' + ($('frame-glow-input').checked ? ' frame-custom-glow' : '');
-  swatch.style.border = `3px solid ${color}`;
-  swatch.style.setProperty('--custom-frame-color', color);
+  if (!swatch) return;
+  const draft = currentFrameDraft();
+  if ($('frame-angle-label') && $('frame-angle-input')) $('frame-angle-label').textContent = (parseInt($('frame-angle-input').value, 10) || 0) + '°';
+  applyProfileFrameVisual(swatch, draft, 'sic-frame-preview');
   swatch.innerHTML = myProfile ? avatarHTML(56, myProfile.avatarColor, initials(myProfile.username), null, myProfile.avatarUrl) : '';
 }
 function initFrameEditor() {
   if (frameEditorInitialized) { updateFramePreview(); return; }
   frameEditorInitialized = true;
+  document.querySelectorAll('.frame-mode-btn').forEach(btn => {
+    btn.onclick = () => setFrameEditorMode(btn.dataset.mode);
+  });
+  if ($('frame-colors')) colorListSet('frame-colors', colorListValues('frame-colors'), updateFramePreview);
   $('frame-color-input').addEventListener('input', updateFramePreview);
   $('frame-glow-input').addEventListener('change', updateFramePreview);
+  if ($('frame-angle-input')) $('frame-angle-input').addEventListener('input', updateFramePreview);
+  if ($('frame-animated-input')) $('frame-animated-input').addEventListener('change', updateFramePreview);
+  if ($('frame-randomize-btn')) $('frame-randomize-btn').onclick = () => {
+    const rand = () => '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
+    colorListSet('frame-colors', colorListValues('frame-colors').map(rand), updateFramePreview);
+    $('frame-angle-input').value = String(Math.round(Math.random() * 72) * 5);
+    updateFramePreview();
+  };
   updateFramePreview();
 }
 $('frame-publish-btn').onclick = async () => {
@@ -16900,11 +17517,18 @@ $('frame-publish-btn').onclick = async () => {
   if (!name) { toast('Enter a name.'); return; }
   if (!desc) { toast('Enter a description.'); return; }
   if (!Number.isFinite(price) || price < 0) { toast('Enter a valid price.'); return; }
+  const draft = currentFrameDraft();
+  const payload = {
+    name, desc, price, color: draft.color, glow: draft.glow, animated: draft.animated,
+    createdBy: myUid, createdAt: FieldValue.serverTimestamp(),
+  };
+  if (draft.colors && draft.colors.length >= 2) {
+    payload.colors = draft.colors;
+    payload.angle = draft.angle;
+    payload.gradAnim = !!draft.gradAnim;
+  }
   try {
-    await db.collection('shopProfileFrames').add({
-      name, desc, price, color: $('frame-color-input').value, glow: $('frame-glow-input').checked, animated: $('frame-glow-input').checked,
-      createdBy: myUid, createdAt: FieldValue.serverTimestamp(),
-    });
+    await db.collection('shopProfileFrames').add(payload);
     $('frame-name-input').value = '';
     $('frame-desc-input').value = '';
     $('frame-price-input').value = '';
@@ -16915,7 +17539,7 @@ function renderAdminProfileFrameList() {
   const wrap = $('admin-frame-list');
   if (!wrap) return;
   wrap.innerHTML = customProfileFrames.length
-    ? customProfileFrames.map(f => `<div class="admin-emoji-chip editable" data-id="${esc(f.id)}"><span class="admin-theme-chip-swatch" style="background:${f.color};"></span><span>${esc(f.name)}</span><span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
+    ? customProfileFrames.map(f => `<div class="admin-emoji-chip editable" data-id="${esc(f.id)}"><span class="admin-theme-chip-swatch" style="background:${esc(frameGradientCSS(f) || f.color || '#5865f2')};"></span><span>${esc(f.name)}</span><span class="rm" title="Delete">${icon('trash')}</span></div>`).join('')
     : '<div class="empty">No custom profile frames yet.</div>';
   wrap.querySelectorAll('.admin-emoji-chip .rm').forEach(btn => {
     btn.onclick = async () => { await db.collection('shopProfileFrames').doc(btn.closest('.admin-emoji-chip').dataset.id).delete(); };
@@ -17065,7 +17689,9 @@ const SHOP_EDIT_EXTRA_FIELDS = {
   banners: () => [{ path: 'colors', label: 'Colors (2 to 8)', type: 'color-list', full: true }, { path: 'angle', label: 'Angle', type: 'number' }, { path: 'animated', label: 'Animated', type: 'checkbox' }],
   nameplates: () => [{ path: 'colors', label: 'Colors (2 to 8)', type: 'color-list', full: true }, { path: 'animated', label: 'Shimmer', type: 'checkbox' }],
   profile_effects: () => [colorField('color', 'Particle Color'), { path: 'style', label: 'Movement', type: 'select', options: ['falling', 'rising', 'floating', 'twinkling'] }],
-  profile_frames: () => [colorField('color', 'Border Color'), { path: 'glow', label: 'Glowing', type: 'checkbox' }],
+  profile_frames: item => (Array.isArray(item && item.colors) && item.colors.length >= 2)
+    ? [{ path: 'colors', label: 'Gradient Colors (2 to 8)', type: 'color-list', full: true }, { path: 'angle', label: 'Angle', type: 'number' }, { path: 'gradAnim', label: 'Animated (flowing gradient)', type: 'checkbox' }, { path: 'glow', label: 'Glowing', type: 'checkbox' }]
+    : [colorField('color', 'Border Color'), { path: 'glow', label: 'Glowing', type: 'checkbox' }],
 };
 const shopOverrideKey = (type, id) => `${type}__${id}`;
 const builtinShopOriginals = new Map();
@@ -17151,6 +17777,9 @@ function finishAdminShopList(wrap, type) {
     wrap.insertAdjacentHTML('beforeend', `<div class="admin-builtin-label">Built-in</div>` + def.builtins.map(item =>
       `<div class="admin-emoji-chip editable" data-id="${esc(item.id)}" data-builtin="1">${builtinChipVisual(type, item)}<span>${esc(item.name)}</span><span class="admin-chip-tag">${esc(fmtOrbs(Number(item.price)))}${item.featured ? ' · Featured' : ''}</span></div>`
     ).join(''));
+  }
+  if (typeof GSR !== 'undefined' && GSR[type] && GSR[type].length) {
+    wrap.insertAdjacentHTML('beforeend', `<div class="admin-gsr-note">+ ${GSR[type].length.toLocaleString()} Great Shop Rush items live in the Shop.</div>`);
   }
   wrap.querySelectorAll('.admin-emoji-chip.editable').forEach(chip => {
     chip.title = 'Click to edit';
@@ -17318,7 +17947,10 @@ $('shop-edit-save-btn').onclick = async () => {
           update[root][Number(idx)] = val;
         } else update[root] = val;
       });
-      if (type === 'profile_frames') update.animated = !!update.glow;
+      if (type === 'profile_frames') {
+        if (Array.isArray(update.colors) && update.colors.length >= 2) update.color = update.colors[0];
+        update.animated = !!(update.glow || update.gradAnim);
+      }
       if ((type === 'decorations' || type === 'masks') && 'emojis' in update) {
         if (!update.emojis.length) { toast('Add at least one emoji.'); return; }
         update.emoji = update.emojis[0].e;
@@ -17379,6 +18011,7 @@ document.querySelectorAll('.shop-mgr-tab').forEach(tab => {
     const section = tab.dataset.shopSection;
     document.querySelectorAll('.shop-mgr-section').forEach(sec => sec.classList.toggle('hidden', !sec.dataset.shopSection.split(' ').includes(section)));
     if (section === 'masks' || section === 'decorations') setDecoCreatorKind(section === 'masks');
+    if (section === 'frames') initFrameEditor();
     if (section === 'music') updateMusicCardPreview();
   };
 });
@@ -22379,13 +23012,22 @@ function setGameApi() {
     }))),
   };
 }
+let ocrngOpenGen = 0, ocrngPending = false;
 function openOcrng() {
   if (!myUid || !myProfile) return;
   setGameApi();
-  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=16');
+  const gen = ++ocrngOpenGen;
+  ocrngPending = true;
+  if (!ocrngModule) ocrngModule = import('./games/ocrng/ocrng.js?v=17');
   // the shared lobby needs the sign-in's claims first (ensureClaims()); if they can't be had, the game plays solo
   const claimed = Promise.race([ensureClaims(), new Promise(r => setTimeout(r, 6000))]);
-  Promise.all([ocrngModule, claimed]).then(([m]) => m.open()).catch(err => {
+  Promise.all([ocrngModule, claimed]).then(([m]) => {
+    if (gen !== ocrngOpenGen) return;   // canceled (e.g. Quick Open shortcut toggled shut before load finished)
+    ocrngPending = false;
+    return m.open();
+  }).catch(err => {
+    if (gen !== ocrngOpenGen) return;
+    ocrngPending = false;
     ocrngModule = null;
     console.error(err);
     toast('Overcontrol RNG could not load. Check your connection and try again.', 'error');
@@ -22537,6 +23179,10 @@ const EGGS = [
   { id: 'centurion', t: 'h', name: 'Century Club (#100)', how: 'Type "century" anywhere.', hint: 'One hundred years — and Frixion\'s 100th easter egg. One word.' },
   { id: 'savedforlater', t: 'e', name: 'Saved for Later', how: 'Bookmark any message to save it to your Saved Messages.', hint: 'Keep a message handy for later.' },
   { id: 'passiton', t: 'e', name: 'Pass It On', how: 'Forward any message to another DM, group chat or server channel.', hint: 'Share a message with another chat.' },
+  // v4.78 (The Great Shop Rush, Closing DMs & Gradient Frames)
+  { id: 'shoprush', t: 'e', name: 'The Great Shop Rush', how: 'Type "shoprush" anywhere.', hint: '4,000+ items just landed in the Shop. Two words, no space.' },
+  { id: 'cleandms', t: 'e', name: 'Clean Slate', how: 'Close a DM from your Direct Messages list.', hint: 'Tidy up your DMs like Discord.' },
+  { id: 'prismframe', t: 'm', name: 'Prism Border', how: 'Equip any gradient profile frame in the Shop.', hint: 'Put a multi-color border around your profile card.' },
   { id: 'lastegg', t: 'l', name: 'The Last Egg', how: 'Comes by itself once you\'ve found all the others. Gives the Cracker tag.', hint: 'Find all the others.' },
 ];
 const EGG_BY_ID = Object.fromEntries(EGGS.map(e => [e.id, e]));
@@ -22797,11 +23443,14 @@ function eggEffect(id, first) {
     case 'centurion': eggParticles('confetti', 6000); eggToast('Century Club (#100)', 'Welcome to 100+ easter eggs in Frixion!'); return;
     case 'savedforlater': eggToast('Saved for Later', 'Tucked safely in your Bookmarks.'); return;
     case 'passiton': eggToast('Pass It On', 'Delivered to its new home.'); return;
+    case 'shoprush': eggToast('The Great Shop Rush!', '4,000+ items and counting.'); return;
+    case 'cleandms': eggToast('Clean Slate', 'You can always reopen a DM whenever you want.'); return;
+    case 'prismframe': eggToast('Prism Border', 'Looking sharp in full gradient.'); return;
     case 'lastegg': return eggCutscene(['That\'s every egg.', 'The Cracker tag is yours.'], { title: 'LAST EGG', cls: 'egg-cut-red' });
   }
 }
 // ---- the triggers that live here (the rest are in the code they belong to: search for eggFind) ----
-const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot', hawking: 'hawking', autopilot: 'autopilot', beepboop: 'beepboop', gdwave: 'ninecircles', screensaver: 'screenshare', golive: 'golive', supernovae: 'supernova', coownerbot: 'coowner', centurion: 'century' };
+const EGG_WORDS = { frixion: 'frixion', hello: 'hello', esrever: 'esrever', gravity: 'gravity', letitsnow: 'letitsnow', party: 'party', greencode: 'greencode', pi: '314159', jackpot: 'jackpot', hawking: 'hawking', autopilot: 'autopilot', beepboop: 'beepboop', gdwave: 'ninecircles', screensaver: 'screenshare', golive: 'golive', supernovae: 'supernova', coownerbot: 'coowner', centurion: 'century', shoprush: 'shoprush' };
 const EGG_SEQS = {
   oldcode: ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'KeyB', 'KeyA'],
   spin: ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'],
@@ -22926,6 +23575,7 @@ const EGG_GROUPS = [
   ['Screenshare (v4.75)', ['watchparty', 'screensaver', 'golive']],
   ['Space Themes & Fixes (v4.76)', ['supernovae', 'coownerbot', 'cosmicwardrobe']],
   ['AutoMod, Forwarding, Bookmarks & #100 (v4.77)', ['centurion', 'savedforlater', 'passiton']],
+  ['The Great Shop Rush, Closing DMs & Gradient Frames (v4.78)', ['shoprush', 'cleandms', 'prismframe']],
   ['Last', ['lastegg']],
 ];
 function renderEggGuide() {
@@ -23066,7 +23716,11 @@ function qoToggledShut(x) {
   let shut = false;
   if (x.t === 'settings' && !$('settings-modal').classList.contains('hidden')) { closeModal('settings-modal'); shut = true; }
   else if (x.t === 'panel' && $('admin-panel-modal') && !$('admin-panel-modal').classList.contains('hidden')) { closeModal('admin-panel-modal'); shut = true; }
-  else if (x.t === 'game' && x.id === 'ocrng' && document.getElementById('ocrng') && ocrngModule) { ocrngModule.then(m => m.close()).catch(() => {}); shut = true; }
+  else if (x.t === 'game' && x.id === 'ocrng' && (ocrngPending || document.getElementById('ocrng'))) {
+    ocrngOpenGen++; ocrngPending = false;
+    if (ocrngModule) ocrngModule.then(m => m.close()).catch(() => {});
+    shut = true;
+  }
   else if (x.t === 'game' && gameWin && !gameWin.hidden && currentGameId === x.id) { closeGame(); shut = true; }
   if (shut) {   // (an easter egg: five times in ten seconds)
     const now = Date.now();

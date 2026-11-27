@@ -25,7 +25,7 @@
 <!-- The font loads in the background (the page paints with a system font first), so it never holds up the first screen. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-<link rel="stylesheet" href="style.css?v=127">
+<link rel="stylesheet" href="style.css?v=128">
 <link rel="stylesheet" href="casino.css?v=2">
 </head>
 <body>
@@ -1652,10 +1652,28 @@
             <div id="frame-preview-swatch" class="sic-frame-preview"></div>
           </div>
           <div class="theme-editor-tools">
-            <div class="field"><label class="fld-label">Border Color</label><input type="color" id="frame-color-input" value="#f0b232" class="deco-color-input"></div>
+            <div class="field">
+              <label class="fld-label">Frame Style</label>
+              <div class="effect-style-row frame-mode-row">
+                <button type="button" class="btn-secondary slim frame-mode-btn on" data-mode="solid">Solid Color</button>
+                <button type="button" class="btn-secondary slim frame-mode-btn" data-mode="gradient">Gradient</button>
+              </div>
+            </div>
+            <div id="frame-solid-fields">
+              <div class="field"><label class="fld-label">Border Color</label><input type="color" id="frame-color-input" value="#f0b232" class="deco-color-input"></div>
+            </div>
+            <div id="frame-gradient-fields" class="hidden">
+              <div class="field"><label class="fld-label">Colors (2 to 8)</label><div class="color-list" id="frame-colors" data-colors="#ff2957,#ff9a3c,#5865f2"></div></div>
+              <div class="field">
+                <label class="fld-label" for="frame-angle-input">Angle — <span id="frame-angle-label">135°</span></label>
+                <input type="range" id="frame-angle-input" min="0" max="360" step="5" value="135" class="banner-range">
+              </div>
+              <div class="setting-row compact"><div class="setting-row-text"><div class="setting-row-title">Animated (flowing gradient)</div></div><label class="toggle-switch"><input type="checkbox" id="frame-animated-input"><span class="toggle-slider"></span></label></div>
+              <div class="field"><button type="button" class="btn-secondary slim" id="frame-randomize-btn">Randomize</button></div>
+            </div>
             <div class="setting-row compact"><div class="setting-row-text"><div class="setting-row-title">Glowing (pulsing border)</div></div><label class="toggle-switch"><input type="checkbox" id="frame-glow-input"><span class="toggle-slider"></span></label></div>
-            <div class="field"><label class="fld-label">Name</label><input type="text" id="frame-name-input" maxlength="24" placeholder="e.g. Sapphire Frame" class="fld-input"></div>
-            <div class="field"><label class="fld-label">Description</label><input type="text" id="frame-desc-input" maxlength="80" placeholder="e.g. A cool blue ring around your avatar" class="fld-input"></div>
+            <div class="field"><label class="fld-label">Name</label><input type="text" id="frame-name-input" maxlength="24" placeholder="e.g. Prism Frame" class="fld-input"></div>
+            <div class="field"><label class="fld-label">Description</label><input type="text" id="frame-desc-input" maxlength="80" placeholder="e.g. A glowing gradient ring around your profile" class="fld-input"></div>
             <div class="field"><label class="fld-label">Price (Orbs)</label><input type="number" id="frame-price-input" min="0" placeholder="800" class="fld-input"></div>
             <button class="btn-accent-inline" id="frame-publish-btn">Publish to Shop</button>
           </div>
@@ -2146,7 +2164,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
 <script defer src="fdb.js?v=2"></script>
-<script defer src="script.js?v=170"></script></script>
+<script defer src="script.js?v=171"></script>
 <script defer src="casino.js?v=4"></script>
 </body>
 </html>

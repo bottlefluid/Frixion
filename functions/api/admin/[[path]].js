@@ -510,11 +510,36 @@ const SHOP = {
 };
 const ITEM_ID = /^(?!__)[A-Za-z0-9_-]{1,100}$/;
 const wholePrice = p => (Number.isInteger(p) && p >= 0 ? p : null);
-// What an item costs, or null when it isn't for sale: the built-in price (shopPrices/builtin), else the staff-made item's
-// own, while it isn't switched off.
+// Great Shop Rush (v4.78): deterministic price table for the 4,200 generated Shop items (gsr_<code_2>_<4-digit-index>),
+// matching GSR_CATS in script.js. Staff overrides in shopPrices/builtin still take precedence.
+const GSR_CATS = {
+  themes: ['th', 1000, [75, 100, 125, 150, 200, 250, 350, 500, 750, 1000, 1500, 2500, 5000, 10000]],
+  nameplates: ['np', 850, [100, 150, 200, 250, 350, 500, 750, 1000, 1500, 2500, 5000, 10000]],
+  profile_frames: ['pf', 800, [125, 175, 250, 350, 500, 750, 1000, 1500, 2500, 5000, 10000]],
+  banners: ['bn', 800, [100, 150, 200, 300, 450, 650, 1000, 1500, 3000, 7500]],
+  decorations: ['dc', 350, [150, 225, 300, 450, 600, 850, 1250, 2000, 4000, 8000]],
+  profile_effects: ['pe', 250, [150, 250, 350, 500, 750, 1200, 2000, 3500, 6000]],
+  badges: ['bd', 150, [150, 250, 400, 600, 900, 1500, 2500, 5000, 10000]],
+};
+function gsrPriceOf(cat, id) {
+  const cfg = own(GSR_CATS, cat) ? GSR_CATS[cat] : null;
+  if (!cfg || typeof id !== 'string') return null;
+  const m = /^gsr_([a-z]{2})_(\d{4})$/.exec(id);
+  if (!m || m[1] !== cfg[0]) return null;
+  const idx = parseInt(m[2], 10);
+  if (!(idx >= 1 && idx <= cfg[1])) return null;
+  const tiers = cfg[2];
+  const h = (Math.imul(idx, 2654435761) >>> 0) % 100;
+  const ti = h < 18 ? 0 : h < 34 ? 1 : h < 48 ? 2 : h < 60 ? 3 : h < 71 ? 4 : h < 80 ? 5 : h < 87 ? 6 : h < 92 ? 7 : h < 96 ? 8 : Math.min(tiers.length - 1, 9 + (h - 96));
+  return wholePrice(tiers[Math.min(ti, tiers.length - 1)]);
+}
+// What an item costs, or null when it isn't for sale: the built-in price (shopPrices/builtin), else the Great Shop Rush
+// generated catalog, else the staff-made item's own, while it isn't switched off.
 function priceOf(cat, id, builtin, custom) {
   const list = builtin && builtin.data.p && builtin.data.p[cat];
   if (own(list, id)) return wholePrice(Number(list[id]));
+  const gsr = gsrPriceOf(cat, id);
+  if (gsr != null) return gsr;
   const coll = SHOP[cat][2], item = custom && (coll ? custom.data : (own(custom.data, id) ? custom.data[id] : null));
   if (!item || typeof item !== 'object' || item.disabled === true) return null;
   if (coll === 'shopDecorations' && (item.mask === true) !== (cat === 'masks')) return null;
@@ -620,6 +645,7 @@ const EGGS = {
   watchparty: 'e', screensaver: 'e', golive: 'e',                          // v4.75: Screenshare watch/host, "screenshare", "golive"
   supernovae: 'e', coownerbot: 'e', cosmicwardrobe: 'm',                   // v4.76: "supernova", "coowner", equip any new space theme
   centurion: 'h', savedforlater: 'e', passiton: 'e',                       // v4.77: "century" (#100 milestone), bookmark a message, forward a message
+  shoprush: 'e', cleandms: 'e', prismframe: 'm',                           // v4.78: "shoprush", close a DM, equip a gradient profile frame
   xyzzy: ['m', '7d76c6d11ed06a3e671afa826c4f88f4e8227fdef446cbd576a3428967e45af9'],
   codeb1: ['e', '4f3cd88dc035fd4d04dda074fd7ced1722751824644c1a27a700dfd5d06ba19e'],
   codeb2: ['e', 'c886bb737cc711b2dfcb069ea8179dc430661db13a38113ddf718b9098f653c7'],

@@ -135,24 +135,37 @@ x = await call('admin', 'casino', { token: nova, game: 'coinflip', bet: 100, sid
 check('51: the infinity sign can bet (it said "not enough Orbs" after the move)', x.status === 200 && (x.result === 'h' || x.result === 't'), x);
 check('...and stays infinite, win or lose', (await doc('users/Nova')).orbs === Infinity, await doc('users/Nova'));
 x = await call('admin', 'egg', { token: nova, egg: 'equilibrium' });
-check('the new eggs are known to the server (102 in all since v4.77)', x.ok && x.total === 102, x);
+check('the new eggs are known to the server (105 in all since v4.78)', x.ok && x.total === 105, x);
 x = await call('admin', 'egg', { token: nova, egg: 'matchingset' });
-check('v4.71: Matching Set (a nameplate and a theme with the same name) is one of them', x.ok && x.total === 102, x);
+check('v4.71: Matching Set (a nameplate and a theme with the same name) is one of them', x.ok && x.total === 105, x);
 const bhEggs = await Promise.all(['hawking', 'spaghetti', 'lostinspace'].map(egg => call('admin', 'egg', { token: nova, egg })));
-check('v4.72: Hawking Radiation, Spaghettified and Lost in Space pay their tiers (100, 250, 500)', bhEggs.every(r => r.ok && r.total === 102) && bhEggs.map(r => r.orbs).join() === '100,250,500', bhEggs);
+check('v4.72: Hawking Radiation, Spaghettified and Lost in Space pay their tiers (100, 250, 500)', bhEggs.every(r => r.ok && r.total === 105) && bhEggs.map(r => r.orbs).join() === '100,250,500', bhEggs);
 const botEggs = await Promise.all(['autopilot', 'beepboop', 'arcadepro'].map(egg => call('admin', 'egg', { token: nova, egg })));
-check('v4.73: Autopilot, Beep Boop and Arcade Regular pay their tiers (100, 100, 250)', botEggs.every(r => r.ok && r.total === 102) && botEggs.map(r => r.orbs).join() === '100,100,250', botEggs);
+check('v4.73: Autopilot, Beep Boop and Arcade Regular pay their tiers (100, 100, 250)', botEggs.every(r => r.ok && r.total === 105) && botEggs.map(r => r.orbs).join() === '100,100,250', botEggs);
 const oldSimon = await call('admin', 'egg', { token: nova, egg: 'simon15' });
 const newSimon = await call('admin', 'egg', { token: nova, egg: 'simon67' });
-check('v4.74: old simon15 is retired (404, forcing re-earn without SQL) and simon67 pays 1000', oldSimon.status === 404 && newSimon.ok && newSimon.orbs === 1000 && newSimon.total === 102, { oldSimon, newSimon });
+check('v4.74: old simon15 is retired (404, forcing re-earn without SQL) and simon67 pays 1000', oldSimon.status === 404 && newSimon.ok && newSimon.orbs === 1000 && newSimon.total === 105, { oldSimon, newSimon });
 const v474Eggs = await Promise.all(['liquiddash', 'pocketmaze', 'gdwave'].map(egg => call('admin', 'egg', { token: nova, egg })));
-check('v4.74: Demon Slayer, Thumb Runner and Nine Circles pay their tiers (500, 100, 100)', v474Eggs.every(r => r.ok && r.total === 102) && v474Eggs.map(r => r.orbs).join() === '500,100,100', v474Eggs);
+check('v4.74: Demon Slayer, Thumb Runner and Nine Circles pay their tiers (500, 100, 100)', v474Eggs.every(r => r.ok && r.total === 105) && v474Eggs.map(r => r.orbs).join() === '500,100,100', v474Eggs);
 const v475Eggs = await Promise.all(['watchparty', 'screensaver', 'golive'].map(egg => call('admin', 'egg', { token: nova, egg })));
-check('v4.75: Front Row, Screen Saver and Going Live pay their tiers (100, 100, 100)', v475Eggs.every(r => r.ok && r.total === 102) && v475Eggs.map(r => r.orbs).join() === '100,100,100', v475Eggs);
+check('v4.75: Front Row, Screen Saver and Going Live pay their tiers (100, 100, 100)', v475Eggs.every(r => r.ok && r.total === 105) && v475Eggs.map(r => r.orbs).join() === '100,100,100', v475Eggs);
 const v476Eggs = await Promise.all(['supernovae', 'coownerbot', 'cosmicwardrobe'].map(egg => call('admin', 'egg', { token: nova, egg })));
-check('v4.76: Starburst, Double Shift and Cosmic Drip pay their tiers (100, 100, 250)', v476Eggs.every(r => r.ok && r.total === 102) && v476Eggs.map(r => r.orbs).join() === '100,100,250', v476Eggs);
+check('v4.76: Starburst, Double Shift and Cosmic Drip pay their tiers (100, 100, 250)', v476Eggs.every(r => r.ok && r.total === 105) && v476Eggs.map(r => r.orbs).join() === '100,100,250', v476Eggs);
 const v477Eggs = await Promise.all(['centurion', 'savedforlater', 'passiton'].map(egg => call('admin', 'egg', { token: nova, egg })));
-check('v4.77: Century Club (#100), Saved for Later and Pass It On pay their tiers (500, 100, 100)', v477Eggs.every(r => r.ok && r.total === 102) && v477Eggs.map(r => r.orbs).join() === '500,100,100', v477Eggs);
+check('v4.77: Century Club (#100), Saved for Later and Pass It On pay their tiers (500, 100, 100)', v477Eggs.every(r => r.ok && r.total === 105) && v477Eggs.map(r => r.orbs).join() === '500,100,100', v477Eggs);
+const v478Eggs = await Promise.all(['shoprush', 'cleandms', 'prismframe'].map(egg => call('admin', 'egg', { token: nova, egg })));
+check('v4.78: The Great Shop Rush, Clean Slate and Prism Border pay their tiers (100, 100, 250)', v478Eggs.every(r => r.ok && r.total === 105) && v478Eggs.map(r => r.orbs).join() === '100,100,250', v478Eggs);
+
+// v4.78: Great Shop Rush (4,200 deterministic items) server pricing + buy & buyAll
+x = await call('admin', 'buy', { token: nova, cat: 'themes', id: 'gsr_th_0001' });
+check('v4.78: buy Great Shop Rush theme gsr_th_0001 directly without shopPrices/builtin bloat', x.ok && Number.isInteger(x.price) && x.price > 0, x);
+x = await call('admin', 'buyall', { token: nova, cat: 'profile_frames', ids: ['gsr_pf_0001', 'gsr_pf_0002', 'gsr_pf_0003'] });
+check('v4.78: buyAll works on Great Shop Rush gradient profile frames', x.ok && Array.isArray(x.bought) && x.bought.length === 3 && x.total > 0, x);
+x = await call('admin', 'buy', { token: nova, cat: 'themes', id: 'gsr_th_9999' });
+check('v4.78: out-of-range GSR id is rejected (404)', x.status === 404, x);
+await put('shopPrices/builtin', { p: { themes: { midnight_test: 100, gsr_th_0002: 77 } } });
+x = await call('admin', 'buy', { token: nova, cat: 'themes', id: 'gsr_th_0002' });
+check('v4.78: staff price override in shopPrices/builtin still overrides GSR default price', x.ok && x.price === 77, x);
 
 section('v4.67 on the server: Provably Fair, bets without a top limit, referrals');
 const fairJs = await import(new URL('../../casino-fair.js', import.meta.url).href);
