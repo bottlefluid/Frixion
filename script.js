@@ -1241,6 +1241,8 @@ function applyShopTheme(themeId) {
 // gsrPriceOf() in functions/api/admin/[[path]].js so every item is server-
 // verified on purchase with zero database bloat and instant O(1) lookups.
 // ============================================================
+// Saved for April Fools (user 2026-11-27): flip to true (here + in functions/api/admin/[[path]].js) to bring back the 150 recolored badges.
+const APRIL_FOOLS_BADGES_ON = false;
 const GSR_CATS = {
   themes: ['th', 1000, [75, 100, 125, 150, 200, 250, 350, 500, 750, 1000, 1500, 2500, 5000, 10000]],
   nameplates: ['np', 850, [100, 150, 200, 250, 350, 500, 750, 1000, 1500, 2500, 5000, 10000]],
@@ -1248,7 +1250,7 @@ const GSR_CATS = {
   banners: ['bn', 800, [100, 150, 200, 300, 450, 650, 1000, 1500, 3000, 7500]],
   decorations: ['dc', 350, [150, 225, 300, 450, 600, 850, 1250, 2000, 4000, 8000]],
   profile_effects: ['pe', 250, [150, 250, 350, 500, 750, 1200, 2000, 3500, 6000]],
-  badges: ['bd', 150, [150, 250, 400, 600, 900, 1500, 2500, 5000, 10000]],
+  ...(APRIL_FOOLS_BADGES_ON ? { badges: ['bd', 150, [150, 250, 400, 600, 900, 1500, 2500, 5000, 10000]] } : {}),
 };
 function gsrPriceFor(cat, idx) {
   const cfg = GSR_CATS[cat];
@@ -1591,7 +1593,7 @@ const SHOP_CATEGORY_DEFS = {
   profile_effects: { label: 'Profile Effects', get catalog() { return [...PROFILE_EFFECTS, ...customProfileEffects, ...GSR.profile_effects]; }, ownedField: 'ownedProfileEffects', equipField: 'equippedProfileEffect' },
   profile_frames: { label: 'Profile Frames', get catalog() { return [...PROFILE_FRAMES, ...customProfileFrames, ...GSR.profile_frames]; }, ownedField: 'ownedProfileFrames', equipField: 'equippedProfileFrame' },
   // Badges (v4.65): every one you own shows on your profile, next to the ones you earn, so there's nothing to equip
-  badges: { label: 'Badges', get catalog() { return [...SHOP_BADGES, ...GSR.badges]; }, ownedField: 'ownedBadges', equipField: 'equippedBadge' },
+  badges: { label: 'Badges', get catalog() { return APRIL_FOOLS_BADGES_ON ? [...SHOP_BADGES, ...GSR.badges] : SHOP_BADGES; }, ownedField: 'ownedBadges', equipField: 'equippedBadge' },
   // (no "Animated" tag on themes since v4.62: the three with a moving background barely showed it, so the Owner had it removed)
   themes: { label: 'Themes', get catalog() { return [...SHOP_THEMES, ...customThemes, ...GSR.themes]; }, ownedField: 'ownedThemes', equipField: 'equippedTheme' },
   banners: { label: 'Banners', get catalog() { return [...customBanners, ...GSR.banners]; }, ownedField: 'ownedBanners', equipField: 'equippedBanner' },
@@ -3373,7 +3375,7 @@ function badgesFor(p, self) {
   if (ct && (self || p.hideOrbs !== true)) out.push({ key: 'casino', color: ct[2], title: 'Casino', tier: ct[1], text: `${fmtOrbs(bet)} Orbs bet in the Casino` });
   if (p.cracker === true) out.push({ key: 'cracker', color: '#ff4d4f', title: 'Easter Eggs', tier: 'CRACKER', text: 'Found every easter egg' });
   SHOP_BADGES.forEach(b => { if ((p.ownedBadges || []).includes(b.id)) out.push({ key: 'shop:' + b.id, svg: b.svg, color: b.color, title: 'Shop Badge', tier: b.name.toUpperCase(), text: b.desc }); });
-  if (typeof GSR_MAP !== 'undefined' && GSR_MAP.badges) {
+  if (APRIL_FOOLS_BADGES_ON && typeof GSR_MAP !== 'undefined' && GSR_MAP.badges) {
     (p.ownedBadges || []).forEach(id => {
       const b = GSR_MAP.badges.get(id);
       if (b) out.push({ key: 'shop:' + b.id, svg: b.svg, color: b.color, title: 'Shop Badge', tier: b.name.toUpperCase(), text: b.desc });
@@ -15811,7 +15813,7 @@ function renderShopFeatured() {
         <button type="button" class="shop-buy-entire-btn${rem.count ? '' : ' is-done'}" id="shop-buy-entire-hero"${rem.count ? '' : ' disabled'}>${rem.count ? `Buy Entire Shop (${rem.count.toLocaleString()}) ${orbIconSVG(12)}<span>${fmtOrbs(rem.total)}</span>` : 'Entire Shop Owned'}</button>
       </div>
     </div>
-    <div class="shop-rush-sub">Over 4,200 new Themes, Nameplates, Gradient Profile Frames, Banners, Avatar Decorations, Profile Effects &amp; Badges. Search everything above or jump straight to a category:</div>
+    <div class="shop-rush-sub">Over 4,000 new Themes, Nameplates, Gradient Profile Frames, Banners, Avatar Decorations &amp; Profile Effects. Search everything above or jump straight to a category:</div>
     <div class="shop-rush-pills">${pillOrder.filter(k => counts[k] > 0).map(k => `<button type="button" class="shop-rush-pill" data-jump-tab="${k}">${esc(SHOP_CATEGORY_DEFS[k].label)} <span>${counts[k].toLocaleString()}</span></button>`).join('')}</div>
   </div>`;
   const sections = [rushBanner];

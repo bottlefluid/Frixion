@@ -173,10 +173,12 @@ check('buyshop: refuses when caller cannot afford the entire Shop (402)', x.stat
 x = await call('admin', 'buyshop', { token: nova });
 const novaAll = await doc('users/Nova');
 check('buyshop: Nova (infinite Orbs) buys every remaining Shop item across all categories in one commit',
-  x.ok && x.count >= 4195 && x.total > 0 && novaAll.ownedThemes.length >= 1000 && novaAll.ownedBanners.includes('custom_ban_1')
+  x.ok && x.count >= 4045 && x.total > 0 && novaAll.ownedThemes.length >= 1000 && novaAll.ownedBanners.includes('custom_ban_1')
   && novaAll.ownedNameplates.length >= 850 && novaAll.ownedProfileFrames.length >= 800 && novaAll.ownedDecorations.length >= 350
-  && novaAll.ownedProfileEffects.length >= 250 && novaAll.ownedBadges.length >= 150,
+  && novaAll.ownedProfileEffects.length >= 250 && !(novaAll.ownedBadges || []).includes('gsr_bd_0001'),
   { ok: x.ok, count: x.count, total: x.total, th: novaAll.ownedThemes.length, bn: novaAll.ownedBanners.length });
+x = await call('admin', 'buy', { token: nova, cat: 'badges', id: 'gsr_bd_0001' });
+check('April Fools badges (gsr_bd_*) stay off until re-enabled (404)', x.status === 404, x);
 x = await call('admin', 'buyshop', { token: nova });
 check('buyshop: calling again once everything is owned returns 409', x.status === 409, x);
 

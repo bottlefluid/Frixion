@@ -513,6 +513,8 @@ const ITEM_ID = /^(?!__)[A-Za-z0-9_-]{1,100}$/;
 const wholePrice = p => (Number.isInteger(p) && p >= 0 ? p : null);
 // Great Shop Rush (v4.78): deterministic price table for the 4,200 generated Shop items (gsr_<code_2>_<4-digit-index>),
 // matching GSR_CATS in script.js. Staff overrides in shopPrices/builtin still take precedence.
+// Saved for April Fools (user 2026-11-27): flip to true (here + in script.js) to re-enable the 150 recolored badges.
+const APRIL_FOOLS_BADGES_ON = false;
 const GSR_CATS = {
   themes: ['th', 1000, [75, 100, 125, 150, 200, 250, 350, 500, 750, 1000, 1500, 2500, 5000, 10000]],
   nameplates: ['np', 850, [100, 150, 200, 250, 350, 500, 750, 1000, 1500, 2500, 5000, 10000]],
@@ -520,7 +522,7 @@ const GSR_CATS = {
   banners: ['bn', 800, [100, 150, 200, 300, 450, 650, 1000, 1500, 3000, 7500]],
   decorations: ['dc', 350, [150, 225, 300, 450, 600, 850, 1250, 2000, 4000, 8000]],
   profile_effects: ['pe', 250, [150, 250, 350, 500, 750, 1200, 2000, 3500, 6000]],
-  badges: ['bd', 150, [150, 250, 400, 600, 900, 1500, 2500, 5000, 10000]],
+  ...(APRIL_FOOLS_BADGES_ON ? { badges: ['bd', 150, [150, 250, 400, 600, 900, 1500, 2500, 5000, 10000]] } : {}),
 };
 function gsrPriceOf(cat, id) {
   const cfg = own(GSR_CATS, cat) ? GSR_CATS[cat] : null;

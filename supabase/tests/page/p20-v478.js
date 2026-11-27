@@ -142,8 +142,10 @@ check('v4.78: UPDATES top is 4.78, EGGS total is 105, all 3 new eggs registered 
   const totalCount = shopCatalogCounts().total;
   const noDupes = Object.entries(GSR).every(([, list]) =>
     new Set(list.map(x => x.id)).size === list.length && new Set(list.map(x => x.name)).size === list.length);
-  check('#98a: Great Shop Rush has 4,200 generated items (4,300+ total) with zero duplicate IDs or names',
-    gsrCount === 4200 && totalCount >= 4300 && noDupes, { gsrCount, totalCount, noDupes });
+  const dupeBadgesHidden = SHOP_CATEGORY_DEFS.badges.catalog.length === SHOP_BADGES.length
+    && !badgesFor({ ...myProfile, ownedBadges: ['star', 'gsr_bd_0001', 'gsr_bd_0002'] }, true).some(b => String(b.key).includes('gsr_bd_'));
+  check('#98a: Great Shop Rush has 4,150+ active items (zero dupes) & 150 April Fools badges stay hidden',
+    gsrCount === 4200 && totalCount >= 4150 && noDupes && dupeBadgesHidden, { gsrCount, totalCount, noDupes, dupeBadgesHidden });
 
   goHomePage('shop');
   await until(() => !$('shop-view').classList.contains('hidden') && !!document.querySelector('.shop-rush-banner'), 4000);
