@@ -4701,7 +4701,9 @@ body.is-mobile #composer textarea { white-space: pre-wrap; min-width: 0; }
 /* Settings on a phone: the tabs sit in one swipeable row instead of wrapping into a block that fills half the screen. */
 body.is-mobile #settings-nav { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; flex-shrink: 0; gap: 8px; padding: 14px 12px 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 body.is-mobile #settings-nav::-webkit-scrollbar { display: none; }
-body.is-mobile #settings-nav .nav-item { flex: none; white-space: nowrap; font-size: 15px; padding: 9px 16px; margin: 0; border-radius: 999px; background: rgba(255,255,255,.06); }
+body.is-mobile #settings-nav .nav-item { flex: none; white-space: nowrap; font-size: 15px; padding: 9px 16px; margin: 0; border-radius: 999px; background: rgba(255,255,255,.06); order: 2; }
+body.is-mobile #settings-nav .nav-item[data-pane="pane-account"] { order: 0; }
+body.is-mobile #settings-nav #egg-guide-nav { order: 1; }
 body.is-mobile #settings-nav .nav-item.active { background: var(--accent); color: #fff; }
 body.is-mobile #settings-content { padding: 16px 16px 28px; }
 #self-status-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

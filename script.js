@@ -14396,6 +14396,7 @@ const YOU_ICONS = {
   codes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.500 5.500l-3 13"/></svg>',
   privacy: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10V8a5 5 0 0 1 10 0v2h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h1Zm2 0h6V8a3 3 0 0 0-6 0v2Z"/></svg>',
   casino: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 3h10a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4Zm1.500 4a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3Zm7 0a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3ZM12 10.500a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3ZM8.500 14a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3Zm7 0a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3Z"/></svg>',
+  egg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5C8.5 2.5 5 9.2 5 14.2a7 7 0 0 0 14 0C19 9.2 15.5 2.5 12 2.5Z"/></svg>',
 };
 function renderMobileYou() {
   const box = $('mobile-you-page');
@@ -14408,6 +14409,7 @@ function renderMobileYou() {
   const staff = [];
   if (!$('open-owner-panel').classList.contains('hidden')) staff.push(`<button type="button" class="myou-row" data-ystaff="owner"><span class="myou-ico">${YOU_ICONS.shield}</span><span class="myou-label">${ownerPanelName()}</span><svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>`);
   else if (!$('open-admin-panel').classList.contains('hidden')) staff.push(`<button type="button" class="myou-row" data-ystaff="admin"><span class="myou-ico">${YOU_ICONS.shield}</span><span class="myou-label">Admin Panel</span><svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>`);
+  if (realOwner()) staff.push(row('pane-eggguide', 'Easter Eggs', 'egg'));
   // Friends, the Shop, Quests and Codes sit here on a phone, the way Discord keeps its extras out of the Messages screen.
   const reqs = (p.incomingRequests || []).length;
   const page = (view, label, icon, badge) => `<button type="button" class="myou-row" data-yview="${view}"><span class="myou-ico">${YOU_ICONS[icon]}</span><span class="myou-label">${label}</span>${badge ? `<span class="myou-badge">${badge > 9 ? '9+' : badge}</span>` : ''}<svg class="myou-chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>`;
@@ -14419,11 +14421,11 @@ function renderMobileYou() {
     </button>
     <div class="mpage-label">Frixion</div>
     <div class="myou-group">${page('friends', 'Friends', 'friends', reqs)}${page('shop', 'Shop', 'shop')}${page('casino', 'Casino', 'casino')}${page('quests', 'Games', 'activity')}${page('codes', 'Codes', 'codes')}</div>
+    ${staff.length ? `<div class="mpage-label">Staff</div><div class="myou-group">${staff.join('')}</div>` : ''}
     <div class="mpage-label">Settings</div>
     <div class="myou-group">${row('pane-account', 'My Account', 'account')}${row('pane-activity', 'Activity Status', 'activity')}${row('pane-privacy', 'Privacy', 'privacy')}${row('pane-premium', 'Frixion Premium', 'premium')}${row('pane-themes', 'Themes', 'themes')}${row('pane-accessibility', 'Accessibility', 'access')}${row('pane-notifications', 'Notifications', 'notify')}${row('pane-keyboard', 'Keyboard', 'keyboard')}</div>
     <div class="mpage-label">App</div>
     <div class="myou-group">${row('pane-app', 'Frixion App', 'app')}${row('pane-updates', 'Update Log', 'updates')}</div>
-    ${staff.length ? `<div class="mpage-label">Staff</div><div class="myou-group">${staff.join('')}</div>` : ''}
     <div class="myou-group myou-out"><button type="button" class="myou-row danger" id="myou-logout"><span class="myou-ico">${YOU_ICONS.logout}</span><span class="myou-label">Log Out</span></button></div>
   </div>`;
   $('myou-card').onclick = () => openProfileModal(myUid);
