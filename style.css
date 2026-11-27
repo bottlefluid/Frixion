@@ -5235,10 +5235,12 @@ body.is-mobile .blocked-msgs { margin-left: 16px; }
 /* Mouse Maze (v4.64, games/maze/maze.js; cleaner in v4.66; mobile gamepad in v4.74) */
 .mz-root { position: relative; display: flex; flex-direction: column; width: 100%; height: min(72vh, 640px); background: #07080b; border-radius: 14px; overflow: hidden; user-select: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
 .mz-root.mz-touch { height: min(78vh, 680px); }
-.mz-root:fullscreen { width: 100vw; height: 100vh; border-radius: 0; box-shadow: none; }
+.mz-root:fullscreen, .mz-root:-webkit-full-screen { width: 100vw; height: 100vh; border-radius: 0; box-shadow: none; }
 .mz-stage { position: relative; flex: 1; min-height: 0; width: 100%; }
-.mz-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+.mz-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
 .mz-root.mz-pad-on .mz-canvas { cursor: default; }
+.mz-root.mz-in-menu [data-mz="menu"] { display: none; }
+.mz-root.mz-in-menu .mz-pad { display: none; }
 .mz-bar { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 2; }
 .mz-btn { padding: 7px 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.12); background: rgba(20,22,30,.82); color: #e8eaf0; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; backdrop-filter: blur(6px); transition: background .15s, border-color .15s; }
 .mz-btn:hover { background: rgba(44,48,62,.95); border-color: rgba(255,255,255,.22); }
@@ -5285,9 +5287,10 @@ body.is-mobile .blocked-msgs { margin-left: 16px; }
   .mz-pad-mid { display: none; }
   .mz-pad-acts { min-width: 114px; }
 }
-.mz-menu { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 30%, rgba(26,30,44,.96), rgba(7,8,11,.97)); padding: 24px; overflow-y: auto; }
+.mz-menu { position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center; background: radial-gradient(circle at 50% 30%, rgba(26,30,44,.96), rgba(7,8,11,.97)); padding: 54px 20px 28px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.mz-root.mz-touch .mz-menu { padding: 20px 14px 28px; }
 .mz-menu[hidden] { display: none; }
-.mz-menu-box { max-width: 720px; width: 100%; color: #e8e9ee; text-align: center; }
+.mz-menu-box { max-width: 720px; width: 100%; margin: auto; color: #e8e9ee; text-align: center; }
 .mz-menu-box h2 { margin: 0 0 10px; font-size: 30px; letter-spacing: -.01em; }
 .mz-menu-box p { color: #aab0bd; font-size: 14px; line-height: 1.55; margin: 6px auto; max-width: 600px; }
 .mz-menu-box .g { color: #3ccf68; } .mz-menu-box .y { color: #e3b23c; }

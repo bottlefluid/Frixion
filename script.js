@@ -21295,12 +21295,12 @@ const GAME_TILES = [
 // tb.mazeClr: one character per level, 1 for cleared) and its Orbs paid the same way.
 let mazeMod = null;
 function openMouseMaze(stage) {
-  if (!mazeMod) mazeMod = import('./games/maze/maze.js?v=5');
+  if (!mazeMod) mazeMod = import('./games/maze/maze.js?v=6');
   mazeMod.then(m => {
     if (currentGameId !== 'maze') return;
     m.open(stage, {
       isTouchOnly: () => isMobile() || !(window.matchMedia && matchMedia('(pointer: fine)').matches),
-      isOwner: () => realOwner(),
+      isOwner: () => gameBotAllowed(),
       load: () => ({ best: Math.max(0, Math.min(125, Number(UC.mazeBest) || 0)), cleared: typeof UC.mazeClr === 'string' ? UC.mazeClr.slice(0, 125) : '' }),
       save: (p, orbs) => {
         UC.coins = (UC.coins || 0) + orbs;
@@ -21337,7 +21337,11 @@ function ensureGameWindow() {
   document.body.append(gameWin);
   gameWin.querySelector('.fg-x').onclick = closeGame;
   gameWin.querySelector('#fg-bot-btn').onclick = gameBotToggle;
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !gameWin.hidden) closeGame(); });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || gameWin.hidden) return;
+    if (currentGameId === 'maze' && document.querySelector('.mz-menu[hidden]')) return;
+    closeGame();
+  });
   gameBotSyncUI();
   return gameWin;
 }

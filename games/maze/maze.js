@@ -14,13 +14,29 @@ const LEVELS = 125;
 const W = 1600, H = 900;                       // the level's own units; the canvas scales them to the screen
 let api = null, root = null, cv = null, ctx = null, raf = 0, level = null, state = 'menu', t0 = 0, deaths = 0;
 let progress = { best: 0, cleared: '' }, arm = null, last = null, paused = '', msg = '', msgUntil = 0, offFns = [];
-let pos = null, frozenUntil = 0, atEnd = false, flawless = 0, wonAt = 0;
+let pos = null, frozenUntil = 0, atEnd = false, flawless = 0, wonAt = 0, lockAt = 0;
 let botOn = false, botWp = 1, botLastAt = 0;
 let padOn = false, padTouch = false, padSlow = false, padVec = { x: 0, y: 0 }, padPtrId = null, padLastAt = 0, padUsedRun = false, hwFinishPrev = false;
 let padEl = null, stickEl = null, knobEl = null, slowBtn = null, finBtn = null, padBtn = null;
 const botAllowed = () => !!(botOn && api && typeof api.isOwner === 'function' && api.isOwner());
 const canLock = () => !!(cv && cv.requestPointerLock);
 const locked = () => !!cv && document.pointerLockElement === cv;
+const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+function reqFull(el) {
+  if (!el) return Promise.reject();
+  try {
+    const fn = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!fn) return Promise.reject();
+    const r = fn.call(el);
+    return r && typeof r.then === 'function' ? r : Promise.resolve();
+  } catch (e) { return Promise.reject(e); }
+}
+function exitFull() {
+  try {
+    const fn = document.exitFullscreen || document.webkitExitFullscreen;
+    if (fn) { const r = fn.call(document); if (r && r.catch) r.catch(() => {}); }
+  } catch (e) {}
+}
 
 // ---------- seeded numbers ----------
 function rng(seed) {
@@ -165,7 +181,12 @@ function toLevel(e) {
   const b = cv.getBoundingClientRect(), s = Math.min(b.width / W, b.height / H), ox = (b.width - W * s) / 2, oy = (b.height - H * s) / 2;
   return { x: (e.clientX - b.left - ox) / s, y: (e.clientY - b.top - oy) / s };
 }
-const isFull = () => !!document.fullscreenElement || (Math.abs(window.innerHeight - screen.height) < 3 && Math.abs(window.innerWidth - screen.width) < 3);
+const isFull = () => !!fsEl() || (Math.abs(window.innerHeight - screen.height) < 6 && Math.abs(window.innerWidth - screen.width) < 6);
+function resetStick() {
+  padVec = { x: 0, y: 0 }; padPtrId = null;
+  if (stickEl) stickEl.classList.remove('active');
+  if (knobEl) knobEl.style.transform = '';
+}
 function say(text, ms) { msg = text; msgUntil = performance.now() + (ms || 1600); }
 function lockPointer() {
   if (!canLock() || locked()) return;
@@ -212,6 +233,7 @@ function clear() {
   flawless = deaths ? 0 : flawless + 1;
   if (flawless >= 10) api.egg('mazeflawless');     // ten levels in a row without touching anything
   state = 'won'; wonAt = performance.now(); atEnd = false;
+  resetStick();
   say(`Level ${n} cleared${first ? ' for the first time' : ''}! +${orbs} Orbs${deaths ? ` (${deaths} ${deaths === 1 ? 'try' : 'tries'})` : ' without a single touch'}`, 2400);
   setTimeout(() => { if (state === 'won') { if (n < LEVELS) startLevel(n + 1); else { showMenu(true); say('That was the last level. You beat Mouse Maze.', 4000); } } }, botAllowed() ? 650 : 2000);
 }
@@ -237,7 +259,9 @@ function onMove(e) {
   if (botAllowed() || padOn || !level || paused || state === 'menu' || state === 'won') return;
   if (canLock()) {
     if (!locked() || state !== 'play' || !pos) return;
-    if (performance.now() < frozenUntil) return;
+    const now = performance.now();
+    if (now < frozenUntil || now - lockAt < 60) return;
+    if (Math.hypot(e.movementX || 0, e.movementY || 0) > 350) return;
     const s = scaleOf();
     moveTo({ x: Math.max(0, Math.min(W, pos.x + e.movementX / s)), y: Math.max(0, Math.min(H, pos.y + e.movementY / s)) });
     return;
@@ -440,14 +464,21 @@ function drawPointer(p, s, blink) {
   ctx.fill(); ctx.shadowBlur = 0; ctx.stroke();
   ctx.restore();
 }
-function pill(text, x, y, align, strong) {
-  ctx.font = `${strong ? 700 : 600} ${strong ? 16 : 13.5}px Inter, sans-serif`;
-  const w = ctx.measureText(text).width + 24, h = strong ? 34 : 28, left = align === 'center' ? x - w / 2 : x;
+function pill(text, x, y, align, strong, maxW) {
+  let fs = strong ? 16 : 13.5;
+  ctx.font = `${strong ? 700 : 600} ${fs}px Inter, sans-serif`;
+  if (maxW && maxW > 80) {
+    while (fs > 11 && ctx.measureText(text).width + 24 > maxW) {
+      fs -= 0.5;
+      ctx.font = `${strong ? 700 : 600} ${fs}px Inter, sans-serif`;
+    }
+  }
+  const w = Math.min(maxW || Infinity, ctx.measureText(text).width + 24), h = strong ? 34 : 28, left = align === 'center' ? x - w / 2 : x;
   ctx.fillStyle = strong ? 'rgba(14,16,22,.88)' : 'rgba(20,22,30,.78)';
   roundRect(left, y, w, h, h / 2); ctx.fill();
   ctx.strokeStyle = 'rgba(255,255,255,.1)'; ctx.lineWidth = 1; ctx.stroke();
   ctx.fillStyle = strong ? '#ffffff' : 'rgba(232,234,240,.92)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(text, left + w / 2, y + h / 2 + 0.5);
+  ctx.fillText(text, left + w / 2, y + h / 2 + 0.5, w - 16);
 }
 function draw(now) {
   raf = requestAnimationFrame(draw);
@@ -503,17 +534,20 @@ function draw(now) {
     : paused === 'focus' ? 'Paused: click back into Frixion.'
     : paused === 'lock' ? 'Paused. Click the maze to keep playing (Esc lets go of the mouse).'
     : (now < msgUntil ? msg : state === 'arming' ? 'Move the mouse onto the highlighted square.' : atEnd ? (padOn ? 'Tap FINISH!' : 'Click to finish!') : '');
-  if (text) pill(text, b.width / 2, b.height - 54, 'center', true);
+  if (text) pill(text, b.width / 2, b.height - 54, 'center', true, b.width - 16);
 }
 
 // ---------- the menu ----------
 function showMenu(on) {
   const m = root.querySelector('.mz-menu');
+  root.classList.toggle('mz-in-menu', !!on);
   if (!on) { m.hidden = true; return; }
   state = 'menu'; atEnd = false;
+  resetStick();
   if (locked()) document.exitPointerLock();
   const cl = progress.cleared, done = [...cl].filter(c => c === '1').length;
   m.hidden = false;
+  m.scrollTop = 0;
   m.querySelector('.mz-progress-fill').style.width = `${(done / LEVELS) * 100}%`;
   m.querySelector('.mz-progress-text').textContent = `${done} of ${LEVELS} levels cleared`;
   m.querySelector('.mz-levels').innerHTML = Array.from({ length: LEVELS }, (_, i) => {
@@ -524,8 +558,11 @@ function showMenu(on) {
   m.querySelectorAll('[data-lv]').forEach(b => { b.onclick = () => go(Number(b.dataset.lv)); });
 }
 function go(n) {
-  if (!botAllowed() && !padOn && !isFull()) { (root.requestFullscreen ? root.requestFullscreen() : Promise.reject()).catch(() => {}); }
+  const needFs = !botAllowed() && !padOn && !isFull();
   startLevel(n);
+  if (needFs) {
+    reqFull(root).then(() => { if (state === 'play' && !padOn && !botAllowed()) lockPointer(); }).catch(() => {});
+  }
 }
 
 export function open(stage, frixion) {
@@ -584,12 +621,13 @@ export function open(stage, frixion) {
   padBtn = root.querySelector('[data-mz="pad"]');
   const on = (el, ev, fn, opt) => { if (!el) return; el.addEventListener(ev, fn, opt); offFns.push(() => el.removeEventListener(ev, fn, opt)); };
   on(document, 'mousemove', onMove);              // (with the pointer locked, moves come to the document)
+  on(document, 'pointerlockchange', () => { if (locked()) lockAt = performance.now(); });
   on(cv, 'mousedown', onDown);
   on(cv, 'mouseleave', onLeave);
   on(root, 'contextmenu', e => e.preventDefault());       // no right-click menu in the maze
-  on(window, 'blur', () => { if (!botAllowed() && !padOn && state === 'play' && !canLock()) { state = 'arming'; last = null; } });
+  on(window, 'blur', () => { resetStick(); if (!botAllowed() && !padOn && state === 'play' && !canLock()) { state = 'arming'; last = null; } });
 
-  // Virtual analog stick (multi-touch safe via pointerId)
+  // Virtual analog stick (multi-touch safe via pointerId; tracked on window so dragging outside never drops)
   const updateStick = e => {
     const r = stickEl.getBoundingClientRect();
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
@@ -608,20 +646,17 @@ export function open(stage, frixion) {
     stickEl.classList.add('active');
     updateStick(e);
   });
-  on(stickEl, 'pointermove', e => {
+  on(window, 'pointermove', e => {
     if (e.pointerId !== padPtrId || botAllowed()) return;
-    e.preventDefault();
+    if (e.cancelable) e.preventDefault();
     updateStick(e);
-  });
+  }, { passive: false });
   const endStick = e => {
     if (e.pointerId !== padPtrId) return;
-    padPtrId = null;
-    padVec = { x: 0, y: 0 };
-    stickEl.classList.remove('active');
-    if (knobEl) knobEl.style.transform = '';
+    resetStick();
   };
-  on(stickEl, 'pointerup', endStick);
-  on(stickEl, 'pointercancel', endStick);
+  on(window, 'pointerup', endStick);
+  on(window, 'pointercancel', endStick);
 
   slowBtn.onclick = () => { if (botAllowed()) return; padSlow = !padSlow; syncPadUI(); };
   finBtn.onclick = () => { if (!botAllowed() && state === 'play' && atEnd) { padUsedRun = true; clear(); } };
@@ -629,7 +664,7 @@ export function open(stage, frixion) {
   root.querySelector('.mz-continue').onclick = () => go(progress.best >= LEVELS ? 1 : progress.best + 1);
   root.querySelector('[data-mz="menu"]').onclick = () => showMenu(true);
   const fullBtn = root.querySelector('[data-mz="full"]');
-  if (fullBtn) fullBtn.onclick = () => { if (!document.fullscreenElement) root.requestFullscreen().then(() => { if (state === 'play' && !padOn) lockPointer(); }).catch(() => {}); else document.exitFullscreen().catch(() => {}); };
+  if (fullBtn) fullBtn.onclick = () => { if (!fsEl()) reqFull(root).then(() => { if (state === 'play' && !padOn && !botAllowed()) lockPointer(); }).catch(() => {}); else exitFull(); };
   syncPadUI();
   showMenu(true);
   raf = requestAnimationFrame(draw);
@@ -652,7 +687,7 @@ export function close() {
   cancelAnimationFrame(raf); raf = 0;
   offFns.forEach(f => f()); offFns = [];
   if (cv && document.pointerLockElement === cv) document.exitPointerLock();
-  if (document.fullscreenElement && root && root.contains(document.fullscreenElement) || document.fullscreenElement === root) document.exitFullscreen().catch(() => {});
+  if (fsEl() && root && (root.contains(fsEl()) || fsEl() === root)) exitFull();
   if (root) root.remove();
   root = cv = ctx = padEl = stickEl = knobEl = slowBtn = finBtn = padBtn = level = null; state = 'menu'; paused = ''; pos = null; atEnd = false;
 }
