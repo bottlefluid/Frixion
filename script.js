@@ -11662,7 +11662,6 @@ function buildMessageLineEl(m, canDelete) {
   const rowWrap = document.createElement('div');
   rowWrap.className = 'msg-row-wrap' + (m.sticker ? ' is-sticker' : '');
 
-  const pingTag = m.pingAnyway ? `<span class="ping-anyway-tag" title="Sent with /ping — bypasses Do Not Disturb">PING ANYWAY</span>` : '';
   const bodyHTML = (m.sticker
     ? `<img class="msg-sticker" src="${esc(m.sticker.dataUrl)}" alt="${esc(m.sticker.name)}" title="${esc(m.sticker.name)}">`
     : m.poll
@@ -11671,7 +11670,7 @@ function buildMessageLineEl(m, canDelete) {
     ? purgeResultHTML(m)
     : m.wordle
     ? wordleCardHTML(m)
-    : (m.text ? `${pingTag}<span class="msg-text">${msgTextHTML(m)}</span>${m.edited ? `<span class="edited-tag">(edited)</span>` : ''}` : pingTag) +
+    : (m.text ? `<span class="msg-text">${msgTextHTML(m)}</span>${m.edited ? `<span class="edited-tag">(edited)</span>` : ''}` : '') +
       (m.forwarded ? forwardedCardHTML(m.forwarded) : '') +
       attachmentHTML(m, canDelete));
 
