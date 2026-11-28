@@ -403,6 +403,19 @@ check('a block counts: nothing to Air from Sumi, whom Air blocked', x.status ===
 await put('servers/pcs01/channels/general/messages/pm4', { uid: 'Tester', username: 'Tester', text: '@Air from the Owner', createdAt: now() });
 x = await call('push', 'send', { kind: 'ch', sid: 'pcs01', cid: 'general', mid: 'pm4', uid: 'Tester' });
 check('...but not against someone ranked above (the Owner still reaches Air)', x.status === 200 && pushed.length === n0 + 1 && pushed[n0].url === '/push/sub-air', { x, pushed: pushed.slice(n0) });
+await rpc('fx_commit', { writes: [{ path: 'users/Sumi', updatePaths: [[['dnd'], true]] }] });
+const n1 = pushed.length;
+await put('dms/Sumi_Tester/messages/pm5', { uid: 'Tester', username: 'Tester', text: 'normal while dnd', createdAt: now() });
+x = await call('push', 'send', { kind: 'dm', id: 'Sumi_Tester', mid: 'pm5', uid: 'Tester' });
+check('DND on: normal DM does not push to Sumi', x.status === 200 && x.quiet === true && pushed.length === n1, { x, pushed: pushed.slice(n1) });
+await put('dms/Sumi_Tester/messages/pm6', { uid: 'Tester', username: 'Tester', text: 'urgent pinganyway', pingAnyway: true, createdAt: now() });
+x = await call('push', 'send', { kind: 'dm', id: 'Sumi_Tester', mid: 'pm6', uid: 'Tester' });
+check('DND on: /ping (pingAnyway) bypasses DND and pushes to Sumi', x.status === 200 && pushed.length === n1 + 1 && pushed[n1].url === '/push/sub-sumi', { x, pushed: pushed.slice(n1) });
+await put('servers/pcs01/channels/general/messages/pm7', { uid: 'Sumi', username: 'Sumi', text: '@Air pinganyway while blocked', pingAnyway: true, createdAt: now() });
+const n2 = pushed.length;
+x = await call('push', 'send', { kind: 'ch', sid: 'pcs01', cid: 'general', mid: 'pm7', uid: 'Sumi' });
+check('pingAnyway still respects blocks (blocked Sumi still cannot push Air)', x.status === 200 && pushed.length === n2, { x, pushed: pushed.slice(n2) });
+await rpc('fx_commit', { writes: [{ path: 'users/Sumi', updatePaths: [[['dnd'], false]] }] });
 pushService.close();
 
 // ---------------- functions/api/discord ----------------

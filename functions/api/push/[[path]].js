@@ -145,14 +145,14 @@ async function batchRead(env, paths, fields) {
   for (const x of (await r.json().catch(() => [])) || []) if (x.found) got.set(x.found.name, decFields(x.found.fields));
   return names.map(n => got.get(n) || null);
 }
-async function notDisturbing(env, uids, sender, senderRank) {
+async function notDisturbing(env, uids, sender, senderRank, bypassDnd = false) {
   const [profiles, blocks] = await Promise.all([
     batchRead(env, uids.map(u => `users/${u}`), ['dnd', 'owner', 'coowner', 'op']),
     batchRead(env, uids.map(u => `users/${u}/meta/blocks`), ['list']),
   ]);
   return uids.filter((u, i) => {
     const p = profiles && profiles[i];
-    if (p && p.dnd === true) return false;
+    if (!bypassDnd && p && p.dnd === true) return false;
     const list = blocks && blocks[i] && Array.isArray(blocks[i].list) ? blocks[i].list : [];
     return !(list.includes(sender) && rankOf(p || {}) >= senderRank);
   });
@@ -234,8 +234,8 @@ async function send(env, { kind, id, sid, cid, tid, mid, uid }, origin) {
     note = { title: `${nick || nameOf(sender, uid)} (${where}, ${server.name || 'server'})`, body, icon, tag: `msg:${mid}`, open: { type: 'ch', sid, cid, tid: tid || null } };
   }
   if (!to.length) return { ok: true, sent: 0 };
-  // Do Not Disturb (v4.60), and blocks (v4.61): nobody who turned it on, or blocked the sender, gets a push
-  to = await notDisturbing(env, to, uid, rankOf(sender || {}));
+  // Do Not Disturb (v4.60, bypassed by /ping pingAnyway), and blocks (v4.61): nobody who turned it on, or blocked the sender, gets a push
+  to = await notDisturbing(env, to, uid, rankOf(sender || {}), m.pingAnyway === true);
   if (!to.length) return { ok: true, sent: 0, quiet: true };
 
   const subs = (await subsOf(env, to)).filter(s => s.endpoint && s.p256dh && s.auth && !(s.muted || []).includes(mute));
