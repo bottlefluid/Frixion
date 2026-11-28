@@ -5807,3 +5807,39 @@ body.is-mobile.keyboard-open {
 body.is-mobile .shop-buy-entire-top { display: none; }
 body.is-mobile .shop-filter-bar { padding: 8px 10px; gap: 6px; }
 body.is-mobile .shop-filter-select { flex: 1 1 130px; min-width: 0; }
+
+/* Old-Discord low-tier UI animations (fast, subtle upward slide-in, GPU-cheap transform+opacity only) */
+@keyframes fxPopUp {
+  from { opacity: 0; transform: translateY(10px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes fxBackdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.modal-overlay:not(.hidden) { animation: fxBackdropIn 120ms ease-out both; }
+.modal-overlay:not(.hidden) > .modal-box,
+#profile-modal:not(.hidden) #profile-modal-box { animation: fxPopUp 165ms cubic-bezier(.2, .9, .3, 1) both; }
+#inbox-popover:not(.hidden),
+#help-popover:not(.hidden),
+#emoji-picker-panel:not(.hidden),
+#sticker-picker-panel:not(.hidden),
+#gif-picker-panel:not(.hidden),
+#mention-popup:not(.hidden),
+.server-menu,
+.composer-action-menu,
+.react-popover,
+.full-react-popover,
+.shop-browse-menu,
+.mht-menu,
+.action-sheet,
+#mobile-you-page:not(.hidden),
+#mobile-notif-page:not(.hidden) { animation: fxPopUp 150ms cubic-bezier(.2, .9, .3, 1) both; }
+.channel-row, .dm-row, .member-row, .rail-item { transition: background-color 110ms ease, color 110ms ease, border-radius 140ms ease; }
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay, .modal-box, #inbox-popover, #help-popover, #emoji-picker-panel, #sticker-picker-panel,
+  #gif-picker-panel, #mention-popup, .server-menu, .composer-action-menu, .react-popover,
+  .full-react-popover, .shop-browse-menu, .mht-menu, .action-sheet, #mobile-you-page, #mobile-notif-page {
+    animation: none !important;
+  }
+}

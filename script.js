@@ -1260,7 +1260,10 @@ function gsrPriceFor(cat, idx) {
   const ti = h < 18 ? 0 : h < 34 ? 1 : h < 48 ? 2 : h < 60 ? 3 : h < 71 ? 4 : h < 80 ? 5 : h < 87 ? 6 : h < 92 ? 7 : h < 96 ? 8 : Math.min(tiers.length - 1, 9 + (h - 96));
   return tiers[Math.min(ti, tiers.length - 1)];
 }
-const { GSR, GSR_MAP } = (() => {
+// Lazy-build the 4,050+ Great Shop Rush items only when the Shop or a gsr_* item is actually accessed (faster page boot!)
+let _gsrBuilt = null;
+function _ensureGsr() {
+  if (_gsrBuilt) return _gsrBuilt;
   const hslHex = (h, s, l) => {
     h = ((h % 360) + 360) % 360;
     s = Math.max(0, Math.min(100, s)) / 100;
@@ -1576,10 +1579,25 @@ const { GSR, GSR_MAP } = (() => {
     }
   }
 
-  const GSR = { themes, nameplates, profile_frames, banners, decorations, profile_effects, badges };
-  const GSR_MAP = Object.fromEntries(Object.entries(GSR).map(([k, list]) => [k, new Map(list.map(x => [x.id, x]))]));
-  return { GSR, GSR_MAP };
-})();
+  const gsr = { themes, nameplates, profile_frames, banners, decorations, profile_effects, badges };
+  const gsrMap = Object.fromEntries(Object.entries(gsr).map(([k, list]) => [k, new Map(list.map(x => [x.id, x]))]));
+  _gsrBuilt = { GSR: gsr, GSR_MAP: gsrMap };
+  return _gsrBuilt;
+}
+const GSR = new Proxy({}, {
+  get(_, k) { return _ensureGsr().GSR[k]; },
+  ownKeys() { return Reflect.ownKeys(_ensureGsr().GSR); },
+  getOwnPropertyDescriptor(_, k) { return Reflect.getOwnPropertyDescriptor(_ensureGsr().GSR, k); },
+});
+const GSR_MAP = new Proxy({}, {
+  get(_, k) {
+    if (!_gsrBuilt) {
+      // Fast-path: don't build all 4,050 items just to look up a non-gsr item id!
+      return { get(id) { return typeof id === 'string' && id.startsWith('gsr_') ? _ensureGsr().GSR_MAP[k].get(id) : undefined; } };
+    }
+    return _gsrBuilt.GSR_MAP[k];
+  },
+});
 
 // A generic registry tying each shop category to its catalog and the
 // profile fields it reads/writes — lets the shop's render/buy/equip code
@@ -5662,7 +5680,9 @@ async function startTermination(info) {
 // ============================================================
 // APP INIT
 // ============================================================
+let lastSelfViewSig = '';
 function initAppForUser() {
+  lastSelfViewSig = '';
   initPresence();
   if (!OVERLAY_WINDOW) { subscribeBlocks(); loadEggs(); }   // (easter eggs you've found: one read, v4.62)
   unsub.self = db.collection('users').doc(myUid).onSnapshot(snap => {
@@ -5729,7 +5749,17 @@ function initAppForUser() {
     if (!$('settings-modal').classList.contains('hidden')) populateSettings();
     if (currentView === 'friends') renderFriendsView();
     if (currentView === 'quests') renderQuests();
-    renderCurrentView();
+    // Avoid rebuilding the whole message list on every Orb / gameMinutes / activity / lastSeen profile tick
+    const viewSig = JSON.stringify([
+      myProfile.displayName, myProfile.username, myProfile.avatarColor, myProfile.avatarUrl,
+      myProfile.equippedDecoration, myProfile.equippedMask, myProfile.equippedNameplate,
+      myProfile.owner, myProfile.coowner, myProfile.op, myProfile.premiumUntil,
+      sfMode, myProfile.friends, myProfile.customRank, myProfile.cracker, myProfile.nameColor,
+    ]);
+    if (viewSig !== lastSelfViewSig) {
+      lastSelfViewSig = viewSig;
+      renderCurrentView();
+    }
   });
 
   unsub.servers = db.collection('servers').where('members', 'array-contains', myUid).onSnapshot(snap => {
@@ -5777,18 +5807,23 @@ function initAppForUser() {
   subscribeReadSync();
   subscribeBookmarks();
   subscribeClosedDMs();
-  subscribeCustomEmojis();
-  subscribeCustomDecorations();
-  subscribeCustomThemes();
-  subscribeCustomNameplates();
-  subscribeCustomBanners();
-  subscribeCustomProfileEffects();
-  subscribeCustomProfileFrames();
-  subscribeShopOverrides();
-  subscribeCustomMusic();
-  subscribeMessageFilter();
-  subscribeCustomRanks();
-  subscribeStickers();
+  // Defer static admin/shop catalog subscriptions slightly so profile, servers, DMs and messages load first without contention
+  const bootUid = myUid;
+  setTimeout(() => {
+    if (myUid !== bootUid) return;
+    subscribeCustomEmojis();
+    subscribeCustomDecorations();
+    subscribeCustomThemes();
+    subscribeCustomNameplates();
+    subscribeCustomBanners();
+    subscribeCustomProfileEffects();
+    subscribeCustomProfileFrames();
+    subscribeShopOverrides();
+    subscribeCustomMusic();
+    subscribeMessageFilter();
+    subscribeCustomRanks();
+    subscribeStickers();
+  }, 350);
   showHomeView();
   handleInviteFromUrl();
 }
@@ -11746,6 +11781,7 @@ async function renderMessages(rawMsgs) {
   }
 
   let lastUid = null, lastMillis = 0, lastDay = null, groupEl = null, blockedRun = null;
+  const frag = document.createDocumentFragment();
 
   msgs.forEach(m => {
     const millis = m.createdAt && m.createdAt.toMillis ? m.createdAt.toMillis() : Date.now();
@@ -11760,7 +11796,7 @@ async function renderMessages(rawMsgs) {
       const div = document.createElement('div');
       div.className = 'day-divider';
       div.textContent = day;
-      wrap.appendChild(div);
+      frag.appendChild(div);
       lastDay = day; lastUid = null; blockedRun = null;
     }
     // Blocked (v4.61): someone you blocked writes messages that fold, in a row, into one bar you can open
@@ -11768,7 +11804,7 @@ async function renderMessages(rawMsgs) {
       if (!blockedRun) {
         blockedRun = { ids: [], el: document.createElement('div') };
         blockedRun.el.className = 'blocked-msgs';
-        wrap.appendChild(blockedRun.el);
+        frag.appendChild(blockedRun.el);
       }
       blockedRun.ids.push(m.id);
       const ids = blockedRun.ids.slice(), n = ids.length;
@@ -11779,7 +11815,7 @@ async function renderMessages(rawMsgs) {
     }
     blockedRun = null;
     if (m.system) {
-      wrap.appendChild(buildSystemMessageEl(m));
+      frag.appendChild(buildSystemMessageEl(m));
       lastUid = null; groupEl = null;
       return;
     }
@@ -11812,10 +11848,11 @@ async function renderMessages(rawMsgs) {
       body.appendChild(buildMessageLineEl(m, canDelete));
       groupEl.innerHTML = avatarHTML(40, p.avatarColor, initials(p.username), null, p.avatarUrl, p.equippedDecoration, undefined, p.equippedMask);
       groupEl.appendChild(body);
-      wrap.appendChild(groupEl);
+      frag.appendChild(groupEl);
     }
     lastUid = m.uid; lastMillis = millis;
   });
+  wrap.appendChild(frag);
 
   purgeMsgMedia();
   if (!searching && msgKeepFromBottom && rawMsgs.length > msgKeepFromBottom.count) {
@@ -12886,12 +12923,12 @@ function autoResize(el) {
 // corner) so showing/hiding it never changes the composer bar's height.
 const COMPOSER_MAX_LENGTH = 1000;
 const COMPOSER_COUNT_SHOW_AT = 100; // only surface it once you're within 100 chars of the cap
-// The Owner has no limit (the database itself stops one message at about a million characters), Co-Owners get 5,000 and
-// everyone else 1,000. In sfmode staff get the normal limit, like any player.
+// The Owner and Co-Owners have no limit (the database itself stops one message at about a million characters),
+// Premium gets 4,000, and everyone else 1,000. In sfmode staff get the normal limit, like any player.
 const MESSAGE_SIZE_CAP = 900000;
 function myMessageLimit() {
   const rank = sfMode ? 0 : platformRank(myProfile);
-  return rank >= 3 ? Infinity : rank === 2 ? 5000 : isPremium(myProfile) ? 4000 : COMPOSER_MAX_LENGTH;   // Premium: 4,000 (v4.56)
+  return rank >= 2 ? Infinity : isPremium(myProfile) ? 4000 : COMPOSER_MAX_LENGTH;   // Premium: 4,000 (v4.56)
 }
 // null when the text is fine to send, otherwise what to tell the person
 function messageTooLong(text) {
@@ -23066,7 +23103,7 @@ function mountGameHubs() {
 let ocrngModule = null, sacModule = null;
 // Steal a Character (games/sac/) stays off for everyone, the Owner too, until it's finished
 const SAC_ON = false;
-// what the 3D games get from Frixion (Steal a Character uses the same)
+// what the 3D games get from Frixion (Steal a Character & Trip use the same)
 function setGameApi() {
   window.FrixionGameAPI = {
     db, rtdb, firebase, FieldValue, esc, toast, isMobile,

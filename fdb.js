@@ -329,6 +329,7 @@
       });
     }
 
+    let rtAuthP = null, rtAuthAt = 0;
     const db = {
       FieldValue, Timestamp, FieldPath,
       collection: p => new CollectionReference(db, p),
@@ -422,7 +423,14 @@
       _listen(target, args) { return listen(db, target, args); },
       _routeFor: routeFor,
       _channel: name => sb.channel(name),
-      _realtimeAuth: () => (sb.realtime && typeof sb.realtime.setAuth === 'function' ? sb.realtime.setAuth().catch(() => {}) : Promise.resolve()),
+      _realtimeAuth: () => {
+        if (!sb.realtime || typeof sb.realtime.setAuth !== 'function') return Promise.resolve();
+        const now = Date.now();
+        if (rtAuthP && now - rtAuthAt < 3000) return rtAuthP;
+        rtAuthAt = now;
+        rtAuthP = sb.realtime.setAuth().catch(() => {}).finally(() => { setTimeout(() => { if (Date.now() - rtAuthAt >= 3000) rtAuthP = null; }, 3100); });
+        return rtAuthP;
+      },
       _removeChannel: ch => { try { sb.removeChannel(ch); } catch (e) {} },
       _nextId: () => ++seq,
     };
@@ -635,7 +643,7 @@
         .on('postgres_changes', Object.assign({ event: '*', schema: 'public', table: route.tbl }, filter ? { filter } : {}), p => apply(p))
         .subscribe((status, err) => {
           if (stopped) return;
-          if (status === 'SUBSCRIBED') load();   // (live from here on: read once more for anything in between)
+          if (status === 'SUBSCRIBED') { if (emitted) load(); }   // (if initial load is still in flight it covers live state; otherwise reload for reconnect/gap)
           else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') console.warn('fdb: live updates for ' + collPath + ' stopped:', status, err && err.message);
         });
     }, report);
